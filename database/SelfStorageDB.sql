@@ -296,6 +296,24 @@ CREATE TABLE Contract (
 );
 GO
 
+CREATE TABLE ContractSignature (
+    ContractID INT PRIMARY KEY,
+    UserID INT NOT NULL,
+    SignerName NVARCHAR(100) NOT NULL,
+    SignatureImage NVARCHAR(MAX) NOT NULL,
+    TermsVersion NVARCHAR(50) NOT NULL,
+    SignedAt DATETIMEOFFSET NOT NULL,
+
+    CONSTRAINT FK_ContractSignature_Contract
+        FOREIGN KEY (ContractID)
+        REFERENCES Contract(ContractID),
+
+    CONSTRAINT FK_ContractSignature_User
+        FOREIGN KEY (UserID)
+        REFERENCES Users(UserID)
+);
+GO
+
 
 -- =============================================
 -- 12. PAYMENT
