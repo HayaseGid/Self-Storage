@@ -1,0 +1,36 @@
+=== THÔNG TIN CÁC CƠ SỞ LƯU TRỮ (FACILITIES) ===
+
+1. Cơ sở Lưu trữ Quận 1
+- Mã: F1 (Quản lý các Unit có tiền tố Q1)
+- Địa chỉ: 123 Lê Lợi, Quận 1, TP.HCM
+- Điện thoại: 0812345678
+- Trạng thái: Active
+- Quản lý bởi: fac_manager1
+
+2. Cơ sở Lưu trữ Tân Bình
+- Mã: F2 (Quản lý các Unit có tiền tố TB)
+- Địa chỉ: 456 Cộng Hòa, Tân Bình, TP.HCM
+- Điện thoại: 0812345679
+- Trạng thái: Active
+- Quản lý bởi: fac_manager2
+
+3. Cơ sở Lưu trữ Thủ Đức
+- Mã: F3 (Quản lý các Unit có tiền tố TD)
+- Địa chỉ: 123 Võ Văn Ngân, Thủ Đức, TP.HCM
+- Điện thoại: 0812345680
+- Trạng thái: Active
+- Quản lý bởi: fac_manager1 (Tạm thời)
+
+4. Cơ sở Lưu trữ Quận 2
+- Mã: F4 (Quản lý các Unit có tiền tố Q2)
+- Địa chỉ: 456 Trần Não, Quận 2, TP.HCM
+- Điện thoại: 0812345681
+- Trạng thái: Active
+- Quản lý bởi: fac_manager2 (Tạm thời)
+
+5. Cơ sở Lưu trữ Quận 3
+- Mã: F5 (Quản lý các Unit có tiền tố Q3)
+- Địa chỉ: 789 Cách Mạng Tháng 8, Quận 3, TP.HCM
+- Điện thoại: 0812345682
+- Trạng thái: Active
+- Quản lý bởi: fac_manager1 (Tạm thời)
