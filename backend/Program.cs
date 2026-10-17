@@ -6,7 +6,6 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
-
 // Configure CORS to allow frontend connections
 builder.Services.AddCors(options =>
 {
@@ -25,6 +24,7 @@ builder.Services.AddDbContext<SelfStorageDbContext>(options =>
 // Register Repositories and Services
 builder.Services.AddScoped<SelfStorageAPI.Interfaces.IUserRepository, SelfStorageAPI.Repositories.UserRepository>();
 builder.Services.AddScoped<SelfStorageAPI.Interfaces.IAuthService, SelfStorageAPI.Services.AuthService>();
+builder.Services.AddScoped<SelfStorageAPI.Interfaces.IContractSignatureService, SelfStorageAPI.Services.ContractSignatureService>();
 
 var app = builder.Build();
 
@@ -34,12 +34,13 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
-// Use CORS before Authorization
+// Allow frontend requests, including the demo identity header.
 app.UseCors("AllowFrontend");
-
-app.UseAuthorization();
 
 app.MapControllers();
 

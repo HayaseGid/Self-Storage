@@ -27,8 +27,12 @@ namespace SelfStorageAPI.Controllers
             if (request.Months is < 1 or > 12)
                 return BadRequest(new { message = "Thời gian thuê phải từ 1 đến 12 tháng." });
 
+            var email = Request.Headers["X-User-Email"].ToString();
+            if (string.IsNullOrWhiteSpace(email))
+                return Unauthorized();
+
             var customer = await _context.Users
-                .FirstOrDefaultAsync(u => u.Email == request.CustomerEmail, cancellationToken);
+                .FirstOrDefaultAsync(u => u.Email == email && u.RoleID == 1 && u.Status == "Active", cancellationToken);
             if (customer == null) return NotFound(new { message = "Không tìm thấy tài khoản khách hàng." });
 
             var startDate = request.StartDate.Date;
@@ -37,12 +41,21 @@ namespace SelfStorageAPI.Controllers
 
             var unit = await _context.StorageUnits
                 .Include(u => u.UnitType)
-                .FirstOrDefaultAsync(u => u.UnitNumber == request.UnitNumber, cancellationToken);
+                .FirstOrDefaultAsync(u =>
+                    u.UnitID == request.UnitID &&
+                    u.UnitNumber == request.UnitNumber,
+                    cancellationToken);
             if (unit == null) return NotFound(new { message = "Không tìm thấy kho." });
 
             var endDate = startDate.AddMonths(request.Months).AddDays(-1);
             await using var transaction = await _context.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable, cancellationToken);
+
+            var facilityIsActive = await _context.Facilities.AnyAsync(
+                f => f.FacilityID == unit.FacilityID && f.Status == "Active",
+                cancellationToken);
+            if (!facilityIsActive)
+                return Conflict(new { message = "Cơ sở hiện không nhận đặt chỗ mới." });
 
             var hasConflict = await _context.Reservations.AnyAsync(r =>
                 r.AssignedUnitID == unit.UnitID &&
@@ -94,8 +107,19 @@ namespace SelfStorageAPI.Controllers
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id, CancellationToken cancellationToken)
         {
+            var email = Request.Headers["X-User-Email"].ToString();
+            if (string.IsNullOrWhiteSpace(email))
+                return Unauthorized();
+
+            var customerId = await _context.Users
+                .Where(u => u.Email == email && u.RoleID == 1 && u.Status == "Active")
+                .Select(u => (int?)u.UserID)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (!customerId.HasValue)
+                return Unauthorized();
+
             var reservation = await _context.Reservations
-                .Where(r => r.ReservationID == id)
+                .Where(r => r.ReservationID == id && r.CustomerID == customerId.Value)
                 .Select(r => new
                 {
                     reservationId = r.ReservationID,
@@ -117,6 +141,15 @@ namespace SelfStorageAPI.Controllers
         [HttpGet("customer/{email}")]
         public async Task<IActionResult> GetForCustomer(string email, CancellationToken cancellationToken)
         {
+            var authenticatedEmail = Request.Headers["X-User-Email"].ToString();
+            if (!string.Equals(authenticatedEmail, email, StringComparison.OrdinalIgnoreCase))
+                return Forbid();
+
+            if (!await _context.Users.AnyAsync(
+                    u => u.Email == email && u.RoleID == 1 && u.Status == "Active",
+                    cancellationToken))
+                return Unauthorized();
+
             var reservations = await _context.Reservations
                 .Where(r => r.Customer.Email == email)
                 .OrderByDescending(r => r.StartDate)
@@ -130,10 +163,19 @@ namespace SelfStorageAPI.Controllers
                     endDate = r.EndDate,
                     months = r.RentalPeriod,
                     rentalAmount = r.TotalEstimatedCost,
+                    monthlyPrice = r.RentalPeriod > 0 && r.TotalEstimatedCost.HasValue
+                        ? r.TotalEstimatedCost.Value / r.RentalPeriod
+                        : 0m,
                     depositAmount = r.DepositAmount,
                     status = r.Status,
                     paymentStatus = r.Payments.OrderByDescending(p => p.PaymentID)
                         .Select(p => p.PaymentStatus).FirstOrDefault(),
+                    paymentReference = r.Payments.OrderByDescending(p => p.PaymentID)
+                        .Select(p => p.TransactionReference).FirstOrDefault(),
+                    paymentAmount = r.Payments.OrderByDescending(p => p.PaymentID)
+                        .Select(p => (decimal?)p.Amount).FirstOrDefault(),
+                    paymentDate = r.Payments.OrderByDescending(p => p.PaymentID)
+                        .Select(p => (DateTime?)p.PaymentDate).FirstOrDefault(),
                     contractId = r.Contract == null ? (int?)null : r.Contract.ContractID,
                     contractStatus = r.Contract == null ? null : r.Contract.ContractStatus,
                     accessType = r.Contract == null ? null :

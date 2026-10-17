@@ -21,6 +21,7 @@ namespace SelfStorageAPI.Controllers
         public async Task<IActionResult> GetCatalogState(CancellationToken cancellationToken)
         {
             var facilities = await _context.Facilities
+                .Where(f => f.Status == "Active")
                 .Select(f => new {
                     id = f.FacilityID.ToString(),
                     name = f.FacilityName,
@@ -33,6 +34,7 @@ namespace SelfStorageAPI.Controllers
                 }).ToListAsync(cancellationToken);
 
             var units = await _context.StorageUnits
+                .Where(u => u.Facility.Status == "Active")
                 .Include(u => u.UnitType)
                 .Include(u => u.UnitSize)
                 .Select(u => new {
@@ -65,6 +67,11 @@ namespace SelfStorageAPI.Controllers
 
             var start = startDate.Date;
             var end = start.AddMonths(months).AddDays(-1);
+            if (!await _context.Facilities.AnyAsync(
+                    f => f.FacilityID == facilityId && f.Status == "Active",
+                    cancellationToken))
+                return Ok(new { facilityId, unitTypeId, startDate = start, endDate = end, months, depositPercent = 20m, units = Array.Empty<object>() });
+
             var policy = await _context.RentalPolicies
                 .Where(p => p.FacilityID == facilityId)
                 .Select(p => (decimal?)p.DepositPercent)

@@ -1,6 +1,7 @@
 using System.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SelfStorageAPI.Constants;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Models;
@@ -14,38 +15,40 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
     [HttpGet("state")]
     public async Task<IActionResult> GetState([FromQuery] string? email, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(email))
+            email = Request.Headers["X-User-Email"].ToString();
+        if (string.IsNullOrWhiteSpace(email))
+            return Unauthorized(new { message = "Thiếu email phiên đăng nhập." });
+
+        var requestingUser = await context.Users
+            .FirstOrDefaultAsync(u => u.Email == email && u.Status == "Active", cancellationToken);
+        if (requestingUser is null)
+            return Unauthorized(new { message = "Tài khoản không tồn tại hoặc chưa được kích hoạt." });
+
         var facilityQuery = context.Facilities.AsQueryable();
         int? customerId = null;
 
-        if (!string.IsNullOrWhiteSpace(email))
+        if (requestingUser.RoleID == 1)
         {
-            var user = await context.Users
-                .Include(u => u.FacilityStaffs)
-                .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
-            if (user is null) return NotFound(new { message = "Không tìm thấy tài khoản." });
-
-            if (user.RoleID == 1)
-            {
-                customerId = user.UserID;
-                facilityQuery = facilityQuery.Where(f => context.Reservations
-                    .Any(r => r.FacilityID == f.FacilityID && r.CustomerID == user.UserID));
-            }
-            else if (user.RoleID == 2)
-            {
-                var facilityIds = user.FacilityStaffs
-                    .Where(fs => fs.Status == "Active")
-                    .Select(fs => fs.FacilityID)
-                    .ToArray();
-                facilityQuery = facilityQuery.Where(f => facilityIds.Contains(f.FacilityID));
-            }
-            else if (user.RoleID == 3)
-            {
-                facilityQuery = facilityQuery.Where(f => f.ManagerID == user.UserID);
-            }
-            else if (user.RoleID != 4 && user.RoleID != 5)
-            {
-                return Forbid();
-            }
+            customerId = requestingUser.UserID;
+            facilityQuery = facilityQuery.Where(f => context.Reservations
+                .Any(r => r.FacilityID == f.FacilityID && r.CustomerID == requestingUser.UserID));
+        }
+        else if (requestingUser.RoleID == 2)
+        {
+            var facilityIds = await context.FacilityStaffs
+                .Where(fs => fs.UserID == requestingUser.UserID && fs.Status == "Active")
+                .Select(fs => fs.FacilityID)
+                .ToArrayAsync(cancellationToken);
+            facilityQuery = facilityQuery.Where(f => facilityIds.Contains(f.FacilityID));
+        }
+        else if (requestingUser.RoleID == 3)
+        {
+            facilityQuery = facilityQuery.Where(f => f.ManagerID == requestingUser.UserID);
+        }
+        else if (requestingUser.RoleID != 4 && requestingUser.RoleID != 5)
+        {
+            return Forbid();
         }
 
         var facilities = await facilityQuery
@@ -108,6 +111,7 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
                 unitId = r.AssignedUnit == null ? null : r.AssignedUnit.UnitNumber,
                 assignedUnitId = r.AssignedUnit == null ? null : r.AssignedUnit.UnitNumber,
                 unitType = r.UnitType.TypeName,
+                unitTypeId = r.UnitTypeID,
                 startDate = r.StartDate,
                 endDate = r.EndDate,
                 months = r.RentalPeriod,
@@ -130,6 +134,7 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
             {
                 id = c.ContractID,
                 reservationId = c.ReservationID,
+                customerName = c.Reservation.Customer.FullName,
                 unitId = c.Reservation.AssignedUnit == null ? null : c.Reservation.AssignedUnit.UnitNumber,
                 startDate = c.StartDate,
                 endDate = c.EndDate,
@@ -236,33 +241,38 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         [FromBody] AssignReservationDTO request,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await context.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable, cancellationToken);
         var reservation = await context.Reservations
             .FirstOrDefaultAsync(r => r.ReservationID == reservationId, cancellationToken);
         if (reservation is null) return NotFound(new { message = "Không tìm thấy đặt chỗ." });
-        if (reservation.Status != "Paid")
+        if (!await CanManageFacilityAsync(reservation.FacilityID, cancellationToken))
+            return Forbid();
+        if (reservation.Status != ReservationStatus.Paid)
             return Conflict(new { message = "Chỉ đặt chỗ đã thanh toán mới được phân kho." });
 
         var unit = await context.StorageUnits
-            .FirstOrDefaultAsync(u => u.UnitNumber == request.UnitNumber &&
+            .FirstOrDefaultAsync(u => u.UnitID == reservation.AssignedUnitID &&
+                u.UnitNumber == request.UnitNumber &&
                 u.FacilityID == reservation.FacilityID &&
                 u.UnitTypeID == reservation.UnitTypeID, cancellationToken);
         if (unit is null) return BadRequest(new { message = "Kho không thuộc cơ sở hoặc loại đã đặt." });
-        if (unit.Status is not ("Available" or "Reserved" or "In Use"))
+        if (unit.Status is not (UnitStatus.Available or UnitStatus.Reserved or UnitStatus.InUse))
             return Conflict(new { message = "Kho hiện không khả dụng." });
 
+        await using var transaction = await context.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
         var hasConflict = await context.Reservations.AnyAsync(r =>
             r.ReservationID != reservationId &&
             r.AssignedUnitID == unit.UnitID &&
-            r.Status != "Cancelled" &&
+            r.Status != ReservationStatus.Cancelled &&
             r.StartDate <= reservation.EndDate &&
             r.EndDate >= reservation.StartDate, cancellationToken);
         if (hasConflict)
             return Conflict(new { message = "Kho đã được đặt trong kỳ thuê này." });
 
         reservation.AssignedUnitID = unit.UnitID;
-        reservation.Status = "Confirmed";
+        reservation.Status = ReservationStatus.Confirmed;
+        if (unit.Status == UnitStatus.Available)
+            unit.Status = UnitStatus.Reserved;
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Ok(new
@@ -280,6 +290,8 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         [FromBody] UpdateRentalPolicyDTO request,
         CancellationToken cancellationToken)
     {
+        if (!await IsBusinessOperationsManagerAsync(cancellationToken))
+            return Forbid();
         if (!await context.Facilities.AnyAsync(f => f.FacilityID == facilityId, cancellationToken))
             return NotFound(new { message = "Không tìm thấy cơ sở." });
 
@@ -304,18 +316,35 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         [FromBody] CreateFacilityDTO request,
         CancellationToken cancellationToken)
     {
+        if (!await IsBusinessOperationsManagerAsync(cancellationToken))
+            return Forbid();
+        if (string.IsNullOrWhiteSpace(request.FacilityName) ||
+            string.IsNullOrWhiteSpace(request.Address) ||
+            string.IsNullOrWhiteSpace(request.ManagerEmail))
+            return BadRequest(new { message = "Tên, địa chỉ và Facility Manager là bắt buộc." });
+        if (!string.Equals(request.Status, "active", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(request.Status, "inactive", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Trạng thái cơ sở không hợp lệ." });
+
+        var facilityName = request.FacilityName.Trim();
+        var address = request.Address.Trim();
+        if (await context.Facilities.AnyAsync(f =>
+                f.FacilityName == facilityName && f.Address == address,
+                cancellationToken))
+            return Conflict(new { message = "Cơ sở có cùng tên và địa chỉ đã tồn tại." });
+
         var manager = await context.Users.FirstOrDefaultAsync(
-            u => u.Email == request.ManagerEmail && u.RoleID == 3, cancellationToken);
+            u => u.Email == request.ManagerEmail && u.RoleID == 3 && u.Status == "Active", cancellationToken);
         if (manager is null)
             return BadRequest(new { message = "Cần chỉ định tài khoản Facility Manager hợp lệ." });
 
         var facility = new Facility
         {
             ManagerID = manager.UserID,
-            FacilityName = request.FacilityName.Trim(),
-            Address = request.Address.Trim(),
+            FacilityName = facilityName,
+            Address = address,
             ContactPhone = request.ContactPhone?.Trim(),
-            Status = request.Status.Equals("inactive", StringComparison.OrdinalIgnoreCase)
+            Status = string.Equals(request.Status, "inactive", StringComparison.OrdinalIgnoreCase)
                 ? "Inactive"
                 : "Active"
         };
@@ -336,14 +365,107 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         });
     }
 
+    [HttpDelete("facilities/{facilityId:int}")]
+    public async Task<IActionResult> DeleteFacility(
+        int facilityId,
+        CancellationToken cancellationToken)
+    {
+        if (!await IsBusinessOperationsManagerAsync(cancellationToken))
+            return Forbid();
+
+        var facility = await context.Facilities
+            .FirstOrDefaultAsync(f => f.FacilityID == facilityId, cancellationToken);
+        if (facility is null)
+            return NotFound(new { message = "Không tìm thấy cơ sở." });
+
+        var hasUnits = await context.StorageUnits.AnyAsync(u => u.FacilityID == facilityId, cancellationToken);
+        var hasReservations = await context.Reservations.AnyAsync(r => r.FacilityID == facilityId, cancellationToken);
+        var hasStaffAssignments = await context.FacilityStaffs.AnyAsync(fs => fs.FacilityID == facilityId, cancellationToken);
+        if (hasUnits || hasReservations || hasStaffAssignments)
+            return Conflict(new
+            {
+                message = "Không thể xóa cơ sở đã có kho, đặt chỗ hoặc nhân viên được phân công. Hãy chuyển cơ sở sang trạng thái tạm ngưng."
+            });
+
+        var rates = await context.RentalRates
+            .Where(rate => rate.FacilityID == facilityId)
+            .ToListAsync(cancellationToken);
+        var policy = await context.RentalPolicies
+            .FirstOrDefaultAsync(item => item.FacilityID == facilityId, cancellationToken);
+
+        context.RentalRates.RemoveRange(rates);
+        if (policy is not null)
+            context.RentalPolicies.Remove(policy);
+        context.Facilities.Remove(facility);
+        await context.SaveChangesAsync(cancellationToken);
+
+        return NoContent();
+    }
+
+    [HttpPut("facilities/{facilityId:int}")]
+    public async Task<IActionResult> UpdateFacility(
+        int facilityId,
+        [FromBody] UpdateFacilityDTO request,
+        CancellationToken cancellationToken)
+    {
+        if (!await IsBusinessOperationsManagerAsync(cancellationToken))
+            return Forbid();
+        var facility = await context.Facilities
+            .FirstOrDefaultAsync(f => f.FacilityID == facilityId, cancellationToken);
+        if (facility is null) return NotFound(new { message = "Không tìm thấy cơ sở." });
+        if ((request.FacilityName is not null && string.IsNullOrWhiteSpace(request.FacilityName)) ||
+            (request.Address is not null && string.IsNullOrWhiteSpace(request.Address)) ||
+            (request.ManagerEmail is not null && string.IsNullOrWhiteSpace(request.ManagerEmail)))
+            return BadRequest(new { message = "Tên, địa chỉ và Facility Manager không được để trống." });
+        if (request.Status is not null &&
+            !request.Status.Equals("active", StringComparison.OrdinalIgnoreCase) &&
+            !request.Status.Equals("inactive", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Trạng thái cơ sở không hợp lệ." });
+
+        if (request.ManagerEmail is not null)
+        {
+            var manager = await context.Users.FirstOrDefaultAsync(
+                u => u.Email == request.ManagerEmail && u.RoleID == 3 && u.Status == "Active",
+                cancellationToken);
+            if (manager is null)
+                return BadRequest(new { message = "Cần chỉ định tài khoản Facility Manager hợp lệ." });
+            facility.ManagerID = manager.UserID;
+        }
+
+        if (request.FacilityName is not null)
+            facility.FacilityName = request.FacilityName.Trim();
+        if (request.Address is not null)
+            facility.Address = request.Address.Trim();
+        if (request.Status is not null)
+            facility.Status = string.Equals(request.Status, "inactive", StringComparison.OrdinalIgnoreCase)
+                ? "Inactive"
+                : "Active";
+        await context.SaveChangesAsync(cancellationToken);
+        var managerEmail = request.ManagerEmail ?? await context.Users
+            .Where(user => user.UserID == facility.ManagerID)
+            .Select(user => user.Email)
+            .FirstAsync(cancellationToken);
+
+        return Ok(new
+        {
+            facilityId = facility.FacilityID,
+            name = facility.FacilityName,
+            address = facility.Address,
+            managerEmail,
+            status = facility.Status
+        });
+    }
+
     [HttpPost("facilities/{facilityId:int}/staff")]
     public async Task<IActionResult> AssignStaff(
         int facilityId,
         [FromBody] AssignFacilityStaffDTO request,
         CancellationToken cancellationToken)
     {
+        if (!await CanManageFacilityAsync(facilityId, cancellationToken))
+            return Forbid();
         var staffUser = await context.Users.FirstOrDefaultAsync(
-            u => u.Email == request.StaffEmail && u.RoleID == 2, cancellationToken);
+            u => u.Email == request.StaffEmail && u.RoleID == 2 && u.Status == "Active", cancellationToken);
         if (staffUser is null)
             return BadRequest(new { message = "Không tìm thấy tài khoản Facility Staff hợp lệ." });
         if (!await context.Facilities.AnyAsync(f => f.FacilityID == facilityId, cancellationToken))
@@ -375,10 +497,12 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         [FromBody] CreateStorageUnitDTO request,
         CancellationToken cancellationToken)
     {
-        var facilityExists = await context.Facilities
-            .AnyAsync(f => f.FacilityID == request.FacilityID, cancellationToken);
-        if (!facilityExists)
-            return BadRequest(new { message = "Cơ sở không hợp lệ." });
+        if (!await CanManageFacilityAsync(request.FacilityID, cancellationToken))
+            return Forbid();
+        var facilityIsActive = await context.Facilities
+            .AnyAsync(f => f.FacilityID == request.FacilityID && f.Status == "Active", cancellationToken);
+        if (!facilityIsActive)
+            return BadRequest(new { message = "Chỉ có thể thêm kho cho cơ sở đang hoạt động." });
         var persistedStatus = ToPersistedUnitStatus(request.Status);
         if (persistedStatus is null)
             return BadRequest(new { message = "Trạng thái kho không hợp lệ." });
@@ -428,6 +552,8 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         [FromBody] UpdateRentalRateDTO request,
         CancellationToken cancellationToken)
     {
+        if (!await IsBusinessOperationsManagerAsync(cancellationToken))
+            return Forbid();
         if (!await context.Facilities.AnyAsync(f => f.FacilityID == facilityId, cancellationToken))
             return NotFound(new { message = "Không tìm thấy cơ sở." });
         if (!await context.UnitTypes.AnyAsync(t => t.UnitTypeID == request.UnitTypeID, cancellationToken) ||
@@ -477,6 +603,8 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         int unitSizeId,
         CancellationToken cancellationToken)
     {
+        if (!await IsBusinessOperationsManagerAsync(cancellationToken))
+            return Forbid();
         var rate = await context.RentalRates.FirstOrDefaultAsync(r =>
             r.FacilityID == facilityId &&
             r.UnitTypeID == unitTypeId &&
@@ -499,9 +627,13 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         [FromBody] CreateStorageUnitDTO request,
         CancellationToken cancellationToken)
     {
+        if (!await CanManageFacilityAsync(request.FacilityID, cancellationToken))
+            return Forbid();
         var unit = await context.StorageUnits.FirstOrDefaultAsync(
             u => u.UnitNumber == unitNumber && u.FacilityID == request.FacilityID, cancellationToken);
         if (unit is null) return NotFound(new { message = "Không tìm thấy kho tại cơ sở." });
+        if (request.UnitTypeID is null || request.UnitSizeID is null)
+            return BadRequest(new { message = "Cần chọn loại và size kho hợp lệ." });
         var persistedStatus = ToPersistedUnitStatus(request.Status);
         if (persistedStatus is null)
             return BadRequest(new { message = "Trạng thái kho không hợp lệ." });
@@ -513,6 +645,8 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
             return BadRequest(new { message = "Kích thước kho không hợp lệ." });
 
         var lookups = await GetOrCreateUnitLookups(request, cancellationToken);
+        if (lookups.unitType.UnitTypeID <= 0 || lookups.unitSize.UnitSizeID <= 0)
+            return BadRequest(new { message = "Loại hoặc size kho không hợp lệ." });
         var rate = lookups.unitType.UnitTypeID > 0 && lookups.unitSize.UnitSizeID > 0
             ? await context.RentalRates.FirstOrDefaultAsync(
                 r => r.FacilityID == request.FacilityID &&
@@ -521,6 +655,8 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
             : null;
         unit.UnitType = lookups.unitType;
         unit.UnitSize = lookups.unitSize;
+        unit.UnitTypeID = lookups.unitType.UnitTypeID;
+        unit.UnitSizeID = lookups.unitSize.UnitSizeID;
         unit.BasePrice = rate?.MonthlyPrice ?? request.BasePrice;
         unit.Status = persistedStatus;
         await context.SaveChangesAsync(cancellationToken);
@@ -530,6 +666,8 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
     [HttpGet("reports")]
     public async Task<IActionResult> GetReports(CancellationToken cancellationToken)
     {
+        if (!await IsBusinessOperationsManagerAsync(cancellationToken))
+            return Forbid();
         var monthlyRevenue = await context.Payments
             .Where(p => p.PaymentStatus == "Completed")
             .GroupBy(p => new { p.PaymentDate.Year, p.PaymentDate.Month })
@@ -539,9 +677,11 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
                 month = group.Key.Month,
                 receivedAmount = group.Sum(payment => payment.Amount)
             })
+            .OrderByDescending(item => item.year)
+            .ThenByDescending(item => item.month)
+            .Take(12)
             .OrderBy(item => item.year)
             .ThenBy(item => item.month)
-            .Take(12)
             .ToListAsync(cancellationToken);
 
         var facilities = await context.Facilities
@@ -632,5 +772,35 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         }
 
         return (unitType, unitSize);
+    }
+
+    private async Task<bool> CanManageFacilityAsync(int facilityId, CancellationToken cancellationToken)
+    {
+        var email = Request.Headers["X-User-Email"].ToString();
+        if (string.IsNullOrWhiteSpace(email))
+            return false;
+
+        var user = await context.Users
+            .FirstOrDefaultAsync(item => item.Email == email && item.Status == "Active", cancellationToken);
+        if (user is null)
+            return false;
+        if (user.RoleID == 4)
+            return true;
+        if (user.RoleID != 3)
+            return false;
+        return await context.Facilities.AnyAsync(
+            facility => facility.FacilityID == facilityId && facility.ManagerID == user.UserID,
+            cancellationToken);
+    }
+
+    private async Task<bool> IsBusinessOperationsManagerAsync(CancellationToken cancellationToken)
+    {
+        var email = Request.Headers["X-User-Email"].ToString();
+        if (string.IsNullOrWhiteSpace(email))
+            return false;
+
+        return await context.Users.AnyAsync(
+            user => user.Email == email && user.RoleID == 4 && user.Status == "Active",
+            cancellationToken);
     }
 }
