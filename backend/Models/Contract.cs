@@ -16,5 +16,6 @@ public class Contract
 
     public Reservation Reservation { get; set; } = null!;
     public ContractType ContractType { get; set; } = null!;
+    public ContractSignature? Signature { get; set; }
     public ICollection<UnitAccess> UnitAccesses { get; set; } = new List<UnitAccess>();
 }

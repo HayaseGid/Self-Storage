@@ -20,6 +20,7 @@ public class SelfStorageDbContext : DbContext
     public DbSet<ContractType> ContractTypes { get; set; } = null!;
     public DbSet<Reservation> Reservations { get; set; } = null!;
     public DbSet<Contract> Contracts { get; set; } = null!;
+    public DbSet<ContractSignature> ContractSignatures { get; set; } = null!;
     public DbSet<Payment> Payments { get; set; } = null!;
     public DbSet<UnitAccess> UnitAccesses { get; set; } = null!;
     public DbSet<HandoverTask> HandoverTasks { get; set; } = null!;
@@ -42,6 +43,7 @@ public class SelfStorageDbContext : DbContext
         modelBuilder.Entity<ContractType>().ToTable("ContractType");
         modelBuilder.Entity<Reservation>().ToTable("Reservation");
         modelBuilder.Entity<Contract>().ToTable("Contract");
+        modelBuilder.Entity<ContractSignature>().ToTable("ContractSignature");
         modelBuilder.Entity<Payment>().ToTable("Payment");
         modelBuilder.Entity<UnitAccess>().ToTable("UnitAccess");
         modelBuilder.Entity<HandoverTask>().ToTable("HandoverTask");
@@ -163,6 +165,27 @@ public class SelfStorageDbContext : DbContext
             .HasOne(c => c.ContractType)
             .WithMany(ct => ct.Contracts)
             .HasForeignKey(c => c.ContractTypeID)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ContractSignature>()
+            .HasKey(signature => signature.ContractID);
+        modelBuilder.Entity<ContractSignature>()
+            .Property(signature => signature.SignerName)
+            .HasMaxLength(100);
+        modelBuilder.Entity<ContractSignature>()
+            .Property(signature => signature.SignatureImage)
+            .HasColumnType("nvarchar(max)");
+        modelBuilder.Entity<ContractSignature>()
+            .Property(signature => signature.TermsVersion)
+            .HasMaxLength(50);
+        modelBuilder.Entity<ContractSignature>()
+            .HasOne(signature => signature.Contract)
+            .WithOne(contract => contract.Signature)
+            .HasForeignKey<ContractSignature>(signature => signature.ContractID)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ContractSignature>()
+            .HasOne(signature => signature.User)
+            .WithMany()
+            .HasForeignKey(signature => signature.UserID)
             .OnDelete(DeleteBehavior.Restrict);
 
         // Payment -> Reservation
