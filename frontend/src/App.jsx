@@ -48,6 +48,7 @@ const facilityImages = [
 ]
 
 const CURRENT_USER_KEY = 'storespace_current_user'
+const ACTIVE_BOOKING_HOLD_KEY = 'storespace_active_booking_hold'
 
 function createSlug(name) {
   return name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
@@ -316,7 +317,7 @@ function FacilityDetailPage({ facility }) {
           <div className="unit-grid">
             {filteredUnits.map(unit => (
               <article className="unit-card" key={unit.id}>
-                <div className="unit-card-top"><span className="unit-id">{unit.id}</span><span className={unit.available ? 'unit-status available' : 'unit-status'}>{unit.available ? 'Còn trống' : 'Không khả dụng'}</span></div>
+                <div className="unit-card-top"><span className="unit-id">{unit.id}</span><span className={unit.available ? 'unit-status available' : 'unit-status'}>{unit.available ? 'Còn trống' : unit.status?.toLowerCase() === 'booking' ? 'Booking · Đang giữ chỗ' : 'Không khả dụng'}</span></div>
                 <h3>{unit.type}</h3>
                 <div className="unit-info"><span>Diện tích</span><strong>{unit.size}</strong></div>
                 <div className="unit-info"><span>Giá thuê</span><strong>{formatMoney(unit.price)}/tháng</strong></div>
@@ -384,7 +385,26 @@ function BookingPage({ facility, unit }) {
   const [error, setError] = useState('')
   const [booking, setBooking] = useState(null)
   const [depositPaid, setDepositPaid] = useState(false)
+  const [depositSecondsRemaining, setDepositSecondsRemaining] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (step !== 2 || booking?.status !== 'Pending Deposit' || !booking.depositExpiresAt) {
+      setDepositSecondsRemaining(null)
+      return
+    }
+
+    const updateCountdown = () => {
+      const expiresAt = Date.parse(booking.depositExpiresAt)
+      setDepositSecondsRemaining(Number.isNaN(expiresAt)
+        ? 0
+        : Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)))
+    }
+
+    updateCountdown()
+    const timerId = window.setInterval(updateCountdown, 1000)
+    return () => window.clearInterval(timerId)
+  }, [step, booking?.status, booking?.depositExpiresAt])
 
   const selectedUnit = getStorageUnits(facility.name).find(item => item.id === selectedUnitNumber) || unit
   const monthlyPrice = Number(selectedUnit.price)
@@ -547,10 +567,16 @@ function BookingPage({ facility, unit }) {
         paymentCycle: paymentMode === 'cycle' ? Number(paymentCycle) : totalMonths,
         depositPercent: availability.depositPercent,
         deposit: reservation.depositAmount,
+        depositExpiresAt: reservation.depositExpiresAt,
         status: 'Pending Deposit',
         createdAt: new Date().toISOString()
       }
 
+      sessionStorage.setItem(ACTIVE_BOOKING_HOLD_KEY, JSON.stringify({
+        email: currentUser.email,
+        unitNumber: availableUnit.unitNumber,
+        expiresAt: reservation.depositExpiresAt
+      }))
       setBooking(bookingData)
       setDepositPaid(false)
       setStep(2)
@@ -563,6 +589,12 @@ function BookingPage({ facility, unit }) {
 
   const handleDepositPaid = async () => {
     if (!booking) return
+
+    if (Date.parse(booking.depositExpiresAt) <= Date.now()) {
+      setDepositSecondsRemaining(0)
+      setError('Thời gian giữ kho 10 phút đã hết. Vui lòng tạo đặt chỗ mới.')
+      return
+    }
 
     setError('')
     setIsSubmitting(true)
@@ -578,6 +610,8 @@ function BookingPage({ facility, unit }) {
         paymentReference: payment.transactionReference
       }))
       setDepositPaid(true)
+      sessionStorage.removeItem(ACTIVE_BOOKING_HOLD_KEY)
+      navigate('/customer')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -682,7 +716,11 @@ function BookingPage({ facility, unit }) {
                     <div>
                       <small>Trạng thái</small>
                       <strong className="available-text">
-                        {selectedUnitNumber === unit.id ? 'Còn trống theo danh mục' : 'Đã kiểm tra còn trống theo kỳ thuê'}
+                        {selectedUnit.status?.toLowerCase() === 'booking'
+                          ? 'Đang được giữ cho bạn'
+                          : selectedUnitNumber === unit.id
+                            ? 'Còn trống theo danh mục'
+                            : 'Đã kiểm tra còn trống theo kỳ thuê'}
                       </strong>
                     </div>
                   </div>
@@ -970,10 +1008,23 @@ function BookingPage({ facility, unit }) {
                     className="dashboard-primary-btn full"
                     type="button"
                     onClick={handleDepositPaid}
-                    disabled={depositPaid || isSubmitting}
+                    disabled={depositPaid || isSubmitting || depositSecondsRemaining === 0}
                   >
-                    {depositPaid ? 'Đã ghi nhận giao dịch mô phỏng' : isSubmitting ? 'Đang ghi nhận...' : 'Ghi nhận thanh toán mô phỏng'}
+                    {depositPaid
+                      ? 'Đã ghi nhận giao dịch mô phỏng'
+                      : depositSecondsRemaining === 0
+                        ? 'Đã hết thời gian giữ kho'
+                        : isSubmitting
+                          ? 'Đang ghi nhận...'
+                          : 'Ghi nhận thanh toán mô phỏng'}
                   </button>
+                  {!depositPaid && depositSecondsRemaining !== null && (
+                    <p role="status">
+                      {depositSecondsRemaining > 0
+                        ? `Vui lòng thanh toán trong ${Math.floor(depositSecondsRemaining / 60)}:${String(depositSecondsRemaining % 60).padStart(2, '0')} phút.`
+                        : 'Thời gian giữ kho đã hết. Vui lòng tạo đặt chỗ mới.'}
+                    </p>
+                  )}
                 </div>
 
                 <div className="deposit-payment-info">
@@ -1268,7 +1319,20 @@ function getRoute() {
       if (!unit) return { type: 'home' }
 
       //Đã cập nhật: Đường dẫn kho đã thuê thì quay về trang cơ sở
-      if (!unit.available) return { type: 'detail', facility }
+      if (!unit.available) {
+        let activeHold = null
+        try {
+          activeHold = JSON.parse(sessionStorage.getItem(ACTIVE_BOOKING_HOLD_KEY) || 'null')
+        } catch {
+          activeHold = null
+        }
+        const user = getCurrentUser()
+        const ownsActiveBooking = parts[3] === 'booking' &&
+          activeHold?.unitNumber?.toLowerCase() === unit.id.toLowerCase() &&
+          activeHold?.email?.toLowerCase() === user?.email?.toLowerCase() &&
+          Date.parse(activeHold?.expiresAt) > Date.now()
+        if (!ownsActiveBooking) return { type: 'detail', facility }
+      }
       //Đã thêm: 05/10/2026
 
 
@@ -1305,7 +1369,8 @@ function mapCustomerReservation(reservation) {
     Paid: 'Đã thanh toán cọc · Chờ phân kho',
     Confirmed: 'Đã phân kho · Chờ bàn giao',
     'Handed Over': 'Đang thuê',
-    Cancelled: 'Đã hủy'
+    Cancelled: 'Đã hủy',
+    Expired: 'Hết hạn giữ kho · Cần đặt lại'
   }
   const monthlyPrice = Number(reservation.monthlyPrice || 0)
 
@@ -1397,6 +1462,22 @@ function Router() {
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [route.type, route.facility?.name, route.unit?.id])
+  useEffect(() => {
+    let refreshing = false
+    const timerId = window.setInterval(async () => {
+      if (refreshing) return
+      refreshing = true
+      try {
+        await loadDataFromApi()
+        setRoute(getRoute())
+      } catch (error) {
+        console.error('Không thể làm mới trạng thái danh mục.', error)
+      } finally {
+        refreshing = false
+      }
+    }, 2000)
+    return () => window.clearInterval(timerId)
+  }, [])
 
   if (route.type === 'login') return <LoginPage />
   if (route.type === 'register') return <RegisterPage />

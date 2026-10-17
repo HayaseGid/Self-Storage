@@ -11,7 +11,8 @@ export function mapOperationsState(data) {
       PENDING_APPROVAL: 'PENDING_APPROVAL',
       CONFIRMED: 'CONFIRMED',
       HANDED_OVER: 'HANDED_OVER',
-      CANCELLED: 'CANCELLED'
+      CANCELLED: 'CANCELLED',
+      EXPIRED: 'EXPIRED'
     }[reservation.status] || reservation.status
     const startDate = String(reservation.startDate || '').slice(0, 10)
     const endDate = String(reservation.endDate || '').slice(0, 10)
