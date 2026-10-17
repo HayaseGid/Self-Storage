@@ -182,6 +182,7 @@ CREATE TABLE StorageUnit (
     UnitNumber NVARCHAR(50) NOT NULL,
     BasePrice DECIMAL(12,2) NOT NULL,
     Status NVARCHAR(30) NOT NULL,
+    StatusBeforeBooking NVARCHAR(30) NULL,
 
     CONSTRAINT FK_StorageUnit_Facility
         FOREIGN KEY (FacilityID)
@@ -236,6 +237,7 @@ CREATE TABLE Reservation (
     EndDate DATE NOT NULL,
     TotalEstimatedCost DECIMAL(12,2),
     DepositAmount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    DepositExpiresAt DATETIME2 NOT NULL DEFAULT (DATEADD(MINUTE, 10, SYSUTCDATETIME())),
     Status NVARCHAR(30) NOT NULL,
 
     CONSTRAINT FK_Reservation_Customer
