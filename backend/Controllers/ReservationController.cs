@@ -4,6 +4,7 @@ using SelfStorageAPI.Data;
 using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Models;
 using SelfStorageAPI.Constants;
+using SelfStorageAPI.Services;
 using System.Data;
 
 namespace SelfStorageAPI.Controllers
@@ -12,6 +13,7 @@ namespace SelfStorageAPI.Controllers
     [Route("api/[controller]")]
     public class ReservationController : ControllerBase
     {
+        private const int DepositHoldMinutes = 10;
         private readonly SelfStorageDbContext _context;
 
         public ReservationController(SelfStorageDbContext context)
@@ -48,8 +50,10 @@ namespace SelfStorageAPI.Controllers
             if (unit == null) return NotFound(new { message = "Không tìm thấy kho." });
 
             var endDate = startDate.AddMonths(request.Months).AddDays(-1);
+            var now = DateTime.UtcNow;
             await using var transaction = await _context.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable, cancellationToken);
+            await ReservationHoldService.ReleaseExpiredAsync(_context, now, cancellationToken);
 
             var facilityIsActive = await _context.Facilities.AnyAsync(
                 f => f.FacilityID == unit.FacilityID && f.Status == "Active",
@@ -60,10 +64,15 @@ namespace SelfStorageAPI.Controllers
             var hasConflict = await _context.Reservations.AnyAsync(r =>
                 r.AssignedUnitID == unit.UnitID &&
                 r.Status != ReservationStatus.Cancelled &&
-                r.StartDate <= endDate &&
-                r.EndDate >= startDate, cancellationToken);
+                r.Status != ReservationStatus.Expired &&
+                ((r.Status == ReservationStatus.PendingDeposit && r.DepositExpiresAt > now) ||
+                 (r.Status != ReservationStatus.PendingDeposit &&
+                  r.StartDate <= endDate && r.EndDate >= startDate)), cancellationToken);
             if (hasConflict)
-                return Conflict(new { message = "Kho đã có đặt chỗ trong một phần hoặc toàn bộ kỳ thuê đã chọn." });
+                return Conflict(new { message = "Kho đang được giữ để thanh toán hoặc đã có đặt chỗ trùng kỳ thuê." });
+
+            if (unit.Status == UnitStatus.Booking)
+                return Conflict(new { message = "Kho đang được giữ để thanh toán. Vui lòng chọn kho khác." });
 
             if (unit.Status is not ("Available" or "Reserved" or "In Use"))
                 return Conflict(new { message = "Kho hiện không được phép cho thuê." });
@@ -84,9 +93,12 @@ namespace SelfStorageAPI.Controllers
                 EndDate = endDate,
                 TotalEstimatedCost = rent,
                 DepositAmount = deposit,
+                DepositExpiresAt = now.AddMinutes(DepositHoldMinutes),
                 Status = ReservationStatus.PendingDeposit
             };
 
+            unit.StatusBeforeBooking = unit.Status;
+            unit.Status = UnitStatus.Booking;
             _context.Reservations.Add(reservation);
             await _context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -99,6 +111,7 @@ namespace SelfStorageAPI.Controllers
                 rentalAmount = rent,
                 depositAmount = deposit,
                 totalAmount = rent + deposit,
+                depositExpiresAt = reservation.DepositExpiresAt,
                 startDate = reservation.StartDate,
                 endDate = reservation.EndDate
             });
@@ -118,6 +131,8 @@ namespace SelfStorageAPI.Controllers
             if (!customerId.HasValue)
                 return Unauthorized();
 
+            await ReservationHoldService.ReleaseExpiredAsync(_context, DateTime.UtcNow, cancellationToken);
+            var now = DateTime.UtcNow;
             var reservation = await _context.Reservations
                 .Where(r => r.ReservationID == id && r.CustomerID == customerId.Value)
                 .Select(r => new
@@ -131,7 +146,10 @@ namespace SelfStorageAPI.Controllers
                     months = r.RentalPeriod,
                     rentalAmount = r.TotalEstimatedCost,
                     depositAmount = r.DepositAmount,
-                    status = r.Status
+                    status = r.Status == ReservationStatus.PendingDeposit && r.DepositExpiresAt <= now
+                        ? ReservationStatus.Expired
+                        : r.Status,
+                    depositExpiresAt = r.DepositExpiresAt
                 })
                 .FirstOrDefaultAsync(cancellationToken);
 
@@ -150,6 +168,8 @@ namespace SelfStorageAPI.Controllers
                     cancellationToken))
                 return Unauthorized();
 
+            await ReservationHoldService.ReleaseExpiredAsync(_context, DateTime.UtcNow, cancellationToken);
+            var now = DateTime.UtcNow;
             var reservations = await _context.Reservations
                 .Where(r => r.Customer.Email == email)
                 .OrderByDescending(r => r.StartDate)
@@ -167,7 +187,10 @@ namespace SelfStorageAPI.Controllers
                         ? r.TotalEstimatedCost.Value / r.RentalPeriod
                         : 0m,
                     depositAmount = r.DepositAmount,
-                    status = r.Status,
+                    status = r.Status == ReservationStatus.PendingDeposit && r.DepositExpiresAt <= now
+                        ? ReservationStatus.Expired
+                        : r.Status,
+                    depositExpiresAt = r.DepositExpiresAt,
                     paymentStatus = r.Payments.OrderByDescending(p => p.PaymentID)
                         .Select(p => p.PaymentStatus).FirstOrDefault(),
                     paymentReference = r.Payments.OrderByDescending(p => p.PaymentID)

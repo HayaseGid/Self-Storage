@@ -12,6 +12,7 @@ public class StorageUnit
     public string UnitNumber { get; set; } = null!;
     public decimal BasePrice { get; set; }
     public string Status { get; set; } = null!;
+    public string? StatusBeforeBooking { get; set; }
 
     public Facility Facility { get; set; } = null!;
     public UnitType UnitType { get; set; } = null!;

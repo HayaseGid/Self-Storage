@@ -4,6 +4,7 @@ using SelfStorageAPI.Data;
 using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Models;
 using SelfStorageAPI.Constants;
+using SelfStorageAPI.Services;
 using System.Data;
 
 namespace SelfStorageAPI.Controllers
@@ -37,6 +38,7 @@ namespace SelfStorageAPI.Controllers
 
             await using var transaction = await _context.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable, cancellationToken);
+            await ReservationHoldService.ReleaseExpiredAsync(_context, DateTime.UtcNow, cancellationToken);
             var reservation = await _context.Reservations
                 .Include(r => r.AssignedUnit)
                 .Include(r => r.Payments)
@@ -46,6 +48,12 @@ namespace SelfStorageAPI.Controllers
                     cancellationToken);
 
             if (reservation == null) return NotFound(new { message = "Không tìm thấy Reservation." });
+            if (reservation.Status == ReservationStatus.Expired)
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return Conflict(new { message = "Thời gian giữ kho 10 phút đã hết. Vui lòng tạo đặt chỗ mới." });
+            }
             if (reservation.Status != ReservationStatus.PendingDeposit)
                 return Conflict(new { message = "Đặt chỗ không ở trạng thái chờ thanh toán hoặc đã được thanh toán." });
             if (request.Amount <= 0 || request.Amount != reservation.DepositAmount)
@@ -65,6 +73,11 @@ namespace SelfStorageAPI.Controllers
 
             _context.Payments.Add(payment);
             reservation.Status = ReservationStatus.Paid;
+            if (reservation.AssignedUnit?.Status == UnitStatus.Booking)
+            {
+                reservation.AssignedUnit.Status = UnitStatus.Reserved;
+                reservation.AssignedUnit.StatusBeforeBooking = null;
+            }
 
             await _context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

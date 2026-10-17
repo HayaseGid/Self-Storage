@@ -15,6 +15,7 @@ public class Reservation
     public DateTime EndDate { get; set; }
     public decimal? TotalEstimatedCost { get; set; }
     public decimal DepositAmount { get; set; }
+    public DateTime DepositExpiresAt { get; set; }
     public string Status { get; set; } = null!;
 
     public User Customer { get; set; } = null!;

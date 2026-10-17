@@ -11,4 +11,5 @@ public static class ReservationStatus
     public const string Confirmed      = "Confirmed";
     public const string HandedOver     = "Handed Over";
     public const string Cancelled      = "Cancelled";
+    public const string Expired        = "Expired";
 }

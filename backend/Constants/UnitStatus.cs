@@ -6,6 +6,7 @@ namespace SelfStorageAPI.Constants;
 public static class UnitStatus
 {
     public const string Available = "Available";
+    public const string Booking  = "Booking";
     public const string Reserved  = "Reserved";
     public const string InUse     = "In Use";
     public const string Inactive  = "Inactive";

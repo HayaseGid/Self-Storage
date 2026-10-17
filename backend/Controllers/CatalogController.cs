@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SelfStorageAPI.Constants;
 using SelfStorageAPI.Data;
+using SelfStorageAPI.Services;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -20,6 +22,9 @@ namespace SelfStorageAPI.Controllers
         [HttpGet("state")]
         public async Task<IActionResult> GetCatalogState(CancellationToken cancellationToken)
         {
+            var now = DateTime.UtcNow;
+            await ReservationHoldService.ReleaseExpiredAsync(_context, now, cancellationToken);
+
             var facilities = await _context.Facilities
                 .Where(f => f.Status == "Active")
                 .Select(f => new {
@@ -47,7 +52,12 @@ namespace SelfStorageAPI.Controllers
                     size = u.UnitSize.Dimensions,
                     unitSizeId = u.UnitSizeID,
                     price = u.BasePrice,
-                    status = u.Status,
+                    status = _context.Reservations.Any(r =>
+                        r.AssignedUnitID == u.UnitID &&
+                        r.Status == ReservationStatus.PendingDeposit &&
+                        r.DepositExpiresAt > now)
+                            ? UnitStatus.Booking
+                            : u.Status,
                     location = (string?)null
                 }).ToListAsync(cancellationToken);
 
@@ -65,6 +75,8 @@ namespace SelfStorageAPI.Controllers
             if (months is < 1 or > 12 || startDate.Date < DateTime.Today)
                 return BadRequest(new { message = "Ngày bắt đầu hoặc thời gian thuê không hợp lệ." });
 
+            var now = DateTime.UtcNow;
+            await ReservationHoldService.ReleaseExpiredAsync(_context, now, cancellationToken);
             var start = startDate.Date;
             var end = start.AddMonths(months).AddDays(-1);
             if (!await _context.Facilities.AnyAsync(
@@ -81,7 +93,11 @@ namespace SelfStorageAPI.Controllers
                 .Where(u => u.FacilityID == facilityId && u.UnitTypeID == unitTypeId &&
                     (u.Status == "Available" || u.Status == "Reserved" || u.Status == "In Use") &&
                     !_context.Reservations.Any(r => r.AssignedUnitID == u.UnitID &&
-                        r.Status != "Cancelled" && r.StartDate <= end && r.EndDate >= start))
+                        r.Status != ReservationStatus.Cancelled &&
+                        r.Status != ReservationStatus.Expired &&
+                        ((r.Status == ReservationStatus.PendingDeposit && r.DepositExpiresAt > now) ||
+                         (r.Status != ReservationStatus.PendingDeposit &&
+                          r.StartDate <= end && r.EndDate >= start))))
                 .Include(u => u.UnitType)
                 .Include(u => u.UnitSize)
                 .OrderBy(u => u.BasePrice)

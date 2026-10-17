@@ -2,6 +2,7 @@ using System.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SelfStorageAPI.Constants;
+using SelfStorageAPI.Services;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Models;
@@ -24,6 +25,8 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
             .FirstOrDefaultAsync(u => u.Email == email && u.Status == "Active", cancellationToken);
         if (requestingUser is null)
             return Unauthorized(new { message = "Tài khoản không tồn tại hoặc chưa được kích hoạt." });
+
+        await ReservationHoldService.ReleaseExpiredAsync(context, DateTime.UtcNow, cancellationToken);
 
         var facilityQuery = context.Facilities.AsQueryable();
         int? customerId = null;
@@ -93,6 +96,7 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         if (customerId.HasValue)
             reservationsQuery = reservationsQuery.Where(r => r.CustomerID == customerId.Value);
 
+        var now = DateTime.UtcNow;
         var reservations = await reservationsQuery
             .Include(r => r.Customer)
             .Include(r => r.Facility)
@@ -123,7 +127,11 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
                 paymentTxn = r.Payments.Where(p => p.PaymentStatus == "Completed")
                     .OrderByDescending(p => p.PaymentID)
                     .Select(p => p.TransactionReference).FirstOrDefault(),
-                status = NormalizeReservationStatus(r.Status),
+                status = NormalizeReservationStatus(
+                    r.Status == ReservationStatus.PendingDeposit && r.DepositExpiresAt <= now
+                        ? ReservationStatus.Expired
+                        : r.Status),
+                depositExpiresAt = r.DepositExpiresAt,
                 contractId = r.Contract == null ? (int?)null : r.Contract.ContractID,
                 source = "live"
             }).ToListAsync(cancellationToken);
@@ -632,6 +640,12 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         var unit = await context.StorageUnits.FirstOrDefaultAsync(
             u => u.UnitNumber == unitNumber && u.FacilityID == request.FacilityID, cancellationToken);
         if (unit is null) return NotFound(new { message = "Không tìm thấy kho tại cơ sở." });
+        if (unit.Status == UnitStatus.Booking &&
+            await context.Reservations.AnyAsync(r =>
+                r.AssignedUnitID == unit.UnitID &&
+                r.Status == ReservationStatus.PendingDeposit &&
+                r.DepositExpiresAt > DateTime.UtcNow, cancellationToken))
+            return Conflict(new { message = "Không thể chỉnh sửa kho đang được giữ để thanh toán." });
         if (request.UnitTypeID is null || request.UnitSizeID is null)
             return BadRequest(new { message = "Cần chọn loại và size kho hợp lệ." });
         var persistedStatus = ToPersistedUnitStatus(request.Status);
@@ -738,6 +752,7 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         "Confirmed" => "CONFIRMED",
         "Handed Over" => "HANDED_OVER",
         "Cancelled" => "CANCELLED",
+        "Expired" => "EXPIRED",
         _ => status.ToUpperInvariant().Replace(' ', '_')
     };
 
