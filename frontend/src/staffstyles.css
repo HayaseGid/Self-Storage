@@ -1,0 +1,419 @@
+/* ============================================================
+   FACILITY STAFF PORTAL STYLES
+   - Dùng chung biến màu/font và layout của styles.css
+     (customer-layout, customer-sidebar, customer-stat-card, auth-*...).
+   - File này chỉ chứa phần riêng của Staff, mọi class có tiền tố .st-
+   - Import trong FacilityStaffAccount.jsx: import './staffstyles.css'
+   ============================================================ */
+
+/* ---------- HEADINGS ---------- */
+
+.st-root h1,
+.st-root h2,
+.st-root h3 {
+  font-family: 'Be Vietnam Pro',sans-serif;
+  color: var(--blue-950);
+}
+
+/* ---------- CARD / EMPTY STATE ---------- */
+
+.st-card {
+  background: #fff;
+  border: 1px solid #e1edf4;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(15,69,111,.06);
+  padding: 24px;
+}
+
+.st-empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 26px;
+  font-size: 13px;
+}
+
+/* ---------- RESERVATION LIST (left) ---------- */
+
+.st-split {
+  display: grid;
+  grid-template-columns: minmax(300px,390px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.st-search,
+.st-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #dce8ef;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: 500 13px 'DM Sans','Be Vietnam Pro',sans-serif;
+}
+
+.st-search {
+  margin-bottom: 12px;
+}
+
+.st-search:focus,
+.st-input:focus {
+  outline: 2px solid #bfe0fa;
+  border-color: #1684db;
+}
+
+.st-list {
+  display: grid;
+  gap: 10px;
+}
+
+.st-item {
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #e1edf4;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(15,69,111,.04);
+  color: var(--ink);
+  font-family: 'DM Sans','Be Vietnam Pro',sans-serif;
+}
+
+.st-item:hover {
+  border-color: #1684db;
+}
+
+.st-item.active {
+  border-color: #1684db;
+  background: #eaf6ff;
+  box-shadow: inset 4px 0 0 #1684db;
+}
+
+.st-item-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.st-time {
+  color: #0877cf;
+  font: 800 13px 'Be Vietnam Pro',sans-serif;
+  min-width: 54px;
+}
+
+.st-name {
+  flex: 1;
+  font-weight: 700;
+  color: #23475e;
+  font-size: 14px;
+}
+
+.st-item-sub {
+  margin: 4px 0 8px;
+  color: #7a8fa1;
+  font-size: 12px;
+}
+
+.st-item-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #7a8fa1;
+  font-size: 11px;
+}
+
+/* ---------- BADGES ---------- */
+
+.st-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.st-ok {
+  background: #eefaf2;
+  color: #2b8b55;
+}
+
+.st-warn {
+  background: #fff6cc;
+  color: #8a6200;
+}
+
+.st-bad {
+  background: #fff0f0;
+  color: #c94a4a;
+}
+
+.st-info {
+  background: #eaf6ff;
+  color: #0877cf;
+}
+
+.st-new {
+  background: var(--yellow);
+  color: #123f67;
+}
+
+/* ---------- RESERVATION DETAIL (right) ---------- */
+
+.st-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+
+.st-head h2 {
+  margin: 6px 0 4px;
+  font-size: 24px;
+}
+
+.st-head p {
+  margin: 0;
+  color: #7a8fa1;
+  font-size: 13px;
+}
+
+.st-alert {
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin: 14px 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.st-grid {
+  display: grid;
+  grid-template-columns: repeat(2,1fr);
+  gap: 18px 24px;
+  margin: 18px 0;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.st-grid small {
+  display: block;
+  color: #7d91a0;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.st-grid strong {
+  color: #23475e;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.st-detail h3 {
+  margin: 22px 0 10px;
+  font-size: 15px;
+}
+
+/* ---------- DEMO BOX (giả lập Manager / cổng thanh toán) ---------- */
+
+.st-demo {
+  margin: 16px 0 4px;
+  padding: 14px 16px;
+  border: 1px dashed #1684db;
+  background: #f5faff;
+  border-radius: 14px;
+}
+
+.st-demo strong {
+  color: var(--blue-950);
+  font-size: 13px;
+}
+
+.st-demo p {
+  margin: 4px 0 10px;
+  color: #6d849b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.st-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------- HANDOVER CHECKLIST & FORM ---------- */
+
+.st-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.st-checks li {
+  display: flex;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 13px;
+}
+
+.st-yes {
+  color: #2b8b55;
+}
+
+.st-no {
+  color: #c94a4a;
+}
+
+.st-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  font-size: 13px;
+  color: #23475e;
+  cursor: pointer;
+}
+
+.st-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.st-form-row label {
+  display: grid;
+  gap: 6px;
+  color: #23475e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.st-hint {
+  margin: 10px 0 0;
+  color: #7a8fa1;
+  font-size: 12px;
+}
+
+.st-root .dashboard-primary-btn:disabled,
+.st-root .dashboard-secondary-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* ---------- OVERVIEW: VIỆC CẦN LÀM HÔM NAY ---------- */
+
+.st-todo-card {
+  padding: 8px;
+}
+
+.st-todo {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-family: 'DM Sans','Be Vietnam Pro',sans-serif;
+  color: var(--ink);
+}
+
+.st-todo:last-child {
+  border-bottom: 0;
+}
+
+.st-todo:hover {
+  background: #f5faff;
+  border-radius: 12px;
+}
+
+.st-todo-main {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.st-todo-main strong {
+  color: #23475e;
+  font-size: 14px;
+}
+
+.st-todo-main small {
+  color: #7a8fa1;
+  font-size: 12px;
+}
+
+.st-go {
+  color: #1684db;
+  font-weight: 800;
+}
+
+/* ---------- UNITS TABLE & ACTIVITY LOG ---------- */
+
+.st-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.st-table th {
+  padding: 10px 8px;
+  text-align: left;
+  color: #7d91a0;
+  font-size: 11px;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+
+.st-table td {
+  padding: 13px 8px;
+  border-bottom: 1px solid var(--line);
+  color: #23475e;
+}
+
+.st-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.st-log li {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  color: #23475e;
+}
+
+.st-log li:last-child {
+  border-bottom: 0;
+}
+
+.st-log small {
+  display: block;
+  color: #7d91a0;
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+
+/* ---------- RESPONSIVE ---------- */
+
+@media(max-width:1180px) {
+  .st-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media(max-width:720px) {
+  .st-grid,
+  .st-form-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,473 @@
+/* ============================================================
+   FACILITY MANAGER DASHBOARD STYLES
+   - Tương thích hoàn toàn với bảng màu & layout của App.jsx / CustomerAccount.jsx
+   - Tiền tố riêng cho Manager: .fm-
+   ============================================================ */
+
+.fm-root {
+  background: #f5faff;
+  min-height: 100vh;
+}
+
+/* Facility Badge ở Topbar */
+.fm-facility-chip {
+  padding: 10px 18px;
+  background: #fff;
+  border: 1px solid #dce8ef;
+  border-radius: 12px;
+  color: var(--blue-950);
+  font-size: 13px;
+  box-shadow: 0 4px 15px rgba(15, 69, 111, 0.05);
+}
+
+/* Thông báo số lượng cần duyệt ở Sidebar */
+.fm-count-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  background: #ffd21c;
+  color: #123f67;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* Badges */
+.fm-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.fm-ok {
+  background: #eefaf2;
+  color: #2b8b55;
+}
+
+.fm-warn {
+  background: #fff6cc;
+  color: #8a6200;
+}
+
+.fm-info {
+  background: #eaf6ff;
+  color: #0877cf;
+}
+
+/* Thanh Tiến độ Lấp đầy Kho (Occupancy Bar) */
+.fm-progress-bar-container {
+  margin-top: 20px;
+}
+
+.fm-progress-bar {
+  display: flex;
+  height: 18px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: #e1edf4;
+}
+
+.fm-bar-rented {
+  background: #1684db;
+}
+
+.fm-bar-reserved {
+  background: #ffd21c;
+}
+
+.fm-bar-available {
+  background: #2eae67;
+}
+
+.fm-progress-legend {
+  display: flex;
+  gap: 25px;
+  margin-top: 15px;
+  font-size: 12px;
+  color: #60798d;
+}
+
+.fm-progress-legend span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fm-progress-legend i.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.fm-progress-legend i.rented {
+  background: #1684db;
+}
+
+.fm-progress-legend i.reserved {
+  background: #ffd21c;
+}
+
+.fm-progress-legend i.available {
+  background: #2eae67;
+}
+
+/* Mini Pending List */
+.fm-pending-mini-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 15px;
+}
+
+.fm-pending-mini-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: #fbfdff;
+  border: 1px solid #e1edf4;
+  border-radius: 12px;
+}
+
+.fm-pending-mini-item strong {
+  display: block;
+  color: var(--blue-950);
+  font-size: 14px;
+}
+
+.fm-pending-mini-item small {
+  color: #7a8fa1;
+  font-size: 11px;
+}
+
+.fm-item-right {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.fm-amount {
+  color: #0877cf;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+/* Card Sections */
+.fm-section-card {
+  padding: 28px;
+  background: #fff;
+  border: 1px solid #e1edf4;
+  border-radius: 22px;
+  box-shadow: 0 10px 30px rgba(15, 69, 111, 0.06);
+}
+
+.fm-card-header {
+  margin-bottom: 24px;
+}
+
+.fm-card-header h2,
+.fm-card-header-flex h2 {
+  margin: 0;
+  color: var(--blue-950);
+  font: 800 24px 'Be Vietnam Pro', sans-serif;
+}
+
+.fm-card-header p,
+.fm-card-header-flex p {
+  margin: 6px 0 0;
+  color: #7a8fa1;
+  font-size: 13px;
+}
+
+.fm-card-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+/* Approval Grid */
+.fm-approval-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.fm-approval-card {
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #e1edf4;
+  border-radius: 18px;
+  box-shadow: 0 8px 25px rgba(15, 69, 111, 0.04);
+}
+
+.fm-approval-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.fm-approval-head h3 {
+  margin: 5px 0 2px;
+  color: var(--blue-950);
+  font: 800 22px 'Be Vietnam Pro', sans-serif;
+}
+
+.fm-approval-head p {
+  margin: 0;
+  color: #7a8fa1;
+  font-size: 12px;
+}
+
+/* Assign Box */
+.fm-assign-box {
+  margin-top: 20px;
+  padding: 18px;
+  background: #f8fbfd;
+  border: 1px solid #dce8ef;
+  border-radius: 14px;
+}
+
+.fm-assign-box label {
+  display: block;
+  margin-bottom: 8px;
+  color: #23475e;
+  font-size: 13px;
+}
+
+.fm-input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid #dce8ef;
+  border-radius: 10px;
+  background: #fff;
+  color: #23475e;
+  font: 600 13px 'DM Sans','Be Vietnam Pro',sans-serif;
+  outline: none;
+}
+
+.fm-input:focus {
+  border-color: #1684db;
+  box-shadow: 0 0 0 3px rgba(22, 132, 219, 0.1);
+}
+
+.fm-actions-row {
+  margin-top: 15px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Tables */
+.fm-table-wrap {
+  overflow-x: auto;
+}
+
+.fm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.fm-table th {
+  padding: 12px 14px;
+  text-align: left;
+  color: #7d91a0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.fm-table td {
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--line);
+  color: #23475e;
+}
+
+.fm-tag-blue {
+  padding: 4px 8px;
+  background: #eaf6ff;
+  color: #0877cf;
+  border-radius: 6px;
+  font-weight: 800;
+}
+
+.fm-unit-customers {
+  display: grid;
+  gap: 8px;
+  min-width: 170px;
+}
+
+.fm-unit-customer {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}
+
+.fm-unit-customer strong {
+  color: #23475e;
+}
+
+.fm-unit-customer small,
+.fm-unit-customer-empty {
+  color: #7d91a0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-secondary-btn.sm {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+/* Staff Grid */
+.fm-staff-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.fm-staff-card {
+  padding: 22px;
+  background: #fff;
+  border: 1px solid #e1edf4;
+  border-radius: 16px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.fm-staff-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #e8f5ff;
+  color: #0877cf;
+  display: grid;
+  place-items: center;
+  font: 800 20px 'Be Vietnam Pro', sans-serif;
+  flex: none;
+}
+
+.fm-staff-info h3 {
+  margin: 0 0 6px;
+  color: var(--blue-950);
+  font-size: 16px;
+}
+
+.fm-staff-info p {
+  margin: 3px 0;
+  color: #7a8fa1;
+  font-size: 12px;
+}
+
+.fm-shift-tag {
+  margin-top: 10px;
+  padding: 4px 10px;
+  background: #f1f7fb;
+  color: #23475e;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-block;
+}
+
+/* Modal Overlay */
+.fm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 57, 103, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.fm-modal-card {
+  width: min(520px, 100%);
+  background: #fff;
+  border-radius: 22px;
+  padding: 30px;
+  box-shadow: 0 25px 60px rgba(15, 69, 111, 0.2);
+}
+
+.fm-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.fm-modal-header h2 {
+  margin: 0;
+  color: var(--blue-950);
+  font: 800 22px 'Be Vietnam Pro', sans-serif;
+}
+
+.fm-modal-close {
+  border: 0;
+  background: transparent;
+  font-size: 28px;
+  color: #8aa0b0;
+  cursor: pointer;
+}
+
+.fm-modal-form {
+  display: grid;
+  gap: 16px;
+}
+
+.fm-modal-form label {
+  display: grid;
+  gap: 6px;
+  color: #23475e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fm-modal-form input,
+.fm-modal-form select {
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid #dce8ef;
+  border-radius: 10px;
+  font: 500 13px 'DM Sans','Be Vietnam Pro',sans-serif;
+  color: #23475e;
+}
+
+.fm-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.fm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+/* Responsive */
+@media (max-width: 1050px) {
+  .fm-staff-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .fm-staff-grid,
+  .fm-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .fm-pending-mini-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+}
