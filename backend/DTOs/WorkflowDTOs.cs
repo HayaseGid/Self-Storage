@@ -27,7 +27,7 @@ public sealed record CreateStorageUnitDTO
     [Required]
     public string Size { get; init; } = string.Empty;
     [Range(0.01, 999999)]
-    public decimal SizeM2 { get; init; }
+    public decimal? SizeM2 { get; init; }
     [Range(0.01, 999999999)]
     public decimal BasePrice { get; init; }
     [Required]
@@ -44,6 +44,14 @@ public sealed record CreateFacilityDTO
     [Required]
     public string ManagerEmail { get; init; } = string.Empty;
     public string Status { get; init; } = "Active";
+}
+
+public sealed record UpdateFacilityDTO
+{
+    public string? FacilityName { get; init; }
+    public string? Address { get; init; }
+    public string? ManagerEmail { get; init; }
+    public string? Status { get; init; }
 }
 
 public sealed record AssignFacilityStaffDTO
