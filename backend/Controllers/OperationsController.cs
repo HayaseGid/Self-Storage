@@ -61,6 +61,7 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
                 id = f.FacilityName,
                 facilityId = f.FacilityID,
                 name = f.FacilityName,
+                unitCodePrefix = f.UnitCodePrefix,
                 address = f.Address,
                 status = f.Status,
                 managerEmail = f.Manager.Email,
@@ -330,12 +331,20 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
             string.IsNullOrWhiteSpace(request.Address) ||
             string.IsNullOrWhiteSpace(request.ManagerEmail))
             return BadRequest(new { message = "Tên, địa chỉ và Facility Manager là bắt buộc." });
+        if (string.IsNullOrWhiteSpace(request.UnitCodePrefix) ||
+            request.UnitCodePrefix.Length > 10 ||
+            request.UnitCodePrefix.Any(character => !char.IsAsciiLetterOrDigit(character)))
+            return BadRequest(new { message = "Mã chi nhánh chỉ được gồm tối đa 10 chữ cái hoặc chữ số." });
         if (!string.Equals(request.Status, "active", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(request.Status, "inactive", StringComparison.OrdinalIgnoreCase))
             return BadRequest(new { message = "Trạng thái cơ sở không hợp lệ." });
 
         var facilityName = request.FacilityName.Trim();
+        var unitCodePrefix = request.UnitCodePrefix.Trim().ToUpperInvariant();
         var address = request.Address.Trim();
+        if (await context.Facilities.AnyAsync(
+                f => f.UnitCodePrefix == unitCodePrefix, cancellationToken))
+            return Conflict(new { message = "Mã chi nhánh đã được sử dụng." });
         if (await context.Facilities.AnyAsync(f =>
                 f.FacilityName == facilityName && f.Address == address,
                 cancellationToken))
@@ -350,6 +359,7 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         {
             ManagerID = manager.UserID,
             FacilityName = facilityName,
+            UnitCodePrefix = unitCodePrefix,
             Address = address,
             ContactPhone = request.ContactPhone?.Trim(),
             Status = string.Equals(request.Status, "inactive", StringComparison.OrdinalIgnoreCase)
@@ -367,6 +377,7 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
         {
             facilityId = facility.FacilityID,
             name = facility.FacilityName,
+            unitCodePrefix = facility.UnitCodePrefix,
             address = facility.Address,
             managerEmail = manager.Email,
             depositPercent = 20m
@@ -521,11 +532,6 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
                 .AnyAsync(s => s.UnitSizeID == request.UnitSizeID.Value, cancellationToken))
             return BadRequest(new { message = "Kích thước kho không hợp lệ." });
 
-        var duplicate = await context.StorageUnits.AnyAsync(u =>
-            u.FacilityID == request.FacilityID && u.UnitNumber == request.UnitNumber.Trim(), cancellationToken);
-        if (duplicate)
-            return Conflict(new { message = "Mã kho đã tồn tại tại cơ sở này." });
-
         var lookups = await GetOrCreateUnitLookups(request, cancellationToken);
         var rate = lookups.unitType.UnitTypeID > 0 && lookups.unitSize.UnitSizeID > 0
             ? await context.RentalRates.FirstOrDefaultAsync(
@@ -533,21 +539,41 @@ public sealed class OperationsController(SelfStorageDbContext context) : Control
                     r.UnitTypeID == lookups.unitType.UnitTypeID &&
                     r.UnitSizeID == lookups.unitSize.UnitSizeID, cancellationToken)
             : null;
+        await using var transaction = await context.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
+        var facility = await context.Facilities
+            .FirstOrDefaultAsync(f => f.FacilityID == request.FacilityID, cancellationToken);
+        if (facility is null)
+            return NotFound(new { message = "Không tìm thấy cơ sở." });
+        var unitCodePrefix = facility.UnitCodePrefix.Trim().ToUpperInvariant();
+        var existingUnitNumbers = await context.StorageUnits
+            .Where(u => u.FacilityID == request.FacilityID)
+            .Select(u => u.UnitNumber)
+            .ToListAsync(cancellationToken);
+        var codePrefix = $"{unitCodePrefix}-U";
+        var nextUnitNumber = existingUnitNumbers
+            .Where(unitNumber => unitNumber.StartsWith(codePrefix, StringComparison.OrdinalIgnoreCase))
+            .Select(unitNumber => int.TryParse(unitNumber[codePrefix.Length..], out var number) ? number : 0)
+            .DefaultIfEmpty()
+            .Max() + 1;
+        var unitNumber = $"{codePrefix}{nextUnitNumber:D2}";
         var unit = new StorageUnit
         {
             FacilityID = request.FacilityID,
             UnitType = lookups.unitType,
             UnitSize = lookups.unitSize,
-            UnitNumber = request.UnitNumber.Trim(),
+            UnitNumber = unitNumber,
             BasePrice = rate?.MonthlyPrice ?? request.BasePrice,
             Status = persistedStatus
         };
         context.StorageUnits.Add(unit);
         await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return CreatedAtAction(nameof(GetState), new { email = (string?)null }, new
         {
             unit.UnitID,
             unit.UnitNumber,
+            unitCode = unit.UnitNumber,
             unit.FacilityID,
             unit.BasePrice,
             unit.Status

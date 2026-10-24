@@ -7,6 +7,7 @@ public class Facility
     public int FacilityID { get; set; }
     public int ManagerID { get; set; }
     public string FacilityName { get; set; } = null!;
+    public string UnitCodePrefix { get; set; } = null!;
     public string Address { get; set; } = null!;
     public string? ContactPhone { get; set; }
     public string? Status { get; set; }

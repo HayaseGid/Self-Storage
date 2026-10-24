@@ -20,6 +20,15 @@
   box-shadow: 0 4px 15px rgba(15, 69, 111, 0.05);
 }
 
+.fm-form-hint {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #eaf6ff;
+  color: #0877cf;
+  font-size: 13px;
+}
+
 /* Thông báo số lượng cần duyệt ở Sidebar */
 .fm-count-badge {
   margin-left: auto;

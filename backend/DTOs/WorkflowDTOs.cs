@@ -18,8 +18,6 @@ public sealed record CreateStorageUnitDTO
 {
     [Range(1, int.MaxValue)]
     public int FacilityID { get; init; }
-    [Required]
-    public string UnitNumber { get; init; } = string.Empty;
     public int? UnitTypeID { get; init; }
     public int? UnitSizeID { get; init; }
     [Required]
@@ -38,6 +36,9 @@ public sealed record CreateFacilityDTO
 {
     [Required]
     public string FacilityName { get; init; } = string.Empty;
+    [Required]
+    [RegularExpression("^[A-Za-z0-9]{1,10}$")]
+    public string UnitCodePrefix { get; init; } = string.Empty;
     [Required]
     public string Address { get; init; } = string.Empty;
     public string? ContactPhone { get; init; }

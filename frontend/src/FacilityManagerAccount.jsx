@@ -41,8 +41,7 @@ function Badge({ map, value }) {
 }
 
 /* Modal Tạo/Chỉnh Sửa Kho */
-function UnitFormModal({ facilityId, editingUnit, onClose, onSave, unitTypes, unitSizes }) {
-  const [id, setId] = useState(editingUnit ? editingUnit.id : '')
+function UnitFormModal({ facilityId, unitCodePrefix, editingUnit, onClose, onSave, unitTypes, unitSizes }) {
   const currentType = unitTypes.find(item => item.name === editingUnit?.type)
   const currentSize = unitSizes.find(item => item.dimensions === editingUnit?.size)
   const [typeId, setTypeId] = useState(String(editingUnit?.unitTypeId ?? currentType?.unitTypeId ?? unitTypes[0]?.unitTypeId ?? ''))
@@ -55,11 +54,9 @@ function UnitFormModal({ facilityId, editingUnit, onClose, onSave, unitTypes, un
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!id.trim()) return setError('Vui lòng nhập Mã kho (VD: CD-103)')
     if (!selectedType || !selectedSize) return setError('Vui lòng chọn loại và kích thước kho hợp lệ.')
     if (!Number.isFinite(Number(pricePerMonth)) || Number(pricePerMonth) <= 0) return setError('Giá thuê phải lớn hơn 0.')
     onSave({
-      id: id.trim().toUpperCase(),
       facilityId,
       type: selectedType.name,
       unitTypeId: selectedType.unitTypeId,
@@ -80,17 +77,11 @@ function UnitFormModal({ facilityId, editingUnit, onClose, onSave, unitTypes, un
         </div>
         <form onSubmit={handleSubmit} className="fm-modal-form">
           {error && <div className="auth-message error">{error}</div>}
-          <label>
-            Mã kho
-            <input
-              type="text"
-              value={id}
-              onChange={(e) => setId(e.target.value)}
-              placeholder="VD: CD-103"
-              disabled={!!editingUnit}
-              required
-            />
-          </label>
+          {!editingUnit && (
+            <p className="fm-form-hint">
+              Mã kho sẽ được hệ thống tự động tạo theo mã chi nhánh {unitCodePrefix}-U.
+            </p>
+          )}
 
           <div className="fm-form-row">
             <label>
@@ -227,7 +218,6 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
   const handleSaveUnit = async (unitData) => {
     const request = {
       facilityID: managedFacility?.facilityId,
-      unitNumber: unitData.id,
       unitTypeID: unitData.unitTypeId,
       unitSizeID: unitData.unitSizeId,
       unitType: unitData.type,
@@ -656,6 +646,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
         <UnitFormModal
           key={editingUnit?.id || 'new-unit'}
           facilityId={facilityName}
+          unitCodePrefix={managedFacility?.unitCodePrefix}
           editingUnit={editingUnit}
           onClose={() => setShowUnitModal(false)}
           onSave={handleSaveUnit}

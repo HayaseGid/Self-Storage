@@ -16,6 +16,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             id: facility.facilityId,
             facilityId: facility.facilityId,
             name: facility.name,
+            unitCodePrefix: facility.unitCodePrefix,
             area: facility.address,
             address: facility.address,
             manager: facility.managerEmail,
@@ -52,6 +53,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
 
     const [newFacility, setNewFacility] = useState({
         name: "",
+        unitCodePrefix: "",
         area: "",
         address: "",
         manager: "",
@@ -87,7 +89,6 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
     const updateUnit = (unit, status) => runOperation(() =>
         apiPut(`/api/operations/units/${encodeURIComponent(unit.id)}`, {
             facilityID: unit.facilityDbId,
-            unitNumber: unit.id,
             unitTypeID: unit.unitTypeId,
             unitSizeID: unit.sizeId,
             unitType: unit.type,
@@ -115,6 +116,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
     const handleAddFacility = () => {
         if (
             !newFacility.name.trim() ||
+            !newFacility.unitCodePrefix.trim() ||
             !newFacility.address.trim()
         ) {
             alert("Vui lòng nhập đầy đủ thông tin cơ sở.");
@@ -128,12 +130,13 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
 
         apiPost("/api/operations/facilities", {
             facilityName: newFacility.name.trim(),
+            unitCodePrefix: newFacility.unitCodePrefix.trim().toUpperCase(),
             address: newFacility.address.trim(),
             managerEmail: newFacility.manager,
             status: newFacility.status
         }).then(async () => {
             await loadBusinessData();
-            setNewFacility({ name: "", area: "", address: "", manager: "", status: "active" });
+            setNewFacility({ name: "", unitCodePrefix: "", area: "", address: "", manager: "", status: "active" });
             setShowAddFacility(false);
         }).catch(error => setApiError(error.message));
     };
@@ -143,6 +146,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
 
         setNewFacility({
             name: "",
+            unitCodePrefix: "",
             area: "",
             address: "",
             manager: "",
@@ -399,6 +403,26 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                                 />
                             </div>
 
+                            <div className="facility-form-group">
+                                <label>
+                                    Mã chi nhánh (tiền tố mã kho)
+                                </label>
+                                <input
+                                    value={newFacility.unitCodePrefix}
+                                    onChange={(e) =>
+                                        setNewFacility({
+                                            ...newFacility,
+                                            unitCodePrefix: e.target.value.toUpperCase()
+                                        })
+                                    }
+                                    placeholder="Ví dụ: TD, BT, Q1"
+                                    maxLength={10}
+                                    pattern="[A-Za-z0-9]{1,10}"
+                                    required
+                                />
+                                <small>Chỉ dùng chữ cái và chữ số; ví dụ Thủ Đức: TD, Bình Tân: BT.</small>
+                            </div>
+
                             <div className="facility-form-group full">
                                 <label>
                                     Địa chỉ
@@ -513,7 +537,7 @@ function BusinessLiveFacilities({ facilities, units, onUpdateFacility, onDeleteF
         <div className="business-panel-header"><h2>Cơ sở và kho từ database</h2><button className="dashboard-primary-btn" type="button" onClick={onAddFacility}>Thêm cơ sở</button></div>
         {!facilities.length && <p>Chưa có cơ sở.</p>}
         {facilities.map(facility => <section className="business-panel" key={facility.facilityId}>
-            <div className="business-panel-header"><div><h3>{facility.name}</h3><p>{facility.address} · Quản lý: {facility.managerEmail}</p></div>
+            <div className="business-panel-header"><div><h3>{facility.name}</h3><p>{facility.unitCodePrefix} · {facility.address} · Quản lý: {facility.managerEmail}</p></div>
                 <div className="business-facility-actions">
                     <label>Trạng thái <select value={facility.status} onChange={event => onUpdateFacility(facility, { status: event.target.value })}><option value="active">Đang hoạt động</option><option value="inactive">Ngừng hoạt động</option></select></label>
                     <button className="dashboard-secondary-btn" type="button" onClick={() => onDeleteFacility(facility)}>Xóa cơ sở</button>

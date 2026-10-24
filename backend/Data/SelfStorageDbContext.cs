@@ -70,6 +70,9 @@ public class SelfStorageDbContext : DbContext
             .WithMany(u => u.ManagedFacilities)
             .HasForeignKey(f => f.ManagerID)
             .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Facility>()
+            .HasIndex(f => f.UnitCodePrefix)
+            .IsUnique();
 
         modelBuilder.Entity<RentalPolicy>()
             .HasIndex(p => p.FacilityID)

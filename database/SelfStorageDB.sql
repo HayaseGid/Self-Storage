@@ -83,10 +83,12 @@ CREATE TABLE Facility (
     FacilityID INT IDENTITY(1,1) PRIMARY KEY,
     ManagerID INT NOT NULL,
     FacilityName NVARCHAR(150) NOT NULL,
+    UnitCodePrefix NVARCHAR(10) NOT NULL,
     Address NVARCHAR(255) NOT NULL,
     ContactPhone NVARCHAR(30),
     Status NVARCHAR(30),
 
+    CONSTRAINT UQ_Facility_UnitCodePrefix UNIQUE (UnitCodePrefix),
     CONSTRAINT FK_Facility_Manager
         FOREIGN KEY (ManagerID)
         REFERENCES Users(UserID)
@@ -445,12 +447,12 @@ GO
 
 -- 3. Facility
 SET IDENTITY_INSERT Facility ON;
-INSERT INTO Facility (FacilityID, ManagerID, FacilityName, Address, ContactPhone, Status) VALUES
-(1, 1, N'Cơ sở Lưu trữ Quận 1', N'123 Lê Lợi, Quận 1, TP.HCM', '0812345678', 'Active'),
-(2, 2, N'Cơ sở Lưu trữ Tân Bình', N'456 Cộng Hòa, Tân Bình, TP.HCM', '0812345679', 'Active'),
-(3, 1, N'Cơ sở Lưu trữ Thủ Đức', N'123 Võ Văn Ngân, Thủ Đức, TP.HCM', '0812345680', 'Active'),
-(4, 2, N'Cơ sở Lưu trữ Quận 2', N'456 Trần Não, Quận 2, TP.HCM', '0812345681', 'Active'),
-(5, 1, N'Cơ sở Lưu trữ Quận 3', N'789 Cách Mạng Tháng 8, Quận 3, TP.HCM', '0812345682', 'Active');
+INSERT INTO Facility (FacilityID, ManagerID, FacilityName, UnitCodePrefix, Address, ContactPhone, Status) VALUES
+(1, 1, N'Cơ sở Lưu trữ Quận 1', 'Q1', N'123 Lê Lợi, Quận 1, TP.HCM', '0812345678', 'Active'),
+(2, 2, N'Cơ sở Lưu trữ Tân Bình', 'TB', N'456 Cộng Hòa, Tân Bình, TP.HCM', '0812345679', 'Active'),
+(3, 1, N'Cơ sở Lưu trữ Thủ Đức', 'TD', N'123 Võ Văn Ngân, Thủ Đức, TP.HCM', '0812345680', 'Active'),
+(4, 2, N'Cơ sở Lưu trữ Quận 2', 'Q2', N'456 Trần Não, Quận 2, TP.HCM', '0812345681', 'Active'),
+(5, 1, N'Cơ sở Lưu trữ Quận 3', 'Q3', N'789 Cách Mạng Tháng 8, Quận 3, TP.HCM', '0812345682', 'Active');
 SET IDENTITY_INSERT Facility OFF;
 GO
 
