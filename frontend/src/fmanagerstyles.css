@@ -480,3 +480,301 @@
     gap: 10px;
   }
 }
+/* ============================================================
+   Bổ sung: kho mới tạo, khóa kho đã đặt, mã đơn, form sửa kho
+   ============================================================ */
+.fm-muted { color: #8197ab; font-size: 12px; }
+
+.fm-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 900;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: #0b5a3a;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 16px 40px rgba(11, 57, 103, .25);
+}
+
+.fm-count-badge.fm-count-new { background: #dff6e8; color: #1f7a48; }
+
+/* Mã kho dự kiến / mã kho hiện tại trong form */
+.fm-code-preview {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f2f7fc;
+  border: 1px dashed #b9d3ea;
+}
+.fm-code-preview small { color: #6d849b; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.fm-code-preview strong { font: 800 20px 'Be Vietnam Pro', sans-serif; color: #073d70; }
+.fm-code-preview em { font: 600 12px 'DM Sans', sans-serif; color: #8197ab; font-style: normal; }
+.fm-code-preview span { color: #6d849b; font-size: 12px; }
+
+.fm-field-note { display: block; margin-top: 4px; color: #6d849b; font-size: 11.5px; font-weight: 500; line-height: 1.4; }
+.fm-modal-form input[readonly] { background: #f2f7fc; color: #4f6880; cursor: not-allowed; }
+
+.fm-field-changed { position: relative; }
+.fm-field-changed input,
+.fm-field-changed select { border-color: #f0b400 !important; background: #fffbea; }
+.fm-field-changed::after {
+  content: 'Đã đổi';
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: #fff1c2;
+  color: #8a6400;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.fm-original-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e4edf4;
+  color: #4f6880;
+  font-size: 13px;
+}
+
+.fm-change-list { margin: 4px 0 0; padding-left: 18px; }
+.fm-change-list li { margin: 4px 0; }
+
+/* Bộ lọc kho */
+.fm-filter-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.fm-filter-chips button {
+  padding: 7px 14px;
+  border-radius: 99px;
+  border: 1px solid #d6e4ef;
+  background: #fff;
+  color: #3b5875;
+  font-size: 13px;
+  font-weight: 700;
+}
+.fm-filter-chips button.active { background: #075a9f; border-color: #075a9f; color: #fff; }
+
+/* Nhãn Mới + dòng kho mới / bị khóa */
+.fm-new-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: #2b8b55;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  vertical-align: middle;
+}
+.fm-table tr.fm-row-fresh td { background: #f1fbf5; }
+.fm-table tr.fm-row-fresh td:first-child { box-shadow: inset 4px 0 0 #2b8b55; }
+.fm-table tr.fm-row-locked td { color: #6d849b; }
+.fm-btn-locked { color: #8197ab !important; border-color: #e4edf4 !important; background: #f8fafc !important; cursor: not-allowed; }
+
+@keyframes fm-flash-bg { 0%, 100% { background: transparent; } 20%, 60% { background: #fff3b0; } }
+.fm-table tr.fm-flash td { animation: fm-flash-bg 1.6s ease-in-out 2; }
+.fm-fresh-card.fm-flash { animation: fm-flash-card 1.6s ease-in-out 2; }
+@keyframes fm-flash-card { 0%, 100% { box-shadow: 0 6px 18px rgba(15, 69, 111, .06); } 30%, 70% { box-shadow: 0 0 0 4px rgba(255, 210, 28, .7); } }
+
+/* Mã đơn trong bảng kho */
+.fm-res-codes { display: grid; gap: 6px; }
+.fm-res-code { display: grid; gap: 1px; }
+.fm-res-code strong { color: #075a9f; font-size: 13px; }
+.fm-res-code small { color: #8197ab; font-size: 11px; }
+
+/* Khu "Kho vừa tạo" */
+.fm-fresh-panel {
+  margin-bottom: 22px;
+  padding: 22px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #effaf3, #f5faff);
+  border: 1px solid #cdebd9;
+}
+.fm-fresh-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+.fm-fresh-head h2 { margin: 4px 0 0; font: 800 19px 'Be Vietnam Pro', sans-serif; color: #073d70; }
+.fm-fresh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.fm-fresh-card {
+  padding: 16px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid #dcefe4;
+  box-shadow: 0 6px 18px rgba(15, 69, 111, .06);
+}
+.fm-fresh-card-top { display: flex; justify-content: space-between; align-items: center; }
+.fm-fresh-card-top .fm-new-tag { margin-left: 0; }
+.fm-fresh-dismiss { border: 0; background: none; color: #8197ab; font-size: 20px; line-height: 1; padding: 0 4px; }
+.fm-fresh-code { display: block; margin-top: 8px; font: 800 26px 'Be Vietnam Pro', sans-serif; color: #073d70; }
+.fm-fresh-card p { margin: 2px 0 10px; color: #4f6880; font-size: 13px; }
+.fm-fresh-card dl { margin: 0; display: grid; gap: 6px; }
+.fm-fresh-card dl div { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.fm-fresh-card dt { color: #8197ab; }
+.fm-fresh-card dd { margin: 0; color: #073d70; font-weight: 700; text-align: right; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fm-table tr.fm-flash td, .fm-fresh-card.fm-flash { animation: none; }
+}
+.fm-btn-locked { white-space: nowrap; }
+.fm-table td:first-child { white-space: nowrap; }
+.fm-price-warning { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: #fff4d6; color: #8a6400; font-size: 13px; font-weight: 700; }
+
+/* ============================================================
+   POPUP CHI TIẾT KHO (Facility Manager)
+   ============================================================ */
+.fm-detail-card {
+  width: min(760px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 18px;
+  padding: 28px;
+  box-shadow: 0 25px 60px rgba(15, 69, 111, 0.2);
+}
+
+.fm-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.fm-detail-header h2 {
+  margin: 6px 0 4px;
+  color: #073d70;
+  font: 800 24px 'Be Vietnam Pro', sans-serif;
+}
+.fm-detail-header p { margin: 0; color: #4f6880; }
+
+.fm-detail-facility {
+  margin-top: 20px;
+  padding: 20px;
+  border-radius: 14px;
+  background: #f2f7fc;
+}
+.fm-detail-facility h3 {
+  margin: 10px 0;
+  color: #073d70;
+  font: 800 22px 'Be Vietnam Pro', sans-serif;
+}
+.fm-detail-facility p { margin: 6px 0 0; color: #23475e; }
+
+.fm-detail-section { margin-top: 24px; }
+.fm-detail-section h3 { margin: 0; color: #073d70; font: 800 18px 'Be Vietnam Pro', sans-serif; }
+
+.fm-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.fm-detail-tile {
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+.fm-detail-tile small { color: #64748b; }
+.fm-detail-value {
+  margin-top: 8px;
+  font-weight: 700;
+  color: #073d70;
+  overflow-wrap: anywhere;
+}
+
+.fm-detail-lock {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 24px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #fff4d6;
+  border: 1px solid #f3d98b;
+  color: #8a6400;
+}
+.fm-detail-lock strong { display: block; font-size: 14px; }
+.fm-detail-lock p { margin: 4px 0 0; font-size: 13px; }
+
+.fm-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+.fm-detail-actions .dashboard-primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dòng bảng bấm được */
+.fm-table tr.fm-row-click { cursor: pointer; }
+.fm-table tr.fm-row-click:hover td,
+.fm-table tr.fm-row-click:focus-visible td { background: #f8fbfd; }
+.fm-table tr.fm-row-click:focus-visible { outline: 2px solid #1684db; outline-offset: -2px; }
+
+@media (max-width: 720px) {
+  .fm-detail-card { padding: 20px; }
+  .fm-detail-header { flex-direction: column; }
+}
+
+/* ============================================================
+   THIẾT LẬP LOẠI KHO
+   ============================================================ */
+.fm-type-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #eaf6ff;
+  color: #0b4f8a;
+  font-size: 13px;
+}
+.fm-type-note p { margin: 0; line-height: 1.5; }
+
+.fm-type-desc {
+  max-width: 340px;
+  color: #4f6880;
+  line-height: 1.45;
+}
+
+.fm-type-actions { display: flex; gap: 8px; }
+
+.fm-btn-danger { color: #b42318 !important; border-color: #f4c7c3 !important; }
+.fm-btn-danger:hover { background: #fff1f0 !important; }
+
+.fm-modal-form textarea {
+  padding: 12px 14px;
+  border: 1px solid #dce8ef;
+  border-radius: 10px;
+  font: 500 13px 'DM Sans', 'Be Vietnam Pro', sans-serif;
+  color: #23475e;
+  resize: vertical;
+  min-height: 80px;
+}
+.fm-modal-form textarea:focus,
+.fm-modal-form input:focus {
+  outline: none;
+  border-color: #1684db;
+  box-shadow: 0 0 0 3px rgba(22, 132, 219, 0.1);
+}
+
+.fm-type-id {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #f1f7fb;
+  color: #075a9f;
+  font-weight: 800;
+  font-size: 12px;
+  font-family: 'DM Sans', monospace;
+}

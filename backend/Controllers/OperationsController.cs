@@ -1,13 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Interfaces;
-using SelfStorageAPI.Services;
 
 namespace SelfStorageAPI.Controllers;
 
-[ApiController]
 [Route("api/[controller]")]
-public sealed class OperationsController : ControllerBase
+[ApiController]
+public class OperationsController : ControllerBase
 {
     private readonly IOperationsStateService _stateService;
     private readonly IFacilityManagementService _facilityService;
@@ -21,110 +20,124 @@ public sealed class OperationsController : ControllerBase
     }
 
     [HttpGet("state")]
-    public async Task<IActionResult> GetState([FromQuery] string? email, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetState(
+        [FromQuery] string? email,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
+        CancellationToken cancellationToken)
     {
-        var headerEmail = Request.Headers["X-User-Email"].ToString();
-        var result = await _stateService.GetStateAsync(email, headerEmail, cancellationToken);
-        return ToActionResult(result);
+        var response = await _stateService.GetStateAsync(email, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpGet("reports")]
-    public async Task<IActionResult> GetReports(CancellationToken cancellationToken)
+    public async Task<IActionResult> GetReports(
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
+        CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _stateService.GetReportsAsync(email, cancellationToken);
-        return ToActionResult(result);
+        var response = await _stateService.GetReportsAsync(userEmail, cancellationToken);
+        return MapResponse(response);
+    }
+
+    [HttpGet("policies")]
+    public async Task<IActionResult> GetSystemPolicies(CancellationToken cancellationToken)
+    {
+        var response = await _facilityService.GetSystemPoliciesAsync(cancellationToken);
+        return MapResponse(response);
+    }
+
+    [HttpPut("policies")]
+    public async Task<IActionResult> UpdateSystemPolicies(
+        [FromBody] UpdateSystemPoliciesDTO request,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
+        CancellationToken cancellationToken)
+    {
+        var response = await _facilityService.UpdateSystemPoliciesAsync(request, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpPost("reservations/{reservationId:int}/assign")]
     public async Task<IActionResult> AssignReservation(
         int reservationId,
         [FromBody] AssignReservationDTO request,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _facilityService.AssignReservationAsync(reservationId, request, email, cancellationToken);
-        return ToActionResult(result);
+        var response = await _facilityService.AssignReservationAsync(reservationId, request, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpPut("facilities/{facilityId:int}/policy")]
     public async Task<IActionResult> UpdatePolicy(
         int facilityId,
         [FromBody] UpdateRentalPolicyDTO request,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _facilityService.UpdatePolicyAsync(facilityId, request, email, cancellationToken);
-        return ToActionResult(result);
+        var response = await _facilityService.UpdatePolicyAsync(facilityId, request, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpPost("facilities")]
     public async Task<IActionResult> CreateFacility(
         [FromBody] CreateFacilityDTO request,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _facilityService.CreateFacilityAsync(request, email, cancellationToken);
-        if (!result.IsSuccess)
-            return ToActionResult(result);
-
-        return CreatedAtAction(nameof(GetState), new { email = (string?)null }, result.Data);
+        var response = await _facilityService.CreateFacilityAsync(request, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpDelete("facilities/{facilityId:int}")]
     public async Task<IActionResult> DeleteFacility(
         int facilityId,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _facilityService.DeleteFacilityAsync(facilityId, email, cancellationToken);
-        return ToActionResult(result);
+        var response = await _facilityService.DeleteFacilityAsync(facilityId, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpPut("facilities/{facilityId:int}")]
     public async Task<IActionResult> UpdateFacility(
         int facilityId,
         [FromBody] UpdateFacilityDTO request,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _facilityService.UpdateFacilityAsync(facilityId, request, email, cancellationToken);
-        return ToActionResult(result);
+        var response = await _facilityService.UpdateFacilityAsync(facilityId, request, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpPost("facilities/{facilityId:int}/staff")]
     public async Task<IActionResult> AssignStaff(
         int facilityId,
         [FromBody] AssignFacilityStaffDTO request,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _facilityService.AssignStaffAsync(facilityId, request, email, cancellationToken);
-        return ToActionResult(result);
+        var response = await _facilityService.AssignStaffAsync(facilityId, request, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpPost("units")]
     public async Task<IActionResult> CreateUnit(
         [FromBody] CreateStorageUnitDTO request,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _facilityService.CreateUnitAsync(request, email, cancellationToken);
-        if (!result.IsSuccess)
-            return ToActionResult(result);
-
-        return CreatedAtAction(nameof(GetState), new { email = (string?)null }, result.Data);
+        var response = await _facilityService.CreateUnitAsync(request, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpPut("facilities/{facilityId:int}/rates")]
     public async Task<IActionResult> UpdateRentalRate(
         int facilityId,
         [FromBody] UpdateRentalRateDTO request,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _facilityService.UpdateRentalRateAsync(facilityId, request, email, cancellationToken);
-        return ToActionResult(result);
+        var response = await _facilityService.UpdateRentalRateAsync(facilityId, request, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpDelete("facilities/{facilityId:int}/rates/{unitTypeId:int}/{unitSizeId:int}")]
@@ -132,41 +145,35 @@ public sealed class OperationsController : ControllerBase
         int facilityId,
         int unitTypeId,
         int unitSizeId,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _facilityService.DeleteRentalRateAsync(facilityId, unitTypeId, unitSizeId, email, cancellationToken);
-        return ToActionResult(result);
+        var response = await _facilityService.DeleteRentalRateAsync(facilityId, unitTypeId, unitSizeId, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
     [HttpPut("units/{unitNumber}")]
     public async Task<IActionResult> UpdateUnit(
         string unitNumber,
         [FromBody] CreateStorageUnitDTO request,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _facilityService.UpdateUnitAsync(unitNumber, request, email, cancellationToken);
-        return ToActionResult(result);
+        var response = await _facilityService.UpdateUnitAsync(unitNumber, request, userEmail, cancellationToken);
+        return MapResponse(response);
     }
 
-    private IActionResult ToActionResult(OperationsServiceResponse result)
+    private IActionResult MapResponse(OperationsServiceResponse response)
     {
-        if (result.IsSuccess)
-        {
-            return result.StatusCode == 204 ? NoContent() : Ok(result.Data);
-        }
+        if (response.StatusCode == 204)
+            return NoContent();
 
-        return result.StatusCode switch
-        {
-            400 => BadRequest(new { message = result.ErrorMessage }),
-            401 => result.ErrorMessage is null ? Unauthorized() : Unauthorized(new { message = result.ErrorMessage }),
-            403 => Forbid(),
-            404 => NotFound(new { message = result.ErrorMessage }),
-            409 => Conflict(new { message = result.ErrorMessage }),
-            _ => StatusCode(result.StatusCode, new { message = result.ErrorMessage })
-        };
+        if (response.IsSuccess)
+            return StatusCode(response.StatusCode, response.Data);
+
+        if (response.ErrorMessage is null)
+            return StatusCode(response.StatusCode);
+
+        return StatusCode(response.StatusCode, new { message = response.ErrorMessage });
     }
 }
-
-

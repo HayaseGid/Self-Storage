@@ -1,0 +1,123 @@
+/* Bảng dữ liệu dùng chung (DataGrid.jsx) */
+.dg { display: grid; gap: 12px; }
+
+.dg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.dg-search {
+  flex: 1 1 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid #dce8ef;
+  background: #fff;
+}
+.dg-search svg { width: 16px; height: 16px; fill: none; stroke: #8197ab; stroke-width: 2.2; flex: none; }
+.dg-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #0b3967; font-size: 14px; }
+.dg-toolbar select {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid #dce8ef;
+  background: #fff;
+  color: #0b3967;
+  font: inherit;
+  font-size: 13.5px;
+}
+.dg-reset { border: 0; background: none; color: #0877cf; font-weight: 700; font-size: 13px; text-decoration: underline; }
+.dg-count { margin-left: auto; color: #8197ab; font-size: 12.5px; }
+
+.dg-wrap {
+  overflow-x: auto;
+  border-radius: 14px;
+  border: 1px solid #e4edf4;
+  background: #fff;
+}
+.dg-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.dg-caption { caption-side: top; text-align: left; padding: 12px 14px 0; color: #6d849b; font-size: 12px; }
+.dg-table th {
+  position: sticky;
+  top: 0;
+  padding: 0;
+  background: #f5faff;
+  border-bottom: 1px solid #e4edf4;
+  color: #4f6880;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+.dg-table th:not(:has(button)) { padding: 12px 14px; }
+.dg-sort {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.dg-sort span { color: #b4c4d3; font-size: 10px; }
+.dg-sort.active { color: #075a9f; }
+.dg-sort.active span { color: #075a9f; }
+
+.dg-table td { padding: 12px 14px; border-bottom: 1px solid #eef3f7; color: #0b3967; vertical-align: middle; }
+.dg-table tbody tr:last-child td { border-bottom: 0; }
+.dg-table tbody tr:nth-child(even) td { background: #fbfdff; }
+.dg-clickable { cursor: pointer; }
+.dg-clickable:hover td { background: #eef7ff !important; }
+.dg-clickable:focus-visible { outline: 3px solid rgba(22, 132, 219, .35); outline-offset: -3px; }
+.dg-empty { padding: 28px 14px !important; text-align: center !important; color: #8197ab !important; }
+
+.dg-pager { display: flex; justify-content: flex-end; align-items: center; gap: 12px; color: #4f6880; font-size: 13px; }
+.dg-pager button {
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid #dce8ef;
+  background: #fff;
+  color: #075a9f;
+  font-weight: 700;
+}
+.dg-pager button:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Ô dùng trong bảng "Kho của tôi" */
+.dg-cell-strong { font-weight: 800; color: #073d70; }
+.dg-cell-sub { display: block; color: #8197ab; font-size: 12px; margin-top: 2px; }
+.dg-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.dg-pill.ok { background: #eefaf2; color: #2b8b55; }
+.dg-pill.info { background: #e9f5ff; color: #075a9f; }
+.dg-pill.warn { background: #fff4d6; color: #8a6400; }
+.dg-pill.muted { background: #f2f5f8; color: #6d849b; }
+.dg-progress { width: 90px; height: 6px; border-radius: 99px; background: #e4edf4; overflow: hidden; margin-top: 6px; }
+.dg-progress > div { height: 100%; background: #1684db; }
+.dg-row-btn {
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid #d6e4ef;
+  background: #fff;
+  color: #075a9f;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dg-view-toggle { display: inline-flex; border: 1px solid #dce8ef; border-radius: 12px; overflow: hidden; }
+.dg-view-toggle button { padding: 0 14px; height: 40px; border: 0; background: #fff; color: #4f6880; font-weight: 700; font-size: 13px; }
+.dg-view-toggle button.active { background: #075a9f; color: #fff; }
+.dg-nowrap { white-space: nowrap; }
+.dg-table td { line-height: 1.35; }
+.dg-pill.dg-pill-wrap { white-space: normal; max-width: 170px; line-height: 1.35; }

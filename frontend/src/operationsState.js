@@ -1,7 +1,15 @@
+import { syncPoliciesFromBackend } from './policies'
+
 export function mapOperationsState(data) {
+  if (data?.policies) {
+    syncPoliciesFromBackend(data.policies)
+  }
+
   const facilities = (data.facilities || []).map(facility => ({
     ...facility,
     id: facility.name,
+    depositMonths: Number(facility.depositMonths ?? facility.depositPercent ?? 2),
+    depositPercent: Number(facility.depositMonths ?? facility.depositPercent ?? 2),
     status: String(facility.status || '').toLowerCase()
   }))
   const facilityNames = new Map(facilities.map(facility => [facility.facilityId, facility.name]))
@@ -11,6 +19,7 @@ export function mapOperationsState(data) {
       PENDING_APPROVAL: 'PENDING_APPROVAL',
       CONFIRMED: 'CONFIRMED',
       HANDED_OVER: 'HANDED_OVER',
+      COMPLETED: 'COMPLETED',
       CANCELLED: 'CANCELLED',
       EXPIRED: 'EXPIRED'
     }[reservation.status] || reservation.status
@@ -19,7 +28,12 @@ export function mapOperationsState(data) {
     return {
       ...reservation,
       facilityId: facilityNames.get(reservation.facilityId) || reservation.facilityId,
-      assignedUnitId: reservation.assignedUnitId || null,
+      assignedUnitId: reservation.assignedUnitId || reservation.unitId || null,
+      unitNumbers: Array.isArray(reservation.unitNumbers) && reservation.unitNumbers.length
+        ? reservation.unitNumbers
+        : reservation.assignedUnitId || reservation.unitId
+          ? [reservation.assignedUnitId || reservation.unitId]
+          : [],
       startDate,
       endDate,
       appointmentDate: String(reservation.appointmentDate || startDate).slice(0, 10),
@@ -41,8 +55,13 @@ export function mapOperationsState(data) {
     reservations,
     contracts: (data.contracts || []).map(contract => ({
       ...contract,
-      customerName: reservationsById.get(contract.reservationId)?.customerName || '—',
-      facilityId: reservationsById.get(contract.reservationId)?.facilityId || '',
+      customerName: contract.customerName || reservationsById.get(contract.reservationId)?.customerName || '—',
+      facilityId: contract.facilityId || reservationsById.get(contract.reservationId)?.facilityId || '',
+      unitNumbers: Array.isArray(contract.unitNumbers) && contract.unitNumbers.length
+        ? contract.unitNumbers
+        : contract.unitId
+          ? String(contract.unitId).split(',').map(s => s.trim()).filter(Boolean)
+          : [],
       handedOverBy: ''
     })),
     payments: data.payments || [],
@@ -52,6 +71,7 @@ export function mapOperationsState(data) {
     unitTypes: data.unitTypes || [],
     unitSizes: data.unitSizes || [],
     rentalRates: data.rentalRates || [],
+    policies: data.policies || null,
     activity: data.activity || []
   }
 }

@@ -1,0 +1,116 @@
+/* Màn hình Business Operations (BusinessPanels.jsx) */
+.bp-root .business-panel-header p { margin: 4px 0 0; color: #6d849b; }
+.bp-muted { color: #8197ab; }
+.bp-code { display: inline-block; padding: 2px 8px; border-radius: 6px; background: #e9f5ff; color: #075a9f; font-size: 11.5px; font-weight: 800; letter-spacing: .04em; }
+.bp-footnote { margin: 16px 0 0; color: #8197ab; font-size: 12.5px; }
+.bp-hint { padding: 28px; border-radius: 16px; border: 1px dashed #c9dbe8; background: #fbfdff; color: #6d849b; text-align: center; }
+
+.bp-readonly { display: flex; gap: 10px; margin: 0 0 16px; padding: 11px 14px; border-radius: 12px; background: #fff8e1; border: 1px solid #f6e2a6; color: #6b5200; font-size: 13px; line-height: 1.55; }
+.bp-readonly > span { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px; background: #d99a00; color: #fff; font-weight: 800; font-size: 12px; }
+
+.bp-status { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 800; white-space: nowrap; }
+.bp-status.on { background: #eefaf2; color: #2b8b55; }
+.bp-status.off { background: #f2f5f8; color: #6d849b; }
+
+/* Tỷ lệ sử dụng */
+.bp-occ { display: inline-flex; align-items: center; gap: 8px; min-width: 130px; }
+.bp-occ-track { flex: 1; height: 7px; border-radius: 99px; background: #e4edf4; overflow: hidden; }
+.bp-occ-fill { display: block; height: 100%; border-radius: 99px; }
+.bp-occ-fill.low { background: #f0b400; }
+.bp-occ-fill.mid { background: #1684db; }
+.bp-occ-fill.high { background: #2b8b55; }
+.bp-occ em { font-style: normal; color: #23475e; font-weight: 800; font-size: 12.5px; min-width: 38px; text-align: right; }
+
+/* 1. Cơ sở theo khu vực */
+.bp-search { display: flex; gap: 8px; margin-bottom: 16px; }
+.bp-search input { flex: 1; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid #d6e4ef; font: inherit; font-size: 14px; }
+.bp-search input:focus { outline: 0; border-color: #1684db; box-shadow: 0 0 0 3px rgba(22, 132, 219, .15); }
+.bp-search button { padding: 0 14px; border-radius: 12px; border: 1px solid #d6e4ef; background: #fff; color: #075a9f; font-weight: 700; cursor: pointer; }
+
+.bp-area-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.bp-area {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1.5px solid #dce8ef;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.bp-area:hover { border-color: #1684db; box-shadow: 0 10px 24px rgba(15, 69, 111, .08); transform: translateY(-2px); }
+.bp-area:focus-visible { outline: 3px solid rgba(22, 132, 219, .35); outline-offset: 2px; }
+.bp-area.active { border-color: #075a9f; background: #075a9f; }
+.bp-area.active * { color: #fff !important; }
+.bp-area.active svg { stroke: #ffd21c !important; }
+.bp-area-name { display: inline-flex; align-items: center; gap: 6px; color: #073d70; font-weight: 800; font-size: 15px; }
+.bp-area-name svg, .bp-list-head svg { width: 16px; height: 16px; fill: none; stroke: #1684db; stroke-width: 2; }
+.bp-area strong { font: 800 26px 'Be Vietnam Pro', sans-serif; color: #075a9f; }
+.bp-area strong small { font: 700 13px 'DM Sans', sans-serif; color: #6d849b; }
+.bp-area-meta { color: #8197ab; font-size: 12px; font-weight: 600; }
+
+.bp-list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 6px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #e4edf4; }
+.bp-list-head h3 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font: 800 19px 'Be Vietnam Pro', sans-serif; color: #073d70; }
+.bp-list-head span { color: #6d849b; font-size: 13px; font-weight: 700; }
+
+.bp-facility-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.bp-facility { display: grid; gap: 12px; padding: 18px; border-radius: 16px; background: #fff; border: 1px solid #e4edf4; box-shadow: 0 6px 18px rgba(15, 69, 111, .05); }
+.bp-facility.inactive { background: #fafbfc; }
+.bp-facility.inactive h4 { color: #6d849b; }
+.bp-facility-top { display: flex; justify-content: space-between; gap: 10px; }
+.bp-facility h4 { margin: 6px 0 2px; font: 800 17px 'Be Vietnam Pro', sans-serif; color: #073d70; }
+.bp-facility-top p { margin: 0; color: #6d849b; font-size: 12.5px; }
+.bp-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
+.bp-metrics div { padding: 8px 10px; border-radius: 10px; background: #f5faff; }
+.bp-metrics dt { color: #8197ab; font-size: 11px; font-weight: 700; }
+.bp-metrics dd { margin: 2px 0 0; color: #073d70; font-weight: 800; font-size: 17px; }
+.bp-types { display: flex; flex-wrap: wrap; gap: 6px; min-height: 22px; }
+.bp-manager { margin: 0; color: #6d849b; font-size: 12.5px; overflow-wrap: anywhere; }
+.bp-manager strong { color: #23475e; }
+.bp-facility-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; border-top: 1px solid #eef3f7; }
+
+/* 2. Chính sách */
+.bp-version { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; color: #4f6880; font-size: 12.5px; }
+.bp-policy { display: grid; gap: 14px; }
+.bp-policy-summary { margin: 0; color: #23475e; font-size: 15px; font-weight: 600; }
+.bp-settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.bp-setting { display: grid; gap: 4px; padding: 12px 14px; border-radius: 12px; border: 1px solid #e4edf4; background: #fbfdff; }
+.bp-setting span { color: #6d849b; font-size: 12px; font-weight: 700; }
+.bp-setting strong { color: #073d70; font-size: 14.5px; line-height: 1.4; }
+.bp-policy h4 { margin: 4px 0 0; color: #073d70; font-size: 14px; }
+.bp-rules { margin: 0; padding-left: 18px; color: #4f6880; font-size: 13.5px; line-height: 1.7; }
+.bp-policy-actions { display: flex; justify-content: flex-end; }
+
+/* 3. Giá & phí */
+.bp-fee-tabs { margin-bottom: 16px; background: #fff; border-radius: 14px 14px 0 0; padding: 0 6px; }
+.bp-calculator { margin: 16px 0; padding: 16px; border-radius: 14px; background: #f5faff; }
+.bp-calculator h4 { margin: 0 0 10px; color: #073d70; }
+.bp-calc-row { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 12px; align-items: end; }
+.bp-calc-row label { display: grid; gap: 6px; color: #23475e; font-size: 13px; font-weight: 700; }
+.bp-calc-row input { height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid #d6e4ef; font: inherit; }
+.bp-calc-result { display: grid; gap: 2px; padding: 10px 14px; border-radius: 12px; background: #fff; border: 1px solid #e4edf4; }
+.bp-calc-result span { color: #6d849b; font-size: 12px; font-weight: 700; }
+.bp-calc-result strong { color: #c27a00; font: 800 20px 'Be Vietnam Pro', sans-serif; }
+.bp-calc-result small { color: #8197ab; font-size: 12px; }
+
+/* 4. Hiệu suất */
+.bp-kpi-text { font-size: 18px !important; line-height: 1.3; }
+.bp-sort { display: inline-flex; align-items: center; gap: 8px; color: #4f6880; font-size: 13px; font-weight: 700; }
+.bp-sort select { height: 38px; padding: 0 10px; border-radius: 10px; border: 1px solid #d6e4ef; font: inherit; font-size: 13px; }
+.bp-bars { display: flex; align-items: flex-end; gap: 10px; height: 220px; padding: 10px 4px 0; border-bottom: 1px solid #e4edf4; overflow-x: auto; }
+.bp-bar { flex: 1 0 46px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; }
+.bp-bar-col { width: 70%; max-width: 44px; border-radius: 8px 8px 2px 2px; background: linear-gradient(180deg, #1684db, #075a9f); }
+.bp-bar-value { color: #4f6880; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.bp-bar-label { padding-bottom: 6px; color: #8197ab; font-size: 11.5px; font-weight: 700; }
+
+/* 5. Báo cáo */
+.bp-export { display: flex; flex-wrap: wrap; gap: 8px; }
+.bp-report-title { margin: 4px 0 12px; font: 800 17px 'Be Vietnam Pro', sans-serif; color: #073d70; }
+.bp-report-title small { color: #8197ab; font: 600 12.5px 'DM Sans', sans-serif; }
+
+@media (max-width: 760px) {
+  .bp-calc-row { grid-template-columns: 1fr; }
+  .bp-facility-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .bp-area { transition: none; } .bp-area:hover { transform: none; } }
