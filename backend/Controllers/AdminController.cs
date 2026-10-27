@@ -1,9 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using SelfStorageAPI.Constants;
-using SelfStorageAPI.Data;
 using SelfStorageAPI.DTOs;
-using SelfStorageAPI.Models;
+using SelfStorageAPI.Interfaces;
 
 namespace SelfStorageAPI.Controllers;
 
@@ -11,74 +8,31 @@ namespace SelfStorageAPI.Controllers;
 [ApiController]
 public class AdminController : ControllerBase
 {
-    private const int SystemAdministratorRoleId = 5;
-    private readonly SelfStorageDbContext _context;
+    private readonly IAdminService _adminService;
 
-    public AdminController(SelfStorageDbContext context)
+    public AdminController(IAdminService adminService)
     {
-        _context = context;
+        _adminService = adminService;
     }
 
     [HttpGet("users")]
-    public async Task<ActionResult<IReadOnlyList<AdminUserResponse>>> GetUsers(
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> GetUsers(CancellationToken cancellationToken)
     {
-        if (await GetActiveAdministratorAsync(cancellationToken) is null)
-            return Forbid();
+        var email = Request.Headers["X-User-Email"].ToString();
+        var result = await _adminService.GetUsersAsync(email, cancellationToken);
 
-        var users = await _context.Users
-            .AsNoTracking()
-            .Include(user => user.Role)
-            .Include(user => user.ManagedFacilities)
-            .Include(user => user.FacilityStaffs)
-                .ThenInclude(assignment => assignment.Facility)
-            .OrderBy(user => user.UserID)
-            .ToListAsync(cancellationToken);
-
-        var userIds = users.Select(user => user.UserID).ToArray();
-        var lastLogins = await _context.UserActivityLogs
-            .AsNoTracking()
-            .Where(log => userIds.Contains(log.UserID) && log.Action == "Login")
-            .GroupBy(log => log.UserID)
-            .Select(group => new { UserId = group.Key, Time = group.Max(log => log.Timestamp) })
-            .ToDictionaryAsync(item => item.UserId, item => (DateTime?)item.Time, cancellationToken);
-
-        return Ok(users.Select(user => new AdminUserResponse(
-            user.UserID,
-            user.FullName,
-            user.Username,
-            user.Email ?? string.Empty,
-            user.PhoneNumber ?? string.Empty,
-            user.Role.RoleName,
-            GetFacilityName(user),
-            ToClientStatus(user.Status),
-            "Chưa được ghi nhận",
-            lastLogins.TryGetValue(user.UserID, out var lastLogin) && lastLogin.HasValue
-                ? lastLogin.Value.ToString("yyyy-MM-dd HH:mm")
-                : "Chưa đăng nhập")));
+        if (!result.IsSuccess) return Forbid();
+        return Ok(result.Data);
     }
 
     [HttpGet("activity")]
-    public async Task<ActionResult<IReadOnlyList<AdminActivityLogResponse>>> GetActivity(
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> GetActivity(CancellationToken cancellationToken)
     {
-        if (await GetActiveAdministratorAsync(cancellationToken) is null)
-            return Forbid();
+        var email = Request.Headers["X-User-Email"].ToString();
+        var result = await _adminService.GetActivityAsync(email, cancellationToken);
 
-        var logs = await _context.UserActivityLogs
-            .AsNoTracking()
-            .Include(log => log.User)
-            .OrderByDescending(log => log.Timestamp)
-            .Take(200)
-            .ToListAsync(cancellationToken);
-
-        return Ok(logs.Select(log => new AdminActivityLogResponse(
-            log.LogID,
-            new DateTimeOffset(DateTime.SpecifyKind(log.Timestamp, DateTimeKind.Local)),
-            log.User.FullName,
-            ToClientAction(log.Action),
-            log.Details ?? log.User.Username,
-            GetActivityType(log.Action))));
+        if (!result.IsSuccess) return Forbid();
+        return Ok(result.Data);
     }
 
     [HttpPut("users/{userId:int}")]
@@ -87,135 +41,23 @@ public class AdminController : ControllerBase
         [FromBody] UpdateAdminUserDTO request,
         CancellationToken cancellationToken)
     {
-        var administrator = await GetActiveAdministratorAsync(cancellationToken);
-        if (administrator is null)
-            return Forbid();
+        var email = Request.Headers["X-User-Email"].ToString();
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        
+        var result = await _adminService.UpdateUserAsync(userId, request, email, ipAddress, cancellationToken);
 
-        if (userId == administrator.UserID)
-            return Conflict(new { message = "Không thể tự thay đổi quyền hoặc trạng thái của tài khoản quản trị hiện tại." });
-
-        var user = await _context.Users
-            .Include(item => item.Role)
-            .FirstOrDefaultAsync(item => item.UserID == userId, cancellationToken);
-        if (user is null)
-            return NotFound(new { message = "Không tìm thấy tài khoản." });
-        if (user.RoleID == SystemAdministratorRoleId)
-            return Conflict(new { message = "Không thể thay đổi tài khoản System Administrator tại đây." });
-
-        var normalizedStatus = NormalizeStatus(request.Status);
-        if (normalizedStatus is null)
-            return BadRequest(new { message = "Trạng thái không hợp lệ." });
-
-        var role = await _context.Roles
-            .FirstOrDefaultAsync(item => item.RoleName == request.RoleName, cancellationToken);
-        if (role is null || role.RoleID == SystemAdministratorRoleId)
-            return BadRequest(new { message = "Role không hợp lệ." });
-
-        if (role.RoleID != user.RoleID)
+        if (!result.IsSuccess)
         {
-            var hasOperationalAssignments = await _context.Facilities
-                .AnyAsync(item => item.ManagerID == userId, cancellationToken)
-                || await _context.FacilityStaffs.AnyAsync(item => item.UserID == userId, cancellationToken)
-                || await _context.HandoverTasks.AnyAsync(item => item.StaffID == userId, cancellationToken);
-            if (hasOperationalAssignments)
-                return Conflict(new { message = "Không thể đổi role khi tài khoản đang được gán cơ sở hoặc có nhiệm vụ nghiệp vụ." });
+            return result.StatusCode switch
+            {
+                403 => Forbid(),
+                404 => NotFound(new { message = result.ErrorMessage }),
+                409 => Conflict(new { message = result.ErrorMessage }),
+                400 => BadRequest(new { message = result.ErrorMessage }),
+                _ => StatusCode(500, new { message = result.ErrorMessage })
+            };
         }
-
-        var oldRole = user.Role.RoleName;
-        var oldStatus = ToClientStatus(user.Status);
-        user.RoleID = role.RoleID;
-        user.Status = normalizedStatus;
-
-        var changes = new List<string>();
-        if (oldRole != role.RoleName)
-            changes.Add($"Role: {oldRole} → {role.RoleName}");
-        if (oldStatus != ToClientStatus(normalizedStatus))
-            changes.Add($"Trạng thái: {oldStatus} → {ToClientStatus(normalizedStatus)}");
-        if (changes.Count == 0)
-            return NoContent();
-
-        _context.UserActivityLogs.Add(new UserActivityLog
-        {
-            UserID = administrator.UserID,
-            Action = oldStatus != ToClientStatus(normalizedStatus)
-                ? GetStatusAction(oldStatus, ToClientStatus(normalizedStatus))
-                : "Role Changed",
-            IPAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            Timestamp = DateTime.Now,
-            Details = $"{user.Username}: {string.Join("; ", changes)}"
-        });
-        await _context.SaveChangesAsync(cancellationToken);
 
         return NoContent();
     }
-
-    private async Task<User?> GetActiveAdministratorAsync(CancellationToken cancellationToken)
-    {
-        var email = Request.Headers["X-User-Email"].ToString();
-        if (string.IsNullOrWhiteSpace(email))
-            return null;
-
-        return await _context.Users
-            .Include(user => user.Role)
-            .FirstOrDefaultAsync(
-                user => user.Email == email
-                    && user.RoleID == SystemAdministratorRoleId
-                    && user.Status == "Active",
-                cancellationToken);
-    }
-
-    private static string GetFacilityName(User user)
-    {
-        var names = user.ManagedFacilities
-            .Select(facility => facility.FacilityName)
-            .Concat(user.FacilityStaffs.Select(assignment => assignment.Facility.FacilityName))
-            .Distinct()
-            .ToArray();
-        return names.Length == 0 ? "—" : string.Join(", ", names);
-    }
-
-    private static string ToClientStatus(string? status) => status switch
-    {
-        "Pending Approval" => "Pending",
-        null or "" => "Unknown",
-        _ => status
-    };
-
-    private static string? NormalizeStatus(string status) => status switch
-    {
-        "Pending" => "Pending Approval",
-        "Pending Approval" => "Pending Approval",
-        "Active" => "Active",
-        "Locked" => "Locked",
-        "Rejected" => "Rejected",
-        _ => null
-    };
-
-    private static string GetStatusAction(string oldStatus, string status) => (oldStatus, status) switch
-    {
-        ("Pending", "Active") => "Account Approved",
-        ("Locked", "Active") => "Account Unlocked",
-        (_, "Locked") => "Account Locked",
-        (_, "Rejected") => "Account Rejected",
-        _ => "Account Updated"
-    };
-
-    private static string ToClientAction(string action) => action switch
-    {
-        "Login" => "Đăng nhập hệ thống",
-        "Account Approved" => "Đã duyệt tài khoản",
-        "Account Rejected" => "Từ chối tài khoản",
-        "Account Locked" => "Đã khóa tài khoản",
-        "Account Unlocked" => "Đã mở khóa tài khoản",
-        "Role Changed" => "Đã thay đổi role",
-        _ => action
-    };
-
-    private static string GetActivityType(string action) => action switch
-    {
-        "Login" => "login",
-        "Account Approved" or "Account Rejected" => "approval",
-        "Role Changed" => "role",
-        _ => "security"
-    };
 }

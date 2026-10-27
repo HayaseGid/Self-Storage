@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using SelfStorageAPI.Data;
+using SelfStorageAPI.Interfaces;
+using SelfStorageAPI.Repositories;
+using SelfStorageAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,9 +25,29 @@ builder.Services.AddDbContext<SelfStorageDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Register Repositories and Services
-builder.Services.AddScoped<SelfStorageAPI.Interfaces.IUserRepository, SelfStorageAPI.Repositories.UserRepository>();
-builder.Services.AddScoped<SelfStorageAPI.Interfaces.IAuthService, SelfStorageAPI.Services.AuthService>();
-builder.Services.AddScoped<SelfStorageAPI.Interfaces.IContractSignatureService, SelfStorageAPI.Services.ContractSignatureService>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IContractSignatureService, ContractSignatureService>();
+builder.Services.AddScoped<IUnitSizeRepository, UnitSizeRepository>();
+builder.Services.AddScoped<IUnitSizeService, UnitSizeService>();
+builder.Services.AddScoped<IUnitTypeRepository, UnitTypeRepository>();
+builder.Services.AddScoped<IUnitTypeService, UnitTypeService>();
+builder.Services.AddScoped<IPaymentRepository, PaymentRepository>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IReservationRepository, ReservationRepository>();
+builder.Services.AddScoped<IReservationService, ReservationService>();
+builder.Services.AddScoped<IHandoverRepository, HandoverRepository>();
+builder.Services.AddScoped<IHandoverService, HandoverService>();
+builder.Services.AddScoped<IReservationHoldRepository, ReservationHoldRepository>();
+builder.Services.AddScoped<IReservationHoldService, ReservationHoldService>();
+builder.Services.AddScoped<IAdminRepository, AdminRepository>();
+builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<ICatalogRepository, CatalogRepository>();
+builder.Services.AddScoped<ICatalogService, CatalogService>();
+builder.Services.AddScoped<IOperationsStateRepository, OperationsStateRepository>();
+builder.Services.AddScoped<IOperationsStateService, OperationsStateService>();
+builder.Services.AddScoped<IFacilityManagementRepository, FacilityManagementRepository>();
+builder.Services.AddScoped<IFacilityManagementService, FacilityManagementService>();
 
 var app = builder.Build();
 

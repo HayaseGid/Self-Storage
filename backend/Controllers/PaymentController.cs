@@ -1,95 +1,47 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using SelfStorageAPI.Data;
 using SelfStorageAPI.DTOs;
-using SelfStorageAPI.Models;
-using SelfStorageAPI.Constants;
-using SelfStorageAPI.Services;
-using System.Data;
+using SelfStorageAPI.Interfaces;
 
-namespace SelfStorageAPI.Controllers
+namespace SelfStorageAPI.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class PaymentController : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class PaymentController : ControllerBase
+    private readonly IPaymentService _paymentService;
+
+    public PaymentController(IPaymentService paymentService)
     {
-        private readonly SelfStorageDbContext _context;
+        _paymentService = paymentService;
+    }
 
-        public PaymentController(SelfStorageDbContext context)
+    [HttpPost("confirm")]
+    public async Task<IActionResult> ConfirmPayment(
+        [FromBody] CreatePaymentDTO request,
+        CancellationToken cancellationToken)
+    {
+        var email = Request.Headers["X-User-Email"].ToString();
+        var result = await _paymentService.ConfirmPaymentAsync(request, email, cancellationToken);
+
+        if (!result.IsSuccess)
         {
-            _context = context;
-        }
-
-        [HttpPost("confirm")]
-        public async Task<IActionResult> ConfirmPayment(
-            [FromBody] CreatePaymentDTO request,
-            CancellationToken cancellationToken)
-        {
-            var email = Request.Headers["X-User-Email"].ToString();
-            if (string.IsNullOrWhiteSpace(email))
-                return Unauthorized();
-
-            var customerId = await _context.Users
-                .Where(u => u.Email == email && u.RoleID == 1 && u.Status == "Active")
-                .Select(u => (int?)u.UserID)
-                .FirstOrDefaultAsync(cancellationToken);
-            if (!customerId.HasValue)
-                return Unauthorized();
-
-            await using var transaction = await _context.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable, cancellationToken);
-            await ReservationHoldService.ReleaseExpiredAsync(_context, DateTime.UtcNow, cancellationToken);
-            var reservation = await _context.Reservations
-                .Include(r => r.AssignedUnit)
-                .Include(r => r.Payments)
-                .FirstOrDefaultAsync(r =>
-                    r.ReservationID == request.ReservationID &&
-                    r.CustomerID == customerId.Value,
-                    cancellationToken);
-
-            if (reservation == null) return NotFound(new { message = "Không tìm thấy Reservation." });
-            if (reservation.Status == ReservationStatus.Expired)
+            return result.StatusCode switch
             {
-                await _context.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-                return Conflict(new { message = "Thời gian giữ kho 10 phút đã hết. Vui lòng tạo đặt chỗ mới." });
-            }
-            if (reservation.Status != ReservationStatus.PendingDeposit)
-                return Conflict(new { message = "Đặt chỗ không ở trạng thái chờ thanh toán hoặc đã được thanh toán." });
-            if (request.Amount <= 0 || request.Amount != reservation.DepositAmount)
-                return BadRequest(new { message = $"Số tiền thanh toán phải đúng bằng tiền cọc {reservation.DepositAmount}." });
-            if (reservation.Payments.Any(p => p.PaymentStatus == "Completed"))
-                return Conflict(new { message = "Đặt chỗ đã có giao dịch thanh toán thành công." });
-
-            var payment = new Payment
-            {
-                ReservationID = request.ReservationID,
-                TransactionReference = $"TXN-{Guid.NewGuid():N}",
-                Amount = request.Amount,
-                PaymentType = request.PaymentType,
-                PaymentDate = DateTime.Today,
-                PaymentStatus = "Completed"
+                401 => Unauthorized(new { message = result.ErrorMessage }),
+                404 => NotFound(new { message = result.ErrorMessage }),
+                400 => BadRequest(new { message = result.ErrorMessage }),
+                409 => Conflict(new { message = result.ErrorMessage }),
+                _ => StatusCode(500, new { message = result.ErrorMessage })
             };
-
-            _context.Payments.Add(payment);
-            reservation.Status = ReservationStatus.Paid;
-            if (reservation.AssignedUnit?.Status == UnitStatus.Booking)
-            {
-                reservation.AssignedUnit.Status = UnitStatus.Reserved;
-                reservation.AssignedUnit.StatusBeforeBooking = null;
-            }
-
-            await _context.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            return Ok(new
-            {
-                message = "Thanh toán thành công. Đơn hàng chuyển sang chờ phân kho.",
-                paymentId = payment.PaymentID,
-                transactionReference = payment.TransactionReference,
-                amount = payment.Amount,
-                reservationStatus = reservation.Status
-            });
         }
+
+        return Ok(new
+        {
+            message = result.ErrorMessage, 
+            paymentId = result.Data!.PaymentId,
+            transactionReference = result.Data.TransactionReference,
+            amount = result.Data.Amount,
+            reservationStatus = result.Data.ReservationStatus
+        });
     }
 }

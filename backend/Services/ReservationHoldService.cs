@@ -1,35 +1,34 @@
-using Microsoft.EntityFrameworkCore;
 using SelfStorageAPI.Constants;
-using SelfStorageAPI.Data;
+using SelfStorageAPI.Interfaces;
 
 namespace SelfStorageAPI.Services;
 
-public static class ReservationHoldService
+// Đã bỏ chữ "static"
+public class ReservationHoldService : IReservationHoldService
 {
-    public static async Task ReleaseExpiredAsync(
-        SelfStorageDbContext context,
-        DateTime now,
-        CancellationToken cancellationToken)
+    private readonly IReservationHoldRepository _repository;
+
+    public ReservationHoldService(IReservationHoldRepository repository)
     {
-        var expiredReservations = await context.Reservations
-            .Include(reservation => reservation.AssignedUnit)
-            .Where(reservation =>
-                reservation.Status == ReservationStatus.PendingDeposit &&
-                reservation.DepositExpiresAt <= now)
-            .ToListAsync(cancellationToken);
+        _repository = repository;
+    }
+
+    public async Task ReleaseExpiredAsync(DateTime now, CancellationToken cancellationToken)
+    {
+        var expiredReservations = await _repository.GetExpiredHoldsAsync(now, cancellationToken);
 
         foreach (var reservation in expiredReservations)
         {
             reservation.Status = ReservationStatus.Expired;
             var unit = reservation.AssignedUnit;
+            
             if (unit is null || unit.Status != UnitStatus.Booking)
                 continue;
 
-            var anotherActiveHold = await context.Reservations.AnyAsync(other =>
-                other.ReservationID != reservation.ReservationID &&
-                other.AssignedUnitID == unit.UnitID &&
-                other.Status == ReservationStatus.PendingDeposit &&
-                other.DepositExpiresAt > now,
+            var anotherActiveHold = await _repository.HasAnotherActiveHoldAsync(
+                reservation.ReservationID, 
+                unit.UnitID, 
+                now, 
                 cancellationToken);
 
             if (!anotherActiveHold)
@@ -40,6 +39,8 @@ public static class ReservationHoldService
         }
 
         if (expiredReservations.Count > 0)
-            await context.SaveChangesAsync(cancellationToken);
+        {
+            await _repository.SaveChangesAsync(cancellationToken);
+        }
     }
 }
