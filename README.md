@@ -1,5 +1,10 @@
 # Self-Storage
 
+## Tài liệu API (Backend & Frontend)
+
+- Xem đầy đủ danh sách **36 API Endpoints**, phương thức HTTP, phân quyền, Request Body (DTO) và Response mẫu tại: **[`API_DOCUMENTATION.md`](./API_DOCUMENTATION.md)**.
+- Khi chạy Backend (`dotnet run`), tài liệu OpenAPI JSON trực tiếp có tại: `http://localhost:5046/openapi/v1.json`.
+
 ## Mã kho tự động
 
 - Mỗi cơ sở có một mã chi nhánh duy nhất, ví dụ `TD` cho Thủ Đức hoặc `BT` cho Bình Tân.
