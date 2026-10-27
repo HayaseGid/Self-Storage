@@ -9,7 +9,7 @@ public class UserActivityLog
     public int UserID { get; set; }
     public string Action { get; set; } = null!;
     public string? IPAddress { get; set; }
-    public DateTime Timestamp { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     public string? Details { get; set; }
 
     public User User { get; set; } = null!;

@@ -3,7 +3,6 @@ using SelfStorageAPI.Interfaces;
 
 namespace SelfStorageAPI.Services;
 
-// Đã bỏ chữ "static"
 public class ReservationHoldService : IReservationHoldService
 {
     private readonly IReservationHoldRepository _repository;
@@ -20,21 +19,14 @@ public class ReservationHoldService : IReservationHoldService
         foreach (var reservation in expiredReservations)
         {
             reservation.Status = ReservationStatus.Expired;
-            var unit = reservation.AssignedUnit;
-            
-            if (unit is null || unit.Status != UnitStatus.Booking)
-                continue;
-
-            var anotherActiveHold = await _repository.HasAnotherActiveHoldAsync(
-                reservation.ReservationID, 
-                unit.UnitID, 
-                now, 
-                cancellationToken);
-
-            if (!anotherActiveHold)
+            foreach (var ru in reservation.ReservationUnits.Where(u => u.Status == "Held"))
             {
-                unit.Status = unit.StatusBeforeBooking ?? UnitStatus.Available;
-                unit.StatusBeforeBooking = null;
+                ru.Status = "Released";
+                ru.ReleasedAt = now;
+            }
+            foreach (var charge in reservation.Charges.Where(c => c.Status == "Unpaid"))
+            {
+                charge.Status = "Cancelled";
             }
         }
 

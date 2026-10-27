@@ -46,7 +46,8 @@ public class UnitSizeService : IUnitSizeService
         if (await _unitSizeRepository.ExistsByDimensionsAsync(dimensions, null, cancellationToken))
             return (false, $"Kích thước \"{dimensions}\" đã tồn tại.", null);
 
-        var entity = new UnitSize { Dimensions = dimensions, Volume = request.Volume };
+        var entity = new UnitSize { IsActive = true, CreatedAt = DateTime.UtcNow };
+        await _unitSizeRepository.PopulateSizeFieldsAsync(entity, dimensions, request.Volume, cancellationToken);
         _unitSizeRepository.Add(entity);
         await _unitSizeRepository.SaveChangesAsync(cancellationToken);
 
@@ -66,8 +67,25 @@ public class UnitSizeService : IUnitSizeService
         if (await _unitSizeRepository.ExistsByDimensionsAsync(dimensions, id, cancellationToken))
             return (false, $"Kích thước \"{dimensions}\" đã tồn tại.", null);
 
-        entity.Dimensions = dimensions;
-        entity.Volume = request.Volume;
+        var isUsed = await _unitSizeRepository.IsUsedByUnitsOrRatesAsync(id, cancellationToken);
+        if (isUsed)
+        {
+            // Theo TR_UnitSize_Validate: Size đang được dùng không được đổi WidthM/LengthM/HeightM/SizeCategoryID
+            if (dimensions.Contains(':'))
+            {
+                var parts = dimensions.Split(':', 2, StringSplitOptions.TrimEntries);
+                entity.DisplayName = string.IsNullOrWhiteSpace(parts[1]) ? dimensions : parts[1];
+            }
+            else
+            {
+                entity.DisplayName = dimensions;
+            }
+        }
+        else
+        {
+            await _unitSizeRepository.PopulateSizeFieldsAsync(entity, dimensions, request.Volume, cancellationToken);
+        }
+
         await _unitSizeRepository.SaveChangesAsync(cancellationToken);
 
         var unitCount = await _unitSizeRepository.GetStorageUnitCountAsync(id, cancellationToken);

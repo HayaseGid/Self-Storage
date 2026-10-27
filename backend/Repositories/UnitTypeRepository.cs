@@ -39,9 +39,10 @@ public class UnitTypeRepository : IUnitTypeRepository
     public async Task<bool> IsUsedAsync(int unitTypeId, CancellationToken cancellationToken)
     {
         var usedByUnits = await _context.StorageUnits.AnyAsync(u => u.UnitTypeID == unitTypeId, cancellationToken);
-        var usedByReservations = await _context.Reservations.AnyAsync(r => r.UnitTypeID == unitTypeId, cancellationToken);
+        var usedByReservations = await _context.ReservationItems.AnyAsync(ri => ri.UnitTypeID == unitTypeId, cancellationToken);
         var usedByRates = await _context.RentalRates.AnyAsync(r => r.UnitTypeID == unitTypeId, cancellationToken);
-        return usedByUnits || usedByReservations || usedByRates;
+        var usedByFacilities = await _context.FacilityUnitTypes.AnyAsync(ft => ft.UnitTypeID == unitTypeId, cancellationToken);
+        return usedByUnits || usedByReservations || usedByRates || usedByFacilities;
     }
 
     public void Add(UnitType unitType) => _context.UnitTypes.Add(unitType);

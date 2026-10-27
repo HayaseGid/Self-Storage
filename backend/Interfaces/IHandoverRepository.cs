@@ -7,7 +7,6 @@ public interface IHandoverRepository
     Task<Reservation?> GetReservationForHandoverAsync(int reservationId, CancellationToken cancellationToken);
     Task<User?> GetActiveStaffByEmailAsync(string email, CancellationToken cancellationToken);
     Task<bool> IsStaffAssignedToFacilityAsync(int staffUserId, int facilityId, CancellationToken cancellationToken);
-    Task<ContractType?> GetContractTypeByDaysAsync(int days, CancellationToken cancellationToken);
     void AddHandoverTask(HandoverTask task);
     void AddContract(Contract contract);
     void AddUnitAccess(UnitAccess access);

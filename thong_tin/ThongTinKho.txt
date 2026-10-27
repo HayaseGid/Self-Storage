@@ -1,0 +1,57 @@
+=== THÔNG TIN CÁC KHO (STORAGE UNITS) ===
+
+Hiện tại hệ thống có tổng cộng 50 kho (Unit), phân bổ đều cho 5 Cơ sở (mỗi cơ sở có 10 kho với cấu trúc giá và kích thước tương tự nhau).
+
+Dưới đây là cơ cấu kho mẫu của mỗi cơ sở (Mã tiền tố sẽ thay đổi theo cơ sở như Q1, TB, TD, Q2, Q3):
+
+1. Mã: *-U01
+- Loại kho: Climate-Control Unit (Trong nhà, có điều hòa)
+- Kích thước: S1 (Locker < 2.5m)
+- Giá thuê: ~ 300.000 VNĐ / tháng
+
+2. Mã: *-U02
+- Loại kho: Climate-Control Unit (Trong nhà, có điều hòa)
+- Kích thước: S2 (2x2m)
+- Giá thuê: ~ 500.000 VNĐ / tháng
+
+3. Mã: *-U03
+- Loại kho: Indoor Unit (Trong nhà, hành lang)
+- Kích thước: M1 (2x6m)
+- Giá thuê: ~ 800.000 VNĐ / tháng
+
+4. Mã: *-U04
+- Loại kho: Indoor Unit (Trong nhà, hành lang)
+- Kích thước: M2 (4x4m)
+- Giá thuê: ~ 1.000.000 VNĐ / tháng
+
+5. Mã: *-U05
+- Loại kho: Basic Unit (Ngoài trời tiêu chuẩn)
+- Kích thước: S2 (2x2m)
+- Giá thuê: ~ 400.000 VNĐ / tháng
+
+6. Mã: *-U06
+- Loại kho: Basic Unit (Ngoài trời tiêu chuẩn)
+- Kích thước: S3 (2x4m)
+- Giá thuê: ~ 600.000 VNĐ / tháng
+
+7. Mã: *-U07
+- Loại kho: Drive-up Unit (Ngoài trời, xe vào tận cửa)
+- Kích thước: L3 (4x10m)
+- Giá thuê: ~ 2.000.000 VNĐ / tháng
+
+8. Mã: *-U08
+- Loại kho: Drive-up Unit (Ngoài trời, xe vào tận cửa)
+- Kích thước: V1 (8x4m)
+- Giá thuê: ~ 2.500.000 VNĐ / tháng
+
+9. Mã: *-U09
+- Loại kho: Climate-Control Unit (Trong nhà, có điều hòa)
+- Kích thước: S3 (2x4m)
+- Giá thuê: ~ 700.000 VNĐ / tháng
+
+10. Mã: *-U10
+- Loại kho: Indoor Unit (Trong nhà, hành lang)
+- Kích thước: L1 (4x6m)
+- Giá thuê: ~ 1.200.000 VNĐ / tháng
+
+(Tất cả các kho đều đang ở trạng thái Available ngoại trừ Q1-U04 (In Use), Q1-U09 (Maintenance) và TB-U03 (In Use)).

@@ -28,13 +28,13 @@ public class AdminService : IAdminService
         var data = users.Select(user => new AdminUserResponse(
             user.UserID,
             user.FullName,
-            user.Username,
+            user.Username ?? user.Email,
             user.Email ?? string.Empty,
             user.PhoneNumber ?? string.Empty,
             user.Role.RoleName,
             GetFacilityName(user),
             ToClientStatus(user.Status),
-            "Chưa được ghi nhận",
+            user.CreatedAt.ToString("yyyy-MM-dd HH:mm"),
             lastLogins.TryGetValue(user.UserID, out var lastLogin) && lastLogin.HasValue
                 ? lastLogin.Value.ToString("yyyy-MM-dd HH:mm")
                 : "Chưa đăng nhập")).ToList();
@@ -56,7 +56,7 @@ public class AdminService : IAdminService
             new DateTimeOffset(DateTime.SpecifyKind(log.Timestamp, DateTimeKind.Local)),
             log.User.FullName,
             ToClientAction(log.Action),
-            log.Details ?? log.User.Username,
+            log.Details ?? log.User.Username ?? log.User.Email,
             GetActivityType(log.Action))).ToList();
 
         return new AdminServiceResponse(true, null, 200, data);
@@ -97,6 +97,7 @@ public class AdminService : IAdminService
         var oldStatus = ToClientStatus(user.Status);
         user.RoleID = role.RoleID;
         user.Status = normalizedStatus;
+        user.UpdatedAt = DateTime.UtcNow;
 
         var changes = new List<string>();
         if (oldRole != role.RoleName) changes.Add($"Role: {oldRole} → {role.RoleName}");
@@ -109,8 +110,8 @@ public class AdminService : IAdminService
             UserID = administrator.UserID,
             Action = oldStatus != ToClientStatus(normalizedStatus) ? GetStatusAction(oldStatus, ToClientStatus(normalizedStatus)) : "Role Changed",
             IPAddress = ipAddress,
-            Timestamp = DateTime.Now,
-            Details = $"{user.Username}: {string.Join("; ", changes)}"
+            Timestamp = DateTime.UtcNow,
+            Details = $"{user.Username ?? user.Email}: {string.Join("; ", changes)}"
         });
         
         await _adminRepository.SaveChangesAsync(cancellationToken);
@@ -118,7 +119,6 @@ public class AdminService : IAdminService
         return new AdminServiceResponse(true, null, 204, null);
     }
 
-    // Các Helper Logic được bưng nguyên xi từ Controller cũ qua
     private static string GetFacilityName(User user)
     {
         var names = user.ManagedFacilities
@@ -130,7 +130,7 @@ public class AdminService : IAdminService
 
     private static string ToClientStatus(string? status) => status switch { "Pending Approval" => "Pending", null or "" => "Unknown", _ => status };
 
-    private static string? NormalizeStatus(string status) => status switch { "Pending" => "Pending Approval", "Pending Approval" => "Pending Approval", "Active" => "Active", "Locked" => "Locked", "Rejected" => "Rejected", _ => null };
+    private static string? NormalizeStatus(string status) => status switch { "Pending" => "Pending Approval", "Pending Approval" => "Pending Approval", "Active" => "Active", "Locked" => "Locked", "Rejected" => "Rejected", "Inactive" => "Inactive", _ => null };
 
     private static string GetStatusAction(string oldStatus, string status) => (oldStatus, status) switch { ("Pending", "Active") => "Account Approved", ("Locked", "Active") => "Account Unlocked", (_, "Locked") => "Account Locked", (_, "Rejected") => "Account Rejected", _ => "Account Updated" };
 

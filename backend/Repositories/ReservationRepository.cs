@@ -28,6 +28,8 @@ public class ReservationRepository : IReservationRepository
     {
         return await _context.StorageUnits
             .Include(u => u.UnitType)
+            .Include(u => u.UnitSize)
+            .Include(u => u.RentalRate)
             .FirstOrDefaultAsync(u => u.UnitID == unitId && u.UnitNumber == unitNumber, cancellationToken);
     }
 
@@ -38,19 +40,35 @@ public class ReservationRepository : IReservationRepository
 
     public async Task<bool> HasConflictingReservationsAsync(int unitId, DateTime startDate, DateTime endDate, DateTime now, CancellationToken cancellationToken)
     {
-        return await _context.Reservations.AnyAsync(r =>
-            r.AssignedUnitID == unitId &&
-            r.Status != ReservationStatus.Cancelled &&
-            r.Status != ReservationStatus.Expired &&
-            ((r.Status == ReservationStatus.PendingDeposit && r.DepositExpiresAt > now) ||
-             (r.Status != ReservationStatus.PendingDeposit && r.StartDate <= endDate && r.EndDate >= startDate)),
+        var today = now.Date;
+        return await _context.ReservationUnits.AnyAsync(ru =>
+            ru.UnitID == unitId &&
+            (ru.Status == "Held" || ru.Status == "Active") &&
+            (ru.Reservation.Status == ReservationStatus.PendingPayment ||
+             ru.Reservation.Status == ReservationStatus.Paid ||
+             ru.Reservation.Status == ReservationStatus.Confirmed ||
+             ru.Reservation.Status == ReservationStatus.HandedOver) &&
+            !(ru.Reservation.Status == ReservationStatus.PendingPayment && ru.Reservation.HoldExpiresAt <= now) &&
+            ru.Reservation.StartDate <= endDate &&
+            ((ru.Status == "Active" && ru.Reservation.EndDate < today) || ru.Reservation.EndDate >= startDate),
             cancellationToken);
     }
 
-    public async Task<decimal> GetFacilityDepositPercentAsync(int facilityId, CancellationToken cancellationToken)
+    public async Task<(byte DepositMonths, int HoldMinutes, decimal DiscountRate)> GetReservationPolicyAndDiscountAsync(int facilityId, int rentalMonths, CancellationToken cancellationToken)
     {
-        var policy = await _context.RentalPolicies.FirstOrDefaultAsync(p => p.FacilityID == facilityId, cancellationToken);
-        return policy?.DepositPercent ?? 20m;
+        var policy = await _context.RentalPolicies
+            .Where(p => p.FacilityID == facilityId || p.FacilityID == null)
+            .OrderBy(p => p.FacilityID != null ? 0 : 1)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var contractType = await _context.ContractTypes
+            .FirstOrDefaultAsync(ct => ct.RentalMonths == rentalMonths, cancellationToken);
+
+        return (
+            policy?.DepositMonths ?? 2,
+            policy?.HoldMinutes ?? 15,
+            contractType?.DiscountRate ?? 0m
+        );
     }
 
     public async Task ReleaseExpiredReservationsAsync(DateTime now, CancellationToken cancellationToken)
@@ -62,7 +80,11 @@ public class ReservationRepository : IReservationRepository
     {
         return await _context.Reservations
             .Include(r => r.Customer)
-            .Include(r => r.AssignedUnit)
+            .Include(r => r.ReservationItems)
+                .ThenInclude(ri => ri.UnitType)
+            .Include(r => r.ReservationUnits)
+                .ThenInclude(ru => ru.Unit)
+            .Include(r => r.Charges)
             .FirstOrDefaultAsync(r => r.ReservationID == id && r.CustomerID == customerId, cancellationToken);
     }
 
@@ -71,12 +93,20 @@ public class ReservationRepository : IReservationRepository
         return await _context.Reservations
             .Include(r => r.Customer)
             .Include(r => r.Facility)
-            .Include(r => r.AssignedUnit)
-                .ThenInclude(u => u.UnitSize)
-            .Include(r => r.UnitType)
+            .Include(r => r.ReservationItems)
+                .ThenInclude(ri => ri.UnitType)
+            .Include(r => r.ReservationItems)
+                .ThenInclude(ri => ri.UnitSize)
+            .Include(r => r.ReservationUnits)
+                .ThenInclude(ru => ru.Unit)
+                    .ThenInclude(u => u.UnitSize)
+            .Include(r => r.ReservationUnits)
+                .ThenInclude(ru => ru.Unit)
+                    .ThenInclude(u => u.UnitType)
             .Include(r => r.Payments)
+            .Include(r => r.Charges)
             .Include(r => r.Contract)
-                .ThenInclude(c => c.UnitAccesses)
+            .Include(r => r.UnitAccesses)
             .Where(r => r.Customer.Email == email)
             .OrderByDescending(r => r.StartDate)
             .ToListAsync(cancellationToken);

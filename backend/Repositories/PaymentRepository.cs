@@ -28,7 +28,10 @@ public class PaymentRepository : IPaymentRepository
     public async Task<Reservation?> GetReservationWithDetailsAsync(int reservationId, int customerId, CancellationToken cancellationToken)
     {
         return await _context.Reservations
-            .Include(r => r.AssignedUnit)
+            .Include(r => r.ReservationItems)
+            .Include(r => r.ReservationUnits)
+                .ThenInclude(ru => ru.Unit)
+            .Include(r => r.Charges)
             .Include(r => r.Payments)
             .FirstOrDefaultAsync(r => r.ReservationID == reservationId && r.CustomerID == customerId, cancellationToken);
     }

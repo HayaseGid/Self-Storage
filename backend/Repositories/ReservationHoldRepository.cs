@@ -18,20 +18,22 @@ public class ReservationHoldRepository : IReservationHoldRepository
     public async Task<List<Reservation>> GetExpiredHoldsAsync(DateTime now, CancellationToken cancellationToken)
     {
         return await _context.Reservations
-            .Include(reservation => reservation.AssignedUnit)
+            .Include(reservation => reservation.ReservationUnits)
+            .Include(reservation => reservation.Charges)
             .Where(reservation =>
-                reservation.Status == ReservationStatus.PendingDeposit &&
-                reservation.DepositExpiresAt <= now)
+                reservation.Status == ReservationStatus.PendingPayment &&
+                reservation.HoldExpiresAt <= now)
             .ToListAsync(cancellationToken);
     }
 
     public async Task<bool> HasAnotherActiveHoldAsync(int currentReservationId, int unitId, DateTime now, CancellationToken cancellationToken)
     {
-        return await _context.Reservations.AnyAsync(other =>
-            other.ReservationID != currentReservationId &&
-            other.AssignedUnitID == unitId &&
-            other.Status == ReservationStatus.PendingDeposit &&
-            other.DepositExpiresAt > now,
+        return await _context.ReservationUnits.AnyAsync(ru =>
+            ru.ReservationID != currentReservationId &&
+            ru.UnitID == unitId &&
+            ru.Status == "Held" &&
+            ru.Reservation.Status == ReservationStatus.PendingPayment &&
+            ru.Reservation.HoldExpiresAt > now,
             cancellationToken);
     }
 

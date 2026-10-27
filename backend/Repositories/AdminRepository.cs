@@ -75,7 +75,7 @@ public class AdminRepository : IAdminRepository
     {
         return await _context.Facilities.AnyAsync(item => item.ManagerID == userId, cancellationToken)
             || await _context.FacilityStaffs.AnyAsync(item => item.UserID == userId, cancellationToken)
-            || await _context.HandoverTasks.AnyAsync(item => item.StaffID == userId, cancellationToken);
+            || await _context.HandoverTasks.AnyAsync(item => item.AssignedStaffID == userId, cancellationToken);
     }
 
     public void AddActivityLog(UserActivityLog log)

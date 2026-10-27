@@ -1,0 +1,24 @@
+=== THÔNG TIN CÁC TÀI KHOẢN (ACCOUNTS) ===
+
+Tất cả các tài khoản mặc định dùng chung mật khẩu: 123456
+
+1. Khách Hàng (Storage Customer)
+- Username: customer1 (Tên: Đinh Khách Hàng, Email: cust1@test.com)
+- Username: customer2 (Tên: Vũ Khách Hàng, Email: cust2@test.com)
+- Username: customer3 (Tên: Bùi Khách Hàng, Email: cust3@test.com)
+- Username: customer4 (Tên: Đỗ Khách Hàng, Email: cust4@test.com)
+
+2. Nhân Viên (Staff)
+- Username: staff1 (Tên: Lê Nhân Viên Một, Email: staff1@test.com)
+- Username: staff2 (Tên: Phạm Nhân Viên Hai, Email: staff2@test.com)
+- Username: staff3 (Tên: Hoàng Nhân Viên Ba, Email: staff3@test.com)
+
+3. Quản Lý Cơ Sở (Facility Manager)
+- Username: fac_manager1 (Tên: Nguyễn Quản Lý Cơ Sở 1, Email: fm1@test.com)
+- Username: fac_manager2 (Tên: Trần Quản Lý Cơ Sở 2, Email: fm2@test.com)
+
+4. Vận Hành Tổng (Business Ops Manager)
+- Username: biz_ops_mgr (Tên: Lý Vận Hành Tổng, Email: ops@test.com)
+
+5. Quản Trị Viên (System Admin)
+- Username: sys_admin (Tên: Quản Trị Viên, Email: admin@test.com)

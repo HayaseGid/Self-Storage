@@ -18,10 +18,12 @@ public class HandoverRepository : IHandoverRepository
     public async Task<Reservation?> GetReservationForHandoverAsync(int reservationId, CancellationToken cancellationToken)
     {
         return await _context.Reservations
-            .Include(r => r.AssignedUnit)
+            .Include(r => r.ReservationUnits)
+                .ThenInclude(ru => ru.Unit)
             .Include(r => r.Customer)
             .Include(r => r.Payments)
             .Include(r => r.Contract)
+            .Include(r => r.HandoverTasks)
             .FirstOrDefaultAsync(r => r.ReservationID == reservationId, cancellationToken);
     }
 
@@ -37,14 +39,6 @@ public class HandoverRepository : IHandoverRepository
             fs.UserID == staffUserId &&
             fs.FacilityID == facilityId &&
             fs.Status == "Active", cancellationToken);
-    }
-
-    public async Task<ContractType?> GetContractTypeByDaysAsync(int days, CancellationToken cancellationToken)
-    {
-        return await _context.ContractTypes
-            .Where(ct => ct.MinDays <= days && ct.MaxDays >= days)
-            .OrderBy(ct => ct.ContractTypeID)
-            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public void AddHandoverTask(HandoverTask task) => _context.HandoverTasks.Add(task);

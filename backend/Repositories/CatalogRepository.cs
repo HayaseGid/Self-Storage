@@ -21,12 +21,13 @@ public class CatalogRepository : ICatalogRepository
             .Select(f => new FacilityCatalogData(
                 f.FacilityID,
                 f.FacilityName,
-                f.Address,
+                f.StreetAddress + ", " + f.Ward + (f.District != null ? ", " + f.District : "") + ", " + f.City,
                 f.Status,
                 _context.RentalPolicies
-                    .Where(p => p.FacilityID == f.FacilityID)
-                    .Select(p => (decimal?)p.DepositPercent)
-                    .FirstOrDefault() ?? 20m
+                    .Where(p => p.FacilityID == f.FacilityID || p.FacilityID == null)
+                    .OrderBy(p => p.FacilityID != null ? 0 : 1)
+                    .Select(p => (decimal?)p.DepositMonths)
+                    .FirstOrDefault() ?? 2m
             )).ToListAsync(cancellationToken);
     }
 
@@ -40,16 +41,21 @@ public class CatalogRepository : ICatalogRepository
                 u.FacilityID,
                 u.UnitType.TypeName,
                 u.UnitTypeID,
-                u.UnitSize.Dimensions,
+                u.UnitSize.SizeCode + ": " + u.UnitSize.DisplayName,
                 u.UnitSizeID,
-                u.BasePrice,
-                // Tính toán trạng thái Booking động ngay từ DB
-                _context.Reservations.Any(r =>
-                    r.AssignedUnitID == u.UnitID &&
-                    r.Status == ReservationStatus.PendingDeposit &&
-                    r.DepositExpiresAt > now)
+                u.RentalRate != null ? u.RentalRate.MonthlyPrice : 0m,
+                _context.ReservationUnits.Any(ru =>
+                    ru.UnitID == u.UnitID &&
+                    ru.Status == "Held" &&
+                    ru.Reservation.Status == ReservationStatus.PendingPayment &&
+                    ru.Reservation.HoldExpiresAt > now)
                         ? UnitStatus.Booking
-                        : u.Status
+                        : _context.ReservationUnits.Any(ru =>
+                            ru.UnitID == u.UnitID &&
+                            ru.Status == "Held" &&
+                            (ru.Reservation.Status == ReservationStatus.Paid || ru.Reservation.Status == ReservationStatus.Confirmed))
+                                ? UnitStatus.Reserved
+                                : u.Status
             )).ToListAsync(cancellationToken);
     }
 
@@ -60,32 +66,39 @@ public class CatalogRepository : ICatalogRepository
 
     public async Task<decimal> GetFacilityDepositPercentAsync(int facilityId, CancellationToken cancellationToken)
     {
-        var policy = await _context.RentalPolicies
-            .Where(p => p.FacilityID == facilityId)
-            .Select(p => (decimal?)p.DepositPercent)
+        var depositMonths = await _context.RentalPolicies
+            .Where(p => p.FacilityID == facilityId || p.FacilityID == null)
+            .OrderBy(p => p.FacilityID != null ? 0 : 1)
+            .Select(p => (byte?)p.DepositMonths)
             .FirstOrDefaultAsync(cancellationToken);
-            
-        return policy ?? 20m;
+
+        return depositMonths ?? 2m;
     }
 
     public async Task<IReadOnlyList<AvailableUnitData>> GetAvailableUnitsAsync(int facilityId, int unitTypeId, DateTime startDate, DateTime endDate, DateTime now, CancellationToken cancellationToken)
     {
+        var today = now.Date;
         return await _context.StorageUnits
             .Where(u => u.FacilityID == facilityId && u.UnitTypeID == unitTypeId &&
-                (u.Status == "Available" || u.Status == "Reserved" || u.Status == "In Use") &&
-                !_context.Reservations.Any(r => r.AssignedUnitID == u.UnitID &&
-                    r.Status != ReservationStatus.Cancelled &&
-                    r.Status != ReservationStatus.Expired &&
-                    ((r.Status == ReservationStatus.PendingDeposit && r.DepositExpiresAt > now) ||
-                     (r.Status != ReservationStatus.PendingDeposit &&
-                      r.StartDate <= endDate && r.EndDate >= startDate))))
-            .OrderBy(u => u.BasePrice)
+                u.Status != UnitStatus.Maintenance && u.Status != UnitStatus.Inactive &&
+                u.UnitType.IsActive && u.UnitSize.IsActive &&
+                !_context.ReservationUnits.Any(ru =>
+                    ru.UnitID == u.UnitID &&
+                    (ru.Status == "Held" || ru.Status == "Active") &&
+                    (ru.Reservation.Status == ReservationStatus.PendingPayment ||
+                     ru.Reservation.Status == ReservationStatus.Paid ||
+                     ru.Reservation.Status == ReservationStatus.Confirmed ||
+                     ru.Reservation.Status == ReservationStatus.HandedOver) &&
+                    !(ru.Reservation.Status == ReservationStatus.PendingPayment && ru.Reservation.HoldExpiresAt <= now) &&
+                    ru.Reservation.StartDate <= endDate &&
+                    ((ru.Status == "Active" && ru.Reservation.EndDate < today) || ru.Reservation.EndDate >= startDate)))
+            .OrderBy(u => u.RentalRate != null ? u.RentalRate.MonthlyPrice : 0m)
             .Select(u => new AvailableUnitData(
                 u.UnitID,
                 u.UnitNumber,
                 u.UnitType.TypeName,
-                u.UnitSize.Dimensions,
-                u.BasePrice
+                u.UnitSize.SizeCode + ": " + u.UnitSize.DisplayName,
+                u.RentalRate != null ? u.RentalRate.MonthlyPrice : 0m
             )).ToListAsync(cancellationToken);
     }
 }

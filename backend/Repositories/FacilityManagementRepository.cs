@@ -74,10 +74,10 @@ public class FacilityManagementRepository : IFacilityManagementRepository
             cancellationToken);
     }
 
-    public async Task<bool> FacilityNameAndAddressExistsAsync(string facilityName, string address, CancellationToken cancellationToken)
+    public async Task<bool> FacilityNameExistsAsync(string facilityName, CancellationToken cancellationToken)
     {
         return await _context.Facilities.AnyAsync(
-            f => f.FacilityName == facilityName && f.Address == address,
+            f => f.FacilityName == facilityName,
             cancellationToken);
     }
 
@@ -113,9 +113,10 @@ public class FacilityManagementRepository : IFacilityManagementRepository
 
     public async Task<Reservation?> GetReservationByIdAsync(int reservationId, CancellationToken cancellationToken)
     {
-        return await _context.Reservations.FirstOrDefaultAsync(
-            r => r.ReservationID == reservationId,
-            cancellationToken);
+        return await _context.Reservations
+            .Include(r => r.ReservationItems)
+            .Include(r => r.ReservationUnits)
+            .FirstOrDefaultAsync(r => r.ReservationID == reservationId, cancellationToken);
     }
 
     public async Task<bool> HasConflictingReservationForUnitAsync(
@@ -125,44 +126,41 @@ public class FacilityManagementRepository : IFacilityManagementRepository
         DateTime endDate,
         CancellationToken cancellationToken)
     {
-        return await _context.Reservations.AnyAsync(r =>
-            r.ReservationID != excludeReservationId &&
-            r.AssignedUnitID == unitId &&
-            r.Status != ReservationStatus.Cancelled &&
-            r.StartDate <= endDate &&
-            r.EndDate >= startDate,
+        var now = DateTime.UtcNow;
+        var today = now.Date;
+        return await _context.ReservationUnits.AnyAsync(ru =>
+            ru.ReservationID != excludeReservationId &&
+            ru.UnitID == unitId &&
+            (ru.Status == "Held" || ru.Status == "Active") &&
+            (ru.Reservation.Status == ReservationStatus.PendingPayment ||
+             ru.Reservation.Status == ReservationStatus.Paid ||
+             ru.Reservation.Status == ReservationStatus.Confirmed ||
+             ru.Reservation.Status == ReservationStatus.HandedOver) &&
+            !(ru.Reservation.Status == ReservationStatus.PendingPayment && ru.Reservation.HoldExpiresAt <= now) &&
+            ru.Reservation.StartDate <= endDate &&
+            ((ru.Status == "Active" && ru.Reservation.EndDate < today) || ru.Reservation.EndDate >= startDate),
             cancellationToken);
     }
 
     public async Task<bool> HasActiveBookingHoldForUnitAsync(int unitId, DateTime now, CancellationToken cancellationToken)
     {
-        return await _context.Reservations.AnyAsync(r =>
-            r.AssignedUnitID == unitId &&
-            r.Status == ReservationStatus.PendingDeposit &&
-            r.DepositExpiresAt > now,
+        return await _context.ReservationUnits.AnyAsync(ru =>
+            ru.UnitID == unitId &&
+            ru.Status == "Held" &&
+            ru.Reservation.Status == ReservationStatus.PendingPayment &&
+            ru.Reservation.HoldExpiresAt > now,
             cancellationToken);
     }
 
-    public async Task<StorageUnit?> GetUnitForReservationAssignmentAsync(
-        int? assignedUnitId,
-        string unitNumber,
-        int facilityId,
-        int unitTypeId,
-        CancellationToken cancellationToken)
-    {
-        return await _context.StorageUnits.FirstOrDefaultAsync(u =>
-            u.UnitID == assignedUnitId &&
-            u.UnitNumber == unitNumber &&
-            u.FacilityID == facilityId &&
-            u.UnitTypeID == unitTypeId,
-            cancellationToken);
-    }
+    public void AddReservationUnit(ReservationUnit reservationUnit) => _context.ReservationUnits.Add(reservationUnit);
 
     public async Task<StorageUnit?> GetUnitByNumberAndFacilityAsync(string unitNumber, int facilityId, CancellationToken cancellationToken)
     {
-        return await _context.StorageUnits.FirstOrDefaultAsync(
-            u => u.UnitNumber == unitNumber && u.FacilityID == facilityId,
-            cancellationToken);
+        return await _context.StorageUnits
+            .Include(u => u.RentalRate)
+            .FirstOrDefaultAsync(
+                u => u.UnitNumber == unitNumber && u.FacilityID == facilityId,
+                cancellationToken);
     }
 
     public async Task<List<string>> GetUnitNumbersByFacilityAsync(int facilityId, CancellationToken cancellationToken)
@@ -214,26 +212,84 @@ public class FacilityManagementRepository : IFacilityManagementRepository
                 t => t.TypeName == request.UnitType.Trim(), cancellationToken);
         if (unitType is null)
         {
-            unitType = new UnitType { TypeName = request.UnitType.Trim() };
+            unitType = new UnitType { TypeName = request.UnitType.Trim(), IsActive = true };
             _context.UnitTypes.Add(unitType);
+            await _context.SaveChangesAsync(cancellationToken);
         }
 
+        var rawSize = request.Size.Trim();
+        var sizeCodeCandidate = rawSize.Contains(':') ? rawSize.Split(':', 2)[0].Trim() : rawSize;
+
         var unitSize = request.UnitSizeID.HasValue
-            ? await _context.UnitSizes.FirstOrDefaultAsync(
+            ? await _context.UnitSizes.Include(s => s.SizeCategory).FirstOrDefaultAsync(
                 s => s.UnitSizeID == request.UnitSizeID.Value, cancellationToken)
-            : await _context.UnitSizes.FirstOrDefaultAsync(
-                s => s.Dimensions == request.Size.Trim(), cancellationToken);
+            : await _context.UnitSizes.Include(s => s.SizeCategory).FirstOrDefaultAsync(
+                s => s.SizeCode == sizeCodeCandidate || s.DisplayName == rawSize || (s.SizeCode + ": " + s.DisplayName) == rawSize,
+                cancellationToken);
+
         if (unitSize is null)
         {
-            unitSize = new UnitSize
+            unitSize = await _context.UnitSizes.Include(s => s.SizeCategory).OrderBy(s => s.UnitSizeID).FirstOrDefaultAsync(cancellationToken);
+            if (unitSize is null)
             {
-                Dimensions = request.Size.Trim(),
-                Volume = request.SizeM2
-            };
-            _context.UnitSizes.Add(unitSize);
+                var cat = await _context.SizeCategories.OrderBy(c => c.SizeCategoryID).FirstAsync(cancellationToken);
+                unitSize = new UnitSize
+                {
+                    SizeCategoryID = cat.SizeCategoryID,
+                    SizeCode = $"{cat.CodePrefix.Trim()}9",
+                    DisplayName = rawSize,
+                    WidthM = 2.0m,
+                    LengthM = 2.0m,
+                    HeightM = cat.StandardHeightM,
+                    IsActive = true
+                };
+                _context.UnitSizes.Add(unitSize);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
         }
 
         return (unitType, unitSize);
+    }
+
+    public async Task EnsureFacilityCatalogLinksAsync(int facilityId, int unitTypeId, int unitSizeId, CancellationToken cancellationToken)
+    {
+        var ft = await _context.FacilityUnitTypes.FirstOrDefaultAsync(
+            x => x.FacilityID == facilityId && x.UnitTypeID == unitTypeId,
+            cancellationToken);
+        if (ft is null)
+        {
+            _context.FacilityUnitTypes.Add(new FacilityUnitType
+            {
+                FacilityID = facilityId,
+                UnitTypeID = unitTypeId,
+                IsActive = true,
+                AddedAt = DateTime.UtcNow
+            });
+        }
+        else if (!ft.IsActive)
+        {
+            ft.IsActive = true;
+        }
+
+        var fs = await _context.FacilityUnitSizes.FirstOrDefaultAsync(
+            x => x.FacilityID == facilityId && x.UnitSizeID == unitSizeId,
+            cancellationToken);
+        if (fs is null)
+        {
+            _context.FacilityUnitSizes.Add(new FacilityUnitSize
+            {
+                FacilityID = facilityId,
+                UnitSizeID = unitSizeId,
+                IsActive = true,
+                AddedAt = DateTime.UtcNow
+            });
+        }
+        else if (!fs.IsActive)
+        {
+            fs.IsActive = true;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<RentalRate?> GetRentalRateAsync(int facilityId, int unitTypeId, int unitSizeId, CancellationToken cancellationToken)
@@ -256,6 +312,14 @@ public class FacilityManagementRepository : IFacilityManagementRepository
     public void RemoveRentalRate(RentalRate rate) => _context.RentalRates.Remove(rate);
     public void RemoveRentalRates(IEnumerable<RentalRate> rates) => _context.RentalRates.RemoveRange(rates);
 
+    public async Task RemoveFacilityCatalogLinksAsync(int facilityId, CancellationToken cancellationToken)
+    {
+        var fts = await _context.FacilityUnitTypes.Where(x => x.FacilityID == facilityId).ToListAsync(cancellationToken);
+        var fss = await _context.FacilityUnitSizes.Where(x => x.FacilityID == facilityId).ToListAsync(cancellationToken);
+        _context.FacilityUnitTypes.RemoveRange(fts);
+        _context.FacilityUnitSizes.RemoveRange(fss);
+    }
+
     public async Task<T> ExecuteInTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
     {
         await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
@@ -277,4 +341,3 @@ public class FacilityManagementRepository : IFacilityManagementRepository
         await _context.SaveChangesAsync(cancellationToken);
     }
 }
-

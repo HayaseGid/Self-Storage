@@ -61,100 +61,160 @@ public class OperationsStateRepository : IOperationsStateRepository
                 facilityId = f.FacilityID,
                 name = f.FacilityName,
                 unitCodePrefix = f.UnitCodePrefix,
-                address = f.Address,
+                address = f.StreetAddress + ", " + f.Ward + (f.District != null ? ", " + f.District : "") + ", " + f.City,
                 status = f.Status,
                 managerEmail = f.Manager.Email,
                 depositPercent = _context.RentalPolicies
-                    .Where(p => p.FacilityID == f.FacilityID)
-                    .Select(p => (decimal?)p.DepositPercent)
-                    .FirstOrDefault() ?? 20m
+                    .Where(p => p.FacilityID == f.FacilityID || p.FacilityID == null)
+                    .OrderBy(p => p.FacilityID != null ? 0 : 1)
+                    .Select(p => (decimal?)p.DepositMonths)
+                    .FirstOrDefault() ?? 2m
             })
             .ToListAsync(cancellationToken);
 
-        var units = await _context.StorageUnits
+        var now = DateTime.UtcNow;
+
+        var rawUnits = await _context.StorageUnits
             .Where(u => facilityIdsInScope.Contains(u.FacilityID))
-            .Include(u => u.Facility)
-            .Include(u => u.UnitType)
-            .Include(u => u.UnitSize)
             .Select(u => new
             {
-                id = u.UnitNumber,
-                unitId = u.UnitID,
-                facilityId = u.Facility.FacilityName,
-                facilityDbId = u.FacilityID,
-                type = u.UnitType.TypeName,
-                unitTypeId = u.UnitTypeID,
-                size = u.UnitSize.Dimensions,
-                sizeId = u.UnitSizeID,
-                sizeM2 = u.UnitSize.Volume,
-                pricePerMonth = u.BasePrice,
-                status = NormalizeUnitStatus(u.Status)
+                u.UnitNumber,
+                u.UnitID,
+                FacilityName = u.Facility.FacilityName,
+                u.FacilityID,
+                TypeName = u.UnitType.TypeName,
+                u.UnitTypeID,
+                SizeCode = u.UnitSize.SizeCode,
+                SizeDisplayName = u.UnitSize.DisplayName,
+                u.UnitSizeID,
+                u.UnitSize.VolumeM3,
+                MonthlyPrice = u.RentalRate != null ? u.RentalRate.MonthlyPrice : 0m,
+                u.Status,
+                IsReserved = _context.ReservationUnits.Any(ru =>
+                    ru.UnitID == u.UnitID &&
+                    ru.Status == "Held" &&
+                    (ru.Reservation.Status == ReservationStatus.Paid || ru.Reservation.Status == ReservationStatus.Confirmed))
             })
             .ToListAsync(cancellationToken);
+
+        var units = rawUnits.Select(u => new
+        {
+            id = u.UnitNumber,
+            unitId = u.UnitID,
+            facilityId = u.FacilityName,
+            facilityDbId = u.FacilityID,
+            type = u.TypeName,
+            unitTypeId = u.UnitTypeID,
+            size = $"{u.SizeCode}: {u.SizeDisplayName}",
+            sizeId = u.UnitSizeID,
+            sizeM2 = u.VolumeM3,
+            pricePerMonth = u.MonthlyPrice,
+            status = u.Status == UnitStatus.Available && u.IsReserved
+                ? "RESERVED"
+                : NormalizeUnitStatus(u.Status)
+        }).ToList();
 
         var reservationsQuery = _context.Reservations
             .Where(r => facilityIdsInScope.Contains(r.FacilityID));
         if (customerId.HasValue)
             reservationsQuery = reservationsQuery.Where(r => r.CustomerID == customerId.Value);
 
-        var now = DateTime.UtcNow;
-        var reservations = await reservationsQuery
-            .Include(r => r.Customer)
-            .Include(r => r.Facility)
-            .Include(r => r.AssignedUnit)
-            .Include(r => r.UnitType)
-            .Include(r => r.Payments)
-            .Include(r => r.Contract)
+        var rawReservations = await reservationsQuery
             .OrderByDescending(r => r.ReservationID)
             .Select(r => new
             {
-                id = r.ReservationID,
-                customerName = r.Customer.FullName,
-                customerEmail = r.Customer.Email,
-                customerPhone = r.Customer.PhoneNumber,
-                facilityId = r.Facility.FacilityName,
-                unitId = r.AssignedUnit == null ? null : r.AssignedUnit.UnitNumber,
-                assignedUnitId = r.AssignedUnit == null ? null : r.AssignedUnit.UnitNumber,
-                unitType = r.UnitType.TypeName,
-                unitTypeId = r.UnitTypeID,
-                startDate = r.StartDate,
-                endDate = r.EndDate,
-                months = r.RentalPeriod,
-                appointmentDate = r.StartDate,
-                appointmentTime = "Cả ngày",
-                deposit = r.DepositAmount,
-                rentalFee = r.TotalEstimatedCost ?? 0,
-                paymentStatus = r.Payments.Any(p => p.PaymentStatus == "Completed") ? "PAID" : "PENDING",
-                paymentTxn = r.Payments
-                    .Where(p => p.PaymentStatus == "Completed")
-                    .OrderByDescending(p => p.PaymentID)
-                    .Select(p => p.TransactionReference)
+                r.ReservationID,
+                r.ReservationCode,
+                CustomerFullName = r.Customer.FullName,
+                CustomerEmail = r.Customer.Email,
+                CustomerPhone = r.Customer.PhoneNumber,
+                FacilityName = r.Facility.FacilityName,
+                AssignedUnitNumber = r.ReservationUnits
+                    .Where(ru => ru.Status != "Released")
+                    .Select(ru => ru.Unit.UnitNumber)
                     .FirstOrDefault(),
-                status = NormalizeReservationStatus(
-                    r.Status == ReservationStatus.PendingDeposit && r.DepositExpiresAt <= now
-                        ? ReservationStatus.Expired
-                        : r.Status),
-                depositExpiresAt = r.DepositExpiresAt,
-                contractId = r.Contract == null ? (int?)null : r.Contract.ContractID,
-                source = "live"
+                UnitTypeName = r.ReservationItems
+                    .Select(ri => ri.UnitType.TypeName)
+                    .FirstOrDefault(),
+                UnitTypeId = r.ReservationItems
+                    .Select(ri => (int?)ri.UnitTypeID)
+                    .FirstOrDefault() ?? 0,
+                r.StartDate,
+                r.EndDate,
+                r.RentalPeriod,
+                r.AppointmentDate,
+                r.AppointmentTime,
+                Deposit = r.Charges
+                    .Where(c => c.ChargeType == "Deposit" && c.Status != "Cancelled")
+                    .Sum(c => (decimal?)c.Amount) ?? 0m,
+                RentalFee = r.Charges
+                    .Where(c => c.ChargeType == "Rent" && c.Status != "Cancelled")
+                    .Sum(c => (decimal?)c.Amount) ?? 0m,
+                IsPaid = r.Payments.Any(p => p.Status == "Completed" && p.Direction == "Collection"),
+                PaymentTxn = r.Payments
+                    .Where(p => p.Status == "Completed" && p.Direction == "Collection")
+                    .OrderByDescending(p => p.PaymentID)
+                    .Select(p => p.ProviderTransactionId ?? p.OrderCode)
+                    .FirstOrDefault(),
+                r.Status,
+                r.HoldExpiresAt,
+                ContractId = r.Contract == null ? (int?)null : r.Contract.ContractID
             })
             .ToListAsync(cancellationToken);
+
+        var reservations = rawReservations.Select(r => new
+        {
+            id = r.ReservationID,
+            reservationCode = r.ReservationCode,
+            customerName = r.CustomerFullName,
+            customerEmail = r.CustomerEmail,
+            customerPhone = r.CustomerPhone,
+            facilityId = r.FacilityName,
+            unitId = r.AssignedUnitNumber,
+            assignedUnitId = r.AssignedUnitNumber,
+            unitType = r.UnitTypeName ?? string.Empty,
+            unitTypeId = r.UnitTypeId,
+            startDate = r.StartDate,
+            endDate = r.EndDate,
+            months = r.RentalPeriod,
+            appointmentDate = r.AppointmentDate ?? r.StartDate,
+            appointmentTime = r.AppointmentTime.HasValue ? r.AppointmentTime.Value.ToString(@"hh\:mm") : "Cả ngày",
+            deposit = r.Deposit,
+            rentalFee = r.RentalFee,
+            paymentStatus = r.IsPaid ? "PAID" : "PENDING",
+            paymentTxn = r.PaymentTxn,
+            status = NormalizeReservationStatus(
+                r.Status == ReservationStatus.PendingPayment && r.HoldExpiresAt <= now
+                    ? ReservationStatus.Expired
+                    : r.Status),
+            depositExpiresAt = r.HoldExpiresAt,
+            contractId = r.ContractId,
+            source = "live"
+        }).ToList();
 
         var contracts = await _context.Contracts
             .Where(c => c.Reservation.CustomerID == customerId || facilityIdsInScope.Contains(c.Reservation.FacilityID))
             .Select(c => new
             {
                 id = c.ContractID,
+                contractNumber = c.ContractNumber,
                 reservationId = c.ReservationID,
                 customerName = c.Reservation.Customer.FullName,
-                unitId = c.Reservation.AssignedUnit == null ? null : c.Reservation.AssignedUnit.UnitNumber,
+                unitId = c.Reservation.ReservationUnits
+                    .Where(ru => ru.Status != "Released")
+                    .Select(ru => ru.Unit.UnitNumber)
+                    .FirstOrDefault(),
                 startDate = c.StartDate,
                 endDate = c.EndDate,
-                deposit = c.DepositAmount,
-                totalFee = c.TotalFee,
+                deposit = c.Reservation.Charges
+                    .Where(ch => ch.ChargeType == "Deposit" && ch.Status != "Cancelled")
+                    .Sum(ch => (decimal?)ch.Amount) ?? 0m,
+                totalFee = c.Reservation.Charges
+                    .Where(ch => ch.ChargeType == "Rent" && ch.Status != "Cancelled")
+                    .Sum(ch => (decimal?)ch.Amount) ?? 0m,
                 status = c.ContractStatus,
-                accessType = c.UnitAccesses.Select(a => a.AccessType).FirstOrDefault(),
-                accessValue = c.UnitAccesses.Select(a => a.AccessValue).FirstOrDefault()
+                accessType = c.Reservation.UnitAccesses.Select(a => a.AccessType).FirstOrDefault(),
+                accessValue = c.Reservation.UnitAccesses.Select(a => a.AccessValue).FirstOrDefault()
             })
             .ToListAsync(cancellationToken);
 
@@ -163,12 +223,12 @@ public class OperationsStateRepository : IOperationsStateRepository
                 (!customerId.HasValue || p.Reservation.CustomerID == customerId.Value))
             .Select(p => new
             {
-                txn = p.TransactionReference,
+                txn = p.ProviderTransactionId ?? p.OrderCode,
                 resId = p.ReservationID,
                 amount = p.Amount,
-                paymentType = p.PaymentType,
-                status = p.PaymentStatus,
-                date = p.PaymentDate,
+                paymentType = p.PaymentMethod,
+                status = p.Status,
+                date = p.ConfirmedAt ?? p.CreatedAt,
                 facility = p.Reservation.Facility.FacilityName,
                 customerName = p.Reservation.Customer.FullName,
                 customerEmail = p.Reservation.Customer.Email
@@ -182,7 +242,7 @@ public class OperationsStateRepository : IOperationsStateRepository
             .Select(fs => new
             {
                 id = fs.UserID,
-                staffId = fs.StaffID,
+                staffId = fs.AssignmentID,
                 fullName = fs.User.FullName,
                 email = fs.User.Email,
                 facilityId = fs.Facility.FacilityName,
@@ -209,7 +269,12 @@ public class OperationsStateRepository : IOperationsStateRepository
 
         var unitSizes = await _context.UnitSizes
             .OrderBy(s => s.UnitSizeID)
-            .Select(s => new { unitSizeId = s.UnitSizeID, dimensions = s.Dimensions, volume = s.Volume })
+            .Select(s => new
+            {
+                unitSizeId = s.UnitSizeID,
+                dimensions = s.SizeCode + ": " + s.DisplayName,
+                volume = s.VolumeM3
+            })
             .ToListAsync(cancellationToken);
 
         var rentalRates = await _context.RentalRates
@@ -220,22 +285,22 @@ public class OperationsStateRepository : IOperationsStateRepository
                 unitTypeId = r.UnitTypeID,
                 unitType = r.UnitType.TypeName,
                 unitSizeId = r.UnitSizeID,
-                size = r.UnitSize.Dimensions,
+                size = r.UnitSize.SizeCode + ": " + r.UnitSize.DisplayName,
                 price = r.MonthlyPrice
             })
             .ToListAsync(cancellationToken);
 
         var activity = await _context.HandoverTasks
-            .Where(t => facilityIdsInScope.Contains(t.Reservation.FacilityID))
+            .Where(t => facilityIdsInScope.Contains(t.FacilityID))
             .OrderByDescending(t => t.TaskID)
             .Select(t => new
             {
                 id = t.TaskID,
-                at = t.ActualDate,
-                facilityId = t.Reservation.Facility.FacilityName,
-                staffName = t.Staff.FullName,
+                at = t.ActualAt ?? (DateTime?)t.CreatedAt,
+                facilityId = t.Facility.FacilityName,
+                staffName = t.AssignedStaff.FullName,
                 unitNumber = t.Unit.UnitNumber,
-                customerName = t.Customer.FullName,
+                customerName = t.Reservation != null ? t.Reservation.Customer.FullName : "Khách hàng",
                 reservationId = t.ReservationID
             })
             .ToListAsync(cancellationToken);
@@ -268,37 +333,58 @@ public class OperationsStateRepository : IOperationsStateRepository
 
     public async Task<object> GetReportsDataAsync(CancellationToken cancellationToken)
     {
-        var monthlyRevenue = await _context.Payments
-            .Where(p => p.PaymentStatus == "Completed")
-            .GroupBy(p => new { p.PaymentDate.Year, p.PaymentDate.Month })
+        // Theo vw_Revenue trong SelfStorageDB_test.sql: chỉ tính Charge đã Paid và KHÔNG tính Deposit, trừ RefundedAmount
+        var paidRevenueCharges = await _context.Charges
+            .Where(c => c.Status == "Paid" && c.ChargeType != "Deposit")
+            .Select(c => new
+            {
+                FacilityID = c.Reservation.FacilityID,
+                RevenueDate = c.PaidAt ?? c.CreatedAt,
+                NetAmount = c.Amount - c.RefundedAmount
+            })
+            .ToListAsync(cancellationToken);
+
+        var monthlyRevenue = paidRevenueCharges
+            .GroupBy(c => new { c.RevenueDate.Year, c.RevenueDate.Month })
             .Select(group => new
             {
                 year = group.Key.Year,
                 month = group.Key.Month,
-                receivedAmount = group.Sum(payment => payment.Amount)
+                receivedAmount = group.Sum(item => item.NetAmount)
             })
             .OrderByDescending(item => item.year)
             .ThenByDescending(item => item.month)
             .Take(12)
             .OrderBy(item => item.year)
             .ThenBy(item => item.month)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
-        var facilities = await _context.Facilities
+        var revenueByFacility = paidRevenueCharges
+            .GroupBy(c => c.FacilityID)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.NetAmount));
+
+        var rawFacilities = await _context.Facilities
             .Select(f => new
             {
                 facilityId = f.FacilityID,
                 name = f.FacilityName,
-                totalUnits = f.StorageUnits.Count,
-                handedOverUnits = f.StorageUnits.Count(u => u.Status == "In Use"),
-                occupancyRate = f.StorageUnits.Count == 0 ? 0m :
-                    decimal.Round((decimal)f.StorageUnits.Count(u => u.Status == "In Use") * 100m / f.StorageUnits.Count, 2),
-                receivedRevenue = f.Reservations.SelectMany(r => r.Payments)
-                    .Where(p => p.PaymentStatus == "Completed")
-                    .Sum(p => (decimal?)p.Amount) ?? 0m,
-                handedOverCount = f.Reservations.Count(r => r.Status == "Handed Over")
+                totalUnits = f.StorageUnits.Count(u => u.Status != UnitStatus.Inactive),
+                handedOverUnits = f.StorageUnits.Count(u => u.Status == UnitStatus.InUse),
+                handedOverCount = f.Reservations.Count(r => r.Status == ReservationStatus.HandedOver)
             })
             .ToListAsync(cancellationToken);
+
+        var facilities = rawFacilities.Select(f => new
+        {
+            f.facilityId,
+            f.name,
+            f.totalUnits,
+            f.handedOverUnits,
+            occupancyRate = f.totalUnits == 0 ? 0m :
+                decimal.Round((decimal)f.handedOverUnits * 100m / f.totalUnits, 2),
+            receivedRevenue = revenueByFacility.TryGetValue(f.facilityId, out var rev) ? rev : 0m,
+            f.handedOverCount
+        }).ToList();
 
         return new
         {
@@ -318,18 +404,20 @@ public class OperationsStateRepository : IOperationsStateRepository
         "Available" => "AVAILABLE",
         "Reserved" => "RESERVED",
         "In Use" => "RENTED",
+        "Pending Inspection" => "MAINTENANCE",
+        "Maintenance" => "MAINTENANCE",
         _ => status.ToUpperInvariant().Replace(' ', '_')
     };
 
     private static string NormalizeReservationStatus(string status) => status switch
     {
-        "Pending Deposit" => "PENDING_PAYMENT",
+        "Pending Payment" or "Pending Deposit" => "PENDING_PAYMENT",
         "Paid" => "PENDING_APPROVAL",
         "Confirmed" => "CONFIRMED",
         "Handed Over" => "HANDED_OVER",
+        "Completed" => "COMPLETED",
         "Cancelled" => "CANCELLED",
         "Expired" => "EXPIRED",
         _ => status.ToUpperInvariant().Replace(' ', '_')
     };
 }
-

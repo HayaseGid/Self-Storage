@@ -30,17 +30,23 @@ public class FacilityManagementService : IFacilityManagementService
         if (reservation.Status != ReservationStatus.Paid)
             return new OperationsServiceResponse(false, "Chỉ đặt chỗ đã thanh toán mới được phân kho.", 409, null);
 
-        var unit = await _repo.GetUnitForReservationAssignmentAsync(
-            reservation.AssignedUnitID,
-            request.UnitNumber,
-            reservation.FacilityID,
-            reservation.UnitTypeID,
-            cancellationToken);
+        var unit = await _repo.GetUnitByNumberAndFacilityAsync(request.UnitNumber, reservation.FacilityID, cancellationToken);
         if (unit is null)
-            return new OperationsServiceResponse(false, "Kho không thuộc cơ sở hoặc loại đã đặt.", 400, null);
+            return new OperationsServiceResponse(false, "Kho không thuộc cơ sở đã đặt.", 400, null);
 
-        if (unit.Status is not (UnitStatus.Available or UnitStatus.Reserved or UnitStatus.InUse))
+        var matchingItem = reservation.ReservationItems.FirstOrDefault(
+            ri => ri.UnitTypeID == unit.UnitTypeID && ri.UnitSizeID == unit.UnitSizeID)
+            ?? reservation.ReservationItems.FirstOrDefault();
+
+        if (matchingItem is null || matchingItem.UnitTypeID != unit.UnitTypeID || matchingItem.UnitSizeID != unit.UnitSizeID)
+            return new OperationsServiceResponse(false, "Kho không thuộc loại hoặc size đã đặt.", 400, null);
+
+        if (unit.Status is UnitStatus.Maintenance or UnitStatus.Inactive)
             return new OperationsServiceResponse(false, "Kho hiện không khả dụng.", 409, null);
+
+        var managerUser = string.IsNullOrWhiteSpace(userEmail)
+            ? null
+            : await _repo.GetActiveUserByEmailAsync(userEmail, cancellationToken);
 
         return await _repo.ExecuteInTransactionAsync(async () =>
         {
@@ -53,10 +59,51 @@ public class FacilityManagementService : IFacilityManagementService
             if (hasConflict)
                 return new OperationsServiceResponse(false, "Kho đã được đặt trong kỳ thuê này.", 409, null);
 
-            reservation.AssignedUnitID = unit.UnitID;
+            var now = DateTime.UtcNow;
+            var activeHold = reservation.ReservationUnits.FirstOrDefault(
+                ru => ru.ReservationItemID == matchingItem.ReservationItemID && ru.Status != "Released");
+
+            // Theo TR_ReservationUnit_Validate: đổi kho = Released dòng cũ + thêm dòng mới
+            if (activeHold != null && activeHold.UnitID != unit.UnitID)
+            {
+                activeHold.Status = "Released";
+                activeHold.ReleasedAt = now;
+                await _repo.SaveChangesAsync(cancellationToken);
+
+                _repo.AddReservationUnit(new ReservationUnit
+                {
+                    ReservationID = reservation.ReservationID,
+                    ReservationItemID = matchingItem.ReservationItemID,
+                    FacilityID = reservation.FacilityID,
+                    UnitID = unit.UnitID,
+                    UnitTypeID = unit.UnitTypeID,
+                    UnitSizeID = unit.UnitSizeID,
+                    Status = "Held",
+                    AssignedAt = now,
+                    AssignedByUserID = managerUser?.UserID
+                });
+                await _repo.SaveChangesAsync(cancellationToken);
+            }
+            else if (activeHold == null)
+            {
+                _repo.AddReservationUnit(new ReservationUnit
+                {
+                    ReservationID = reservation.ReservationID,
+                    ReservationItemID = matchingItem.ReservationItemID,
+                    FacilityID = reservation.FacilityID,
+                    UnitID = unit.UnitID,
+                    UnitTypeID = unit.UnitTypeID,
+                    UnitSizeID = unit.UnitSizeID,
+                    Status = "Held",
+                    AssignedAt = now,
+                    AssignedByUserID = managerUser?.UserID
+                });
+                await _repo.SaveChangesAsync(cancellationToken);
+            }
+
             reservation.Status = ReservationStatus.Confirmed;
-            if (unit.Status == UnitStatus.Available)
-                unit.Status = UnitStatus.Reserved;
+            reservation.ConfirmedAt = now;
+            reservation.ConfirmedByUserID = managerUser?.UserID;
 
             await _repo.SaveChangesAsync(cancellationToken);
 
@@ -82,19 +129,22 @@ public class FacilityManagementService : IFacilityManagementService
         if (!await _repo.FacilityExistsAsync(facilityId, cancellationToken))
             return new OperationsServiceResponse(false, "Không tìm thấy cơ sở.", 404, null);
 
+        byte depositMonths = request.DepositPercent <= 1 ? (byte)1 : (byte)2;
+
         var policy = await _repo.GetRentalPolicyByFacilityIdAsync(facilityId, cancellationToken);
         if (policy is null)
         {
-            policy = new RentalPolicy { FacilityID = facilityId, DepositPercent = request.DepositPercent };
+            policy = new RentalPolicy { FacilityID = facilityId, DepositMonths = depositMonths };
             _repo.AddRentalPolicy(policy);
         }
         else
         {
-            policy.DepositPercent = request.DepositPercent;
+            policy.DepositMonths = depositMonths;
+            policy.UpdatedAt = DateTime.UtcNow;
         }
 
         await _repo.SaveChangesAsync(cancellationToken);
-        return new OperationsServiceResponse(true, null, 200, new { facilityId, depositPercent = policy.DepositPercent });
+        return new OperationsServiceResponse(true, null, 200, new { facilityId, depositPercent = (decimal)policy.DepositMonths, depositMonths = policy.DepositMonths });
     }
 
     public async Task<OperationsServiceResponse> CreateFacilityAsync(
@@ -126,8 +176,8 @@ public class FacilityManagementService : IFacilityManagementService
         if (await _repo.UnitCodePrefixExistsAsync(unitCodePrefix, cancellationToken))
             return new OperationsServiceResponse(false, "Mã chi nhánh đã được sử dụng.", 409, null);
 
-        if (await _repo.FacilityNameAndAddressExistsAsync(facilityName, address, cancellationToken))
-            return new OperationsServiceResponse(false, "Cơ sở có cùng tên và địa chỉ đã tồn tại.", 409, null);
+        if (await _repo.FacilityNameExistsAsync(facilityName, cancellationToken))
+            return new OperationsServiceResponse(false, "Tên cơ sở đã tồn tại.", 409, null);
 
         var manager = await _repo.GetActiveUserByEmailAndRoleAsync(request.ManagerEmail, 3, cancellationToken);
         if (manager is null)
@@ -138,18 +188,15 @@ public class FacilityManagementService : IFacilityManagementService
             ManagerID = manager.UserID,
             FacilityName = facilityName,
             UnitCodePrefix = unitCodePrefix,
-            Address = address,
             ContactPhone = request.ContactPhone?.Trim(),
             Status = string.Equals(request.Status, "inactive", StringComparison.OrdinalIgnoreCase)
                 ? "Inactive"
-                : "Active"
+                : "Active",
+            CreatedAt = DateTime.UtcNow
         };
+        facility.ApplyAddressString(address);
 
-        _repo.AddRentalPolicy(new RentalPolicy
-        {
-            Facility = facility,
-            DepositPercent = 20m
-        });
+        // Trigger TR_Facility_CreateDefaultPolicy tự động tạo RentalPolicy và CancellationRule cho cơ sở mới
         _repo.AddFacility(facility);
         await _repo.SaveChangesAsync(cancellationToken);
 
@@ -160,7 +207,7 @@ public class FacilityManagementService : IFacilityManagementService
             unitCodePrefix = facility.UnitCodePrefix,
             address = facility.Address,
             managerEmail = manager.Email,
-            depositPercent = 20m
+            depositPercent = 2m
         });
     }
 
@@ -187,6 +234,7 @@ public class FacilityManagementService : IFacilityManagementService
         var policy = await _repo.GetRentalPolicyByFacilityIdAsync(facilityId, cancellationToken);
 
         _repo.RemoveRentalRates(rates);
+        await _repo.RemoveFacilityCatalogLinksAsync(facilityId, cancellationToken);
         if (policy is not null)
             _repo.RemoveRentalPolicy(policy);
         _repo.RemoveFacility(facility);
@@ -229,12 +277,13 @@ public class FacilityManagementService : IFacilityManagementService
         if (request.FacilityName is not null)
             facility.FacilityName = request.FacilityName.Trim();
         if (request.Address is not null)
-            facility.Address = request.Address.Trim();
+            facility.ApplyAddressString(request.Address.Trim());
         if (request.Status is not null)
             facility.Status = string.Equals(request.Status, "inactive", StringComparison.OrdinalIgnoreCase)
                 ? "Inactive"
                 : "Active";
 
+        facility.UpdatedAt = DateTime.UtcNow;
         await _repo.SaveChangesAsync(cancellationToken);
 
         var managerEmail = request.ManagerEmail ?? await _repo.GetUserEmailByIdAsync(facility.ManagerID, cancellationToken);
@@ -285,7 +334,8 @@ public class FacilityManagementService : IFacilityManagementService
         await _repo.SaveChangesAsync(cancellationToken);
         return new OperationsServiceResponse(true, null, 200, new
         {
-            assignment.StaffID,
+            StaffID = assignment.AssignmentID,
+            assignment.AssignmentID,
             assignment.FacilityID,
             assignment.UserID,
             assignment.Status
@@ -313,16 +363,41 @@ public class FacilityManagementService : IFacilityManagementService
         if (request.UnitSizeID.HasValue && !await _repo.UnitSizeExistsAsync(request.UnitSizeID.Value, cancellationToken))
             return new OperationsServiceResponse(false, "Kích thước kho không hợp lệ.", 400, null);
 
-        var lookups = await _repo.GetOrCreateUnitLookupsAsync(request, cancellationToken);
-        var rate = lookups.unitType.UnitTypeID > 0 && lookups.unitSize.UnitSizeID > 0
-            ? await _repo.GetRentalRateAsync(request.FacilityID, lookups.unitType.UnitTypeID, lookups.unitSize.UnitSizeID, cancellationToken)
-            : null;
-
         return await _repo.ExecuteInTransactionAsync(async () =>
         {
             var facility = await _repo.GetFacilityByIdAsync(request.FacilityID, cancellationToken);
             if (facility is null)
                 return new OperationsServiceResponse(false, "Không tìm thấy cơ sở.", 404, null);
+
+            var lookups = await _repo.GetOrCreateUnitLookupsAsync(request, cancellationToken);
+            await _repo.EnsureFacilityCatalogLinksAsync(
+                request.FacilityID,
+                lookups.unitType.UnitTypeID,
+                lookups.unitSize.UnitSizeID,
+                cancellationToken);
+
+            var rate = await _repo.GetRentalRateAsync(
+                request.FacilityID,
+                lookups.unitType.UnitTypeID,
+                lookups.unitSize.UnitSizeID,
+                cancellationToken);
+
+            if (rate is null)
+            {
+                var minPrice = lookups.unitSize.SizeCategory?.MinMonthlyPrice ?? 400000m;
+                var maxPrice = lookups.unitSize.SizeCategory?.MaxMonthlyPrice ?? 3500000m;
+                var monthlyPrice = Math.Clamp(request.BasePrice, minPrice, maxPrice);
+
+                rate = new RentalRate
+                {
+                    FacilityID = request.FacilityID,
+                    UnitTypeID = lookups.unitType.UnitTypeID,
+                    UnitSizeID = lookups.unitSize.UnitSizeID,
+                    MonthlyPrice = monthlyPrice
+                };
+                _repo.AddRentalRate(rate);
+                await _repo.SaveChangesAsync(cancellationToken);
+            }
 
             var unitCodePrefix = facility.UnitCodePrefix.Trim().ToUpperInvariant();
             var existingUnitNumbers = await _repo.GetUnitNumbersByFacilityAsync(request.FacilityID, cancellationToken);
@@ -337,11 +412,11 @@ public class FacilityManagementService : IFacilityManagementService
             var unit = new StorageUnit
             {
                 FacilityID = request.FacilityID,
-                UnitType = lookups.unitType,
-                UnitSize = lookups.unitSize,
+                UnitTypeID = lookups.unitType.UnitTypeID,
+                UnitSizeID = lookups.unitSize.UnitSizeID,
                 UnitNumber = unitNumber,
-                BasePrice = rate?.MonthlyPrice ?? request.BasePrice,
-                Status = persistedStatus
+                Status = persistedStatus,
+                CreatedAt = DateTime.UtcNow
             };
             _repo.AddStorageUnit(unit);
             await _repo.SaveChangesAsync(cancellationToken);
@@ -352,7 +427,7 @@ public class FacilityManagementService : IFacilityManagementService
                 unit.UnitNumber,
                 unitCode = unit.UnitNumber,
                 unit.FacilityID,
-                unit.BasePrice,
+                BasePrice = rate.MonthlyPrice,
                 unit.Status
             });
         }, cancellationToken);
@@ -374,6 +449,8 @@ public class FacilityManagementService : IFacilityManagementService
             !await _repo.UnitSizeExistsAsync(request.UnitSizeID, cancellationToken))
             return new OperationsServiceResponse(false, "Loại hoặc kích thước kho không hợp lệ.", 400, null);
 
+        await _repo.EnsureFacilityCatalogLinksAsync(facilityId, request.UnitTypeID, request.UnitSizeID, cancellationToken);
+
         var rate = await _repo.GetRentalRateAsync(facilityId, request.UnitTypeID, request.UnitSizeID, cancellationToken);
         if (rate is null)
         {
@@ -382,13 +459,15 @@ public class FacilityManagementService : IFacilityManagementService
                 FacilityID = facilityId,
                 UnitTypeID = request.UnitTypeID,
                 UnitSizeID = request.UnitSizeID,
-                MonthlyPrice = request.BasePrice
+                MonthlyPrice = request.BasePrice,
+                UpdatedAt = DateTime.UtcNow
             };
             _repo.AddRentalRate(rate);
         }
         else
         {
             rate.MonthlyPrice = request.BasePrice;
+            rate.UpdatedAt = DateTime.UtcNow;
         }
 
         var matchingUnits = await _repo.GetUnitsByFacilityTypeAndSizeAsync(
@@ -396,8 +475,6 @@ public class FacilityManagementService : IFacilityManagementService
             request.UnitTypeID,
             request.UnitSizeID,
             cancellationToken);
-        foreach (var unit in matchingUnits)
-            unit.BasePrice = request.BasePrice;
 
         await _repo.SaveChangesAsync(cancellationToken);
 
@@ -447,8 +524,7 @@ public class FacilityManagementService : IFacilityManagementService
         if (unit is null)
             return new OperationsServiceResponse(false, "Không tìm thấy kho tại cơ sở.", 404, null);
 
-        if (unit.Status == UnitStatus.Booking &&
-            await _repo.HasActiveBookingHoldForUnitAsync(unit.UnitID, DateTime.UtcNow, cancellationToken))
+        if (await _repo.HasActiveBookingHoldForUnitAsync(unit.UnitID, DateTime.UtcNow, cancellationToken))
             return new OperationsServiceResponse(false, "Không thể chỉnh sửa kho đang được giữ để thanh toán.", 409, null);
 
         if (request.UnitTypeID is null || request.UnitSizeID is null)
@@ -458,15 +534,18 @@ public class FacilityManagementService : IFacilityManagementService
         if (persistedStatus is null)
             return new OperationsServiceResponse(false, "Trạng thái kho không hợp lệ.", 400, null);
 
-        if (request.UnitTypeID.HasValue && !await _repo.UnitTypeExistsAsync(request.UnitTypeID.Value, cancellationToken))
+        if (!await _repo.UnitTypeExistsAsync(request.UnitTypeID.Value, cancellationToken))
             return new OperationsServiceResponse(false, "Loại kho không hợp lệ.", 400, null);
 
-        if (request.UnitSizeID.HasValue && !await _repo.UnitSizeExistsAsync(request.UnitSizeID.Value, cancellationToken))
+        if (!await _repo.UnitSizeExistsAsync(request.UnitSizeID.Value, cancellationToken))
             return new OperationsServiceResponse(false, "Kích thước kho không hợp lệ.", 400, null);
 
         var lookups = await _repo.GetOrCreateUnitLookupsAsync(request, cancellationToken);
-        if (lookups.unitType.UnitTypeID <= 0 || lookups.unitSize.UnitSizeID <= 0)
-            return new OperationsServiceResponse(false, "Loại hoặc size kho không hợp lệ.", 400, null);
+        await _repo.EnsureFacilityCatalogLinksAsync(
+            request.FacilityID,
+            lookups.unitType.UnitTypeID,
+            lookups.unitSize.UnitSizeID,
+            cancellationToken);
 
         var rate = await _repo.GetRentalRateAsync(
             request.FacilityID,
@@ -474,12 +553,25 @@ public class FacilityManagementService : IFacilityManagementService
             lookups.unitSize.UnitSizeID,
             cancellationToken);
 
-        unit.UnitType = lookups.unitType;
-        unit.UnitSize = lookups.unitSize;
+        if (rate is null)
+        {
+            var minPrice = lookups.unitSize.SizeCategory?.MinMonthlyPrice ?? 400000m;
+            var maxPrice = lookups.unitSize.SizeCategory?.MaxMonthlyPrice ?? 3500000m;
+            rate = new RentalRate
+            {
+                FacilityID = request.FacilityID,
+                UnitTypeID = lookups.unitType.UnitTypeID,
+                UnitSizeID = lookups.unitSize.UnitSizeID,
+                MonthlyPrice = Math.Clamp(request.BasePrice, minPrice, maxPrice)
+            };
+            _repo.AddRentalRate(rate);
+            await _repo.SaveChangesAsync(cancellationToken);
+        }
+
         unit.UnitTypeID = lookups.unitType.UnitTypeID;
         unit.UnitSizeID = lookups.unitSize.UnitSizeID;
-        unit.BasePrice = rate?.MonthlyPrice ?? request.BasePrice;
         unit.Status = persistedStatus;
+        unit.UpdatedAt = DateTime.UtcNow;
 
         await _repo.SaveChangesAsync(cancellationToken);
 
@@ -488,7 +580,7 @@ public class FacilityManagementService : IFacilityManagementService
             unit.UnitID,
             unit.UnitNumber,
             unit.FacilityID,
-            unit.BasePrice,
+            BasePrice = rate.MonthlyPrice,
             unit.Status
         });
     }
@@ -522,11 +614,12 @@ public class FacilityManagementService : IFacilityManagementService
 
     private static string? ToPersistedUnitStatus(string status) => status.ToUpperInvariant() switch
     {
-        "AVAILABLE" => "Available",
-        "RESERVED" => "Reserved",
-        "RENTED" or "IN_USE" => "In Use",
-        "NEEDS_INSPECTION" or "MAINTENANCE" => "Maintenance",
-        "INACTIVE" => "Inactive",
+        "AVAILABLE" => UnitStatus.Available,
+        "RESERVED" => UnitStatus.Available,
+        "RENTED" or "IN_USE" => UnitStatus.InUse,
+        "PENDING_INSPECTION" => UnitStatus.PendingInspection,
+        "NEEDS_INSPECTION" or "MAINTENANCE" => UnitStatus.Maintenance,
+        "INACTIVE" => UnitStatus.Inactive,
         _ => null
     };
 }

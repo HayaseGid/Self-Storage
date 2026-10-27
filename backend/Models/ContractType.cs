@@ -6,9 +6,9 @@ public class ContractType
 {
     public int ContractTypeID { get; set; }
     public string TypeName { get; set; } = null!;
-    public int MinDays { get; set; }
-    public int MaxDays { get; set; }
+    public int RentalMonths { get; set; }
     public decimal DiscountRate { get; set; }
+    public bool IsActive { get; set; } = true;
 
-    public ICollection<Contract> Contracts { get; set; } = new List<Contract>();
+    public ICollection<Reservation> Reservations { get; set; } = new List<Reservation>();
 }

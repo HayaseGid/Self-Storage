@@ -14,7 +14,7 @@ public interface IFacilityManagementRepository
     Task<bool> FacilityExistsAsync(int facilityId, CancellationToken cancellationToken);
     Task<bool> IsFacilityActiveAsync(int facilityId, CancellationToken cancellationToken);
     Task<bool> UnitCodePrefixExistsAsync(string unitCodePrefix, CancellationToken cancellationToken);
-    Task<bool> FacilityNameAndAddressExistsAsync(string facilityName, string address, CancellationToken cancellationToken);
+    Task<bool> FacilityNameExistsAsync(string facilityName, CancellationToken cancellationToken);
     Task<bool> FacilityHasDependenciesAsync(int facilityId, CancellationToken cancellationToken);
     void AddFacility(Facility facility);
     void RemoveFacility(Facility facility);
@@ -29,8 +29,8 @@ public interface IFacilityManagementRepository
     Task<Reservation?> GetReservationByIdAsync(int reservationId, CancellationToken cancellationToken);
     Task<bool> HasConflictingReservationForUnitAsync(int excludeReservationId, int unitId, DateTime startDate, DateTime endDate, CancellationToken cancellationToken);
     Task<bool> HasActiveBookingHoldForUnitAsync(int unitId, DateTime now, CancellationToken cancellationToken);
+    void AddReservationUnit(ReservationUnit reservationUnit);
 
-    Task<StorageUnit?> GetUnitForReservationAssignmentAsync(int? assignedUnitId, string unitNumber, int facilityId, int unitTypeId, CancellationToken cancellationToken);
     Task<StorageUnit?> GetUnitByNumberAndFacilityAsync(string unitNumber, int facilityId, CancellationToken cancellationToken);
     Task<List<string>> GetUnitNumbersByFacilityAsync(int facilityId, CancellationToken cancellationToken);
     Task<List<StorageUnit>> GetUnitsByFacilityTypeAndSizeAsync(int facilityId, int unitTypeId, int unitSizeId, CancellationToken cancellationToken);
@@ -40,14 +40,15 @@ public interface IFacilityManagementRepository
     Task<bool> UnitTypeExistsAsync(int unitTypeId, CancellationToken cancellationToken);
     Task<bool> UnitSizeExistsAsync(int unitSizeId, CancellationToken cancellationToken);
     Task<(UnitType unitType, UnitSize unitSize)> GetOrCreateUnitLookupsAsync(CreateStorageUnitDTO request, CancellationToken cancellationToken);
+    Task EnsureFacilityCatalogLinksAsync(int facilityId, int unitTypeId, int unitSizeId, CancellationToken cancellationToken);
 
     Task<RentalRate?> GetRentalRateAsync(int facilityId, int unitTypeId, int unitSizeId, CancellationToken cancellationToken);
     Task<List<RentalRate>> GetRentalRatesByFacilityIdAsync(int facilityId, CancellationToken cancellationToken);
     void AddRentalRate(RentalRate rate);
     void RemoveRentalRate(RentalRate rate);
     void RemoveRentalRates(IEnumerable<RentalRate> rates);
+    Task RemoveFacilityCatalogLinksAsync(int facilityId, CancellationToken cancellationToken);
 
     Task<T> ExecuteInTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken);
     Task SaveChangesAsync(CancellationToken cancellationToken);
 }
-
