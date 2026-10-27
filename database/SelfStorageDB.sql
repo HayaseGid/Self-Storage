@@ -430,18 +430,21 @@ GO
 
 -- 2. Users
 SET IDENTITY_INSERT Users ON;
+
+-- Hash Password tương ứng với mật khẩu: 123456
 INSERT INTO Users (UserID, RoleID, Username, PasswordHash, FullName, Email, PhoneNumber, Status) VALUES
-(1, 3, 'fac_manager1', '123456', N'Nguyễn Quản Lý Cơ Sở 1', 'fm1@test.com', '0901000001', 'Active'),
-(2, 3, 'fac_manager2', '123456', N'Trần Quản Lý Cơ Sở 2', 'fm2@test.com', '0901000002', 'Active'),
-(3, 2, 'staff1', '123456', N'Lê Nhân Viên Một', 'staff1@test.com', '0902000001', 'Active'),
-(4, 2, 'staff2', '123456', N'Phạm Nhân Viên Hai', 'staff2@test.com', '0902000002', 'Active'),
-(5, 2, 'staff3', '123456', N'Hoàng Nhân Viên Ba', 'staff3@test.com', '0902000003', 'Active'),
-(6, 1, 'customer1', '123456', N'Đinh Khách Hàng', 'cust1@test.com', '0903000001', 'Active'),
-(7, 1, 'customer2', '123456', N'Vũ Khách Hàng', 'cust2@test.com', '0903000002', 'Active'),
-(8, 1, 'customer3', '123456', N'Bùi Khách Hàng', 'cust3@test.com', '0903000003', 'Active'),
-(9, 1, 'customer4', '123456', N'Đỗ Khách Hàng', 'cust4@test.com', '0903000004', 'Active'),
-(10, 4, 'biz_ops_mgr', '123456', N'Lý Vận Hành Tổng', 'ops@test.com', '0904000001', 'Active'),
-(11, 5, 'sys_admin', '123456', N'Quản Trị Viên', 'admin@test.com', '0905000001', 'Active');
+(1, 3, 'fac_manager1', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Nguyễn Quản Lý Cơ Sở 1', 'fm1@test.com', '0901000001', 'Active'),
+(2, 3, 'fac_manager2', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Trần Quản Lý Cơ Sở 2', 'fm2@test.com', '0901000002', 'Active'),
+(3, 2, 'staff1', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Lê Nhân Viên Một', 'staff1@test.com', '0902000001', 'Active'),
+(4, 2, 'staff2', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Phạm Nhân Viên Hai', 'staff2@test.com', '0902000002', 'Active'),
+(5, 2, 'staff3', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Hoàng Nhân Viên Ba', 'staff3@test.com', '0902000003', 'Active'),
+(6, 1, 'customer1', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Đinh Khách Hàng', 'cust1@test.com', '0903000001', 'Active'),
+(7, 1, 'customer2', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Vũ Khách Hàng', 'cust2@test.com', '0903000002', 'Active'),
+(8, 1, 'customer3', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Bùi Khách Hàng', 'cust3@test.com', '0903000003', 'Active'),
+(9, 1, 'customer4', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Đỗ Khách Hàng', 'cust4@test.com', '0903000004', 'Active'),
+(10, 4, 'biz_ops_mgr', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Lý Vận Hành Tổng', 'ops@test.com', '0904000001', 'Active'),
+(11, 5, 'sys_admin', '$2a$12$I8uc/GX04rH6fA8L9/JxUeG1N1lEkl2.DSTVpVFCTzWeqypXizoYi', N'Quản Trị Viên', 'admin@test.com', '0905000001', 'Active');
+
 SET IDENTITY_INSERT Users OFF;
 GO
 

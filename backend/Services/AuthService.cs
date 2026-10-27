@@ -1,6 +1,7 @@
 using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Models;
+using BCrypt.Net; // Thêm thư viện
 
 namespace SelfStorageAPI.Services;
 
@@ -17,7 +18,8 @@ public class AuthService : IAuthService
     {
         var user = await _userRepository.GetUserByEmailAsync(request.Email);
 
-        if (user == null || user.PasswordHash != request.Password)
+        // So sánh mật khẩu người dùng nhập với chuỗi đã được Hash trong cơ sở dữ liệu
+        if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
         {
             return new AuthResult { IsSuccess = false, ErrorMessage = "Email hoặc mật khẩu không đúng." };
         }
@@ -61,7 +63,8 @@ public class AuthService : IAuthService
             Username = request.Email,
             Email = request.Email,
             FullName = request.FullName,
-            PasswordHash = request.Password, 
+            // Mã hóa mật khẩu plain-text trước khi lưu xuống DB
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password), 
             RoleID = role.RoleID,
             Status = isCustomer ? "Active" : "Pending Approval"
         };
