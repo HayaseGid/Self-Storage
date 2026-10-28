@@ -6,6 +6,7 @@ namespace SelfStorageAPI.Services;
 
 public class UnitTypeService : IUnitTypeService
 {
+    private const int BusinessOperationsRoleId = 4;
     private readonly IUnitTypeRepository _unitTypeRepository;
     private readonly IUserRepository _userRepository;
 
@@ -15,208 +16,86 @@ public class UnitTypeService : IUnitTypeService
         _userRepository = userRepository;
     }
 
-    public async Task<IReadOnlyList<UnitTypeResponse>> GetAllAsync(int? facilityId = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<UnitTypeResponse>> GetAllAsync(CancellationToken cancellationToken)
     {
-        var items = await _unitTypeRepository.GetAllAsync(cancellationToken);
-        var result = new List<UnitTypeResponse>(items.Count);
-
-        foreach (var item in items)
+        var unitTypes = await _unitTypeRepository.GetAllAsync(cancellationToken);
+        var responses = new List<UnitTypeResponse>();
+        foreach (var t in unitTypes)
         {
-            var stats = await _unitTypeRepository.GetUsageStatsAsync(item.UnitTypeID, facilityId, cancellationToken);
-            result.Add(new UnitTypeResponse(
-                item.UnitTypeID,
-                item.TypeName,
-                item.Description,
-                stats.UnitCount,
-                item.UnitTypeID,
-                item.TypeName,
-                stats.IsActiveAtFacility,
-                stats.UnitCount,
-                stats.ReservationCount,
-                stats.RateCount));
+            var count = await _unitTypeRepository.GetStorageUnitCountAsync(t.UnitTypeID, cancellationToken);
+            responses.Add(new UnitTypeResponse(t.UnitTypeID, t.TypeName, t.Description, count));
         }
-
-        return result;
+        return responses;
     }
 
-    public async Task<UnitTypeResponse?> GetByIdAsync(int id, int? facilityId = null, CancellationToken cancellationToken = default)
+    public async Task<UnitTypeResponse?> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
-        var entity = await _unitTypeRepository.GetByIdAsync(id, cancellationToken);
-        if (entity is null) return null;
-
-        var stats = await _unitTypeRepository.GetUsageStatsAsync(entity.UnitTypeID, facilityId, cancellationToken);
-        return new UnitTypeResponse(
-            entity.UnitTypeID,
-            entity.TypeName,
-            entity.Description,
-            stats.UnitCount,
-            entity.UnitTypeID,
-            entity.TypeName,
-            stats.IsActiveAtFacility,
-            stats.UnitCount,
-            stats.ReservationCount,
-            stats.RateCount);
+        var t = await _unitTypeRepository.GetByIdAsync(id, cancellationToken);
+        if (t == null) return null;
+        var count = await _unitTypeRepository.GetStorageUnitCountAsync(t.UnitTypeID, cancellationToken);
+        return new UnitTypeResponse(t.UnitTypeID, t.TypeName, t.Description, count);
     }
 
     public async Task<(bool IsSuccess, string? ErrorMessage, UnitTypeResponse? Data)> CreateAsync(
-        UpsertUnitTypeDTO request,
-        string? userEmail,
-        CancellationToken cancellationToken)
+        UpsertUnitTypeDTO request, string? userEmail, CancellationToken cancellationToken)
     {
-        var (authorized, authError, user) = await CheckAuthorizationAsync(userEmail, request.FacilityID, cancellationToken);
-        if (!authorized || user is null) return (false, authError, null);
+        if (!await IsBusinessOperationsManagerAsync(userEmail))
+            return (false, "Chỉ Business Operations Manager mới được quản lý loại kho.", null);
 
-        var rawName = !string.IsNullOrWhiteSpace(request.TypeName) ? request.TypeName : (request.Name ?? string.Empty);
-        var normalizedName = rawName.Trim();
-        if (string.IsNullOrWhiteSpace(normalizedName))
-            return (false, "Tên loại kho không được để trống.", null);
+        var name = request.TypeName.Trim();
+        if (await _unitTypeRepository.ExistsByNameAsync(name, null, cancellationToken))
+            return (false, $"Loại kho \"{name}\" đã tồn tại.", null);
 
-        var duplicated = await _unitTypeRepository.ExistsByNameAsync(normalizedName, null, cancellationToken);
-        if (duplicated)
-            return (false, $"Loại kho \"{normalizedName}\" đã tồn tại.", null);
-
-        var isActive = request.IsActive ?? true;
-        var entity = new UnitType
-        {
-            TypeName = normalizedName,
-            Description = NormalizeDescription(request.Description),
-            IsActive = isActive,
-            CreatedAt = DateTime.UtcNow,
-            CreatedByUserID = user.UserID
-        };
-
+        var entity = new UnitType { TypeName = name, Description = NormalizeOptional(request.Description) };
         _unitTypeRepository.Add(entity);
         await _unitTypeRepository.SaveChangesAsync(cancellationToken);
 
-        await _unitTypeRepository.EnsureAllFacilitiesLinkAsync(entity.UnitTypeID, user.UserID, cancellationToken);
-        if (request.FacilityID.HasValue)
-        {
-            await _unitTypeRepository.EnsureFacilityLinkAsync(request.FacilityID.Value, entity.UnitTypeID, isActive, user.UserID, cancellationToken);
-        }
-        await _unitTypeRepository.SaveChangesAsync(cancellationToken);
-
-        return (true, null, new UnitTypeResponse(
-            entity.UnitTypeID,
-            entity.TypeName,
-            entity.Description,
-            0,
-            entity.UnitTypeID,
-            entity.TypeName,
-            isActive,
-            0,
-            0,
-            0));
+        return (true, null, new UnitTypeResponse(entity.UnitTypeID, entity.TypeName, entity.Description, 0));
     }
 
     public async Task<(bool IsSuccess, string? ErrorMessage, UnitTypeResponse? Data)> UpdateAsync(
-        int id,
-        UpsertUnitTypeDTO request,
-        string? userEmail,
-        CancellationToken cancellationToken)
+        int id, UpsertUnitTypeDTO request, string? userEmail, CancellationToken cancellationToken)
     {
-        var (authorized, authError, user) = await CheckAuthorizationAsync(userEmail, request.FacilityID, cancellationToken);
-        if (!authorized || user is null) return (false, authError, null);
+        if (!await IsBusinessOperationsManagerAsync(userEmail))
+            return (false, "Chỉ Business Operations Manager mới được quản lý loại kho.", null);
 
         var entity = await _unitTypeRepository.GetByIdAsync(id, cancellationToken);
-        if (entity is null) return (false, "NOT_FOUND", null);
+        if (entity is null) return (false, "Không tìm thấy loại kho.", null);
 
-        var rawName = !string.IsNullOrWhiteSpace(request.TypeName) ? request.TypeName : (request.Name ?? entity.TypeName);
-        var normalizedName = rawName.Trim();
-        if (string.IsNullOrWhiteSpace(normalizedName))
-            return (false, "Tên loại kho không được để trống.", null);
+        var name = request.TypeName.Trim();
+        if (await _unitTypeRepository.ExistsByNameAsync(name, id, cancellationToken))
+            return (false, $"Loại kho \"{name}\" đã tồn tại.", null);
 
-        var duplicated = await _unitTypeRepository.ExistsByNameAsync(normalizedName, id, cancellationToken);
-        if (duplicated)
-            return (false, $"Loại kho \"{normalizedName}\" đã tồn tại.", null);
-
-        entity.TypeName = normalizedName;
-        entity.Description = NormalizeDescription(request.Description);
-
-        if (request.IsActive.HasValue)
-        {
-            if (request.FacilityID.HasValue)
-            {
-                if (!request.IsActive.Value)
-                {
-                    var hasActiveUnits = await _unitTypeRepository.HasActiveUnitsAtFacilityAsync(request.FacilityID.Value, id, cancellationToken);
-                    if (hasActiveUnits)
-                        return (false, "Cơ sở vẫn còn kho đang hoạt động thuộc loại này. Hãy ngừng hoặc đổi các kho đó trước.", null);
-                }
-                await _unitTypeRepository.EnsureFacilityLinkAsync(request.FacilityID.Value, id, request.IsActive.Value, user.UserID, cancellationToken);
-            }
-            else if (user.RoleID == 4)
-            {
-                entity.IsActive = request.IsActive.Value;
-            }
-        }
-
+        entity.TypeName = name;
+        entity.Description = NormalizeOptional(request.Description);
         await _unitTypeRepository.SaveChangesAsync(cancellationToken);
 
-        var stats = await _unitTypeRepository.GetUsageStatsAsync(id, request.FacilityID, cancellationToken);
-        return (true, null, new UnitTypeResponse(
-            entity.UnitTypeID,
-            entity.TypeName,
-            entity.Description,
-            stats.UnitCount,
-            entity.UnitTypeID,
-            entity.TypeName,
-            stats.IsActiveAtFacility,
-            stats.UnitCount,
-            stats.ReservationCount,
-            stats.RateCount));
+        var unitCount = await _unitTypeRepository.GetStorageUnitCountAsync(id, cancellationToken);
+        return (true, null, new UnitTypeResponse(entity.UnitTypeID, entity.TypeName, entity.Description, unitCount));
     }
 
-    public async Task<(bool IsSuccess, string? ErrorMessage)> DeleteAsync(
-        int id,
-        string? userEmail,
-        CancellationToken cancellationToken)
+    public async Task<(bool IsSuccess, string? ErrorMessage)> DeleteAsync(int id, string? userEmail, CancellationToken cancellationToken)
     {
-        var (authorized, authError, _) = await CheckAuthorizationAsync(userEmail, null, cancellationToken);
-        if (!authorized) return (false, authError);
+        if (!await IsBusinessOperationsManagerAsync(userEmail))
+            return (false, "Chỉ Business Operations Manager mới được quản lý loại kho.");
 
         var entity = await _unitTypeRepository.GetByIdAsync(id, cancellationToken);
-        if (entity is null) return (false, "NOT_FOUND");
+        if (entity is null) return (false, "Không tìm thấy loại kho.");
 
-        var isUsed = await _unitTypeRepository.IsUsedAsync(id, cancellationToken);
-        if (isUsed)
+        if (await _unitTypeRepository.IsUsedAsync(id, cancellationToken))
             return (false, "Không thể xóa loại kho đang được sử dụng bởi kho, đơn đặt chỗ hoặc bảng giá.");
 
-        await _unitTypeRepository.RemoveFacilityLinksAsync(id, cancellationToken);
         _unitTypeRepository.Remove(entity);
         await _unitTypeRepository.SaveChangesAsync(cancellationToken);
-
         return (true, null);
     }
 
-    private async Task<(bool Authorized, string? ErrorMessage, User? User)> CheckAuthorizationAsync(
-        string? email,
-        int? facilityId,
-        CancellationToken cancellationToken)
+    private async Task<bool> IsBusinessOperationsManagerAsync(string? email)
     {
-        if (string.IsNullOrWhiteSpace(email))
-            return (false, "UNAUTHORIZED:Thiếu thông tin người dùng (header X-User-Email).", null);
-
-        var user = await _userRepository.GetUserByEmailAsync(email.Trim());
-        if (user is null || user.Status != "Active")
-            return (false, "UNAUTHORIZED:Tài khoản không hợp lệ hoặc đã bị khóa.", null);
-
-        if (user.RoleID == 4)
-            return (true, null, user);
-
-        if (user.RoleID == 3)
-        {
-            if (facilityId.HasValue)
-            {
-                var isManager = await _unitTypeRepository.IsFacilityManagerAsync(facilityId.Value, user.UserID, cancellationToken);
-                if (!isManager)
-                    return (false, "FORBIDDEN:Bạn không quản lý cơ sở này.", null);
-            }
-            return (true, null, user);
-        }
-
-        return (false, "FORBIDDEN:Chỉ Business Operations Manager hoặc Facility Manager mới được thao tác danh mục loại kho.", null);
+        if (string.IsNullOrWhiteSpace(email)) return false;
+        var user = await _userRepository.GetUserByEmailAsync(email);
+        return user != null && user.RoleID == BusinessOperationsRoleId && user.Status == "Active";
     }
 
-    private static string? NormalizeDescription(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? NormalizeOptional(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

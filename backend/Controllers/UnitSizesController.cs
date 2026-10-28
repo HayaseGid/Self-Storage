@@ -4,91 +4,68 @@ using SelfStorageAPI.Interfaces;
 
 namespace SelfStorageAPI.Controllers;
 
-[Route("api/unit-sizes")]
-[Route("api/operations/unit-sizes")]
 [ApiController]
-public class UnitSizesController : ControllerBase
+[Route("api/unit-sizes")]
+public sealed class UnitSizesController(IUnitSizeService unitSizeService) : ControllerBase
 {
-    private readonly IUnitSizeService _unitSizeService;
-
-    public UnitSizesController(IUnitSizeService unitSizeService)
-    {
-        _unitSizeService = unitSizeService;
-    }
-
-    // GET /api/unit-sizes
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<UnitSizeResponse>>> GetAll(
-        [FromQuery] int? facilityId,
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyList<UnitSizeResponse>>> GetAll(CancellationToken cancellationToken)
     {
-        var items = await _unitSizeService.GetAllAsync(facilityId, cancellationToken);
+        var items = await unitSizeService.GetAllAsync(cancellationToken);
         return Ok(items);
     }
 
-    // GET /api/unit-sizes/{id}
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<UnitSizeResponse>> GetById(
-        int id,
-        [FromQuery] int? facilityId,
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<UnitSizeResponse>> GetById(int id, CancellationToken cancellationToken)
     {
-        var item = await _unitSizeService.GetByIdAsync(id, facilityId, cancellationToken);
-        if (item is null)
-            return NotFound(new { message = "Không tìm thấy kích thước kho." });
-
-        return Ok(item);
+        var item = await unitSizeService.GetByIdAsync(id, cancellationToken);
+        return item is null ? NotFound(new { message = "Không tìm thấy kích thước kho." }) : Ok(item);
     }
 
-    // POST /api/unit-sizes
     [HttpPost]
-    public async Task<ActionResult<UnitSizeResponse>> Create(
-        [FromBody] UpsertUnitSizeDTO request,
-        [FromHeader(Name = "X-User-Email")] string? userEmail,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> Create([FromBody] UpsertUnitSizeDTO request, CancellationToken cancellationToken)
     {
-        var (isSuccess, error, data) = await _unitSizeService.CreateAsync(request, userEmail, cancellationToken);
-        if (!isSuccess) return MapErrorResult(error);
+        var email = Request.Headers["X-User-Email"].ToString();
+        var result = await unitSizeService.CreateAsync(request, email, cancellationToken);
+        
+        if (!result.IsSuccess)
+        {
+            if (result.ErrorMessage!.Contains("Chỉ Business Operations")) return StatusCode(StatusCodes.Status403Forbidden, new { message = result.ErrorMessage });
+            return Conflict(new { message = result.ErrorMessage }); // Hoặc BadRequest tùy logic
+        }
 
-        return CreatedAtAction(nameof(GetById), new { id = data!.UnitSizeID }, data);
+        return CreatedAtAction(nameof(GetById), new { id = result.Data!.UnitSizeID }, result.Data);
     }
 
-    // PUT /api/unit-sizes/{id}
     [HttpPut("{id:int}")]
-    public async Task<ActionResult<UnitSizeResponse>> Update(
-        int id,
-        [FromBody] UpsertUnitSizeDTO request,
-        [FromHeader(Name = "X-User-Email")] string? userEmail,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> Update(int id, [FromBody] UpsertUnitSizeDTO request, CancellationToken cancellationToken)
     {
-        var (isSuccess, error, data) = await _unitSizeService.UpdateAsync(id, request, userEmail, cancellationToken);
-        if (!isSuccess) return MapErrorResult(error);
+        var email = Request.Headers["X-User-Email"].ToString();
+        var result = await unitSizeService.UpdateAsync(id, request, email, cancellationToken);
 
-        return Ok(data);
+        if (!result.IsSuccess)
+        {
+            if (result.ErrorMessage!.Contains("Không tìm thấy")) return NotFound(new { message = result.ErrorMessage });
+            if (result.ErrorMessage!.Contains("Chỉ Business Operations")) return StatusCode(StatusCodes.Status403Forbidden, new { message = result.ErrorMessage });
+            return Conflict(new { message = result.ErrorMessage });
+        }
+
+        return Ok(result.Data);
     }
 
-    // DELETE /api/unit-sizes/{id}
     [HttpDelete("{id:int}")]
-    public async Task<IActionResult> Delete(
-        int id,
-        [FromHeader(Name = "X-User-Email")] string? userEmail,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
     {
-        var (isSuccess, error) = await _unitSizeService.DeleteAsync(id, userEmail, cancellationToken);
-        if (!isSuccess) return MapErrorResult(error);
+        var email = Request.Headers["X-User-Email"].ToString();
+        var result = await unitSizeService.DeleteAsync(id, email, cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            if (result.ErrorMessage!.Contains("Không tìm thấy")) return NotFound(new { message = result.ErrorMessage });
+            if (result.ErrorMessage!.Contains("Chỉ Business Operations")) return StatusCode(StatusCodes.Status403Forbidden, new { message = result.ErrorMessage });
+            return Conflict(new { message = result.ErrorMessage });
+        }
 
         return NoContent();
-    }
-
-    private ActionResult MapErrorResult(string? error)
-    {
-        if (error == "NOT_FOUND")
-            return NotFound(new { message = "Không tìm thấy kích thước kho." });
-        if (error != null && error.StartsWith("UNAUTHORIZED:"))
-            return Unauthorized(new { message = error["UNAUTHORIZED:".Length..] });
-        if (error != null && error.StartsWith("FORBIDDEN:"))
-            return StatusCode(StatusCodes.Status403Forbidden, new { message = error["FORBIDDEN:".Length..] });
-
-        return Conflict(new { message = error });
     }
 }

@@ -2,17 +2,12 @@ using System.ComponentModel.DataAnnotations;
 
 namespace SelfStorageAPI.DTOs
 {
-    public class ReservationUnitItemDTO
-    {
-        public int UnitID { get; set; }
-        public string UnitNumber { get; set; } = string.Empty;
-    }
-
     public class CreateReservationDTO
     {
+        [Range(1, int.MaxValue)]
         public int UnitID { get; set; }
+        [Required]
         public string UnitNumber { get; set; } = string.Empty;
-        public List<ReservationUnitItemDTO>? Units { get; set; }
         [Required]
         public DateTime StartDate { get; set; }
         [Required]

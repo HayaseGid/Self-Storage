@@ -3,15 +3,6 @@ import { createRoot } from 'react-dom/client'
 import './styles.css'
 import { apiPost, apiGet } from './api'
 import CustomerDashboard from './CustomerAccount'
-import { DialogProvider, useDialog } from './Dialog'
-import CartPage from './CartPage'
-import { addToCart, isInCart, useCart } from './cart'
-import RentalCalendar from './RentalCalendar'
-import { DEPOSIT_MONTHS, RENTAL_TERMS } from './storageRules'
-import { clearBookingDraft, loadBookingDraft, saveBookingDraft } from './bookingDraft'
-import { getFacilityDistrict, groupFacilitiesByDistrict } from './districts'
-import { SizeMeter, UnitTypeChip } from './unitTypes'
-import './unitTypes.css'
 
 import StaffPortal from './FacilityStaffAccount'
 //Đã thêm: 04/10/2026
@@ -122,7 +113,6 @@ function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [mobileStorageOpen, setMobileStorageOpen] = useState(false)
   const [currentUser, setCurrentUser] = useState(getCurrentUser())
-  const cart = useCart()
 
   const go = path => {
     setMenuOpen(false)
@@ -146,7 +136,6 @@ function SiteHeader() {
         </button>
         <nav className="desktop-nav">
           <button type="button" onClick={() => go('/search')}>Tìm kho</button>
-          <button type="button" onClick={() => go('/facilities')}>Cơ sở</button>
           <button className="nav-dropdown" type="button" onClick={() => setStorageOpen(v => !v)}>Loại kho <ChevronIcon /></button>
           {storageOpen && (
             <div className="type-menu">
@@ -158,20 +147,10 @@ function SiteHeader() {
           )}
         </nav>
         <div className="header-actions">
-          <button
-            className="login-link"
-            type="button"
-            onClick={() => go('/cart')}
-            title="Giỏ kho để đặt nhiều kho cùng lúc"
-          >
-            🛒 Giỏ kho {cart.length > 0 && <strong>({cart.length})</strong>}
-          </button>
           {currentUser ? (
             <div className="user-actions">
               <span className="user-greeting">Xin chào, <strong>{currentUser.name}</strong></span>
-              <button className="login-link" type="button" onClick={() => go(roleHome(currentUser.role))}>
-                {currentUser.role && currentUser.role !== 'customer' ? 'Trang làm việc' : 'Tài khoản'}
-              </button>
+              {currentUser.role && currentUser.role !== 'customer' && <button className="login-link" type="button" onClick={() => go(roleHome(currentUser.role))}>Trang làm việc</button>}
               <button className="logout-link" type="button" onClick={logout}>Đăng xuất</button>
             </div>
           ) : (
@@ -259,36 +238,13 @@ function FacilityCard({ facility, index }) {
 }
 
 function FacilitiesPage() {
-  const [districtSlug, setDistrictSlug] = useState('all')
-  const groups = groupFacilitiesByDistrict(facilities)
-  const visible = districtSlug === 'all'
-    ? facilities
-    : (groups.find(g => g.slug === districtSlug)?.facilities || [])
-
   return (
     <div className="app">
       <SiteHeader />
       <main className="listing-page">
         <div className="container">
-          <div className="listing-heading"><div className="eyebrow">OUR FACILITIES</div><h1>Các cơ sở lưu trữ</h1><p>Chọn khu vực hoặc cơ sở phù hợp để xem các kho đang có sẵn.</p></div>
-          {groups.length > 0 && (
-            <div className="fm-filter-chips" style={{ marginBottom: 24 }}>
-              <button type="button" className={districtSlug === 'all' ? 'active' : ''} onClick={() => setDistrictSlug('all')}>
-                Tất cả khu vực ({facilities.length})
-              </button>
-              {groups.map(group => (
-                <button
-                  key={group.slug}
-                  type="button"
-                  className={districtSlug === group.slug ? 'active' : ''}
-                  onClick={() => setDistrictSlug(group.slug)}
-                >
-                  📍 {group.label} ({group.facilities.length})
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="facility-grid">{visible.map((f, i) => <FacilityCard key={f.name} facility={f} index={i} />)}</div>
+          <div className="listing-heading"><div className="eyebrow">OUR FACILITIES</div><h1>Các cơ sở lưu trữ</h1><p>Chọn cơ sở phù hợp để xem các kho đang có sẵn.</p></div>
+          <div className="facility-grid">{facilities.map((f, i) => <FacilityCard key={f.name} facility={f} index={i} />)}</div>
         </div>
       </main>
       <SiteFooter />
@@ -297,12 +253,11 @@ function FacilitiesPage() {
 }
 
 function FacilityDetailPage({ facility }) {
-  const dialog = useDialog()
-  const cart = useCart()
 
   //Đã cập nhật: Trang cơ sở lấy trạng thái kho đã cập nhật
   const units = getStorageUnits(facility.name)
   //Đã thêm: 05/10/2026
+
 
   const [query, setQuery] = useState('')
   const [type, setType] = useState('all')
@@ -329,22 +284,6 @@ function FacilityDetailPage({ facility }) {
     setPriceRange('all')
   }
 
-  const handleAddToCart = async unit => {
-    const res = addToCart(facility, unit)
-    if (!res.ok) {
-      await dialog.alert({ tone: 'info', title: 'Giỏ kho', message: res.reason })
-      return
-    }
-    const goCart = await dialog.confirm({
-      tone: 'success',
-      title: `Đã thêm kho ${unit.id} vào giỏ`,
-      message: `Giỏ kho hiện có ${res.items.length} kho. Bạn có thể chọn thêm kho khác để gộp chung vào 1 hợp đồng hoặc mở giỏ kho để đặt ngay.`,
-      confirmLabel: 'Mở giỏ kho',
-      cancelLabel: 'Chọn thêm kho'
-    })
-    if (goCart) navigate('/cart')
-  }
-
   return (
     <div className="app">
       <SiteHeader />
@@ -358,14 +297,7 @@ function FacilityDetailPage({ facility }) {
               <h1>{facility.name}</h1>
               <p className="facility-location"><PinIcon /> {facility.location}</p>
               <div className="tag-row">{facility.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
-              <p>Hiện có <strong>{facility.available}</strong> kho đang sẵn sàng cho thuê · Tiền cọc: <strong>{facility.depositMonths ?? DEPOSIT_MONTHS} tháng tiền thuê</strong>.</p>
-              {cart.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <button type="button" className="dashboard-primary-btn" onClick={() => navigate('/cart')}>
-                    🛒 Xem giỏ kho ({cart.length} kho đã chọn)
-                  </button>
-                </div>
-              )}
+              <p>Hiện có <strong>{facility.available}</strong> kho đang sẵn sàng cho thuê.</p>
             </div>
           </div>
           <div className="units-heading">
@@ -383,29 +315,15 @@ function FacilityDetailPage({ facility }) {
             </div>
           </div>
           <div className="unit-grid">
-            {filteredUnits.map(unit => {
-              const inCart = isInCart(facility.facilityId, unit.id)
-              return (
-                <article className="unit-card" key={unit.id}>
-                  <div className="unit-card-top"><span className="unit-id">{unit.id}</span><span className={unit.available ? 'unit-status available' : 'unit-status'}>{unit.available ? 'Còn trống' : unit.status?.toLowerCase() === 'booking' ? 'Booking · Đang giữ chỗ' : 'Không khả dụng'}</span></div>
-                  <h3><UnitTypeChip type={unit.type} compact /></h3>
-                  <div className="unit-info"><span>Diện tích</span><strong>{unit.size}</strong></div>
-                  <div className="unit-info"><span>Giá thuê</span><strong>{formatMoney(unit.price)}/tháng</strong></div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                    <button className="unit-button" style={{ flex: 1 }} type="button" disabled={!unit.available} onClick={() => unit.available && navigate(`/facilities/${createSlug(facility.name)}/unit/${unit.id}`)}>{unit.available ? 'Xem kho' : 'Không khả dụng'}{unit.available && <ArrowIcon />}</button>
-                    {unit.available && (
-                      <button
-                        type="button"
-                        className="dashboard-secondary-btn"
-                        onClick={() => inCart ? navigate('/cart') : handleAddToCart(unit)}
-                      >
-                        {inCart ? '✓ Trong giỏ' : '+ Giỏ kho'}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              )
-            })}
+            {filteredUnits.map(unit => (
+              <article className="unit-card" key={unit.id}>
+                <div className="unit-card-top"><span className="unit-id">{unit.id}</span><span className={unit.available ? 'unit-status available' : 'unit-status'}>{unit.available ? 'Còn trống' : unit.status?.toLowerCase() === 'booking' ? 'Booking · Đang giữ chỗ' : 'Không khả dụng'}</span></div>
+                <h3>{unit.type}</h3>
+                <div className="unit-info"><span>Diện tích</span><strong>{unit.size}</strong></div>
+                <div className="unit-info"><span>Giá thuê</span><strong>{formatMoney(unit.price)}/tháng</strong></div>
+                <button className="unit-button" type="button" disabled={!unit.available} onClick={() => unit.available && navigate(`/facilities/${createSlug(facility.name)}/unit/${unit.id}`)}>{unit.available ? 'Xem kho' : 'Không khả dụng'}{unit.available && <ArrowIcon />}</button>
+              </article>
+            ))}
           </div>
           {filteredUnits.length === 0 && <div className="empty-state unit-empty-state">Không tìm thấy kho phù hợp với bộ lọc.</div>}
         </div>
@@ -416,26 +334,6 @@ function FacilityDetailPage({ facility }) {
 }
 
 function UnitDetailPage({ facility, unit }) {
-  const dialog = useDialog()
-  useCart()
-  const inCart = isInCart(facility.facilityId, unit.id)
-
-  const handleAdd = async () => {
-    const res = addToCart(facility, unit)
-    if (!res.ok) {
-      await dialog.alert({ tone: 'info', title: 'Giỏ kho', message: res.reason })
-      return
-    }
-    const open = await dialog.confirm({
-      tone: 'success',
-      title: `Đã thêm kho ${unit.id} vào giỏ`,
-      message: 'Bạn muốn mở giỏ kho để đặt ngay hay tiếp tục chọn thêm kho khác?',
-      confirmLabel: 'Mở giỏ kho',
-      cancelLabel: 'Chọn thêm kho'
-    })
-    if (open) navigate('/cart')
-  }
-
   return (
     <div className="app">
       <SiteHeader />
@@ -447,19 +345,18 @@ function UnitDetailPage({ facility, unit }) {
             <div className="unit-detail-content">
               <span className="customer-eyebrow">STORAGE UNIT</span>
               <h1>{unit.id}</h1>
-              <h2><UnitTypeChip type={unit.type} /></h2>
+              <h2>{unit.type}</h2>
               <p className="unit-detail-location"><PinIcon /> {facility.name} · {facility.location}</p>
               <div className="unit-detail-price"><small>Giá thuê</small><strong>{formatMoney(unit.price)}/tháng</strong></div>
               <div className="unit-detail-info-grid">
                 <div><small>Diện tích</small><strong>{unit.size}</strong></div>
-                <div><small>Hạng kích thước</small><strong><SizeMeter size={unit.size} /></strong></div>
                 <div><small>Tình trạng</small><strong className="available-text">Còn trống</strong></div>
-                <div><small>Tiền cọc</small><strong>{facility.depositMonths ?? DEPOSIT_MONTHS} tháng tiền thuê</strong></div>
+                <div><small>An ninh</small><strong>24/7</strong></div>
+                <div><small>Ra vào</small><strong>Access Card</strong></div>
               </div>
               <div className="unit-detail-features"><div><span>✓</span>Camera giám sát 24/7</div><div><span>✓</span>Kiểm soát ra vào</div><div><span>✓</span>Hỗ trợ khách hàng</div><div><span>✓</span>Giá thuê minh bạch</div></div>
               <div className="unit-detail-actions">
                 <button className="dashboard-primary-btn" type="button" onClick={() => navigate(`/facilities/${createSlug(facility.name)}/unit/${unit.id}/booking`)}>Đặt kho này <ArrowIcon /></button>
-                <button className="dashboard-secondary-btn" type="button" onClick={() => inCart ? navigate('/cart') : handleAdd()}>{inCart ? '🛒 Xem trong giỏ kho' : '+ Thêm vào giỏ (thuê nhiều kho)'}</button>
                 <button className="dashboard-secondary-btn" type="button" onClick={() => navigate(`/facilities/${createSlug(facility.name)}`)}>Xem các kho khác</button>
               </div>
             </div>
@@ -477,8 +374,11 @@ function BookingPage({ facility, unit }) {
   const [availableUnits, setAvailableUnits] = useState([])
   const [selectedUnitNumber, setSelectedUnitNumber] = useState(unit.id)
 
-  const [startDate, setStartDate] = useState(null)
-  const [duration, setDuration] = useState(RENTAL_TERMS[0])
+  const [startDay, setStartDay] = useState('')
+  const [startMonth, setStartMonth] = useState('')
+  const [startYear, setStartYear] = useState('')
+
+  const [duration, setDuration] = useState(1)
   const [paymentMode, setPaymentMode] = useState('cycle')
   const [paymentCycle, setPaymentCycle] = useState(1)
 
@@ -487,19 +387,6 @@ function BookingPage({ facility, unit }) {
   const [depositPaid, setDepositPaid] = useState(false)
   const [depositSecondsRemaining, setDepositSecondsRemaining] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-
-  useEffect(() => {
-    const draft = loadBookingDraft()
-    if (draft && String(draft.unitNumber || '').toLowerCase() === unit.id.toLowerCase()) {
-      if (draft.startDate) {
-        const parsed = new Date(`${draft.startDate}T00:00:00`)
-        if (!Number.isNaN(parsed.getTime())) setStartDate(parsed)
-      }
-      if (RENTAL_TERMS.includes(Number(draft.duration))) {
-        setDuration(Number(draft.duration))
-      }
-    }
-  }, [unit.id])
 
   useEffect(() => {
     if (step !== 2 || booking?.status !== 'Pending Deposit' || !booking.depositExpiresAt) {
@@ -523,8 +410,15 @@ function BookingPage({ facility, unit }) {
   const monthlyPrice = Number(selectedUnit.price)
   const totalMonths = Number(duration)
   const totalRent = monthlyPrice * totalMonths
-  const depositMonths = facility.depositMonths ?? DEPOSIT_MONTHS
-  const deposit = booking?.deposit ?? Math.round(monthlyPrice * depositMonths)
+  const deposit = booking?.deposit ?? Math.round(totalRent * (facility.depositPercent ?? 20) / 100)
+
+  const years = Array.from(
+    { length: 6 },
+    (_, index) => new Date().getFullYear() + index
+  )
+
+  const months = Array.from({ length: 12 }, (_, index) => index + 1)
+  const days = Array.from({ length: 31 }, (_, index) => index + 1)
 
   const formatPrice = value =>
     new Intl.NumberFormat('vi-VN').format(value) + 'đ'
@@ -545,6 +439,28 @@ function BookingPage({ facility, unit }) {
     const day = String(date.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
   }
+
+  const getStartDate = () => {
+    if (!startDay || !startMonth || !startYear) return null
+
+    const day = Number(startDay)
+    const month = Number(startMonth)
+    const year = Number(startYear)
+    const date = new Date(year, month - 1, day)
+
+    // Reject impossible dates such as 31/02.
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day
+    ) {
+      return null
+    }
+
+    return date
+  }
+
+  const startDate = getStartDate()
 
   const calculateEndDate = () => {
     if (!startDate) return null
@@ -568,16 +484,15 @@ function BookingPage({ facility, unit }) {
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const maxStartDate = new Date(today)
-  maxStartDate.setDate(maxStartDate.getDate() + 30)
 
   const isValidStartDate =
-    !!startDate && startDate.getTime() >= today.getTime() && startDate.getTime() <= maxStartDate.getTime()
+    !!startDate && startDate.getTime() >= today.getTime()
 
   const canConfirm =
     !!startDate &&
     isValidStartDate &&
-    RENTAL_TERMS.includes(totalMonths)
+    duration >= 1 &&
+    duration <= 12
 
   const handleConfirmBooking = async () => {
     setError('')
@@ -589,24 +504,18 @@ function BookingPage({ facility, unit }) {
     }
 
     if (!startDate) {
-      setError('Vui lòng chọn ngày bắt đầu thuê trên lịch.')
+      setError('Vui lòng chọn đầy đủ ngày, tháng và năm bắt đầu thuê.')
       return
     }
 
     if (!isValidStartDate) {
-      setError('Ngày bắt đầu thuê phải từ hôm nay và trong vòng 30 ngày tới.')
+      setError('Ngày bắt đầu thuê không được ở trong quá khứ.')
       return
     }
 
     const currentUser = getCurrentUser()
 
     if (!currentUser) {
-      saveBookingDraft({
-        facilityName: facility.name,
-        unitNumber: selectedUnitNumber,
-        startDate: toApiDate(startDate),
-        duration: totalMonths
-      })
       setError('Vui lòng đăng nhập trước khi đặt kho.')
       return
     }
@@ -639,7 +548,6 @@ function BookingPage({ facility, unit }) {
         startDate: startDateValue,
         months: totalMonths
       })
-      clearBookingDraft()
       const reservationId = reservation.reservationId
       const bookingData = {
         id: `RSV-${reservationId}`,
@@ -657,7 +565,7 @@ function BookingPage({ facility, unit }) {
         totalRent: reservation.rentalAmount,
         paymentMode,
         paymentCycle: paymentMode === 'cycle' ? Number(paymentCycle) : totalMonths,
-        depositMonths,
+        depositPercent: availability.depositPercent,
         deposit: reservation.depositAmount,
         depositExpiresAt: reservation.depositExpiresAt,
         status: 'Pending Deposit',
@@ -716,7 +624,7 @@ function BookingPage({ facility, unit }) {
   )
 
   const handleDurationChange = value => {
-    const nextDuration = RENTAL_TERMS.includes(Number(value)) ? Number(value) : RENTAL_TERMS[0]
+    const nextDuration = Math.max(1, Math.min(12, value))
     setDuration(nextDuration)
 
     if (paymentCycle > nextDuration) {
@@ -752,8 +660,8 @@ function BookingPage({ facility, unit }) {
               </h1>
               <p>
                 {step === 1
-                  ? `Chọn ngày bắt đầu, gói kỳ hạn thuê (1, 3, 6, 12 tháng) và phương thức thanh toán cho kho ${unit.id}.`
-                  : `Tiền cọc ${depositMonths} tháng tiền thuê được tính theo chính sách của cơ sở.`}
+                  ? `Chọn ngày bắt đầu, thời gian thuê và phương thức thanh toán cho kho ${unit.id}.`
+                    : `Tiền cọc ${booking?.depositPercent ?? facility.depositPercent}% được tính theo chính sách của cơ sở.`}
               </p>
             </div>
 
@@ -831,40 +739,107 @@ function BookingPage({ facility, unit }) {
                   <span>01</span>
                   <div>
                     <h2>Thông tin thuê</h2>
-                    <p>Chọn ngày bắt đầu trên lịch và chọn gói kỳ hạn thuê cố định.</p>
+                    <p>Điền đầy đủ thông tin để hệ thống tính tiền tự động.</p>
                   </div>
                 </div>
 
                 <div className="booking-large-field">
-                  <label>Ngày bắt đầu thuê (trong vòng 30 ngày tới)</label>
-                  <RentalCalendar
-                    value={startDate}
-                    onChange={date => {
-                      setStartDate(date)
-                      setError('')
-                    }}
-                    endDate={endDate}
-                    minDate={today}
-                    maxDate={maxStartDate}
-                    durationMonths={totalMonths}
-                  />
+                  <label>Ngày bắt đầu thuê</label>
+
+                  <div className="date-select-grid">
+                    <select
+                      value={startDay}
+                      onChange={e => {
+                        setStartDay(e.target.value)
+                        setError('')
+                      }}
+                    >
+                      <option value="">Ngày</option>
+                      {days.map(day => (
+                        <option key={day} value={day}>
+                          {String(day).padStart(2, '0')}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={startMonth}
+                      onChange={e => {
+                        setStartMonth(e.target.value)
+                        setError('')
+                      }}
+                    >
+                      <option value="">Tháng</option>
+                      {months.map(month => (
+                        <option key={month} value={month}>
+                          {String(month).padStart(2, '0')}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={startYear}
+                      onChange={e => {
+                        setStartYear(e.target.value)
+                        setError('')
+                      }}
+                    >
+                      <option value="">Năm</option>
+                      {years.map(year => (
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {startDate && (
+                    <div className="selected-date-preview">
+                      Ngày bắt đầu:
+                      <strong>{formatDate(startDate)}</strong>
+                    </div>
+                  )}
                 </div>
 
                 <div className="booking-large-field">
-                  <label>Gói thời hạn thuê cố định</label>
-                  <div className="fm-filter-chips" role="radiogroup" aria-label="Gói thời hạn thuê">
-                    {RENTAL_TERMS.map(term => (
-                      <button
-                        key={term}
-                        type="button"
-                        role="radio"
-                        aria-checked={duration === term}
-                        className={duration === term ? 'active' : ''}
-                        onClick={() => handleDurationChange(term)}
-                      >
-                        <strong>{term} tháng</strong>
-                      </button>
-                    ))}
+                  <label>Thời gian thuê</label>
+
+                  <div className="duration-picker">
+                    <button
+                      type="button"
+                      onClick={() => handleDurationChange(duration - 1)}
+                      aria-label="Giảm thời gian thuê"
+                    >
+                      −
+                    </button>
+
+                    <div className="duration-value">
+                      <strong>{duration}</strong>
+                      <span>tháng</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDurationChange(duration + 1)}
+                      aria-label="Tăng thời gian thuê"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <div className="duration-slider-wrap">
+                    <input
+                      type="range"
+                      min="1"
+                      max="12"
+                      value={duration}
+                      onChange={e => handleDurationChange(Number(e.target.value))}
+                    />
+
+                    <div className="duration-slider-label">
+                      <span>1 tháng</span>
+                      <span>12 tháng</span>
+                    </div>
                   </div>
                 </div>
 
@@ -957,7 +932,7 @@ function BookingPage({ facility, unit }) {
                   <div className="deposit-row">
                     <div>
                       <span>Tiền cọc bắt buộc</span>
-                      <small>{depositMonths} tháng tiền thuê</small>
+                      <small>{facility.depositPercent ?? 20}% tổng giá thuê</small>
                     </div>
                     <strong className="deposit-price">{formatPrice(deposit)}</strong>
                   </div>
@@ -1142,9 +1117,6 @@ function SearchPage() {
   const initial = params.get('q') || ''
   const type = params.get('type') || ''
   const [query, setQuery] = useState(initial)
-  const [districtSlug, setDistrictSlug] = useState('all')
-  const groups = groupFacilitiesByDistrict(facilities)
-
   const results = facilities.filter(f => {
     const unitText = getStorageUnits(f.name)
       .map(unit => `${unit.id} ${unit.type} ${unit.size}`)
@@ -1156,9 +1128,7 @@ function SearchPage() {
     const typeOK = !type || getStorageUnits(f.name).some(u => u.type.toLowerCase() === type.toLowerCase())
     //Đã thêm: 05/10/2026
 
-    const districtOK = districtSlug === 'all' || getFacilityDistrict(f)?.slug === districtSlug
-
-    return keywordOK && typeOK && districtOK
+    return keywordOK && typeOK
   })
   const search = e => {
     e.preventDefault()
@@ -1170,28 +1140,11 @@ function SearchPage() {
       <SiteHeader />
       <main className="listing-page">
         <div className="container">
-          <div className="listing-heading"><div className="eyebrow">SEARCH STORAGE</div><h1>Tìm kho phù hợp với bạn.</h1><p>Tìm kiếm theo khu vực (quận), cơ sở hoặc loại kho bạn đang cần.</p></div>
+          <div className="listing-heading"><div className="eyebrow">SEARCH STORAGE</div><h1>Tìm kho phù hợp với bạn.</h1><p>Tìm kiếm cơ sở, vị trí hoặc loại kho bạn đang cần.</p></div>
           <form className="search-box listing-search" onSubmit={search}><div className="search-input-wrap"><SearchIcon />
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm kho, cơ sở, khu vực, loại kho..." />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Tìm kho, cơ sở, loại kho..." />
           </div>
             <button type="submit">Tìm kho</button></form>
-          {groups.length > 0 && (
-            <div className="fm-filter-chips" style={{ marginTop: 18 }}>
-              <button type="button" className={districtSlug === 'all' ? 'active' : ''} onClick={() => setDistrictSlug('all')}>
-                Tất cả khu vực ({facilities.length})
-              </button>
-              {groups.map(group => (
-                <button
-                  key={group.slug}
-                  type="button"
-                  className={districtSlug === group.slug ? 'active' : ''}
-                  onClick={() => setDistrictSlug(group.slug)}
-                >
-                  📍 {group.label} ({group.facilities.length})
-                </button>
-              ))}
-            </div>
-          )}
           {type && <div className="search-result-note">Loại kho: <strong>{type}</strong></div>}
           <div className="listing-top"><h2>{results.length} cơ sở phù hợp</h2></div>
           <div className="facility-grid">{results.map((f, i) => <FacilityCard key={f.name} facility={f} index={i} />)}</div>
@@ -1344,7 +1297,6 @@ function getRoute() {
   if (path === '/register') return { type: 'register' }
   if (path === '/search') return { type: 'search' }
   if (path === '/facilities') return { type: 'facilities' }
-  if (path === '/cart') return { type: 'cart' }
   if (path === '/customer') return { type: 'customer' }
 
   //Đã cập nhật: Route /staff trong getRoute()
@@ -1493,7 +1445,6 @@ function CustomerPage() {
       getCurrentUser={getCurrentUser}
       navigate={navigate}
       currentUserKey={CURRENT_USER_KEY}
-      onReload={loadReservations}
     />
   )
 }
@@ -1532,22 +1483,6 @@ function Router() {
   if (route.type === 'register') return <RegisterPage />
   if (route.type === 'search') return <SearchPage />
   if (route.type === 'facilities') return <FacilitiesPage />
-  if (route.type === 'cart') {
-    return (
-      <div className="app">
-        <SiteHeader />
-        <CartPage
-          facilities={facilities}
-          getStorageUnits={getStorageUnits}
-          navigate={navigate}
-          getCurrentUser={getCurrentUser}
-          onRequireLogin={() => navigate('/login')}
-          getUnitPath={(facilityName, unitNumber) => `/facilities/${createSlug(facilityName)}/unit/${unitNumber}`}
-        />
-        <SiteFooter />
-      </div>
-    )
-  }
 
   // Chỉ đúng role mới được vào khu Admin / Business
   if (route.type === 'admin') {
@@ -1610,14 +1545,11 @@ async function loadDataFromApi() {
       facilityId,
       name: item.name,
       location: item.address,
-      address: item.address,
-      district: item.district,
       image: facilityImages[index % facilityImages.length],
       available: units.filter(unit => unit.status?.toLowerCase() === 'available').length,
       total: units.length,
       depositPercent: item.depositPercent,
-      depositMonths: item.depositMonths ?? DEPOSIT_MONTHS,
-      tags: item.district ? [item.district] : []
+      tags: []
     }
   })
 
@@ -1665,8 +1597,8 @@ function ApiStartupError({ error }) {
 
 const root = createRoot(document.getElementById('root'))
 loadDataFromApi()
-  .then(() => root.render(<DialogProvider><Router /></DialogProvider>))
+  .then(() => root.render(<Router />))
   .catch(error => {
     console.error('Không tải được danh mục từ backend.', error)
-    root.render(<DialogProvider><ApiStartupError error={error} /></DialogProvider>)
+    root.render(<ApiStartupError error={error} />)
   })

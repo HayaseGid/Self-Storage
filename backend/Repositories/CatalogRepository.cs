@@ -21,41 +21,13 @@ public class CatalogRepository : ICatalogRepository
             .Select(f => new FacilityCatalogData(
                 f.FacilityID,
                 f.FacilityName,
-                f.UnitCodePrefix,
                 f.StreetAddress + ", " + f.Ward + (f.District != null ? ", " + f.District : "") + ", " + f.City,
-                f.StreetAddress,
-                f.Ward,
-                f.District,
-                f.City,
-                f.ContactPhone,
-                f.OpeningHours,
-                f.Description,
                 f.Status,
                 _context.RentalPolicies
                     .Where(p => p.FacilityID == f.FacilityID || p.FacilityID == null)
                     .OrderBy(p => p.FacilityID != null ? 0 : 1)
                     .Select(p => (decimal?)p.DepositMonths)
-                    .FirstOrDefault() ?? 2m,
-                _context.RentalPolicies
-                    .Where(p => p.FacilityID == f.FacilityID || p.FacilityID == null)
-                    .OrderBy(p => p.FacilityID != null ? 0 : 1)
-                    .Select(p => (int?)p.HoldMinutes)
-                    .FirstOrDefault() ?? 15,
-                _context.RentalPolicies
-                    .Where(p => p.FacilityID == f.FacilityID || p.FacilityID == null)
-                    .OrderBy(p => p.FacilityID != null ? 0 : 1)
-                    .Select(p => (decimal?)p.LateFeePerDay)
-                    .FirstOrDefault() ?? 50000m,
-                _context.RentalPolicies
-                    .Where(p => p.FacilityID == f.FacilityID || p.FacilityID == null)
-                    .OrderBy(p => p.FacilityID != null ? 0 : 1)
-                    .Select(p => (int?)p.GracePeriodDays)
-                    .FirstOrDefault() ?? 3,
-                _context.RentalPolicies
-                    .Where(p => p.FacilityID == f.FacilityID || p.FacilityID == null)
-                    .OrderBy(p => p.FacilityID != null ? 0 : 1)
-                    .Select(p => (int?)p.RenewalNoticeDays)
-                    .FirstOrDefault() ?? 30
+                    .FirstOrDefault() ?? 2m
             )).ToListAsync(cancellationToken);
     }
 
@@ -71,8 +43,6 @@ public class CatalogRepository : ICatalogRepository
                 u.UnitTypeID,
                 u.UnitSize.SizeCode + ": " + u.UnitSize.DisplayName,
                 u.UnitSizeID,
-                u.UnitSize.AreaM2,
-                u.UnitSize.VolumeM3,
                 u.RentalRate != null ? u.RentalRate.MonthlyPrice : 0m,
                 _context.ReservationUnits.Any(ru =>
                     ru.UnitID == u.UnitID &&
@@ -85,69 +55,8 @@ public class CatalogRepository : ICatalogRepository
                             ru.Status == "Held" &&
                             (ru.Reservation.Status == ReservationStatus.Paid || ru.Reservation.Status == ReservationStatus.Confirmed))
                                 ? UnitStatus.Reserved
-                                : u.Status,
-                u.Floor,
-                u.Zone,
-                u.LocationNote
+                                : u.Status
             )).ToListAsync(cancellationToken);
-    }
-
-    public async Task<object> GetCatalogPoliciesAsync(CancellationToken cancellationToken)
-    {
-        var globalPolicy = await _context.RentalPolicies
-            .Include(p => p.CancellationRules)
-            .FirstOrDefaultAsync(p => p.FacilityID == null, cancellationToken);
-
-        var contractTypes = await _context.ContractTypes
-            .Where(ct => ct.IsActive)
-            .OrderBy(ct => ct.RentalMonths)
-            .Select(ct => new
-            {
-                contractTypeId = ct.ContractTypeID,
-                typeName = ct.TypeName,
-                months = ct.RentalMonths,
-                discountPercent = ct.DiscountRate
-            })
-            .ToListAsync(cancellationToken);
-
-        var feePolicies = await _context.FeePolicies
-            .Where(fp => fp.IsActive)
-            .OrderBy(fp => fp.FeePolicyID)
-            .Select(fp => new
-            {
-                id = fp.FeeCode,
-                feePolicyId = fp.FeePolicyID,
-                feeCode = fp.FeeCode,
-                name = fp.FeeName,
-                category = fp.FeeCategory,
-                valueType = fp.ValueType,
-                minValue = fp.MinValue,
-                maxValue = fp.MaxValue,
-                amount = fp.MaxValue
-            })
-            .ToListAsync(cancellationToken);
-
-        var cancellationRules = globalPolicy?.CancellationRules
-            .OrderByDescending(r => r.DaysBeforeStart)
-            .Select(r => new
-            {
-                cancellationRuleId = r.CancellationRuleID,
-                daysBeforeStart = r.DaysBeforeStart,
-                refundPercent = r.RefundPercent
-            })
-            .ToList();
-
-        return new
-        {
-            depositMonths = globalPolicy?.DepositMonths ?? (byte)2,
-            holdMinutes = globalPolicy?.HoldMinutes ?? 15,
-            lateFeePerDay = globalPolicy?.LateFeePerDay ?? 50000m,
-            gracePeriodDays = globalPolicy?.GracePeriodDays ?? 3,
-            renewalNoticeDays = globalPolicy?.RenewalNoticeDays ?? 30,
-            cancellationRules,
-            contractTypes,
-            feePolicies
-        };
     }
 
     public async Task<bool> IsFacilityActiveAsync(int facilityId, CancellationToken cancellationToken)
@@ -164,16 +73,6 @@ public class CatalogRepository : ICatalogRepository
             .FirstOrDefaultAsync(cancellationToken);
 
         return depositMonths ?? 2m;
-    }
-
-    public async Task<decimal> GetContractDiscountRateAsync(int months, CancellationToken cancellationToken)
-    {
-        var discount = await _context.ContractTypes
-            .Where(ct => ct.RentalMonths == months && ct.IsActive)
-            .Select(ct => (decimal?)ct.DiscountRate)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return discount ?? (months switch { 6 => 5m, 12 => 10m, _ => 0m });
     }
 
     public async Task<IReadOnlyList<AvailableUnitData>> GetAvailableUnitsAsync(int facilityId, int unitTypeId, DateTime startDate, DateTime endDate, DateTime now, CancellationToken cancellationToken)

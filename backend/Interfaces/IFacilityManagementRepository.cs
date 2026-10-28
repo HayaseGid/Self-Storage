@@ -20,16 +20,8 @@ public interface IFacilityManagementRepository
     void RemoveFacility(Facility facility);
 
     Task<RentalPolicy?> GetRentalPolicyByFacilityIdAsync(int facilityId, CancellationToken cancellationToken);
-    Task<RentalPolicy?> GetGlobalRentalPolicyAsync(CancellationToken cancellationToken);
-    Task<List<RentalPolicy>> GetAllRentalPoliciesAsync(CancellationToken cancellationToken);
     void AddRentalPolicy(RentalPolicy policy);
     void RemoveRentalPolicy(RentalPolicy policy);
-
-    Task<List<ContractType>> GetContractTypesAsync(CancellationToken cancellationToken);
-    Task<List<FeePolicy>> GetFeePoliciesAsync(CancellationToken cancellationToken);
-    void AddFeePolicy(FeePolicy feePolicy);
-    void RemoveFeePolicy(FeePolicy feePolicy);
-    void ReplaceCancellationRules(RentalPolicy policy, IEnumerable<CancellationRule> rules);
 
     Task<FacilityStaff?> GetFacilityStaffAssignmentAsync(int facilityId, int userId, CancellationToken cancellationToken);
     void AddFacilityStaff(FacilityStaff assignment);
@@ -47,7 +39,6 @@ public interface IFacilityManagementRepository
 
     Task<bool> UnitTypeExistsAsync(int unitTypeId, CancellationToken cancellationToken);
     Task<bool> UnitSizeExistsAsync(int unitSizeId, CancellationToken cancellationToken);
-    Task<UnitSize?> GetUnitSizeWithCategoryAsync(int unitSizeId, CancellationToken cancellationToken);
     Task<(UnitType unitType, UnitSize unitSize)> GetOrCreateUnitLookupsAsync(CreateStorageUnitDTO request, CancellationToken cancellationToken);
     Task EnsureFacilityCatalogLinksAsync(int facilityId, int unitTypeId, int unitSizeId, CancellationToken cancellationToken);
 

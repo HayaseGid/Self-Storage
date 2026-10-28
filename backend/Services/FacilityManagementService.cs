@@ -30,20 +30,7 @@ public class FacilityManagementService : IFacilityManagementService
         if (reservation.Status != ReservationStatus.Paid)
             return new OperationsServiceResponse(false, "Chỉ đặt chỗ đã thanh toán mới được phân kho.", 409, null);
 
-        var managerUser = string.IsNullOrWhiteSpace(userEmail)
-            ? null
-            : await _repo.GetActiveUserByEmailAsync(userEmail, cancellationToken);
-
-        var requestedUnitNumber = request.UnitNumber?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(requestedUnitNumber))
-        {
-            requestedUnitNumber = reservation.ReservationUnits
-                .Where(ru => ru.Status != "Released" && ru.Unit != null)
-                .Select(ru => ru.Unit.UnitNumber)
-                .FirstOrDefault() ?? string.Empty;
-        }
-
-        var unit = await _repo.GetUnitByNumberAndFacilityAsync(requestedUnitNumber, reservation.FacilityID, cancellationToken);
+        var unit = await _repo.GetUnitByNumberAndFacilityAsync(request.UnitNumber, reservation.FacilityID, cancellationToken);
         if (unit is null)
             return new OperationsServiceResponse(false, "Kho không thuộc cơ sở đã đặt.", 400, null);
 
@@ -57,6 +44,10 @@ public class FacilityManagementService : IFacilityManagementService
         if (unit.Status is UnitStatus.Maintenance or UnitStatus.Inactive)
             return new OperationsServiceResponse(false, "Kho hiện không khả dụng.", 409, null);
 
+        var managerUser = string.IsNullOrWhiteSpace(userEmail)
+            ? null
+            : await _repo.GetActiveUserByEmailAsync(userEmail, cancellationToken);
+
         return await _repo.ExecuteInTransactionAsync(async () =>
         {
             var hasConflict = await _repo.HasConflictingReservationForUnitAsync(
@@ -69,22 +60,32 @@ public class FacilityManagementService : IFacilityManagementService
                 return new OperationsServiceResponse(false, "Kho đã được đặt trong kỳ thuê này.", 409, null);
 
             var now = DateTime.UtcNow;
-            var activeHoldsForItem = reservation.ReservationUnits
-                .Where(ru => ru.ReservationItemID == matchingItem.ReservationItemID && ru.Status != "Released")
-                .ToList();
+            var activeHold = reservation.ReservationUnits.FirstOrDefault(
+                ru => ru.ReservationItemID == matchingItem.ReservationItemID && ru.Status != "Released");
 
-            var alreadyHeldThisUnit = activeHoldsForItem.Any(ru => ru.UnitID == unit.UnitID);
-
-            if (!alreadyHeldThisUnit)
+            // Theo TR_ReservationUnit_Validate: đổi kho = Released dòng cũ + thêm dòng mới
+            if (activeHold != null && activeHold.UnitID != unit.UnitID)
             {
-                if (activeHoldsForItem.Count >= matchingItem.Quantity)
-                {
-                    var holdToReplace = activeHoldsForItem[0];
-                    holdToReplace.Status = "Released";
-                    holdToReplace.ReleasedAt = now;
-                    await _repo.SaveChangesAsync(cancellationToken);
-                }
+                activeHold.Status = "Released";
+                activeHold.ReleasedAt = now;
+                await _repo.SaveChangesAsync(cancellationToken);
 
+                _repo.AddReservationUnit(new ReservationUnit
+                {
+                    ReservationID = reservation.ReservationID,
+                    ReservationItemID = matchingItem.ReservationItemID,
+                    FacilityID = reservation.FacilityID,
+                    UnitID = unit.UnitID,
+                    UnitTypeID = unit.UnitTypeID,
+                    UnitSizeID = unit.UnitSizeID,
+                    Status = "Held",
+                    AssignedAt = now,
+                    AssignedByUserID = managerUser?.UserID
+                });
+                await _repo.SaveChangesAsync(cancellationToken);
+            }
+            else if (activeHold == null)
+            {
                 _repo.AddReservationUnit(new ReservationUnit
                 {
                     ReservationID = reservation.ReservationID,
@@ -128,197 +129,22 @@ public class FacilityManagementService : IFacilityManagementService
         if (!await _repo.FacilityExistsAsync(facilityId, cancellationToken))
             return new OperationsServiceResponse(false, "Không tìm thấy cơ sở.", 404, null);
 
-        var rawDeposit = request.DepositMonths.HasValue ? (decimal)request.DepositMonths.Value : request.DepositPercent;
-        byte depositMonths = rawDeposit <= 1 ? (byte)1 : (byte)2;
+        byte depositMonths = request.DepositPercent <= 1 ? (byte)1 : (byte)2;
 
         var policy = await _repo.GetRentalPolicyByFacilityIdAsync(facilityId, cancellationToken);
         if (policy is null)
         {
-            policy = new RentalPolicy
-            {
-                FacilityID = facilityId,
-                DepositMonths = depositMonths,
-                HoldMinutes = request.HoldMinutes ?? 15,
-                LateFeePerDay = request.LateFeePerDay ?? 50000m,
-                GracePeriodDays = request.GracePeriodDays ?? 3,
-                RenewalNoticeDays = request.RenewalNoticeDays ?? 30
-            };
+            policy = new RentalPolicy { FacilityID = facilityId, DepositMonths = depositMonths };
             _repo.AddRentalPolicy(policy);
         }
         else
         {
             policy.DepositMonths = depositMonths;
-            if (request.HoldMinutes.HasValue) policy.HoldMinutes = Math.Clamp(request.HoldMinutes.Value, 1, 60);
-            if (request.LateFeePerDay.HasValue) policy.LateFeePerDay = Math.Max(0m, request.LateFeePerDay.Value);
-            if (request.GracePeriodDays.HasValue) policy.GracePeriodDays = Math.Max(0, request.GracePeriodDays.Value);
-            if (request.RenewalNoticeDays.HasValue) policy.RenewalNoticeDays = Math.Max(0, request.RenewalNoticeDays.Value);
             policy.UpdatedAt = DateTime.UtcNow;
         }
 
         await _repo.SaveChangesAsync(cancellationToken);
-        return new OperationsServiceResponse(true, null, 200, new
-        {
-            facilityId,
-            depositPercent = (decimal)policy.DepositMonths,
-            depositMonths = policy.DepositMonths,
-            holdMinutes = policy.HoldMinutes,
-            lateFeePerDay = policy.LateFeePerDay,
-            gracePeriodDays = policy.GracePeriodDays,
-            renewalNoticeDays = policy.RenewalNoticeDays
-        });
-    }
-
-    public async Task<OperationsServiceResponse> GetSystemPoliciesAsync(CancellationToken cancellationToken)
-    {
-        var globalPolicy = await _repo.GetGlobalRentalPolicyAsync(cancellationToken);
-        var contractTypes = await _repo.GetContractTypesAsync(cancellationToken);
-        var feePolicies = await _repo.GetFeePoliciesAsync(cancellationToken);
-
-        return new OperationsServiceResponse(true, null, 200, new
-        {
-            depositMonths = globalPolicy?.DepositMonths ?? (byte)2,
-            holdMinutes = globalPolicy?.HoldMinutes ?? 15,
-            lateFeePerDay = globalPolicy?.LateFeePerDay ?? 50000m,
-            gracePeriodDays = globalPolicy?.GracePeriodDays ?? 3,
-            renewalNoticeDays = globalPolicy?.RenewalNoticeDays ?? 30,
-            cancellationRules = globalPolicy?.CancellationRules
-                .OrderByDescending(r => r.DaysBeforeStart)
-                .Select(r => new
-                {
-                    cancellationRuleId = r.CancellationRuleID,
-                    daysBeforeStart = r.DaysBeforeStart,
-                    refundPercent = r.RefundPercent
-                })
-                .ToList(),
-            contractTypes = contractTypes.Select(ct => new
-            {
-                contractTypeId = ct.ContractTypeID,
-                typeName = ct.TypeName,
-                months = ct.RentalMonths,
-                discountPercent = ct.DiscountRate,
-                isActive = ct.IsActive
-            }),
-            feePolicies = feePolicies.Select(fp => new
-            {
-                id = fp.FeeCode,
-                feePolicyId = fp.FeePolicyID,
-                feeCode = fp.FeeCode,
-                name = fp.FeeName,
-                category = fp.FeeCategory,
-                valueType = fp.ValueType,
-                minValue = fp.MinValue,
-                maxValue = fp.MaxValue,
-                amount = fp.MaxValue,
-                isActive = fp.IsActive
-            })
-        });
-    }
-
-    public async Task<OperationsServiceResponse> UpdateSystemPoliciesAsync(
-        UpdateSystemPoliciesDTO request,
-        string? userEmail,
-        CancellationToken cancellationToken)
-    {
-        if (!await IsBusinessOperationsManagerAsync(userEmail, cancellationToken))
-            return new OperationsServiceResponse(false, "Chỉ Business Operations Manager mới được cấu hình chính sách hệ thống.", 403, null);
-
-        var user = await _repo.GetActiveUserByEmailAsync(userEmail!, cancellationToken);
-        var now = DateTime.UtcNow;
-
-        var allPolicies = await _repo.GetAllRentalPoliciesAsync(cancellationToken);
-        var globalPolicy = allPolicies.FirstOrDefault(p => p.FacilityID == null);
-        if (globalPolicy is null)
-        {
-            globalPolicy = new RentalPolicy { FacilityID = null, DepositMonths = 2, HoldMinutes = 15, LateFeePerDay = 50000m, GracePeriodDays = 3, RenewalNoticeDays = 30 };
-            _repo.AddRentalPolicy(globalPolicy);
-            allPolicies.Add(globalPolicy);
-        }
-
-        byte? newDepositMonths = request.DepositMonths.HasValue
-            ? (request.DepositMonths.Value <= 1 ? (byte)1 : (byte)2)
-            : request.DepositPercent.HasValue
-                ? (request.DepositPercent.Value <= 1 ? (byte)1 : (byte)2)
-                : null;
-
-        foreach (var p in allPolicies)
-        {
-            if (newDepositMonths.HasValue) p.DepositMonths = newDepositMonths.Value;
-            if (request.HoldMinutes.HasValue) p.HoldMinutes = Math.Clamp(request.HoldMinutes.Value, 1, 60);
-            if (request.LateFeePerDay.HasValue) p.LateFeePerDay = Math.Max(0m, request.LateFeePerDay.Value);
-            if (request.GracePeriodDays.HasValue) p.GracePeriodDays = Math.Max(0, request.GracePeriodDays.Value);
-            if (request.RenewalNoticeDays.HasValue) p.RenewalNoticeDays = Math.Max(0, request.RenewalNoticeDays.Value);
-            p.UpdatedAt = now;
-            p.UpdatedByUserID = user?.UserID;
-
-            if (request.CancellationRules is { Count: > 0 })
-            {
-                var rules = request.CancellationRules
-                    .GroupBy(r => Math.Max(0, r.DaysBeforeStart))
-                    .Select(g => new CancellationRule
-                    {
-                        RentalPolicyID = p.RentalPolicyID,
-                        DaysBeforeStart = g.Key,
-                        RefundPercent = Math.Clamp(g.First().RefundPercent, 0m, 100m)
-                    });
-                _repo.ReplaceCancellationRules(p, rules);
-            }
-        }
-
-        if (request.ContractDiscounts is { Count: > 0 })
-        {
-            var contractTypes = await _repo.GetContractTypesAsync(cancellationToken);
-            foreach (var disc in request.ContractDiscounts)
-            {
-                var ct = contractTypes.FirstOrDefault(x => x.RentalMonths == disc.Months);
-                if (ct is not null)
-                {
-                    ct.DiscountRate = Math.Clamp(disc.DiscountPercent, 0m, 100m);
-                }
-            }
-        }
-
-        if (request.ExtraFees is not null)
-        {
-            var existingFees = await _repo.GetFeePoliciesAsync(cancellationToken);
-            foreach (var feeDto in request.ExtraFees)
-            {
-                var code = (!string.IsNullOrWhiteSpace(feeDto.FeeCode) ? feeDto.FeeCode : feeDto.Id)?.Trim().ToUpperInvariant();
-                if (string.IsNullOrWhiteSpace(code))
-                {
-                    code = $"FEE_{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
-                }
-                if (code.Length > 30) code = code[..30];
-
-                var existing = existingFees.FirstOrDefault(f => string.Equals(f.FeeCode, code, StringComparison.OrdinalIgnoreCase));
-                var amount = Math.Max(0m, feeDto.Amount > 0 ? feeDto.Amount : (feeDto.MaxValue ?? 0m));
-
-                if (existing is null)
-                {
-                    _repo.AddFeePolicy(new FeePolicy
-                    {
-                        FeeCode = code,
-                        FeeName = string.IsNullOrWhiteSpace(feeDto.Name) ? code : feeDto.Name.Trim(),
-                        FeeCategory = feeDto.Category is "ExtraFee" or "LateFee" or "Discount" or "FeeWaiver" ? feeDto.Category : "ExtraFee",
-                        ValueType = feeDto.ValueType is "Amount" or "Percentage" ? feeDto.ValueType : "Amount",
-                        MinValue = 0m,
-                        MaxValue = amount,
-                        IsActive = feeDto.IsActive ?? true,
-                        CreatedAt = now,
-                        UpdatedAt = now
-                    });
-                }
-                else
-                {
-                    if (!string.IsNullOrWhiteSpace(feeDto.Name)) existing.FeeName = feeDto.Name.Trim();
-                    existing.MaxValue = Math.Max(existing.MinValue, amount);
-                    if (feeDto.IsActive.HasValue) existing.IsActive = feeDto.IsActive.Value;
-                    existing.UpdatedAt = now;
-                }
-            }
-        }
-
-        await _repo.SaveChangesAsync(cancellationToken);
-        return await GetSystemPoliciesAsync(cancellationToken);
+        return new OperationsServiceResponse(true, null, 200, new { facilityId, depositPercent = (decimal)policy.DepositMonths, depositMonths = policy.DepositMonths });
     }
 
     public async Task<OperationsServiceResponse> CreateFacilityAsync(
@@ -363,35 +189,16 @@ public class FacilityManagementService : IFacilityManagementService
             FacilityName = facilityName,
             UnitCodePrefix = unitCodePrefix,
             ContactPhone = request.ContactPhone?.Trim(),
-            OpeningHours = request.OpeningHours?.Trim() ?? "07:00 - 21:00 hằng ngày",
-            Description = request.Description?.Trim(),
             Status = string.Equals(request.Status, "inactive", StringComparison.OrdinalIgnoreCase)
                 ? "Inactive"
                 : "Active",
             CreatedAt = DateTime.UtcNow
         };
         facility.ApplyAddressString(address);
-        if (!string.IsNullOrWhiteSpace(request.StreetAddress)) facility.StreetAddress = request.StreetAddress.Trim();
-        if (!string.IsNullOrWhiteSpace(request.Ward)) facility.Ward = request.Ward.Trim();
-        if (!string.IsNullOrWhiteSpace(request.District)) facility.District = request.District.Trim();
-        if (!string.IsNullOrWhiteSpace(request.City)) facility.City = request.City.Trim();
 
         // Trigger TR_Facility_CreateDefaultPolicy tự động tạo RentalPolicy và CancellationRule cho cơ sở mới
         _repo.AddFacility(facility);
         await _repo.SaveChangesAsync(cancellationToken);
-
-        byte depositMonths = 2;
-        if (request.DepositMonths.HasValue || request.DepositPercent.HasValue)
-        {
-            var rawDep = request.DepositMonths.HasValue ? (decimal)request.DepositMonths.Value : request.DepositPercent!.Value;
-            depositMonths = rawDep <= 1 ? (byte)1 : (byte)2;
-            var policy = await _repo.GetRentalPolicyByFacilityIdAsync(facility.FacilityID, cancellationToken);
-            if (policy is not null && policy.DepositMonths != depositMonths)
-            {
-                policy.DepositMonths = depositMonths;
-                await _repo.SaveChangesAsync(cancellationToken);
-            }
-        }
 
         return new OperationsServiceResponse(true, null, 201, new
         {
@@ -399,11 +206,8 @@ public class FacilityManagementService : IFacilityManagementService
             name = facility.FacilityName,
             unitCodePrefix = facility.UnitCodePrefix,
             address = facility.Address,
-            district = facility.District,
-            contactPhone = facility.ContactPhone,
             managerEmail = manager.Email,
-            depositPercent = (decimal)depositMonths,
-            depositMonths = (int)depositMonths
+            depositPercent = 2m
         });
     }
 
@@ -474,36 +278,10 @@ public class FacilityManagementService : IFacilityManagementService
             facility.FacilityName = request.FacilityName.Trim();
         if (request.Address is not null)
             facility.ApplyAddressString(request.Address.Trim());
-        if (!string.IsNullOrWhiteSpace(request.StreetAddress))
-            facility.StreetAddress = request.StreetAddress.Trim();
-        if (!string.IsNullOrWhiteSpace(request.Ward))
-            facility.Ward = request.Ward.Trim();
-        if (!string.IsNullOrWhiteSpace(request.District))
-            facility.District = request.District.Trim();
-        if (!string.IsNullOrWhiteSpace(request.City))
-            facility.City = request.City.Trim();
-        if (request.ContactPhone is not null)
-            facility.ContactPhone = request.ContactPhone.Trim();
-        if (request.OpeningHours is not null)
-            facility.OpeningHours = request.OpeningHours.Trim();
-        if (request.Description is not null)
-            facility.Description = request.Description.Trim();
         if (request.Status is not null)
             facility.Status = string.Equals(request.Status, "inactive", StringComparison.OrdinalIgnoreCase)
                 ? "Inactive"
                 : "Active";
-
-        if (request.DepositMonths.HasValue || request.DepositPercent.HasValue)
-        {
-            var rawDep = request.DepositMonths.HasValue ? (decimal)request.DepositMonths.Value : request.DepositPercent!.Value;
-            byte depositMonths = rawDep <= 1 ? (byte)1 : (byte)2;
-            var policy = await _repo.GetRentalPolicyByFacilityIdAsync(facility.FacilityID, cancellationToken);
-            if (policy is not null)
-            {
-                policy.DepositMonths = depositMonths;
-                policy.UpdatedAt = DateTime.UtcNow;
-            }
-        }
 
         facility.UpdatedAt = DateTime.UtcNow;
         await _repo.SaveChangesAsync(cancellationToken);
@@ -515,8 +293,6 @@ public class FacilityManagementService : IFacilityManagementService
             facilityId = facility.FacilityID,
             name = facility.FacilityName,
             address = facility.Address,
-            district = facility.District,
-            contactPhone = facility.ContactPhone,
             managerEmail,
             status = facility.Status
         });
@@ -606,12 +382,12 @@ public class FacilityManagementService : IFacilityManagementService
                 lookups.unitSize.UnitSizeID,
                 cancellationToken);
 
-            var minPrice = lookups.unitSize.SizeCategory?.MinMonthlyPrice ?? 400000m;
-            var maxPrice = lookups.unitSize.SizeCategory?.MaxMonthlyPrice ?? 3500000m;
-            var monthlyPrice = Math.Clamp(request.BasePrice, minPrice, maxPrice);
-
             if (rate is null)
             {
+                var minPrice = lookups.unitSize.SizeCategory?.MinMonthlyPrice ?? 400000m;
+                var maxPrice = lookups.unitSize.SizeCategory?.MaxMonthlyPrice ?? 3500000m;
+                var monthlyPrice = Math.Clamp(request.BasePrice, minPrice, maxPrice);
+
                 rate = new RentalRate
                 {
                     FacilityID = request.FacilityID,
@@ -639,9 +415,6 @@ public class FacilityManagementService : IFacilityManagementService
                 UnitTypeID = lookups.unitType.UnitTypeID,
                 UnitSizeID = lookups.unitSize.UnitSizeID,
                 UnitNumber = unitNumber,
-                Floor = request.Floor?.Trim(),
-                Zone = request.Zone?.Trim(),
-                LocationNote = request.LocationNote?.Trim(),
                 Status = persistedStatus,
                 CreatedAt = DateTime.UtcNow
             };
@@ -666,7 +439,7 @@ public class FacilityManagementService : IFacilityManagementService
         string? userEmail,
         CancellationToken cancellationToken)
     {
-        if (!await CanManageFacilityAsync(facilityId, userEmail, cancellationToken))
+        if (!await IsBusinessOperationsManagerAsync(userEmail, cancellationToken))
             return new OperationsServiceResponse(false, null, 403, null);
 
         if (!await _repo.FacilityExistsAsync(facilityId, cancellationToken))
@@ -675,19 +448,6 @@ public class FacilityManagementService : IFacilityManagementService
         if (!await _repo.UnitTypeExistsAsync(request.UnitTypeID, cancellationToken) ||
             !await _repo.UnitSizeExistsAsync(request.UnitSizeID, cancellationToken))
             return new OperationsServiceResponse(false, "Loại hoặc kích thước kho không hợp lệ.", 400, null);
-
-        var unitSize = await _repo.GetUnitSizeWithCategoryAsync(request.UnitSizeID, cancellationToken);
-        if (unitSize?.SizeCategory is not null)
-        {
-            if (request.BasePrice < unitSize.SizeCategory.MinMonthlyPrice || request.BasePrice > unitSize.SizeCategory.MaxMonthlyPrice)
-            {
-                return new OperationsServiceResponse(
-                    false,
-                    $"Giá thuê phải nằm trong khung của nhóm {unitSize.SizeCategory.CategoryName} ({unitSize.SizeCategory.MinMonthlyPrice:N0}đ – {unitSize.SizeCategory.MaxMonthlyPrice:N0}đ).",
-                    400,
-                    null);
-            }
-        }
 
         await _repo.EnsureFacilityCatalogLinksAsync(facilityId, request.UnitTypeID, request.UnitSizeID, cancellationToken);
 
@@ -735,7 +495,7 @@ public class FacilityManagementService : IFacilityManagementService
         string? userEmail,
         CancellationToken cancellationToken)
     {
-        if (!await CanManageFacilityAsync(facilityId, userEmail, cancellationToken))
+        if (!await IsBusinessOperationsManagerAsync(userEmail, cancellationToken))
             return new OperationsServiceResponse(false, null, 403, null);
 
         var rate = await _repo.GetRentalRateAsync(facilityId, unitTypeId, unitSizeId, cancellationToken);
@@ -787,10 +547,6 @@ public class FacilityManagementService : IFacilityManagementService
             lookups.unitSize.UnitSizeID,
             cancellationToken);
 
-        var minPrice = lookups.unitSize.SizeCategory?.MinMonthlyPrice ?? 400000m;
-        var maxPrice = lookups.unitSize.SizeCategory?.MaxMonthlyPrice ?? 3500000m;
-        var clampedPrice = Math.Clamp(request.BasePrice, minPrice, maxPrice);
-
         var rate = await _repo.GetRentalRateAsync(
             request.FacilityID,
             lookups.unitType.UnitTypeID,
@@ -799,27 +555,21 @@ public class FacilityManagementService : IFacilityManagementService
 
         if (rate is null)
         {
+            var minPrice = lookups.unitSize.SizeCategory?.MinMonthlyPrice ?? 400000m;
+            var maxPrice = lookups.unitSize.SizeCategory?.MaxMonthlyPrice ?? 3500000m;
             rate = new RentalRate
             {
                 FacilityID = request.FacilityID,
                 UnitTypeID = lookups.unitType.UnitTypeID,
                 UnitSizeID = lookups.unitSize.UnitSizeID,
-                MonthlyPrice = clampedPrice
+                MonthlyPrice = Math.Clamp(request.BasePrice, minPrice, maxPrice)
             };
             _repo.AddRentalRate(rate);
             await _repo.SaveChangesAsync(cancellationToken);
         }
-        else if (request.BasePrice > 0 && rate.MonthlyPrice != clampedPrice)
-        {
-            rate.MonthlyPrice = clampedPrice;
-            rate.UpdatedAt = DateTime.UtcNow;
-        }
 
         unit.UnitTypeID = lookups.unitType.UnitTypeID;
         unit.UnitSizeID = lookups.unitSize.UnitSizeID;
-        if (request.Floor is not null) unit.Floor = request.Floor.Trim();
-        if (request.Zone is not null) unit.Zone = request.Zone.Trim();
-        if (request.LocationNote is not null) unit.LocationNote = request.LocationNote.Trim();
         unit.Status = persistedStatus;
         unit.UpdatedAt = DateTime.UtcNow;
 

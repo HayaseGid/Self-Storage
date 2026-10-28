@@ -1,7 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using SelfStorageAPI.Constants;
 using SelfStorageAPI.Data;
-using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Models;
 
@@ -49,155 +47,31 @@ public class UnitSizeRepository : IUnitSizeRepository
         return await _context.StorageUnits.CountAsync(u => u.UnitSizeID == unitSizeId, cancellationToken);
     }
 
-    public async Task<(int UnitCount, int ReservationCount, int RateCount, bool IsActiveAtFacility)> GetUsageStatsAsync(
-        int unitSizeId,
-        int? facilityId,
-        CancellationToken cancellationToken)
-    {
-        var unitsQuery = _context.StorageUnits.Where(u => u.UnitSizeID == unitSizeId);
-        var itemsQuery = _context.ReservationItems.Where(ri => ri.UnitSizeID == unitSizeId);
-        var ratesQuery = _context.RentalRates.Where(r => r.UnitSizeID == unitSizeId);
-
-        if (facilityId.HasValue)
-        {
-            unitsQuery = unitsQuery.Where(u => u.FacilityID == facilityId.Value);
-            itemsQuery = itemsQuery.Where(ri => ri.FacilityID == facilityId.Value);
-            ratesQuery = ratesQuery.Where(r => r.FacilityID == facilityId.Value);
-        }
-
-        var unitCount = await unitsQuery.CountAsync(cancellationToken);
-        var reservationCount = await itemsQuery.CountAsync(cancellationToken);
-        var rateCount = await ratesQuery.CountAsync(cancellationToken);
-
-        bool isActive = await _context.UnitSizes
-            .Where(s => s.UnitSizeID == unitSizeId)
-            .Select(s => s.IsActive)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (facilityId.HasValue)
-        {
-            var fsActive = await _context.FacilityUnitSizes
-                .Where(fs => fs.FacilityID == facilityId.Value && fs.UnitSizeID == unitSizeId)
-                .Select(fs => (bool?)fs.IsActive)
-                .FirstOrDefaultAsync(cancellationToken);
-            if (fsActive.HasValue)
-            {
-                isActive = isActive && fsActive.Value;
-            }
-        }
-
-        return (unitCount, reservationCount, rateCount, isActive);
-    }
-
     public async Task<bool> IsUsedByUnitsOrRatesAsync(int unitSizeId, CancellationToken cancellationToken)
     {
         var usedByUnits = await _context.StorageUnits.AnyAsync(u => u.UnitSizeID == unitSizeId, cancellationToken);
         var usedByRates = await _context.RentalRates.AnyAsync(r => r.UnitSizeID == unitSizeId, cancellationToken);
+        var usedByFacilities = await _context.FacilityUnitSizes.AnyAsync(fs => fs.UnitSizeID == unitSizeId, cancellationToken);
         var usedByItems = await _context.ReservationItems.AnyAsync(ri => ri.UnitSizeID == unitSizeId, cancellationToken);
-        return usedByUnits || usedByRates || usedByItems;
+        return usedByUnits || usedByRates || usedByFacilities || usedByItems;
     }
 
-    public async Task<bool> HasRentalRatesAsync(int unitSizeId, CancellationToken cancellationToken)
-    {
-        return await _context.RentalRates.AnyAsync(r => r.UnitSizeID == unitSizeId, cancellationToken);
-    }
-
-    public async Task<bool> IsFacilityManagerAsync(int facilityId, int userId, CancellationToken cancellationToken)
-    {
-        return await _context.Facilities.AnyAsync(f => f.FacilityID == facilityId && f.ManagerID == userId, cancellationToken);
-    }
-
-    public async Task<bool> HasActiveUnitsAtFacilityAsync(int facilityId, int unitSizeId, CancellationToken cancellationToken)
-    {
-        return await _context.StorageUnits.AnyAsync(
-            u => u.FacilityID == facilityId && u.UnitSizeID == unitSizeId && u.Status != UnitStatus.Inactive,
-            cancellationToken);
-    }
-
-    public async Task EnsureFacilityLinkAsync(int facilityId, int unitSizeId, bool isActive, int? userId, CancellationToken cancellationToken)
-    {
-        var link = await _context.FacilityUnitSizes.FirstOrDefaultAsync(
-            fs => fs.FacilityID == facilityId && fs.UnitSizeID == unitSizeId,
-            cancellationToken);
-
-        if (link is null)
-        {
-            _context.FacilityUnitSizes.Add(new FacilityUnitSize
-            {
-                FacilityID = facilityId,
-                UnitSizeID = unitSizeId,
-                IsActive = isActive,
-                AddedAt = DateTime.UtcNow,
-                AddedByUserID = userId
-            });
-        }
-        else
-        {
-            link.IsActive = isActive;
-        }
-    }
-
-    public async Task EnsureAllFacilitiesLinkAsync(int unitSizeId, int? userId, CancellationToken cancellationToken)
-    {
-        var facilityIds = await _context.Facilities.Select(f => f.FacilityID).ToListAsync(cancellationToken);
-        var existingLinks = await _context.FacilityUnitSizes
-            .Where(fs => fs.UnitSizeID == unitSizeId)
-            .Select(fs => fs.FacilityID)
-            .ToListAsync(cancellationToken);
-
-        foreach (var fid in facilityIds.Except(existingLinks))
-        {
-            _context.FacilityUnitSizes.Add(new FacilityUnitSize
-            {
-                FacilityID = fid,
-                UnitSizeID = unitSizeId,
-                IsActive = true,
-                AddedAt = DateTime.UtcNow,
-                AddedByUserID = userId
-            });
-        }
-    }
-
-    public async Task RemoveFacilityLinksAsync(int unitSizeId, CancellationToken cancellationToken)
-    {
-        var links = await _context.FacilityUnitSizes.Where(fs => fs.UnitSizeID == unitSizeId).ToListAsync(cancellationToken);
-        if (links.Count > 0)
-        {
-            _context.FacilityUnitSizes.RemoveRange(links);
-        }
-    }
-
-    public async Task PopulateSizeFieldsAsync(UnitSize entity, UpsertUnitSizeDTO request, CancellationToken cancellationToken)
+    public async Task PopulateSizeFieldsAsync(UnitSize entity, string rawDimensions, decimal? requestedVolume, CancellationToken cancellationToken)
     {
         var categories = await _context.SizeCategories
             .Where(c => c.IsActive)
             .OrderBy(c => c.SizeCategoryID)
             .ToListAsync(cancellationToken);
 
-        var rawDimensions = !string.IsNullOrWhiteSpace(request.Dimensions)
-            ? request.Dimensions.Trim()
-            : !string.IsNullOrWhiteSpace(request.SizeCode) && !string.IsNullOrWhiteSpace(request.DisplayName)
-                ? $"{request.SizeCode.Trim()}: {request.DisplayName.Trim()}"
-                : (request.DisplayName ?? request.SizeCode ?? string.Empty).Trim();
+        var trimmed = rawDimensions.Trim();
+        string? explicitCode = null;
+        var displayName = trimmed;
 
-        string? explicitCode = !string.IsNullOrWhiteSpace(request.SizeCode) ? request.SizeCode.Trim().ToUpperInvariant() : null;
-        var displayName = !string.IsNullOrWhiteSpace(request.DisplayName) ? request.DisplayName.Trim() : rawDimensions;
-
-        if (rawDimensions.Contains(':'))
+        if (trimmed.Contains(':'))
         {
-            var parts = rawDimensions.Split(':', 2, StringSplitOptions.TrimEntries);
-            explicitCode ??= parts[0].ToUpperInvariant();
-            if (string.IsNullOrWhiteSpace(request.DisplayName))
-            {
-                displayName = string.IsNullOrWhiteSpace(parts[1]) ? rawDimensions : parts[1];
-            }
-        }
-
-        decimal? requestedVolume = request.Volume;
-        if (!requestedVolume.HasValue && request.WidthM.HasValue && request.LengthM.HasValue)
-        {
-            var h = request.HeightM ?? 2.50m;
-            requestedVolume = request.WidthM.Value * request.LengthM.Value * h;
+            var parts = trimmed.Split(':', 2, StringSplitOptions.TrimEntries);
+            explicitCode = parts[0].ToUpperInvariant();
+            displayName = string.IsNullOrWhiteSpace(parts[1]) ? trimmed : parts[1];
         }
 
         SizeCategory? chosenCategory = null;
@@ -223,13 +97,10 @@ public class UnitSizeRepository : IUnitSizeRepository
         };
 
         var prefixChar = chosenCategory.CodePrefix.Trim();
-        if (string.IsNullOrWhiteSpace(explicitCode) ||
-            !explicitCode.StartsWith(prefixChar, StringComparison.OrdinalIgnoreCase) ||
-            explicitCode.Length < 2 ||
-            !char.IsDigit(explicitCode[1]))
+        if (string.IsNullOrWhiteSpace(explicitCode) || !explicitCode.StartsWith(prefixChar, StringComparison.OrdinalIgnoreCase) || explicitCode.Length < 2 || !char.IsDigit(explicitCode[1]))
         {
             var existingCodes = await _context.UnitSizes
-                .Where(s => s.SizeCode.StartsWith(prefixChar) && s.UnitSizeID != entity.UnitSizeID)
+                .Where(s => s.SizeCode.StartsWith(prefixChar))
                 .Select(s => s.SizeCode)
                 .ToListAsync(cancellationToken);
             var nextNum = existingCodes
@@ -240,39 +111,22 @@ public class UnitSizeRepository : IUnitSizeRepository
         }
 
         var height = chosenCategory.StandardHeightM;
-        decimal width;
-        decimal length;
-
-        if (request.WidthM.HasValue && request.LengthM.HasValue)
+        var targetVolume = Math.Clamp(requestedVolume ?? chosenCategory.MinVolumeM3, chosenCategory.MinVolumeM3, chosenCategory.MaxVolumeM3);
+        var targetArea = targetVolume / height;
+        var width = 2.00m;
+        var length = decimal.Round(targetArea / width, 2, MidpointRounding.AwayFromZero);
+        if (width * length * height < chosenCategory.MinVolumeM3)
         {
-            width = request.WidthM.Value;
-            length = request.LengthM.Value;
-            var vol = width * length * height;
-            if (vol < chosenCategory.MinVolumeM3 || vol > chosenCategory.MaxVolumeM3)
-            {
-                var targetVol = Math.Clamp(vol, chosenCategory.MinVolumeM3, chosenCategory.MaxVolumeM3);
-                length = decimal.Round(targetVol / (width * height), 2, MidpointRounding.AwayFromZero);
-            }
+            length = decimal.Round(chosenCategory.MinVolumeM3 / (width * height) + 0.01m, 2);
         }
-        else
+        else if (width * length * height > chosenCategory.MaxVolumeM3)
         {
-            var targetVolume = Math.Clamp(requestedVolume ?? chosenCategory.MinVolumeM3, chosenCategory.MinVolumeM3, chosenCategory.MaxVolumeM3);
-            var targetArea = targetVolume / height;
-            width = 2.00m;
-            length = decimal.Round(targetArea / width, 2, MidpointRounding.AwayFromZero);
-            if (width * length * height < chosenCategory.MinVolumeM3)
-            {
-                length = decimal.Round(chosenCategory.MinVolumeM3 / (width * height) + 0.01m, 2);
-            }
-            else if (width * length * height > chosenCategory.MaxVolumeM3)
-            {
-                length = decimal.Round(chosenCategory.MaxVolumeM3 / (width * height) - 0.01m, 2);
-            }
+            length = decimal.Round(chosenCategory.MaxVolumeM3 / (width * height) - 0.01m, 2);
         }
 
         entity.SizeCategoryID = chosenCategory.SizeCategoryID;
         entity.SizeCode = explicitCode;
-        entity.DisplayName = string.IsNullOrWhiteSpace(displayName) ? explicitCode : displayName;
+        entity.DisplayName = displayName;
         entity.WidthM = width;
         entity.LengthM = Math.Max(0.50m, length);
         entity.HeightM = height;

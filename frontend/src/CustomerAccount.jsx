@@ -8,10 +8,8 @@
 
 import React, { useEffect, useState } from 'react'
 import ContractModal from './ContractModal'
-import ContractSignFlow from './ContractSignFlow'
 import { apiGet, apiPost } from './api'
 import { formatSignedAt } from './contractSignatures'
-import { useDialog } from './Dialog'
 
 function MyStoragePage({ customerRental, customerRentals, facilities }) {
   const [selectedRental, setSelectedRental] = useState(null)
@@ -694,7 +692,7 @@ function BookingPage({ facilities, storageUnits, getCurrentUser }) {
 
   const totalMonths = Number(duration)
   const totalRent = monthlyPrice * totalMonths
-  const deposit = monthlyPrice * 2
+  const deposit = Math.round(totalRent * 0.2)
 
   const formatPrice = value =>
     new Intl.NumberFormat('vi-VN').format(value) + 'đ'
@@ -854,7 +852,7 @@ function BookingPage({ facilities, storageUnits, getCurrentUser }) {
 
     setBooking(bookingData)
     setSuccess(
-      'Đặt chỗ đã được tạo. Vui lòng thanh toán tiền cọc 2 tháng tiền thuê.'
+      'Đặt chỗ đã được tạo. Vui lòng thanh toán tiền cọc 20%.'
     )
     setStep(4)
   }
@@ -1336,7 +1334,7 @@ function BookingPage({ facilities, storageUnits, getCurrentUser }) {
                   </span>
 
                   <small>
-                    2 tháng tiền thuê
+                    20% tổng giá thuê
                   </small>
                 </div>
 
@@ -1421,7 +1419,7 @@ function BookingPage({ facilities, storageUnits, getCurrentUser }) {
 
               <p>
                 Đặt chỗ của bạn đã được tạo.
-                Vui lòng thanh toán tiền cọc (2 tháng tiền thuê)
+                Vui lòng thanh toán tiền cọc 20%
                 để gửi yêu cầu đến Facility Manager.
               </p>
             </div>
@@ -1623,9 +1621,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser }) {
   const [signatureErrors, setSignatureErrors] = useState({})
   const [loadedSignatures, setLoadedSignatures] = useState({})
   const [openRental, setOpenRental] = useState(null)
-  const [signingRental, setSigningRental] = useState(null)
-  const currentUser = getCurrentUser()
-  const customerName = currentUser?.name
+  const customerName = getCurrentUser()?.name
 
   const keyOf = rental => String(rental.contractId)
 
@@ -1794,7 +1790,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser }) {
 
                 <div>
                   <small>Mã kho</small>
-                  <strong>{rental.unitNumbers?.length > 1 ? rental.unitNumbers.join(', ') : rental.unitId}</strong>
+                  <strong>{rental.unitId}</strong>
                 </div>
 
                 <div>
@@ -1861,7 +1857,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser }) {
                   <button
                     type="button"
                     className="dashboard-primary-btn"
-                    onClick={() => setSigningRental(rental)}
+                    onClick={() => setOpenRental(rental)}
                   >
                     ✍ Ký hợp đồng
                   </button>
@@ -1884,31 +1880,6 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser }) {
         )
       })}
 
-      {signingRental && (
-        <ContractSignFlow
-          group={{
-            code: `SS-${keyOf(signingRental)}`,
-            title: `Hợp đồng #${keyOf(signingRental)}`,
-            rentals: (signingRental.unitNumbers?.length > 1
-              ? signingRental.unitNumbers.map((unitNum, idx) => ({
-                  ...signingRental,
-                  reservationId: `${signingRental.reservationId}-${idx + 1}`,
-                  unitId: unitNum,
-                  monthlyPrice: Math.round(Number(signingRental.monthlyPrice || 0) / signingRental.unitNumbers.length),
-                  rentalAmount: Math.round(Number(signingRental.rentalAmount || 0) / signingRental.unitNumbers.length),
-                  depositAmount: Math.round(Number(signingRental.depositAmount || 0) / signingRental.unitNumbers.length)
-                }))
-              : [signingRental])
-          }}
-          customer={currentUser}
-          onClose={() => setSigningRental(null)}
-          onSign={async record => {
-            await handleSign(signingRental, record)
-            setSigningRental(null)
-          }}
-        />
-      )}
-
       {openRental && (
         <ContractModal
           rental={openRental}
@@ -1922,9 +1893,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser }) {
   )
 }
 
-function CustomerPaymentPage({ reservations, onReload }) {
-  const dialog = useDialog()
-  const [payingId, setPayingId] = useState(null)
+function CustomerPaymentPage({ reservations }) {
   const pending = reservations.filter(item =>
     item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed'
   )
@@ -1934,31 +1903,6 @@ function CustomerPaymentPage({ reservations, onReload }) {
     0
   )
   const formatMoney = amount => `${new Intl.NumberFormat('vi-VN').format(amount || 0)}đ`
-
-  const confirmDeposit = async item => {
-    setPayingId(item.reservationId)
-    try {
-      await apiPost('/api/payment/confirm', {
-        reservationID: item.reservationId,
-        amount: item.depositAmount,
-        paymentType: 'Demo manual confirmation'
-      })
-      await onReload?.()
-      await dialog.alert({
-        tone: 'success',
-        title: 'Đã ghi nhận tiền cọc',
-        message: `Đặt chỗ #${item.reservationId} đã chuyển sang chờ Facility Manager duyệt.`
-      })
-    } catch (err) {
-      await dialog.alert({
-        tone: 'danger',
-        title: 'Không ghi nhận được thanh toán',
-        message: err.message
-      })
-    } finally {
-      setPayingId(null)
-    }
-  }
 
   return (
     <div className="customer-content-page">
@@ -2001,18 +1945,6 @@ function CustomerPaymentPage({ reservations, onReload }) {
               <div><span>Mã giao dịch</span><strong>{item.paymentReference || '—'}</strong></div>
               <div><span>Ngày giao dịch</span><strong>{item.paymentDate ? item.paymentDate.slice(0, 10) : '—'}</strong></div>
             </div>
-            {item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed' && (
-              <div style={{ marginTop: 14 }}>
-                <button
-                  type="button"
-                  className="dashboard-primary-btn"
-                  disabled={payingId === item.reservationId}
-                  onClick={() => confirmDeposit(item)}
-                >
-                  {payingId === item.reservationId ? 'Đang ghi nhận...' : `Ghi nhận thanh toán cọc (${formatMoney(item.depositAmount)})`}
-                </button>
-              </div>
-            )}
           </div>
         </section>
       ))}
@@ -2023,7 +1955,7 @@ function CustomerPaymentPage({ reservations, onReload }) {
   )
 }
 
-function CustomerDashboard({ facilities, storageUnits, customerRental, customerRentals, getCurrentUser, navigate, currentUserKey, onReload }) {
+function CustomerDashboard({ facilities, storageUnits, customerRental, customerRentals, getCurrentUser, navigate, currentUserKey }) {
   const user = getCurrentUser()
   // Đã cập nhật: Danh sách kho đang thuê, kho Staff vừa bàn giao đứng đầu (05/10/2026)
   const rentals = Array.isArray(customerRentals)
@@ -2581,7 +2513,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
 
         {activeSection === 'payment' && (
-          <CustomerPaymentPage reservations={rentals} onReload={onReload} />
+          <CustomerPaymentPage reservations={rentals} />
         )}
 
         {activeSection === 'payment-demo-disabled' && (
