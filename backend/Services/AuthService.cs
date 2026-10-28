@@ -38,7 +38,8 @@ public class AuthService : IAuthService
                 FullName = user.FullName,
                 Email = user.Email!,
                 RoleName = user.Role.RoleName,
-                Status = user.Status
+                Status = user.Status,
+                PhoneNumber = user.PhoneNumber
             }
         };
     }
@@ -63,8 +64,10 @@ public class AuthService : IAuthService
             Username = request.Email,
             Email = request.Email,
             FullName = request.FullName,
+            PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim(),
+            EmailVerified = isCustomer,
             // Mã hóa mật khẩu plain-text trước khi lưu xuống DB
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password), 
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
             RoleID = role.RoleID,
             Status = isCustomer ? "Active" : "Pending Approval"
         };
@@ -72,10 +75,10 @@ public class AuthService : IAuthService
         await _userRepository.AddUserAsync(newUser);
         await _userRepository.SaveChangesAsync();
 
-        return new AuthResult 
-        { 
-            IsSuccess = true, 
-            ErrorMessage = isCustomer ? "Tạo tài khoản thành công." : "Đã gửi yêu cầu tài khoản, chờ Admin duyệt." 
+        return new AuthResult
+        {
+            IsSuccess = true,
+            ErrorMessage = isCustomer ? "Tạo tài khoản thành công." : "Đã gửi yêu cầu tài khoản, chờ Admin duyệt."
         };
     }
 }

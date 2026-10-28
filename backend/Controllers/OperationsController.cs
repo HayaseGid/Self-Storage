@@ -25,7 +25,9 @@ public class OperationsController : ControllerBase
         [FromHeader(Name = "X-User-Email")] string? userEmail,
         CancellationToken cancellationToken)
     {
-        var response = await _stateService.GetStateAsync(email, userEmail, cancellationToken);
+        // Đã xác thực bằng JWT thì chỉ tin email trong token, bỏ qua ?email= để tránh xem trộm dữ liệu người khác.
+        var authenticatedByJwt = HttpContext.Items.ContainsKey(SelfStorageAPI.Middleware.JwtIdentityMiddleware.AuthenticatedByJwtItem);
+        var response = await _stateService.GetStateAsync(authenticatedByJwt ? null : email, userEmail, cancellationToken);
         return MapResponse(response);
     }
 

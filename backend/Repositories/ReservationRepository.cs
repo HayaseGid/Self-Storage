@@ -90,6 +90,30 @@ public class ReservationRepository : IReservationRepository
 
     public async Task<List<Reservation>> GetCustomerReservationsAsync(string email, CancellationToken cancellationToken)
     {
+        var missingContractReservations = await _context.Reservations
+            .Include(r => r.Contract)
+            .Where(r => r.Customer.Email == email &&
+                        (r.Status == ReservationStatus.Confirmed || r.Status == ReservationStatus.HandedOver) &&
+                        r.Contract == null)
+            .ToListAsync(cancellationToken);
+
+        if (missingContractReservations.Count > 0)
+        {
+            foreach (var r in missingContractReservations)
+            {
+                _context.Contracts.Add(new Contract
+                {
+                    ContractNumber = $"CT-{r.StartDate:yyyy}-{r.ReservationID:00000}",
+                    ReservationID = r.ReservationID,
+                    StartDate = r.StartDate.Date,
+                    EndDate = r.EndDate.Date,
+                    ContractStatus = "Active",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
         return await _context.Reservations
             .Include(r => r.Customer)
             .Include(r => r.Facility)
@@ -106,6 +130,7 @@ public class ReservationRepository : IReservationRepository
             .Include(r => r.Payments)
             .Include(r => r.Charges)
             .Include(r => r.Contract)
+                .ThenInclude(c => c!.Signature)
             .Include(r => r.UnitAccesses)
             .Where(r => r.Customer.Email == email)
             .OrderByDescending(r => r.StartDate)

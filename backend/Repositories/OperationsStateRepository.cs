@@ -52,7 +52,34 @@ public class OperationsStateRepository : IOperationsStateRepository
 
     public async Task<object> GetStateDataAsync(int[] facilityIdsInScope, int? customerId, CancellationToken cancellationToken)
     {
-        var facilities = await _context.Facilities
+        var now = DateTime.UtcNow;
+
+        // Đảm bảo mọi đơn đã Confirmed hoặc Handed Over đều có bản ghi Contract để khách có thể ký hợp đồng online
+        var reservationsMissingContract = await _context.Reservations
+            .Where(r =>
+                (r.Status == ReservationStatus.Confirmed || r.Status == ReservationStatus.HandedOver) &&
+                r.Contract == null)
+            .ToListAsync(cancellationToken);
+
+        if (reservationsMissingContract.Count > 0)
+        {
+            foreach (var r in reservationsMissingContract)
+            {
+                _context.Contracts.Add(new Contract
+                {
+                    ContractNumber = $"HD-{now:yyyy}-{r.ReservationID:D5}",
+                    ReservationID = r.ReservationID,
+                    StartDate = r.StartDate,
+                    EndDate = r.EndDate,
+                    ContractStatus = "Active",
+                    CreatedAt = r.ConfirmedAt ?? now,
+                    CreatedByUserID = r.ConfirmedByUserID
+                });
+            }
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        var rawFacilities = await _context.Facilities
             .Where(f => facilityIdsInScope.Contains(f.FacilityID))
             .OrderBy(f => f.FacilityID)
             .Select(f => new
@@ -71,11 +98,6 @@ public class OperationsStateRepository : IOperationsStateRepository
                 description = f.Description,
                 status = f.Status,
                 managerEmail = f.Manager.Email,
-                depositPercent = _context.RentalPolicies
-                    .Where(p => p.FacilityID == f.FacilityID || p.FacilityID == null)
-                    .OrderBy(p => p.FacilityID != null ? 0 : 1)
-                    .Select(p => (decimal?)p.DepositMonths)
-                    .FirstOrDefault() ?? 2m,
                 depositMonths = _context.RentalPolicies
                     .Where(p => p.FacilityID == f.FacilityID || p.FacilityID == null)
                     .OrderBy(p => p.FacilityID != null ? 0 : 1)
@@ -104,7 +126,29 @@ public class OperationsStateRepository : IOperationsStateRepository
             })
             .ToListAsync(cancellationToken);
 
-        var now = DateTime.UtcNow;
+        var facilities = rawFacilities.Select(f => new
+        {
+            f.id,
+            f.facilityId,
+            f.name,
+            f.unitCodePrefix,
+            f.address,
+            f.streetAddress,
+            f.ward,
+            f.district,
+            f.city,
+            f.contactPhone,
+            f.openingHours,
+            f.description,
+            f.status,
+            f.managerEmail,
+            depositPercent = f.depositMonths <= 1 ? 50m : 100m,
+            f.depositMonths,
+            f.holdMinutes,
+            f.lateFeePerDay,
+            f.gracePeriodDays,
+            f.renewalNoticeDays
+        }).ToList();
 
         var rawUnits = await _context.StorageUnits
             .Where(u => facilityIdsInScope.Contains(u.FacilityID))
@@ -143,7 +187,7 @@ public class OperationsStateRepository : IOperationsStateRepository
             unitTypeId = u.UnitTypeID,
             size = $"{u.SizeCode}: {u.SizeDisplayName}",
             sizeId = u.UnitSizeID,
-            sizeM2 = u.VolumeM3,
+            sizeM2 = u.AreaM2,
             areaM2 = u.AreaM2,
             volumeM3 = u.VolumeM3,
             pricePerMonth = u.MonthlyPrice,
@@ -202,7 +246,9 @@ public class OperationsStateRepository : IOperationsStateRepository
                     .FirstOrDefault(),
                 r.Status,
                 r.HoldExpiresAt,
-                ContractId = r.Contract == null ? (int?)null : r.Contract.ContractID
+                ContractId = r.Contract == null ? (int?)null : r.Contract.ContractID,
+                IsSigned = r.Contract != null && r.Contract.Signature != null,
+                SignedAt = r.Contract != null && r.Contract.Signature != null ? (DateTimeOffset?)r.Contract.Signature.SignedAt : null
             })
             .ToListAsync(cancellationToken);
 
@@ -237,6 +283,9 @@ public class OperationsStateRepository : IOperationsStateRepository
                     : r.Status),
             depositExpiresAt = r.HoldExpiresAt,
             contractId = r.ContractId,
+            contractStatus = r.IsSigned ? "Signed" : "Pending Signature",
+            isSigned = r.IsSigned,
+            signedAt = r.SignedAt,
             source = "live"
         }).ToList();
 
@@ -263,6 +312,9 @@ public class OperationsStateRepository : IOperationsStateRepository
                     .Where(ch => ch.ChargeType == "Rent" && ch.Status != "Cancelled")
                     .Sum(ch => (decimal?)ch.Amount) ?? 0m,
                 status = c.ContractStatus,
+                isSigned = c.Signature != null,
+                signedAt = c.Signature != null ? (DateTimeOffset?)c.Signature.SignedAt : null,
+                signerName = c.Signature != null ? c.Signature.SignerName : null,
                 accessType = c.Reservation.UnitAccesses.Select(a => a.AccessType).FirstOrDefault(),
                 accessValue = c.Reservation.UnitAccesses.Select(a => a.AccessValue).FirstOrDefault()
             })
@@ -283,6 +335,9 @@ public class OperationsStateRepository : IOperationsStateRepository
             c.deposit,
             c.totalFee,
             c.status,
+            c.isSigned,
+            c.signedAt,
+            c.signerName,
             c.accessType,
             c.accessValue
         }).ToList();
@@ -353,6 +408,8 @@ public class OperationsStateRepository : IOperationsStateRepository
             {
                 id = s.UnitSizeID,
                 unitSizeId = s.UnitSizeID,
+                sizeCategoryId = s.SizeCategoryID,
+                categoryCode = s.SizeCategory.CategoryCode,
                 sizeCode = s.SizeCode,
                 displayName = s.DisplayName,
                 dimensions = s.SizeCode + ": " + s.DisplayName,
@@ -419,14 +476,20 @@ public class OperationsStateRepository : IOperationsStateRepository
             .Select(c => new
             {
                 sizeCategoryId = c.SizeCategoryID,
-                code = c.CategoryCode,
+                code = c.CodePrefix.Trim(),
+                categoryCode = c.CategoryCode,
                 name = c.CategoryName,
                 prefix = c.CodePrefix.Trim(),
                 standardHeightM = c.StandardHeightM,
                 minVolumeM3 = c.MinVolumeM3,
                 maxVolumeM3 = c.MaxVolumeM3,
+                minArea = decimal.Round(c.MinVolumeM3 / (c.StandardHeightM > 0 ? c.StandardHeightM : 2.5m), 2),
+                maxArea = decimal.Round(c.MaxVolumeM3 / (c.StandardHeightM > 0 ? c.StandardHeightM : 2.5m), 2),
+                minPrice = c.MinMonthlyPrice,
+                maxPrice = c.MaxMonthlyPrice,
                 minMonthlyPrice = c.MinMonthlyPrice,
                 maxMonthlyPrice = c.MaxMonthlyPrice,
+                recommendedPrice = decimal.Round((c.MinMonthlyPrice + c.MaxMonthlyPrice) / 2m, 0),
                 isActive = c.IsActive
             })
             .ToListAsync(cancellationToken);
@@ -487,6 +550,7 @@ public class OperationsStateRepository : IOperationsStateRepository
             unitTypes,
             unitSizes,
             rentalRates,
+            priceBands = sizeCategories,
             managers,
             staffUsers,
             policies,

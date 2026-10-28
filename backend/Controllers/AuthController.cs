@@ -12,13 +12,16 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
     private readonly SelfStorageDbContext _context;
+    private readonly IJwtTokenService _jwtTokenService;
 
     public AuthController(
         IAuthService authService,
-        SelfStorageDbContext context)
+        SelfStorageDbContext context,
+        IJwtTokenService jwtTokenService)
     {
         _authService = authService;
         _context = context;
+        _jwtTokenService = jwtTokenService;
     }
 
     [HttpPost("login")]
@@ -45,6 +48,10 @@ public class AuthController : ControllerBase
             Details = "Đăng nhập thành công"
         });
         await _context.SaveChangesAsync(cancellationToken);
+
+        var (token, expiresAt) = _jwtTokenService.CreateToken(user);
+        user.Token = token;
+        user.TokenExpiresAt = expiresAt;
 
         return Ok(user);
     }

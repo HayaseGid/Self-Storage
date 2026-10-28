@@ -1,6 +1,11 @@
+using System.Security.Claims;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.Interfaces;
+using SelfStorageAPI.Middleware;
 using SelfStorageAPI.Repositories;
 using SelfStorageAPI.Services;
 
@@ -49,6 +54,35 @@ builder.Services.AddScoped<IOperationsStateService, OperationsStateService>();
 builder.Services.AddScoped<IFacilityManagementRepository, FacilityManagementRepository>();
 builder.Services.AddScoped<IFacilityManagementService, FacilityManagementService>();
 
+// JWT authentication
+var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
+builder.Services.Configure<JwtOptions>(jwtSection);
+var jwtOptions = jwtSection.Get<JwtOptions>() ?? new JwtOptions();
+if (string.IsNullOrWhiteSpace(jwtOptions.Key) || Encoding.UTF8.GetByteCount(jwtOptions.Key) < 32)
+    throw new InvalidOperationException("Cấu hình Jwt:Key bắt buộc và phải dài tối thiểu 32 ký tự.");
+
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1),
+            NameClaimType = ClaimTypes.Name,
+            RoleClaimType = ClaimTypes.Role
+        };
+    });
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -64,6 +98,11 @@ if (!app.Environment.IsDevelopment())
 
 // Allow frontend requests, including the demo identity header.
 app.UseCors("AllowFrontend");
+
+// Xác thực JWT, sau đó gán email trong token vào X-User-Email cho các controller hiện có.
+app.UseAuthentication();
+app.UseMiddleware<JwtIdentityMiddleware>();
+app.UseAuthorization();
 
 app.MapControllers();
 

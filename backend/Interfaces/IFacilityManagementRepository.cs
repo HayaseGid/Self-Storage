@@ -31,6 +31,14 @@ public interface IFacilityManagementRepository
     void RemoveFeePolicy(FeePolicy feePolicy);
     void ReplaceCancellationRules(RentalPolicy policy, IEnumerable<CancellationRule> rules);
 
+    Task<List<SizeCategory>> GetSizeCategoriesWithDetailsAsync(CancellationToken cancellationToken);
+    Task<SizeCategory?> GetSizeCategoryByCodeAsync(string code, CancellationToken cancellationToken);
+    void AddSizeCategory(SizeCategory category);
+    void RemoveSizeCategory(SizeCategory category);
+    Task<List<StorageUnit>> GetAllStorageUnitsAsync(CancellationToken cancellationToken);
+    Task<List<RentalRate>> GetAllRentalRatesAsync(CancellationToken cancellationToken);
+    Task<List<UnitSize>> GetAllUnitSizesAsync(CancellationToken cancellationToken);
+
     Task<FacilityStaff?> GetFacilityStaffAssignmentAsync(int facilityId, int userId, CancellationToken cancellationToken);
     void AddFacilityStaff(FacilityStaff assignment);
 
@@ -38,6 +46,7 @@ public interface IFacilityManagementRepository
     Task<bool> HasConflictingReservationForUnitAsync(int excludeReservationId, int unitId, DateTime startDate, DateTime endDate, CancellationToken cancellationToken);
     Task<bool> HasActiveBookingHoldForUnitAsync(int unitId, DateTime now, CancellationToken cancellationToken);
     void AddReservationUnit(ReservationUnit reservationUnit);
+    Task<Contract> EnsureContractForReservationAsync(Reservation reservation, int? userId, CancellationToken cancellationToken);
 
     Task<StorageUnit?> GetUnitByNumberAndFacilityAsync(string unitNumber, int facilityId, CancellationToken cancellationToken);
     Task<List<string>> GetUnitNumbersByFacilityAsync(int facilityId, CancellationToken cancellationToken);
