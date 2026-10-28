@@ -4534,3 +4534,37 @@
 .bo-revenue-bar-past { background: #b9dcf3; }
 
 .bo-revenue-row-divider { border-bottom: 1px solid #edf2f5; }
+/* Mã chi nhánh tự sinh (không nhập tay) */
+.business-auto-code {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 46px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px dashed #b9d3ea;
+  background: #f2f7fc;
+  color: #6d849b;
+  font-size: 13px;
+}
+.business-auto-code strong { font: 800 18px 'Be Vietnam Pro', sans-serif; color: #073d70; letter-spacing: .04em; }
+
+/* Kho đã có đơn: khóa đổi trạng thái */
+.business-unit-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 99px;
+  background: #f2f5f8;
+  color: #6d849b;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: help;
+}
+
+/* Biểu giá: ô nhập giá có ràng buộc */
+.business-price-toolbar { align-items: flex-start; flex-wrap: wrap; }
+.business-price-input { flex: 1 1 260px; min-width: 220px; }
+.business-rate-selected td { background: #eef7ff; }

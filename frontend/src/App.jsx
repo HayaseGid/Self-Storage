@@ -17,7 +17,9 @@ import {
 } from './unitTypes'
 import './unitTypes.css'
 import { getFacilityDistrict, groupFacilitiesByDistrict } from './districts'
-import { DEPOSIT_MONTHS, RENTAL_TERMS, computeDeposit } from './storageRules'
+import { RENTAL_TERMS } from './storageRules'
+import { effectiveMonthly, holdMinutesFor, quote, setCatalogPricing } from './pricing'
+import FacilityMap, { directionsUrl, useFacilityLocations } from './FacilityMap'
 import CartPage from './CartPage'
 import { CART_LIMIT, addToCart, isInCart, useCart } from './cart'
 import {
@@ -483,6 +485,81 @@ function DistrictPicker({ groups, active = '', onSelect, showAll = true, large =
   )
 }
 
+/* Gộp danh sách cơ sở với tọa độ từ /api/facility-locations để vẽ bản đồ. */
+function toMapPoints(list, locations) {
+  return list.map(f => {
+    const loc = locations.find(item => Number(item.facilityId) === Number(f.facilityId))
+    return {
+      id: f.facilityId,
+      name: f.name,
+      address: f.location || loc?.address,
+      latitude: loc?.latitude ?? null,
+      longitude: loc?.longitude ?? null,
+      available: f.available,
+      total: f.total,
+      phone: loc?.contactPhone,
+      hours: loc?.openingHours,
+      facility: f
+    }
+  })
+}
+
+function FacilitiesMapSection({ list }) {
+  const { loading, error, locations } = useFacilityLocations()
+  const [show, setShow] = useState(true)
+  const [selectedId, setSelectedId] = useState(null)
+  const points = toMapPoints(list, locations)
+  const mapped = points.filter(p => p.latitude != null && p.longitude != null).length
+  return (
+    <section className="facility-map-section" aria-label="Bản đồ các cơ sở">
+      <div className="facility-map-head">
+        <div>
+          <h2>Bản đồ cơ sở</h2>
+          <p>{loading ? 'Đang tải vị trí...' : error ? `Chưa tải được vị trí: ${error}` : `${mapped}/${points.length} cơ sở có vị trí trên bản đồ · bấm ghim để xem kho hoặc chỉ đường`}</p>
+        </div>
+        <button type="button" className="facility-map-toggle" onClick={() => setShow(v => !v)}>{show ? 'Ẩn bản đồ' : 'Xem bản đồ'}</button>
+      </div>
+      {show && !error && (
+        <div className="facility-map-layout">
+          <FacilityMap points={points} selectedId={selectedId} onOpen={point => navigate(`/facilities/${createSlug(point.name)}`)} />
+          <div className="facility-map-list">
+            {points.map(point => (
+              <button
+                key={point.id}
+                type="button"
+                className={`facility-map-item${selectedId === point.id ? ' active' : ''}${point.latitude == null ? ' no-geo' : ''}`}
+                onClick={() => (point.latitude == null ? navigate(`/facilities/${createSlug(point.name)}`) : setSelectedId(point.id))}
+              >
+                <strong>{point.name}</strong>
+                <span>{point.address}</span>
+                <em>{point.available} kho trống{point.latitude == null ? ' · chưa có vị trí' : ''}</em>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function FacilityLocationCard({ facility }) {
+  const { error, locations } = useFacilityLocations()
+  const [point] = toMapPoints([facility], locations)
+  if (error || !point || point.latitude == null) return null
+  return (
+    <div className="facility-location-card">
+      <FacilityMap points={[point]} single height={260} />
+      <div className="facility-location-info">
+        <h3>Vị trí cơ sở</h3>
+        <p><PinIcon /> {point.address}</p>
+        {point.hours && <p>Giờ mở cửa: {point.hours}</p>}
+        {point.phone && <p>Điện thoại: {point.phone}</p>}
+        <a href={directionsUrl(point)} target="_blank" rel="noopener noreferrer">Chỉ đường (Google Maps)</a>
+      </div>
+    </div>
+  )
+}
+
 function FacilitiesPage() {
   const district = new URLSearchParams(window.location.search).get('district') || ''
   const groups = getDistrictGroups()
@@ -496,6 +573,7 @@ function FacilitiesPage() {
         <div className="container">
           <div className="listing-heading"><div className="eyebrow">OUR FACILITIES</div><h1>Các cơ sở lưu trữ</h1><p>Chọn khu vực gần bạn, rồi chọn cơ sở để xem các kho đang có sẵn.</p></div>
           <DistrictPicker groups={groups} active={activeGroup ? district : ''} onSelect={selectDistrict} />
+          {facilities.length > 0 && <FacilitiesMapSection list={activeGroup ? activeGroup.facilities : facilities} />}
           {(activeGroup ? [activeGroup] : groups).map(group => (
             <section className="district-section" key={group.slug} aria-labelledby={`district-${group.slug}`}>
               <div className="district-section-head">
@@ -617,6 +695,7 @@ function FacilityDetailPage({ facility }) {
               <p>Hiện có <strong>{facility.available}</strong> kho đang sẵn sàng cho thuê.</p>
             </div>
           </div>
+          <FacilityLocationCard facility={facility} />
           <div className="units-heading">
             <div><div className="eyebrow">AVAILABLE UNITS</div><h2>Các kho tại {facility.name}</h2></div>
             <span>{filteredUnits.length} / {units.length} kho phù hợp</span>
@@ -802,9 +881,13 @@ function BookingPage({ facility, unit }) {
   const selectedUnit = getStorageUnits(facility.name).find(item => item.id === selectedUnitNumber) || unit
   const monthlyPrice = Number(selectedUnit.price)
   const totalMonths = Number(duration)
-  const totalRent = monthlyPrice * totalMonths
-  // Tiền cọc = 2 tháng tiền thuê. Sau khi tạo đặt chỗ thì dùng số backend trả về.
-  const deposit = booking?.deposit ?? computeDeposit(monthlyPrice)
+  // Giá xem trước theo đúng công thức backend: giảm giá theo gói (ContractType) và số tháng cọc của cơ sở.
+  // Sau khi tạo đặt chỗ thì dùng số backend trả về.
+  const priceQuote = quote(monthlyPrice, totalMonths, facility.facilityId)
+  const totalRent = priceQuote.rent
+  const depositMonths = priceQuote.depositMonths
+  const holdMinutes = holdMinutesFor(facility.facilityId)
+  const deposit = booking?.deposit ?? priceQuote.deposit
 
   const years = Array.from(
     { length: 6 },
@@ -1032,7 +1115,7 @@ function BookingPage({ facility, unit }) {
     if (Date.parse(booking.depositExpiresAt) <= Date.now()) {
       setDepositSecondsRemaining(0)
       await showBookingError(
-        'Thời gian giữ kho 10 phút đã hết nên kho đã được trả lại. Vui lòng tạo đặt chỗ mới.',
+        `Thời gian giữ kho ${holdMinutes} phút đã hết nên kho đã được trả lại. Vui lòng tạo đặt chỗ mới.`,
         'Hết thời gian giữ kho',
         'warning'
       )
@@ -1113,7 +1196,7 @@ function BookingPage({ facility, unit }) {
               <p>
                 {step === 1
                   ? `Chọn ngày bắt đầu, thời gian thuê và phương thức thanh toán cho kho ${unit.id}.`
-                    : `Tiền cọc bằng ${DEPOSIT_MONTHS} tháng tiền thuê, hoàn lại khi trả kho nếu không phát sinh chi phí.`}
+                    : `Tiền cọc bằng ${depositMonths} tháng tiền thuê, hoàn lại khi trả kho nếu không phát sinh chi phí.`}
               </p>
             </div>
 
@@ -1238,14 +1321,17 @@ function BookingPage({ facility, unit }) {
                           onClick={() => handleDurationChange(months)}
                         >
                           <span className="duration-package-months"><strong>{months}</strong> tháng</span>
-                          <span className="duration-package-total">{formatPrice(monthlyPrice * months)}</span>
+                          <span className="duration-package-total">{formatPrice(quote(monthlyPrice, months, facility.facilityId).rent)}</span>
+                          {quote(monthlyPrice, months, facility.facilityId).discountPercent > 0 && (
+                            <span className="duration-package-saving">Giảm {quote(monthlyPrice, months, facility.facilityId).discountPercent}% · {formatPrice(effectiveMonthly(monthlyPrice, months))}/tháng</span>
+                          )}
                           <span className="duration-package-end">{packageEnd ? `Đến ${formatDate(packageEnd)}` : DURATION_PACKAGE_NOTES[months]}</span>
                         </button>
                       )
                     })}
                   </div>
                   <p className="duration-note">
-                    Hợp đồng thuê mới áp dụng gói <strong>6 tháng</strong> hoặc <strong>12 tháng</strong>. Tiền cọc <strong>{DEPOSIT_MONTHS} tháng tiền thuê</strong> ({formatPrice(computeDeposit(monthlyPrice))}), hoàn lại khi trả kho. Gia hạn hợp đồng là chức năng riêng, sẽ có sau.
+                    Hợp đồng thuê mới áp dụng gói <strong>6 tháng</strong> hoặc <strong>12 tháng</strong>. Tiền cọc <strong>{depositMonths} tháng tiền thuê</strong> ({formatPrice(priceQuote.deposit)}), hoàn lại khi trả kho. Gia hạn hợp đồng là chức năng riêng, sẽ có sau.
                   </p>
                 </div>
 
@@ -1334,11 +1420,17 @@ function BookingPage({ facility, unit }) {
                     <span>Tổng tiền thuê</span>
                     <strong className="main-price">{formatPrice(totalRent)}</strong>
                   </div>
+                  {priceQuote.discountPercent > 0 && (
+                    <div className="discount-row">
+                      <span>Giảm giá gói {totalMonths} tháng ({priceQuote.discountPercent}%)</span>
+                      <strong>−{formatPrice(priceQuote.saving)}</strong>
+                    </div>
+                  )}
 
                   <div className="deposit-row">
                     <div>
                       <span>Tiền cọc bắt buộc</span>
-                      <small>{DEPOSIT_MONTHS} tháng tiền thuê · hoàn lại khi trả kho</small>
+                      <small>{depositMonths} tháng tiền thuê · hoàn lại khi trả kho</small>
                     </div>
                     <strong className="deposit-price">{formatPrice(deposit)}</strong>
                   </div>
@@ -2167,7 +2259,7 @@ function HomePage() {
             <DistrictPicker groups={getDistrictGroups()} showAll={false} large label="Chọn khu vực" onSelect={slug => navigate(`/search?district=${slug}`)} />
           </div>
         </section>
-        <section className="facilities section" id="facilities"><div className="container"><div className="section-heading"><div><div className="eyebrow green">OUR FACILITIES</div><h2>Cơ sở lưu trữ</h2><p>Mỗi cơ sở có nhiều loại kho và kích thước để bạn lựa chọn.</p></div><button className="text-link" type="button" onClick={() => navigate('/facilities')}>Xem tất cả <ArrowIcon /></button></div>{submittedQuery && <div className="search-result-note">Đang hiển thị kết quả cho <strong>“{submittedQuery}”</strong></div>}<div className="facility-grid">{visible.map((f, i) => <FacilityCard key={f.name} facility={f} index={i} />)}</div>{visible.length === 0 && <div className="empty-state">Không tìm thấy cơ sở phù hợp. Hãy thử từ khóa khác.</div>}</div></section>
+        <section className="facilities section" id="facilities"><div className="container"><div className="section-heading"><div><div className="eyebrow green">OUR FACILITIES</div><h2>Cơ sở lưu trữ</h2><p>Mỗi cơ sở có nhiều loại kho và kích thước để bạn lựa chọn.</p></div><button className="text-link" type="button" onClick={() => navigate('/facilities')}>Xem tất cả <ArrowIcon /></button></div>{submittedQuery && <div className="search-result-note">Đang hiển thị kết quả cho <strong>“{submittedQuery}”</strong></div>}<div className="facility-grid">{visible.map((f, i) => <FacilityCard key={f.name} facility={f} index={i} />)}</div>{visible.length === 0 && <div className="empty-state">Không tìm thấy cơ sở phù hợp. Hãy thử từ khóa khác.</div>}{facilities.length > 0 && <FacilitiesMapSection list={visible.length ? visible : facilities} />}</div></section>
         <section className="types section" id="types"><div className="container types-layout"><div className="types-image-wrap"><img src="https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?auto=format&fit=crop&w=1300&q=90" alt="Các kho lưu trữ với nhiều kích thước" /><div className="image-caption"><span>SPACE THAT FITS</span><strong>Chọn đúng không gian<br />cho đúng nhu cầu.</strong></div></div><div className="types-content"><div className="eyebrow green">STORAGE TYPES</div><h2>Từ vài chiếc hộp<br />đến cả một căn phòng.</h2><p>Không cần thuê quá nhiều. Chọn loại kho và diện tích vừa đủ với đồ đạc, thời gian và ngân sách của bạn.</p><div className="type-list"><div className="type-item"><span>01</span><div><strong>Kho tiêu chuẩn</strong><small>Phù hợp đồ gia dụng, hồ sơ và vật dụng cá nhân.</small></div><ArrowIcon /></div><div className="type-item"><span>02</span><div><strong>Kho mát / Cool</strong><small>Kiểm soát nhiệt độ cho nhóm hàng cần môi trường ổn định.</small></div><ArrowIcon /></div><div className="type-item"><span>03</span><div><strong>Kho lạnh / Frozen</strong><small>Dành cho nhu cầu lưu trữ đặc thù với điều kiện nhiệt độ phù hợp.</small></div><ArrowIcon /></div></div></div></div></section>
         <section className="about section" id="about"><div className="container about-grid"><div><div className="eyebrow green">ABOUT STORESPACE</div><h2>Lưu trữ đơn giản,<br />quản lý rõ ràng.</h2></div><div className="about-copy"><p>StoreSpace kết nối khách hàng với các cơ sở lưu trữ và hỗ trợ toàn bộ vòng đời thuê kho — từ tìm kiếm, đặt kho, thanh toán đến bàn giao và theo dõi hợp đồng.</p><div className="process-list"><div><b>01</b><span>Chọn cơ sở, loại kho, kích thước và thời gian thuê.</span></div><div><b>02</b><span>Giá, tiền cọc, thanh toán và hợp đồng được theo dõi rõ ràng.</span></div><div><b>03</b><span>Quy trình kiểm tra, bàn giao và quản lý quyền truy cập.</span></div></div></div></div></section>
         <section className="support" id="support"><div className="container"><div className="support-card"><div><div className="eyebrow">NEED HELP?</div><h2>Bạn cần hỗ trợ về kho?</h2><p>Đội ngũ StoreSpace sẵn sàng hỗ trợ thông tin về cơ sở, loại kho, đặt kho và quy trình thuê.</p></div><a className="primary-dark-button" href="mailto:support@storespace.vn">Bắt đầu ngay <ArrowIcon /></a></div></div></section>
@@ -2296,9 +2388,28 @@ function mapCustomerReservation(reservation) {
     Expired: 'Hết hạn giữ kho · Cần đặt lại'
   }
   const monthlyPrice = Number(reservation.monthlyPrice || 0)
+  // Backend mới dùng "Pending Payment"; giao diện khách vẫn dùng mã "Pending Deposit".
+  const status = reservation.status === 'Pending Payment' ? 'Pending Deposit' : reservation.status
+  // Một đơn (một hợp đồng) có thể gồm nhiều kho: bổ sung loại, kích thước, giá từng kho từ danh mục.
+  const facilityUnits = getStorageUnits(reservation.facility) || []
+  const unitNumbers = Array.isArray(reservation.unitNumbers) && reservation.unitNumbers.length
+    ? reservation.unitNumbers
+    : String(reservation.unitNumber || '').split(',').map(x => x.trim()).filter(Boolean)
+  const units = unitNumbers.map(number => {
+    const unit = facilityUnits.find(item => item.id === number)
+    return {
+      number,
+      type: unit?.type || (unitNumbers.length === 1 ? reservation.unitType : ''),
+      size: unit?.size || (unitNumbers.length === 1 ? reservation.size : ''),
+      listPrice: unit ? Number(unit.price) : null,
+      monthlyPrice: unit ? effectiveMonthly(unit.price, reservation.months) : (unitNumbers.length === 1 ? monthlyPrice : null)
+    }
+  })
 
   return {
     ...reservation,
+    status,
+    units,
     unitId: reservation.unitNumber,
     type: reservation.unitType,
     size: reservation.size || '',
@@ -2308,11 +2419,11 @@ function mapCustomerReservation(reservation) {
     totalDays,
     remainingDays: Math.max(0, totalDays - elapsedDays),
     progress: Math.min(100, Math.round((Math.min(totalDays, elapsedDays) / totalDays) * 100)),
-    statusLabel: reservation.status === 'Confirmed' && reservation.contractStatus === 'Pending Signature'
+    statusLabel: status === 'Confirmed' && reservation.contractStatus === 'Pending Signature'
       ? 'Đã duyệt · Chờ ký hợp đồng'
-      : reservation.status === 'Confirmed' && reservation.contractStatus === 'Signed'
+      : status === 'Confirmed' && reservation.contractStatus === 'Signed'
         ? 'Đã ký hợp đồng · Chờ nhận kho'
-        : statusLabels[reservation.status] || reservation.status
+        : statusLabels[status] || status
   }
 }
 
@@ -2496,6 +2607,8 @@ async function loadDataFromApi() {
   if (!Array.isArray(catalog?.facilities) || !Array.isArray(catalog?.units)) {
     throw new Error('Backend trả về dữ liệu danh mục không hợp lệ.')
   }
+  // Giảm giá theo gói + số tháng cọc của từng cơ sở để tính tiền xem trước (pricing.js).
+  setCatalogPricing(catalog)
   const signature = JSON.stringify(catalog)
   if (signature === lastCatalogSignature) return false
   lastCatalogSignature = signature

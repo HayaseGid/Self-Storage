@@ -3,15 +3,28 @@
  * - Định dạng mã đơn (mã đặt chỗ) thống nhất ở mọi màn hình.
  * - Xác định kho nào đang bị khóa (đã có đơn) để không cho sửa.
  * - Tự sinh mã chi nhánh (tiền tố mã kho) từ tên cơ sở.
+ * - Kiểm tra giá thuê, tiền cọc và kỳ hạn thuê.
  */
+
+export const DEPOSIT_HOLD_MINUTES = 15
+export const RENTAL_TERMS = [6, 12]
+export const DEPOSIT_MONTHS = 2
+
+export const UNIT_TYPE_CODES = {
+  'Climate-Control Unit': 'CLM',
+  'Drive-up Unit': 'DRV',
+  'Basic Unit': 'BSC',
+  'Indoor Unit': 'IND'
+}
 
 /* ---------- Mã đơn ---------- */
 
 export function formatReservationCode(id) {
   if (id === null || id === undefined || id === '') return '—'
   const text = String(id).trim()
-  if (/^(RS|RSV)-/i.test(text)) return text.toUpperCase()
-  return `RSV-${text}`
+  if (/^(RSV|RS|RES)-/i.test(text)) return text.toUpperCase()
+  const number = Number(text)
+  return Number.isFinite(number) ? `RS-2026-${String(number).padStart(5, '0')}` : `RSV-${text}`
 }
 
 /* ---------- Trạng thái kho ---------- */
@@ -21,6 +34,8 @@ export const UNIT_STATUS_LABELS = {
   BOOKING: 'Đang giữ chỗ chờ cọc',
   RESERVED: 'Đã giữ chỗ',
   RENTED: 'Đang thuê',
+  IN_USE: 'Đang thuê',
+  PENDING_INSPECTION: 'Chờ kiểm tra',
   NEEDS_INSPECTION: 'Cần kiểm tra',
   MAINTENANCE: 'Bảo trì',
   INACTIVE: 'Ngừng sử dụng'
@@ -31,7 +46,7 @@ export const UNIT_STATUS_LABELS = {
 export const EDITABLE_UNIT_STATUSES = ['AVAILABLE', 'MAINTENANCE', 'INACTIVE']
 
 /* Trạng thái kho cho thấy kho đang gắn với một đơn. */
-const LOCKED_UNIT_STATUSES = ['BOOKING', 'RESERVED', 'RENTED']
+const LOCKED_UNIT_STATUSES = ['BOOKING', 'RESERVED', 'RENTED', 'IN_USE']
 
 /* Trạng thái đơn còn hiệu lực (chưa hủy, chưa hết hạn). */
 export const ACTIVE_RESERVATION_STATUSES = ['PENDING_PAYMENT', 'PENDING_APPROVAL', 'CONFIRMED', 'HANDED_OVER']
@@ -63,14 +78,10 @@ function isReservationActive(reservation) {
 export function getActiveReservationsForUnit(reservations = [], unit) {
   if (!unit) return []
   return reservations
-    .filter(reservation => {
-      const unitMatched =
-        reservation.assignedUnitId === unit.id ||
-        (Array.isArray(reservation.unitNumbers) && reservation.unitNumbers.includes(unit.id))
-      return unitMatched &&
-        (!unit.facilityId || !reservation.facilityId || reservation.facilityId === unit.facilityId) &&
-        isReservationActive(reservation)
-    })
+    .filter(reservation =>
+      reservation.assignedUnitId === unit.id &&
+      (!unit.facilityId || !reservation.facilityId || reservation.facilityId === unit.facilityId) &&
+      isReservationActive(reservation))
     .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)))
 }
 
@@ -86,7 +97,7 @@ export function getUnitLock(unit, reservations = []) {
       locked: true,
       reservation: first,
       reservations: active,
-      reason: `Kho đã có đơn ${formatReservationCode(first.reservationCode || first.id)} (${RESERVATION_STATUS_LABELS[first.status] || first.status}). Kho đã đặt thì không được sửa.`
+      reason: `Kho đã có đơn ${formatReservationCode(first.id)} (${RESERVATION_STATUS_LABELS[first.status] || first.status}). Kho đã đặt thì không được sửa.`
     }
   }
   if (LOCKED_UNIT_STATUSES.includes(unit?.status)) {
@@ -102,11 +113,11 @@ export function getUnitLock(unit, reservations = []) {
 
 /* ---------- Mã chi nhánh tự sinh ---------- */
 
-const IGNORED_WORDS = new Set(['storespace', 'store', 'space', 'kho', 'co', 'so', 'chi', 'nhanh', 'tp', 'hcm', 'cs', 'luu', 'tru'])
+const IGNORED_WORDS = new Set(['storespace', 'store', 'space', 'kho', 'co', 'so', 'chi', 'nhanh', 'tp', 'hcm', 'cs'])
 
 function normalizeWords(name) {
   return String(name || '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd').replace(/Đ/g, 'D')
     .toLowerCase()
     .replace(/thanh pho/g, ' ')
@@ -115,6 +126,13 @@ function normalizeWords(name) {
     .filter(Boolean)
 }
 
+/*
+ * Sinh mã chi nhánh từ tên cơ sở, ví dụ:
+ *   "StoreSpace Thủ Đức"  -> "TD"
+ *   "StoreSpace Quận 7"   -> "Q7"
+ *   "Kho Bình Thạnh"      -> "BT"
+ * Nếu trùng với mã đã có thì thêm số: "TD2", "TD3"...
+ */
 export function generateUnitCodePrefix(name, existingPrefixes = []) {
   const words = normalizeWords(name).filter(word => !IGNORED_WORDS.has(word))
   let base = ''
@@ -142,6 +160,41 @@ export function generateUnitCodePrefix(name, existingPrefixes = []) {
     if (!taken.has(candidate)) return candidate
   }
   return `${base}${Date.now() % 1000}`.slice(0, 10)
+}
+
+export function getUnitTypeCode(typeName) {
+  if (!typeName) return 'UNT'
+  if (UNIT_TYPE_CODES[typeName]) return UNIT_TYPE_CODES[typeName]
+  const letters = String(typeName)
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word[0])
+    .join('')
+  return (letters || 'UNT').slice(0, 3).padEnd(3, 'X')
+}
+
+export function previewNextUnitCode(unitCodePrefix, units = []) {
+  const prefix = String(unitCodePrefix || 'FAC').trim().toUpperCase() || 'FAC'
+  const codePrefix = `${prefix}-U`
+  const maxNumber = units.reduce((max, unit) => {
+    const code = String(unit?.id || unit?.unitNumber || '').toUpperCase()
+    if (!code.startsWith(codePrefix)) return max
+    const parsed = Number.parseInt(code.slice(codePrefix.length), 10)
+    return Number.isFinite(parsed) ? Math.max(max, parsed) : max
+  }, 0)
+  return `${codePrefix}${String(maxNumber + 1).padStart(2, '0')}`
+}
+
+export function calculateEndDate(startDate, months) {
+  if (!startDate) return ''
+  const [year, month, day] = String(startDate).slice(0, 10).split('-').map(Number)
+  if (!year || !month || !day) return ''
+  const date = new Date(Date.UTC(year, month - 1, day))
+  date.setUTCMonth(date.getUTCMonth() + Number(months || 0))
+  date.setUTCDate(date.getUTCDate() - 1)
+  return date.toISOString().slice(0, 10)
 }
 
 /* ---------- Giá thuê ---------- */
@@ -215,15 +268,6 @@ export function medianPrice(values) {
   return list.length % 2 ? list[mid] : Math.round((list[mid - 1] + list[mid]) / 2)
 }
 
-/* ---------- Chính sách thuê hiện hành (Theo SelfStorageDB_test.sql) ---------- */
-
-/* Kỳ hạn thuê hợp lệ trong DB ContractType: 1, 3, 6 hoặc 12 tháng */
-export const RENTAL_TERMS = [1, 3, 6, 12]
-
-/* Tiền cọc mặc định = 2 tháng tiền thuê của mỗi kho (theo RentalPolicy.DepositMonths) */
-export const DEPOSIT_MONTHS = 2
-
-export function computeDeposit(monthlyPrice, depositMonths = DEPOSIT_MONTHS) {
-  const months = Number(depositMonths) >= 1 && Number(depositMonths) <= 2 ? Number(depositMonths) : DEPOSIT_MONTHS
-  return Math.round(Number(monthlyPrice || 0) * months)
+export function computeDeposit(monthlyPrice) {
+  return Math.round(Number(monthlyPrice || 0) * DEPOSIT_MONTHS)
 }

@@ -4,13 +4,15 @@ import { useDialog } from './Dialog'
 import RentalCalendar from './RentalCalendar'
 import { UnitTypeArt, UnitTypeChip } from './unitTypes'
 import { CHECKOUT_LIMIT, newOrderCode, removeFromCart, removeManyFromCart, saveCartOrder, useCart } from './cart'
-import { DEPOSIT_MONTHS, RENTAL_TERMS, computeDeposit, formatReservationCode, formatVnd } from './storageRules'
+import { RENTAL_TERMS, formatVnd } from './storageRules'
+import { effectiveMonthly, holdMinutesFor, quote } from './pricing'
 import './CartPage.css'
 
 /*
- * Giỏ hàng: thuê nhiều kho trong một lần đặt (một cơ sở = một hợp đồng).
+ * Giỏ hàng: thuê nhiều kho trong một lần đặt.
+ * Một lần đặt = MỘT đơn đặt chỗ (POST /api/reservation với units: [...]) = MỘT hợp đồng gồm nhiều kho.
  * Bước 1 – Giỏ hàng: chọn cơ sở, chọn kho, ngày bắt đầu, gói 6/12 tháng.
- * Bước 2 – Đặt cọc: hệ thống giữ các kho 10 phút, khách thanh toán tổng tiền cọc.
+ * Bước 2 – Đặt cọc: hệ thống giữ các kho theo thời hạn giữ chỗ của cơ sở, khách thanh toán tiền cọc một lần.
  * Bước 3 – Hoàn tất: chờ Manager duyệt, sau đó ký hợp đồng online trong mục Hợp đồng.
  */
 
@@ -36,7 +38,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
   const [startDate, setStartDate] = useState(null)
   const [months, setMonths] = useState(RENTAL_TERMS[0])
   const [submitting, setSubmitting] = useState(false)
-  const [order, setOrder] = useState(null) // { code, reservations: [...], failures: [...] }
+  const [order, setOrder] = useState(null) // { code, reservation, items, startDate, endDate, months, facilityName, paid }
   const [now, setNow] = useState(Date.now())
 
   // Trạng thái hiện tại của từng kho trong giỏ (còn trống hay đã có người đặt).
@@ -76,9 +78,13 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
 
   const activeGroup = groups.find(g => String(g.facilityId) === String(facilityId))
   const selected = (activeGroup?.items || []).filter(item => item.available && !excluded.has(item.key))
-  const monthlyTotal = selected.reduce((n, item) => n + item.price, 0)
-  const rentTotal = monthlyTotal * months
-  const depositTotal = selected.reduce((n, item) => n + computeDeposit(item.price), 0)
+  // Giá xem trước: giảm giá theo gói + số tháng cọc của cơ sở (giống backend).
+  const cartQuote = quote(selected.map(item => item.price), months, activeGroup?.facilityId)
+  const monthlyTotal = cartQuote.monthly
+  const rentTotal = cartQuote.rent
+  const depositTotal = cartQuote.deposit
+  const depositMonths = cartQuote.depositMonths
+  const holdMinutes = holdMinutesFor(activeGroup?.facilityId)
   const endDate = endDateFor(startDate, months)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -124,8 +130,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
         <>
           <p>Thuê từ <strong>{fmtDate(startDate)}</strong> đến <strong>{fmtDate(endDate)}</strong> ({months} tháng).</p>
           <p>Kho: <strong>{selected.map(i => i.unitId).join(', ')}</strong></p>
-          <p>Tổng tiền cọc cần thanh toán: <strong>{money(depositTotal)}</strong> ({DEPOSIT_MONTHS} tháng tiền thuê mỗi kho).</p>
-          <p>Các kho sẽ được giữ cho bạn 10 phút để thanh toán cọc.</p>
+          <p>Tổng tiền cọc cần thanh toán: <strong>{money(depositTotal)}</strong> ({depositMonths} tháng tiền thuê mỗi kho).</p>
+          <p>Tất cả kho được làm chung <strong>một hợp đồng</strong> và giữ cho bạn {holdMinutes} phút để thanh toán cọc.</p>
         </>
       ),
       confirmLabel: 'Giữ kho & đặt cọc'
@@ -133,94 +139,66 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
     if (!ok) return
 
     setSubmitting(true)
-    const reservations = []
-    const failures = []
+    let reservation
     try {
-      const result = await apiPost('/api/reservation', {
+      // Một đơn gồm nhiều kho -> backend tạo một Reservation (nhiều ReservationUnit) và sau này một hợp đồng.
+      reservation = await apiPost('/api/reservation', {
         unitID: selected[0].unit.unitId,
         unitNumber: selected[0].unitId,
-        units: selected.map(item => ({
-          unitID: item.unit.unitId,
-          unitNumber: item.unitId
-        })),
+        units: selected.map(item => ({ unitID: item.unit.unitId, unitNumber: item.unitId })),
         startDate: toApiDate(startDate),
         months
       })
-      reservations.push({
-        item: {
-          ...selected[0],
-          unitId: selected.map(i => i.unitId).join(', '),
-          type: [...new Set(selected.map(i => i.type))].join(', '),
-          size: [...new Set(selected.map(i => i.size))].join(', ')
-        },
-        selectedItems: selected,
-        ...result
-      })
     } catch (error) {
-      failures.push({ item: { unitId: selected.map(i => i.unitId).join(', ') }, message: error.message })
+      setSubmitting(false)
+      await dialog.alert({ tone: 'danger', title: 'Chưa giữ được kho', message: `${error.message}\nCác kho vẫn nằm trong giỏ, bạn có thể bỏ kho bị trùng rồi đặt lại.` })
+      return
     }
     setSubmitting(false)
 
-    if (!reservations.length) {
-      await dialog.alert({
-        tone: 'danger',
-        title: 'Chưa giữ được kho',
-        message: failures.map(f => `${f.item.unitId}: ${f.message}`).join('\n')
-      })
-      return
-    }
-
-    const code = reservations[0]?.reservationCode || newOrderCode()
+    const code = reservation.reservationCode || newOrderCode()
     saveCartOrder({
       code,
       facilityId: activeGroup.facilityId,
       facilityName: activeGroup.name,
-      reservationIds: reservations.map(r => r.reservationId),
+      reservationIds: [reservation.reservationId],
       startDate: toApiDate(startDate),
       months,
       createdAt: new Date().toISOString()
     })
-    removeManyFromCart(selected.map(i => i.key))
-    setOrder({ code, reservations, failures, startDate, endDate, months, facilityName: activeGroup.name, unitCount: selected.length, paid: [] })
+    removeManyFromCart(selected.map(item => item.key))
+    setOrder({ code, reservation, items: selected, startDate, endDate, months, depositMonths, facilityName: activeGroup.name, paid: false })
     setStep('payment')
   }
 
-  const expiresAt = order ? Math.min(...order.reservations.map(r => Date.parse(r.depositExpiresAt)).filter(Number.isFinite)) : null
-  const secondsLeft = expiresAt ? Math.max(0, Math.ceil((expiresAt - now) / 1000)) : null
-  const orderDeposit = order ? order.reservations.reduce((n, r) => n + Number(r.depositAmount || 0), 0) : 0
+  const expiresAt = order ? Date.parse(order.reservation.depositExpiresAt) : null
+  const secondsLeft = Number.isFinite(expiresAt) ? Math.max(0, Math.ceil((expiresAt - now) / 1000)) : null
+  const orderDeposit = order ? Number(order.reservation.depositAmount || 0) : 0
 
   const payDeposit = async () => {
     if (secondsLeft === 0) {
-      await dialog.alert({ tone: 'warning', title: 'Hết thời gian giữ kho', message: 'Thời gian giữ kho 10 phút đã hết, các kho đã được trả lại. Vui lòng đặt lại.' })
+      await dialog.alert({ tone: 'warning', title: 'Hết thời gian giữ kho', message: 'Thời gian giữ kho đã hết, các kho đã được trả lại. Vui lòng đặt lại.' })
       return
     }
-    const pending = order.reservations.filter(r => !order.paid.includes(r.reservationId))
     const ok = await dialog.confirm({
       tone: 'warning',
-      title: 'Xác nhận đã thanh toán tổng tiền cọc?',
-      message: `Bạn xác nhận đã chuyển ${money(pending.reduce((n, r) => n + Number(r.depositAmount || 0), 0))} cho ${pending.length} kho (${pending.map(r => formatReservationCode(r.reservationId)).join(', ')}).`,
+      title: 'Xác nhận đã thanh toán tiền cọc?',
+      message: `Bạn xác nhận đã chuyển ${money(orderDeposit)} tiền cọc cho đơn ${order.code} (${order.items.length} kho).`,
       confirmLabel: 'Tôi đã thanh toán',
       cancelLabel: 'Chưa'
     })
     if (!ok) return
     setSubmitting(true)
-    const paid = [...order.paid]
-    const errors = []
-    for (const r of pending) {
-      try {
-        await apiPost('/api/payment/confirm', { reservationID: r.reservationId, amount: r.depositAmount, paymentType: 'Cart deposit' })
-        paid.push(r.reservationId)
-      } catch (error) {
-        errors.push(`${formatReservationCode(r.reservationId)}: ${error.message}`)
-      }
+    try {
+      // Backend yêu cầu số tiền đúng bằng tổng tiền cọc của đơn.
+      await apiPost('/api/payment/confirm', { reservationID: order.reservation.reservationId, amount: orderDeposit, paymentType: 'QR' })
+      setOrder(current => ({ ...current, paid: true }))
+      setStep('done')
+    } catch (error) {
+      await dialog.alert({ tone: 'danger', title: 'Chưa ghi nhận được tiền cọc', message: error.message })
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
-    setOrder(current => ({ ...current, paid }))
-    if (errors.length) {
-      await dialog.alert({ tone: 'danger', title: 'Chưa ghi nhận được tiền cọc cho một số kho', message: errors.join('\n') })
-      return
-    }
-    setStep('done')
   }
 
   /* ---------- Bước 3: hoàn tất ---------- */
@@ -230,7 +208,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
         <div className="container">
           <section className="cart-done">
             <span className="cart-done-icon" aria-hidden="true">✓</span>
-            <h1>Đã ghi nhận tiền cọc cho {order.reservations.length} kho</h1>
+            <h1>Đã ghi nhận tiền cọc cho {order.items.length} kho</h1>
             <p>Mã đơn <strong>{order.code}</strong> · {order.facilityName} · {fmtDate(order.startDate)} → {fmtDate(order.endDate)}</p>
             <ol className="cart-next-steps">
               <li className="done">Đặt cọc <span>Đã xong</span></li>
@@ -259,19 +237,23 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
           </div>
           <div className="cart-layout">
             <section className="cart-card">
-              <h2>Kho đã được giữ cho bạn</h2>
-              <div className="admin-table-wrap"><table className="cart-table"><thead><tr><th>Mã đơn</th><th>Kho</th><th>Giá / tháng</th><th>Tiền cọc</th><th>Trạng thái</th></tr></thead><tbody>
-                {order.reservations.map(r => (
-                  <tr key={r.reservationId}>
-                    <td><strong>{formatReservationCode(r.reservationId)}</strong></td>
-                    <td>{r.item.unitId}<br /><small>{r.item.type} · {r.item.size}</small></td>
-                    <td>{money(r.monthlyPrice)}</td>
-                    <td><strong>{money(r.depositAmount)}</strong></td>
-                    <td>{order.paid.includes(r.reservationId) ? <span className="cart-pill ok">Đã cọc</span> : <span className="cart-pill warn">Chờ cọc</span>}</td>
-                  </tr>
-                ))}
-              </tbody></table></div>
-              <p className="cart-note">Thuê từ <strong>{fmtDate(order.startDate)}</strong> đến <strong>{fmtDate(order.endDate)}</strong> ({order.months} tháng). Tiền cọc {DEPOSIT_MONTHS} tháng tiền thuê mỗi kho, hoàn lại khi trả kho.</p>
+              <h2>Kho đã được giữ cho bạn · 1 hợp đồng</h2>
+              <div className="admin-table-wrap"><table className="cart-table"><thead><tr><th>Kho</th><th>Loại · Kích thước</th><th>Giá / tháng</th><th>Tiền cọc</th></tr></thead><tbody>
+                {order.items.map(item => {
+                  const monthly = effectiveMonthly(item.price, order.months)
+                  return (
+                    <tr key={item.key}>
+                      <td><strong>{item.unitId}</strong></td>
+                      <td>{item.type} · {item.size}</td>
+                      <td>{money(monthly)}</td>
+                      <td>{money(monthly * order.depositMonths)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot><tr><td colSpan="2">Tổng ({order.items.length} kho)</td><td>{money(order.reservation.monthlyPrice)}</td><td><strong>{money(orderDeposit)}</strong></td></tr></tfoot>
+              </table></div>
+              <p className="cart-note">Mã đơn <strong>{order.code}</strong> · thuê từ <strong>{fmtDate(order.startDate)}</strong> đến <strong>{fmtDate(order.endDate)}</strong> ({order.months} tháng). Tổng tiền thuê {money(order.reservation.rentalAmount)}. Tiền cọc hoàn lại khi trả kho.</p>
             </section>
             <aside className="cart-summary">
               <h2>Tổng tiền cọc</h2>
@@ -340,7 +322,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                             </div>
                             <div className="cart-item-price">
                               <strong>{money(item.price)}</strong><small>/tháng</small>
-                              <span>Cọc {money(computeDeposit(item.price))}</span>
+                              {effectiveMonthly(item.price, months) < item.price && <span className="cart-item-discount">Gói {months} tháng: {money(effectiveMonthly(item.price, months))}/tháng</span>}
                             </div>
                             <button type="button" className="cart-remove" onClick={() => removeItem(item)} aria-label={`Bỏ kho ${item.unitId} khỏi giỏ`}>×</button>
                           </li>
@@ -358,7 +340,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                     {RENTAL_TERMS.map(term => (
                       <button key={term} type="button" role="radio" aria-checked={months === term} className={`duration-package${months === term ? ' active' : ''}`} onClick={() => setMonths(term)}>
                         <span className="duration-package-months"><strong>{term}</strong> tháng</span>
-                        <span className="duration-package-total">{money(monthlyTotal * term)}</span>
+                        <span className="duration-package-total">{money(quote(selected.map(item => item.price), term, activeGroup?.facilityId).rent)}</span>
+                        {quote([1000000], term, activeGroup?.facilityId).discountPercent > 0 && <span className="duration-package-saving">Giảm {quote([1000000], term, activeGroup?.facilityId).discountPercent}%</span>}
                         <span className="duration-package-end">{startDate ? `Đến ${fmtDate(endDateFor(startDate, term))}` : term === 6 ? 'Nửa năm' : 'Một năm'}</span>
                       </button>
                     ))}
@@ -373,16 +356,17 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
               <p className="cart-summary-facility">{activeGroup ? activeGroup.name : 'Chưa chọn cơ sở'}</p>
               <dl>
                 <div><dt>Số kho</dt><dd>{selected.length}{selected.length > CHECKOUT_LIMIT ? ` (tối đa ${CHECKOUT_LIMIT})` : ''}</dd></div>
-                <div><dt>Tiền thuê / tháng</dt><dd>{money(monthlyTotal)}</dd></div>
+                <div><dt>Tiền thuê / tháng{cartQuote.discountPercent ? ` (đã giảm ${cartQuote.discountPercent}%)` : ''}</dt><dd>{money(monthlyTotal)}</dd></div>
                 <div><dt>Thời hạn</dt><dd>{months} tháng</dd></div>
                 <div><dt>Tổng tiền thuê</dt><dd>{money(rentTotal)}</dd></div>
-                <div className="cart-sum-deposit"><dt>Tiền cọc ({DEPOSIT_MONTHS} tháng / kho)</dt><dd>{money(depositTotal)}</dd></div>
+                {cartQuote.saving > 0 && <div className="cart-sum-saving"><dt>Tiết kiệm nhờ gói {months} tháng</dt><dd>−{money(cartQuote.saving)}</dd></div>}
+                <div className="cart-sum-deposit"><dt>Tiền cọc ({depositMonths} tháng / kho)</dt><dd>{money(depositTotal)}</dd></div>
               </dl>
               <p className="cart-note">Thanh toán ngay: <strong>tiền cọc</strong>. Tiền thuê thanh toán sau khi ký hợp đồng.</p>
               <button type="button" className="dashboard-primary-btn full" disabled={submitting || !selected.length} onClick={checkout}>
                 {submitting ? 'Đang giữ kho...' : selected.length ? `Đặt cọc ${selected.length} kho` : 'Chọn kho để đặt'}
               </button>
-              <p className="cart-note small">Kho trong giỏ chưa được giữ chỗ. Kho chỉ được giữ 10 phút sau khi bấm đặt cọc.</p>
+              <p className="cart-note small">Kho trong giỏ chưa được giữ chỗ. Sau khi bấm đặt cọc, các kho được giữ {holdMinutes} phút và làm chung một hợp đồng.</p>
             </aside>
           </div>
         )}

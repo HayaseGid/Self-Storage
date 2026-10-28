@@ -1,0 +1,48 @@
+/* Bản đồ vị trí cơ sở (FacilityMap.jsx) */
+.fm-wrap { position: relative; width: 100%; border-radius: 18px; overflow: hidden; border: 1px solid #dce8f2; background: #eef4f9; box-shadow: 0 10px 28px rgba(15, 69, 111, .08); }
+.fm-map { position: absolute; inset: 0; }
+.fm-overlay { position: absolute; inset: 0; z-index: 500; display: grid; place-items: center; padding: 20px; text-align: center; background: rgba(238, 244, 249, .85); color: #4f6880; font-weight: 700; font-size: 14px; }
+.fm-overlay.error { color: #c94a4a; }
+
+.fm-pin-wrap { background: none; border: 0; }
+.fm-pin { position: relative; width: 36px; height: 36px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: #075a9f; border: 3px solid #fff; box-shadow: 0 6px 14px rgba(7, 37, 66, .35); display: grid; place-items: center; }
+.fm-pin span { transform: rotate(45deg); color: #ffd21f; font: 800 13px 'Be Vietnam Pro', Arial, sans-serif; }
+.fm-pin.empty { background: #8197ab; }
+.fm-pin.empty span { color: #fff; }
+
+.fm-popup { min-width: 200px; font-family: 'Be Vietnam Pro', Arial, sans-serif; color: #23475e; }
+.fm-popup strong { display: block; color: #073d70; font-size: 14.5px; margin-bottom: 2px; }
+.fm-popup p { margin: 2px 0; font-size: 12.5px; line-height: 1.45; }
+.fm-popup-units b { color: #2b8b55; font-size: 14px; }
+.fm-popup-muted { color: #6d849b; }
+.fm-popup-actions { display: flex; gap: 6px; margin-top: 8px; }
+.fm-popup-actions button, .fm-popup-actions a { flex: 1; padding: 7px 10px; border-radius: 9px; border: 0; font: 700 12.5px 'Be Vietnam Pro', Arial, sans-serif; text-align: center; text-decoration: none; cursor: pointer; }
+.fm-popup-actions button { background: #ffd21f; color: #073d70; }
+.fm-popup-actions a { background: #eef5fb; color: #075a9f !important; }
+
+/* Khối bản đồ trên trang danh sách cơ sở */
+.facility-map-section { margin: 20px 0 6px; }
+.facility-map-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.facility-map-head h2 { margin: 0; font: 800 20px 'Be Vietnam Pro', sans-serif; color: #073d70; }
+.facility-map-head p { margin: 2px 0 0; color: #6d849b; font-size: 13.5px; }
+.facility-map-toggle { padding: 8px 14px; border-radius: 10px; border: 1px solid #cfe0ee; background: #fff; color: #075a9f; font-weight: 800; font-size: 13px; cursor: pointer; }
+.facility-map-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; }
+.facility-map-list { display: grid; gap: 8px; max-height: 420px; overflow: auto; align-content: start; }
+.facility-map-item { display: grid; gap: 2px; padding: 11px 13px; border-radius: 13px; border: 1.5px solid #e1edf7; background: #fff; text-align: left; cursor: pointer; font: inherit; }
+.facility-map-item strong { color: #073d70; font-size: 14px; }
+.facility-map-item span { color: #6d849b; font-size: 12.5px; }
+.facility-map-item em { color: #2b8b55; font-style: normal; font-weight: 800; font-size: 12.5px; }
+.facility-map-item.active { border-color: #075a9f; background: #f0f7ff; }
+.facility-map-item.no-geo { opacity: .65; }
+
+/* Bản đồ nhỏ ở trang chi tiết cơ sở */
+.facility-location-card { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; margin: 18px 0 26px; }
+.facility-location-info { display: grid; gap: 8px; align-content: start; padding: 16px; border-radius: 16px; border: 1px solid #e1edf7; background: #fff; }
+.facility-location-info h3 { margin: 0; color: #073d70; font-size: 16px; }
+.facility-location-info p { margin: 0; color: #4f6880; font-size: 13.5px; line-height: 1.5; }
+.facility-location-info a { justify-self: start; padding: 9px 14px; border-radius: 10px; background: #ffd21f; color: #073d70; font-weight: 800; font-size: 13.5px; text-decoration: none; }
+
+@media (max-width: 860px) {
+  .facility-map-layout, .facility-location-card { grid-template-columns: 1fr; }
+  .facility-map-list { max-height: none; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+}

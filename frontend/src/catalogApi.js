@@ -120,6 +120,10 @@ export function deleteUnitSize(id) {
   return apiDelete(`/api/unit-sizes/${id}`)
 }
 
+export function deleteRentalRate(facilityId, unitTypeId, unitSizeId) {
+  return apiDelete(`/api/operations/facilities/${facilityId}/rates/${unitTypeId}/${unitSizeId}`)
+}
+
 export function parseDimensions(dimensions = '', volume = null) {
   const raw = String(dimensions || '').trim()
   const [leftPart = '', rightPart = ''] = raw.split(':').map(part => part.trim())
@@ -196,6 +200,6 @@ export const catalogApi = {
   listUnitSizes,
   createUnitSize,
   updateUnitSize,
-  deleteUnitSize
+  deleteUnitSize,
+  deleteRentalRate
 }
-

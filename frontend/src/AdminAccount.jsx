@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./AdminAccount.css";
 import { apiGet, apiPut } from "./api";
+import { useDialog } from "./Dialog";
 
 const roleOptions = [
   "Storage Customer",
@@ -10,6 +11,7 @@ const roleOptions = [
 ];
 
 function Admin() {
+  const dialog = useDialog();
   const [activeMenu, setActiveMenu] = useState("dashboard");
   const [users, setUsers] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -70,6 +72,7 @@ function Admin() {
       showToast(successMessage);
     } catch (updateError) {
       setError(updateError.message);
+      void dialog.alert({ tone: "danger", title: "Không cập nhật được tài khoản", message: updateError.message });
     } finally {
       setSaving(false);
     }
@@ -80,24 +83,44 @@ function Admin() {
     if (user) void updateUser(id, user.role, "Active", `Đã duyệt tài khoản ${user.username}`);
   };
 
-  const rejectUser = (id) => {
+  const rejectUser = async (id) => {
     const user = users.find((item) => item.id === id);
-    if (user) void updateUser(id, user.role, "Rejected", `Đã từ chối tài khoản ${user.username}`);
+    if (!user) return;
+    const confirmed = await dialog.confirm({
+      tone: "danger",
+      title: `Từ chối tài khoản ${user.username}?`,
+      message: "Người dùng này sẽ không thể đăng nhập vào hệ thống.",
+      confirmLabel: "Từ chối",
+    });
+    if (confirmed) void updateUser(id, user.role, "Rejected", `Đã từ chối tài khoản ${user.username}`);
   };
 
-  const toggleLock = (id) => {
+  const toggleLock = async (id) => {
     const user = users.find((item) => item.id === id);
-    if (user) {
-      const nextStatus = user.status === "Locked" ? "Active" : "Locked";
-      void updateUser(id, user.role, nextStatus, `${nextStatus === "Locked" ? "Đã khóa" : "Đã mở khóa"} ${user.username}`);
+    if (!user) return;
+    const nextStatus = user.status === "Locked" ? "Active" : "Locked";
+    if (nextStatus === "Locked") {
+      const confirmed = await dialog.confirm({
+        tone: "danger",
+        title: `Khóa tài khoản ${user.username}?`,
+        message: "Người dùng sẽ bị đăng xuất khỏi các thao tác tiếp theo và không thể đăng nhập cho đến khi được mở khóa.",
+        confirmLabel: "Khóa tài khoản",
+      });
+      if (!confirmed) return;
     }
+    void updateUser(id, user.role, nextStatus, `${nextStatus === "Locked" ? "Đã khóa" : "Đã mở khóa"} ${user.username}`);
   };
 
-  const changeRole = (id, newRole) => {
+  const changeRole = async (id, newRole) => {
     const user = users.find((item) => item.id === id);
-    if (user && user.role !== newRole) {
-      void updateUser(id, newRole, user.status, `Đã đổi role của ${user.username}`);
-    }
+    if (!user || user.role === newRole) return;
+    const confirmed = await dialog.confirm({
+      tone: "warning",
+      title: `Đổi role của ${user.username}?`,
+      message: `Từ "${user.role}" sang "${newRole}". Quyền truy cập của người dùng sẽ thay đổi ngay.`,
+      confirmLabel: "Đổi role",
+    });
+    if (confirmed) void updateUser(id, newRole, user.status, `Đã đổi role của ${user.username}`);
   };
 
   const pendingUsers = useMemo(

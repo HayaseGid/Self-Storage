@@ -3,6 +3,8 @@ import "./styles.css";
 import "./staffstyles.css";
 import { apiGet, apiPost } from "./api";
 import { mapOperationsState } from "./operationsState";
+import { useDialog } from "./Dialog";
+import { formatReservationCode } from "./storageRules";
 
 /* ---------- helpers ---------- */
 const pad = (n) => String(n).padStart(2, "0");
@@ -49,6 +51,7 @@ function checkHandover(res, staff, db) {
     { key: "facility", label: "Đặt chỗ thuộc đúng cơ sở của bạn", ok: res.facilityId === staff.facilityId },
     { key: "payment", label: "Hệ thống đã xác nhận tiền cọc (không dựa vào thông báo từ trình duyệt)", ok: res.paymentStatus === "PAID" },
     { key: "unit", label: "Facility Manager đã duyệt và phân kho", ok: !!res.assignedUnitId },
+    { key: "signed", label: "Khách đã ký hợp đồng online", ok: res.status === "HANDED_OVER" || res.contractStatus !== "Pending Signature" },
     { key: "clash", label: "Kho không trùng kỳ thuê với đặt chỗ khác", ok: !findClash(db, res, res.assignedUnitId) },
     { key: "status", label: "Đặt chỗ chưa được bàn giao", ok: res.status === "CONFIRMED" },
   ];
@@ -108,12 +111,23 @@ function ReservationDetail({ res, unit, staff, db, actions }) {
   const handedOver = res.status === "HANDED_OVER";
   const notToday = res.appointmentDate !== todayStr();
   const ready = canHandover && idChecked && accessValue.trim().length > 0;
+  const dialog = useDialog();
   const doHandoverClick = async () => {
+    if (!handedOver) {
+      const confirmed = await dialog.confirm({
+        tone: "warning",
+        title: `Xác nhận bàn giao kho cho ${res.customerName}?`,
+        message: `Kho ${res.assignedUnitId || ""} sẽ chuyển sang trạng thái đang thuê và hợp đồng được tạo. Hãy chắc chắn đã kiểm tra giấy tờ và giao ${accessType.toLowerCase()} cho khách.`,
+        confirmLabel: "Xác nhận bàn giao"
+      });
+      if (!confirmed) return;
+    }
     try {
       const response = await actions.handover(res.id, { type: accessType, value: accessValue });
       setResult({ ok: true, message: response.message });
     } catch (error) {
       setResult({ ok: false, message: error.message });
+      void dialog.alert({ tone: "danger", title: "Bàn giao không thành công", message: error.message });
     }
   };
 
@@ -121,7 +135,7 @@ function ReservationDetail({ res, unit, staff, db, actions }) {
     <div className="st-card st-detail">
       <div className="st-head">
         <div>
-          <span className="customer-eyebrow">ĐẶT CHỖ {res.id}</span>
+          <span className="customer-eyebrow">MÃ ĐƠN {formatReservationCode(res.id)}</span>
           <h2>{res.customerName}</h2>
           <p>{res.unitType} · khách chọn {res.unitId}</p>
         </div>
@@ -202,7 +216,7 @@ function Workspace({ list, query, setQuery, selected, setSelectedId, selectedId,
                 <span className="st-name">{r.customerName}</span>
                 {r.source === "live" && <span className="st-badge st-new">Mới từ khách</span>}
               </div>
-              <div className="st-item-sub">{r.id} · {r.unitId} · {r.unitType}</div>
+              <div className="st-item-sub">{formatReservationCode(r.id)} · {r.unitId} · {r.unitType}</div>
               <div className="st-item-foot"><Badge map={RES_STATUS} value={r.status} /><span>{fmtDate(r.startDate)}</span></div>
             </button>
           ))}
@@ -326,7 +340,7 @@ function Portal({ staff, db, onLogout, onRefresh, onHandover }) {
                 {todayList.map((r) => (
                   <button type="button" key={r.id} className="st-todo" onClick={() => open(r.id)}>
                     <span className="st-time">{r.appointmentTime}</span>
-                    <span className="st-todo-main"><strong>{r.customerName}</strong><small>{r.id} · {r.unitId} · {r.unitType}</small></span>
+                    <span className="st-todo-main"><strong>{r.customerName}</strong><small>{formatReservationCode(r.id)} · {r.unitId} · {r.unitType}</small></span>
                     {r.source === "live" && <span className="st-badge st-new">Mới từ khách</span>}
                     <Badge map={RES_STATUS} value={r.status} />
                     <span className="st-go">→</span>

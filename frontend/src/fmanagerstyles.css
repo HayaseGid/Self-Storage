@@ -778,3 +778,144 @@
   font-size: 12px;
   font-family: 'DM Sans', monospace;
 }
+
+/* ============================================================
+   THIẾT LẬP TÍNH CHẤT KHO (Facility Manager)
+   ============================================================ */
+.fp-card { padding-top: 26px; }
+
+.fp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.fp-head h2 { margin: 0 0 6px; color: #073d70; font: 800 24px 'Be Vietnam Pro', sans-serif; }
+.fp-head p { margin: 0; color: #5b7489; font-size: 14px; }
+
+/* Tab Loại kho / Kích thước */
+.fp-tabs { display: flex; gap: 4px; border-bottom: 1px solid #e3edf4; margin-bottom: 16px; }
+.fp-tabs button {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border: 0; background: none; cursor: pointer;
+  color: #60798d; font: 800 14px 'Be Vietnam Pro', sans-serif;
+  border-bottom: 3px solid transparent; margin-bottom: -1px;
+}
+.fp-tabs button span {
+  min-width: 22px; padding: 1px 7px; border-radius: 999px;
+  background: #eef4f9; color: #60798d; font-size: 11px; text-align: center;
+}
+.fp-tabs button.active { color: #075a9f; border-bottom-color: #075a9f; }
+.fp-tabs button.active span { background: #075a9f; color: #fff; }
+
+/* Thanh lọc + tìm kiếm */
+.fp-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.fp-chips { display: inline-flex; padding: 3px; border-radius: 10px; background: #f1f6fa; }
+.fp-chips button {
+  border: 0; background: none; cursor: pointer; padding: 7px 14px; border-radius: 8px;
+  color: #4f6880; font-weight: 700; font-size: 12px;
+}
+.fp-chips button.active { background: #fff; color: #075a9f; box-shadow: 0 1px 3px rgba(15, 69, 111, 0.15); }
+.fp-search { max-width: 280px; min-height: 38px; }
+
+/* Bảng */
+.fp-table td { vertical-align: middle; }
+.fp-table .fp-right { text-align: right; }
+.fp-code {
+  display: inline-block; min-width: 38px; padding: 3px 8px; border-radius: 6px; text-align: center;
+  background: #f1f7fb; color: #075a9f; font-weight: 800; font-size: 12px;
+}
+.fp-sub { display: block; margin-top: 3px; color: #7b91a3; font-size: 12px; font-weight: 500; max-width: 420px; }
+.fp-usage { display: grid; gap: 2px; }
+.fp-usage small { color: #7b91a3; font-size: 11px; }
+
+.fp-status { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.fp-status.on { color: #1f7a4a; }
+.fp-status.off { color: #a86b00; }
+.fp-table tr.fp-row-off td { background: #fbfcfd; }
+.fp-table tr.fp-row-off strong { color: #8197ab; }
+
+/* Nút thao tác gọn */
+.fp-actions { display: inline-flex; gap: 6px; justify-content: flex-end; }
+.fp-btn {
+  min-height: 30px; padding: 0 11px; border-radius: 8px; cursor: pointer;
+  border: 1px solid #d7e5ef; background: #fff; color: #075a9f; font-weight: 700; font-size: 12px;
+}
+.fp-btn:hover { background: #f2f8fc; }
+.fp-btn.danger { color: #b42318; border-color: #f4c7c3; }
+.fp-btn.danger:hover { background: #fff1f0; }
+.fp-btn.locked { color: #8197ab; border-color: #e4edf4; background: #f8fafc; }
+
+/* Modal */
+.fp-modal { width: min(560px, 100%); max-height: 92vh; overflow-y: auto; }
+.fp-id-box {
+  display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 12px;
+  padding: 12px 14px; border-radius: 12px; background: #f2f7fc; border: 1px dashed #c9dceb;
+}
+.fp-id-box span { grid-column: 1 / -1; color: #5b7489; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.fp-id-box strong { color: #073d70; font: 800 22px 'Be Vietnam Pro', sans-serif; }
+.fp-id-box em { color: #7b91a3; font-size: 12px; }
+
+.fp-modal textarea {
+  padding: 12px 14px; border: 1px solid #dce8ef; border-radius: 10px; resize: vertical; min-height: 80px;
+  font: 500 13px 'DM Sans', 'Be Vietnam Pro', sans-serif; color: #23475e;
+}
+.fp-modal input[readonly], .fp-modal select:disabled { background: #f2f7fc; color: #4f6880; cursor: not-allowed; }
+.fp-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+.fp-calc {
+  display: grid; gap: 4px; padding: 10px 14px; border-radius: 10px;
+  background: #eefaf2; border: 1px solid #cdebd9; color: #1f6b43; font-size: 13px;
+}
+.fp-calc small { color: #4f6880; font-size: 12px; }
+.fp-calc.bad { background: #fff1f0; border-color: #f4c7c3; color: #b42318; }
+
+@media (max-width: 720px) {
+  .fp-head { flex-direction: column; }
+  .fp-search { max-width: none; width: 100%; }
+  .fp-row-3 { grid-template-columns: 1fr; }
+}
+
+.fm-btn-delete-unit { color: #b42318 !important; border-color: #f4c7c3 !important; }
+.fm-btn-delete-unit:hover:not(:disabled) { background: #fff1f0 !important; }
+.fm-btn-delete-unit:disabled { opacity: .5; cursor: not-allowed; }
+
+.fm-assign-slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 10px 0 4px; }
+.fm-assign-slot { padding: 12px; border: 1px solid #dce8ef; border-radius: 12px; background: #fff; display: grid; gap: 8px; }
+.fm-assign-slot-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fm-assign-slot-no { padding: 2px 10px; border-radius: 999px; background: #075a9f; color: #fff; font-size: 11px; font-weight: 800; }
+.fm-assign-slot-head small { color: #5b7489; }
+
+/* Sort bảng kho */
+.fm-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.fm-sort-btn:hover { color: #075a9f; }
+.fm-sort-btn:focus-visible { outline: 2px solid #1684db; outline-offset: 3px; border-radius: 4px; }
+.fm-sort-icon { font-size: 10px; opacity: .35; }
+.fm-sort-btn.active { color: #075a9f; }
+.fm-sort-btn.active .fm-sort-icon { opacity: 1; }
+.fm-sort-reset {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: #b42318;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}

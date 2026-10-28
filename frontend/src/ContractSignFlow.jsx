@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import SignaturePad from './SignaturePad'
-import { CONTRACT_TERM_GROUPS, POLICY_SET, POLICY_VERSION } from './policies'
-import { DEPOSIT_MONTHS, formatReservationCode, formatVnd } from './storageRules'
+import { buildContractTerms, usePolicies } from './policies'
+import { formatVnd } from './storageRules'
+import ContractDocument, { contractUnits } from './ContractDocument'
 import './ContractSignFlow.css'
 
 /*
@@ -10,11 +11,10 @@ import './ContractSignFlow.css'
  * thành Hợp đồng chính + Phụ lục danh sách kho.
  *
  * Bước 1: Xem hợp đồng  ·  Bước 2: Xác nhận từng nhóm điều khoản  ·  Bước 3: Ký tay + nhập họ tên
- * (Mã OTP qua email sẽ thêm khi backend có chức năng gửi email.)
+ * Ký xong, bản hợp đồng được gửi qua email cho khách (EmailJS, xem contractEmail.js).
  */
 
 const money = value => `${formatVnd(value || 0)}đ`
-const TERM_POLICIES = POLICY_SET.filter(policy => CONTRACT_TERM_GROUPS.includes(policy.key))
 export const CONTRACT_TERMS_VERSION = 'storage-rental-v1'
 
 export default function ContractSignFlow({ group, customer, onClose, onSign }) {
@@ -24,6 +24,9 @@ export default function ContractSignFlow({ group, customer, onClose, onSign }) {
   const [typedName, setTypedName] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // Điều khoản lấy từ chính sách hiện hành do Business Operations thiết lập.
+  const policies = usePolicies()
+  const TERM_POLICIES = buildContractTerms(policies.values)
 
   useEffect(() => {
     const onKey = event => { if (event.key === 'Escape' && !submitting) onClose() }
@@ -38,6 +41,7 @@ export default function ContractSignFlow({ group, customer, onClose, onSign }) {
   const monthlyTotal = rentals.reduce((n, r) => n + Number(r.monthlyPrice || 0), 0)
   const rentTotal = rentals.reduce((n, r) => n + Number(r.rentalAmount || Number(r.monthlyPrice || 0) * Number(r.months || 0)), 0)
   const depositTotal = rentals.reduce((n, r) => n + Number(r.depositAmount || 0), 0)
+  const unitCount = contractUnits(rentals).length
   const allAccepted = TERM_POLICIES.every(policy => accepted.has(policy.key))
   const nameMatches = typedName.trim().toLowerCase() === String(customer?.name || '').trim().toLowerCase()
 
@@ -70,7 +74,7 @@ export default function ContractSignFlow({ group, customer, onClose, onSign }) {
           <div>
             <span className="customer-eyebrow">HỢP ĐỒNG THUÊ KHO</span>
             <h2 id="csf-title">{group.title}</h2>
-            <p>{rentals.length} kho · {first.facility} · {first.startDate} → {first.endDate}</p>
+            <p>{unitCount} kho · {first.facility} · {first.startDate} → {first.endDate}</p>
           </div>
           <button type="button" className="csf-close" onClick={onClose} aria-label="Đóng" disabled={submitting}>×</button>
         </div>
@@ -82,54 +86,7 @@ export default function ContractSignFlow({ group, customer, onClose, onSign }) {
 
         <div className="csf-body">
           {step === 1 && (
-            <article className="csf-doc" id="csf-print">
-              <h3>HỢP ĐỒNG THUÊ KHO LƯU TRỮ</h3>
-              <p className="csf-doc-meta">Số: {group.code} · Áp dụng chính sách {POLICY_VERSION.version} (hiệu lực từ {POLICY_VERSION.effectiveFrom.split('-').reverse().join('/')})</p>
-              <section>
-                <h4>Điều 1. Các bên</h4>
-                <p><strong>Bên cho thuê:</strong> StoreSpace, cơ sở {first.facility}.</p>
-                <p><strong>Bên thuê:</strong> {customer?.name} · Email: {customer?.email}</p>
-              </section>
-              <section>
-                <h4>Điều 2. Đối tượng và thời hạn thuê</h4>
-                <p>Bên thuê thuê {rentals.length} kho lưu trữ liệt kê tại Phụ lục 01, thời hạn {first.months} tháng, từ ngày <strong>{first.startDate}</strong> đến hết ngày <strong>{first.endDate}</strong>. Một tháng thuê tính từ ngày bắt đầu đến ngày liền trước cùng ngày của tháng tiếp theo.</p>
-              </section>
-              <section>
-                <h4>Điều 3. Giá thuê, tiền cọc và thanh toán</h4>
-                <p>Tổng tiền thuê mỗi tháng: <strong>{money(monthlyTotal)}</strong>. Tổng tiền thuê cả kỳ: <strong>{money(rentTotal)}</strong>.</p>
-                <p>Tiền cọc: <strong>{money(depositTotal)}</strong> ({DEPOSIT_MONTHS} tháng tiền thuê mỗi kho), <strong>đã thanh toán</strong>. Tiền cọc dùng để bảo đảm nghĩa vụ, không mặc nhiên là tiền thuê tháng cuối, và được hoàn trong 07 ngày làm việc sau khi trả kho nếu không phát sinh khấu trừ.</p>
-                <p>Giá thuê đã xác nhận không thay đổi trong suốt thời hạn hợp đồng.</p>
-              </section>
-              <section>
-                <h4>Điều 4. Quyền và nghĩa vụ</h4>
-                <p>Bên thuê sử dụng kho đúng mục đích, không lưu trữ hàng cấm, hàng dễ cháy nổ; bảo quản khóa/thẻ ra vào; báo trả kho trước ít nhất 07 ngày. Bên cho thuê bàn giao kho đúng hiện trạng, bảo đảm an ninh khu vực chung và hoàn cọc đúng hạn.</p>
-              </section>
-              <section>
-                <h4>Điều 5. Hiệu lực</h4>
-                <p>Hợp đồng có hiệu lực khi Bên thuê ký điện tử trên hệ thống StoreSpace và kho được bàn giao. Khi nhận kho, Bên thuê xuất trình CCCD để nhân viên đối chiếu.</p>
-              </section>
-              <section>
-                <h4>Phụ lục 01. Danh sách kho thuê</h4>
-                <div className="csf-table-wrap">
-                  <table className="csf-table">
-                    <thead><tr><th>#</th><th>Mã đơn</th><th>Kho</th><th>Loại · Kích thước</th><th>Giá / tháng</th><th>Tiền cọc</th></tr></thead>
-                    <tbody>
-                      {rentals.map((r, i) => (
-                        <tr key={r.reservationId}>
-                          <td>{i + 1}</td>
-                          <td>{formatReservationCode(r.reservationId)}</td>
-                          <td><strong>{r.unitId}</strong></td>
-                          <td>{r.type} · {r.size || '—'}</td>
-                          <td>{money(r.monthlyPrice)}</td>
-                          <td>{money(r.depositAmount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot><tr><td colSpan="4">Tổng cộng</td><td>{money(monthlyTotal)}</td><td>{money(depositTotal)}</td></tr></tfoot>
-                  </table>
-                </div>
-              </section>
-            </article>
+            <ContractDocument group={group} customer={customer} />
           )}
 
           {step === 2 && (
@@ -153,7 +110,7 @@ export default function ContractSignFlow({ group, customer, onClose, onSign }) {
             <div className="csf-sign">
               <div className="csf-sign-summary">
                 <div><span>Bên thuê</span><strong>{customer?.name}</strong></div>
-                <div><span>Số kho</span><strong>{rentals.length}</strong></div>
+                <div><span>Số kho</span><strong>{unitCount}</strong></div>
                 <div><span>Kỳ thuê</span><strong>{first.startDate} → {first.endDate}</strong></div>
                 <div><span>Tiền thuê / tháng</span><strong>{money(monthlyTotal)}</strong></div>
               </div>
