@@ -2,10 +2,23 @@ import React, { useEffect, useState } from "react";
 import "./BusinessOperations.css";
 import { apiDelete, apiGet, apiPost, apiPut } from "./api";
 import { mapOperationsState } from "./operationsState";
+import { useDialog } from "./Dialog";
+import {
+    BusinessFacilitiesByArea,
+    BusinessPolicyCenter,
+    BusinessFeesPanel,
+    BusinessPerformance,
+    BusinessReportsCenter
+} from "./BusinessPanels";
+import BusinessCatalog from "./BusinessCatalog";
+import BusinessFacilityForm from "./BusinessFacilityForm";
+import { extractDistrict } from "./districts";
 
 function BusinessOperations({ currentUser, navigate, currentUserKey = "storespace_current_user" }) {
+    const dialog = useDialog();
     const [activeMenu, setActiveMenu] = useState("dashboard");
     const [showAddFacility, setShowAddFacility] = useState(false);
+    const [editingFacility, setEditingFacility] = useState(null);
     const [operationState, setOperationState] = useState(null);
     const [reports, setReports] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -17,9 +30,13 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             facilityId: facility.facilityId,
             name: facility.name,
             unitCodePrefix: facility.unitCodePrefix,
-            area: facility.address,
+            area: facility.district || facility.address,
+            district: facility.district,
             address: facility.address,
             manager: facility.managerEmail,
+            managerEmail: facility.managerEmail,
+            depositMonths: facility.depositMonths ?? 2,
+            depositPercent: facility.depositPercent ?? 20,
             totalUnits: units.length,
             rentedUnits: units.filter(unit => unit.status === "RENTED").length,
             maintenanceUnits: units.filter(unit => unit.status === "MAINTENANCE").length,
@@ -60,30 +77,48 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
         status: "active"
     });
 
-    const runOperation = async operation => {
+    const runOperation = async (operation, successMsg) => {
         setApiError("");
         try {
             await operation();
             await loadBusinessData();
+            if (successMsg) {
+                await dialog.alert({ tone: "success", title: "Thành công", message: successMsg });
+            }
         } catch (error) {
             setApiError(error.message);
+            await dialog.alert({ tone: "danger", title: "Không thực hiện được", message: error.message });
         }
     };
 
-    const updateFacility = (facility, values) => runOperation(() =>
-        apiPut(`/api/operations/facilities/${facility.facilityId}`, {
-            facilityName: values.name ?? facility.name,
-            address: values.address ?? facility.address,
-            managerEmail: values.managerEmail ?? facility.managerEmail,
-            status: values.status ?? facility.status
-        })
-    );
+    const updateFacility = (facility, values) => {
+        const nextName = values.name ?? facility.name;
+        const nextAddress = values.address ?? facility.address;
+        const detectedDistrict = extractDistrict(nextAddress, nextName)?.label || facility.district || null;
+        return runOperation(
+            () => apiPut(`/api/operations/facilities/${facility.facilityId}`, {
+                facilityName: nextName,
+                address: nextAddress,
+                district: detectedDistrict,
+                managerEmail: values.managerEmail ?? facility.managerEmail ?? facility.manager,
+                status: values.status ?? facility.status
+            }),
+            `Đã cập nhật thông tin cơ sở "${nextName}".`
+        ).then(() => setEditingFacility(null));
+    };
 
-    const deleteFacility = facility => {
-        if (!window.confirm(`Bạn có chắc muốn xóa cơ sở "${facility.name}"? Thao tác này không thể hoàn tác.`)) {
-            return;
-        }
-        return runOperation(() => apiDelete(`/api/operations/facilities/${facility.facilityId}`));
+    const deleteFacility = async facility => {
+        const ok = await dialog.confirm({
+            tone: "danger",
+            title: `Xóa cơ sở "${facility.name}"?`,
+            message: "Thao tác này chỉ thực hiện được khi cơ sở chưa có kho hoặc đơn đặt chỗ phát sinh. Không thể hoàn tác.",
+            confirmLabel: "Xóa cơ sở"
+        });
+        if (!ok) return;
+        return runOperation(
+            () => apiDelete(`/api/operations/facilities/${facility.facilityId}`),
+            `Đã xóa cơ sở "${facility.name}".`
+        );
     };
 
     const updateUnit = (unit, status) => runOperation(() =>
@@ -99,46 +134,62 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
         })
     );
 
-    const updateRate = (facilityId, unitTypeId, unitSizeId, basePrice) => runOperation(() =>
-        apiPut(`/api/operations/facilities/${facilityId}/rates`, {
+    const updateRate = (facilityId, unitTypeId, unitSizeId, basePrice) => runOperation(
+        () => apiPut(`/api/operations/facilities/${facilityId}/rates`, {
             unitTypeID: Number(unitTypeId),
             unitSizeID: Number(unitSizeId),
             basePrice: Number(basePrice)
-        })
+        }),
+        "Đã lưu mức giá thuê vào database."
     );
 
-    const updatePolicy = (facilityId, depositPercent) => runOperation(() =>
-        apiPut(`/api/operations/facilities/${facilityId}/policy`, {
-            depositPercent: Number(depositPercent)
-        })
+    const updateFacilityPolicy = (facilityId, depositMonths) => runOperation(
+        () => apiPut(`/api/operations/facilities/${facilityId}/policy`, {
+            depositMonths: Number(depositMonths),
+            depositPercent: Number(depositMonths) * 10
+        }),
+        `Đã lưu chính sách cọc ${depositMonths} tháng tiền thuê.`
     );
 
-    const handleAddFacility = () => {
+    const updateSystemPolicies = payload => runOperation(
+        () => apiPut("/api/operations/policies", payload),
+        "Đã lưu chính sách kinh doanh vào database."
+    );
+
+    const handleAddFacility = async () => {
         if (
             !newFacility.name.trim() ||
             !newFacility.unitCodePrefix.trim() ||
             !newFacility.address.trim()
         ) {
-            alert("Vui lòng nhập đầy đủ thông tin cơ sở.");
+            await dialog.alert({ tone: "warning", title: "Thiếu thông tin", message: "Vui lòng nhập đầy đủ tên cơ sở, mã chi nhánh và địa chỉ." });
             return;
         }
 
         if (!newFacility.manager || !newFacility.manager.includes("@")) {
-            alert("Vui lòng chọn Facility Manager hợp lệ.");
+            await dialog.alert({ tone: "warning", title: "Chưa chọn quản lý", message: "Vui lòng chọn Facility Manager hợp lệ." });
             return;
         }
 
-        apiPost("/api/operations/facilities", {
-            facilityName: newFacility.name.trim(),
-            unitCodePrefix: newFacility.unitCodePrefix.trim().toUpperCase(),
-            address: newFacility.address.trim(),
-            managerEmail: newFacility.manager,
-            status: newFacility.status
-        }).then(async () => {
+        const detectedDistrict = extractDistrict(newFacility.address.trim(), newFacility.name.trim())?.label || null;
+
+        try {
+            await apiPost("/api/operations/facilities", {
+                facilityName: newFacility.name.trim(),
+                unitCodePrefix: newFacility.unitCodePrefix.trim().toUpperCase(),
+                address: newFacility.address.trim(),
+                district: detectedDistrict,
+                managerEmail: newFacility.manager,
+                status: newFacility.status
+            });
             await loadBusinessData();
             setNewFacility({ name: "", unitCodePrefix: "", area: "", address: "", manager: "", status: "active" });
             setShowAddFacility(false);
-        }).catch(error => setApiError(error.message));
+            await dialog.alert({ tone: "success", title: "Đã tạo cơ sở mới", message: `Cơ sở "${newFacility.name.trim()}" đã được lưu vào database.` });
+        } catch (error) {
+            setApiError(error.message);
+            await dialog.alert({ tone: "danger", title: "Không tạo được cơ sở", message: error.message });
+        }
     };
 
     const handleCloseAddFacility = () => {
@@ -207,6 +258,17 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
 
                     <button
                         className={
+                            activeMenu === "catalog"
+                                ? "active"
+                                : ""
+                        }
+                        onClick={() => setActiveMenu("catalog")}
+                    >
+                        <span>▦</span> Loại & kích thước kho
+                    </button>
+
+                    <button
+                        className={
                             activeMenu === "prices"
                                 ? "active"
                                 : ""
@@ -235,7 +297,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                         }
                         onClick={() => setActiveMenu("revenue")}
                     >
-                        <span>◈</span> Doanh thu
+                        <span>◈</span> Doanh thu & hiệu suất
                     </button>
 
                     <button
@@ -253,12 +315,11 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
 
                 <div className="customer-sidebar-bottom">
 
-                    <button >
-                        <span>⚙</span> Cấu hình
+                    <button onClick={() => setActiveMenu("catalog")}>
+                        <span>⚙</span> Cấu hình danh mục
                     </button>
 
                     <button
-                        
                         onClick={handleLogout}
                     >
                         <span>↪</span> Đăng xuất
@@ -277,11 +338,12 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                         <span className="customer-eyebrow">BUSINESS OPERATIONS</span>
                         <h1>
                             {activeMenu === "dashboard" && "Tổng quan kinh doanh"}
-                            {activeMenu === "facilities" && "Cơ sở & kho"}
-                            {activeMenu === "prices" && "Giá & phí"}
+                            {activeMenu === "facilities" && "Cơ sở & kho theo khu vực"}
+                            {activeMenu === "catalog" && "Danh mục Loại kho & Kích thước kho"}
+                            {activeMenu === "prices" && "Khung giá, phụ phí & giảm giá"}
                             {activeMenu === "policies" && "Chính sách kinh doanh"}
-                            {activeMenu === "revenue" && "Doanh thu"}
-                            {activeMenu === "reports" && "Báo cáo"}
+                            {activeMenu === "revenue" && "Doanh thu & hiệu suất"}
+                            {activeMenu === "reports" && "Báo cáo toàn hệ thống"}
                         </h1>
 
                         <p>
@@ -320,39 +382,89 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                     {apiError && <div className="auth-message error" role="alert">{apiError}</div>}
 
                     {activeMenu === "dashboard" && (
-                        <BusinessLiveDashboard facilities={facilities} reports={reports} />
+                        <BusinessPerformance reports={reports} facilities={facilities} />
                     )}
 
                     {activeMenu === "facilities" && (
-                        <BusinessLiveFacilities
-                            facilities={facilities}
-                            units={operationState.units}
-                            onUpdateFacility={updateFacility}
-                            onDeleteFacility={deleteFacility}
-                            onUpdateUnit={updateUnit}
-                            onAddFacility={() => setShowAddFacility(true)}
+                        <>
+                            <BusinessFacilitiesByArea
+                                facilities={facilities}
+                                units={operationState.units}
+                                onAdd={() => setShowAddFacility(true)}
+                                onEdit={facility => setEditingFacility(facility)}
+                                onUpdateStatus={(facility, nextStatus) => updateFacility(facility, { status: nextStatus })}
+                                onDelete={deleteFacility}
+                            />
+                            <BusinessLiveFacilities
+                                facilities={facilities}
+                                units={operationState.units}
+                                onUpdateFacility={updateFacility}
+                                onDeleteFacility={deleteFacility}
+                                onUpdateUnit={updateUnit}
+                                onAddFacility={() => setShowAddFacility(true)}
+                            />
+                        </>
+                    )}
+
+                    {activeMenu === "catalog" && (
+                        <BusinessCatalog
+                            operationState={operationState}
+                            dialog={dialog}
+                            onChanged={loadBusinessData}
                         />
                     )}
 
                     {activeMenu === "prices" && (
-                        <BusinessLivePrices facilities={facilities} rates={operationState.rentalRates} unitTypes={operationState.unitTypes} unitSizes={operationState.unitSizes} onSave={updateRate} />
+                        <BusinessFeesPanel
+                            pricesPanel={
+                                <BusinessLivePrices
+                                    facilities={facilities}
+                                    rates={operationState.rentalRates}
+                                    unitTypes={operationState.unitTypes}
+                                    unitSizes={operationState.unitSizes}
+                                    onSave={updateRate}
+                                />
+                            }
+                            policies={operationState.policies}
+                            onSavePolicies={updateSystemPolicies}
+                        />
                     )}
 
                     {activeMenu === "policies" && (
-                        <BusinessLivePolicies facilities={operationState.facilities} onSave={updatePolicy} />
+                        <BusinessPolicyCenter
+                            policies={operationState.policies}
+                            facilities={operationState.facilities}
+                            onSavePolicies={updateSystemPolicies}
+                            onSaveFacilityPolicy={updateFacilityPolicy}
+                        />
                     )}
 
                     {activeMenu === "revenue" && (
-                        <BusinessLiveRevenue reports={reports} />
+                        <BusinessPerformance reports={reports} facilities={facilities} />
                     )}
 
                     {activeMenu === "reports" && (
-                        <BusinessLiveReports reports={reports} />
+                        <BusinessReportsCenter
+                            reports={reports}
+                            operationState={operationState}
+                            facilities={facilities}
+                        />
                     )}
 
                 </section>
 
             </main>
+
+            {editingFacility && (
+                <BusinessFacilityForm
+                    facility={editingFacility}
+                    facilities={facilities}
+                    managers={operationState.managers}
+                    dialog={dialog}
+                    onClose={() => setEditingFacility(null)}
+                    onSave={values => updateFacility(editingFacility, values)}
+                />
+            )}
 
             {/* ADD FACILITY MODAL */}
             {showAddFacility && (

@@ -1,0 +1,33 @@
+/* Ô nhập giá thuê (PriceInput.jsx) */
+.price-input { display: grid; gap: 5px; }
+.price-input-field {
+  display: flex;
+  align-items: center;
+  border: 1px solid #d6e4ef;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color .15s, box-shadow .15s;
+}
+.price-input-field:focus-within { border-color: #1684db; box-shadow: 0 0 0 3px rgba(22, 132, 219, .15); }
+.price-input-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0 !important;
+  outline: 0;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 10px 12px;
+  font: 700 15px 'DM Sans', sans-serif;
+  color: #0b3967;
+  letter-spacing: .01em;
+}
+.price-input-unit { padding: 0 12px; color: #8197ab; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.price-input-hint { min-height: 16px; color: #6d849b; font-size: 11.5px; font-weight: 500; line-height: 1.45; }
+.price-input-error { color: #c94a4a; font-weight: 700; }
+.price-input-warning { color: #8a6400; font-weight: 700; }
+
+.price-input.has-error .price-input-field { border-color: #e58c8c; background: #fff6f6; }
+.price-input.has-warning .price-input-field { border-color: #f0b400; background: #fffbea; }
+.price-input.is-readonly .price-input-field { background: #f2f7fc; }
+.price-input.is-readonly input { color: #4f6880; cursor: not-allowed; }
