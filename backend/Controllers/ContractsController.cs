@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Interfaces;
-using SelfStorageAPI.Services;
 
 namespace SelfStorageAPI.Controllers;
 
@@ -54,10 +53,7 @@ public sealed class ContractsController(
         if (!request.AcceptedTerms)
             return BadRequest(new { message = "Bạn cần xác nhận đồng ý với điều khoản hợp đồng." });
 
-        if (!string.Equals(
-                request.TermsVersion,
-                ContractSignatureService.CurrentTermsVersion,
-                StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(request.TermsVersion))
         {
             return BadRequest(new { message = "Phiên bản điều khoản không hợp lệ. Hãy tải lại hợp đồng." });
         }

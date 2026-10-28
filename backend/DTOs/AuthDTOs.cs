@@ -20,6 +20,9 @@ public class RegisterRequestDTO
     public string Password { get; set; } = null!;
     [Required]
     public string RoleName { get; set; } = null!;
+    public string? PhoneNumber { get; set; }
+    public string? Gender { get; set; }
+    public string? DateOfBirth { get; set; }
 }
 
 public class AuthResponseDTO
@@ -29,4 +32,8 @@ public class AuthResponseDTO
     public string Email { get; set; } = null!;
     public string RoleName { get; set; } = null!;
     public string Status { get; set; } = null!;
+    public string? PhoneNumber { get; set; }
+    /// <summary>JWT access token, gửi lại trong header "Authorization: Bearer {token}".</summary>
+    public string? Token { get; set; }
+    public DateTime? TokenExpiresAt { get; set; }
 }

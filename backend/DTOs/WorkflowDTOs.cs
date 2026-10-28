@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 
 namespace SelfStorageAPI.DTOs;
 
@@ -49,6 +50,27 @@ public sealed record UpdateSystemPoliciesDTO
     public List<CancellationRuleDTO>? CancellationRules { get; init; }
     public List<ContractTermDiscountDTO>? ContractDiscounts { get; init; }
     public List<ExtraFeeRuleDTO>? ExtraFees { get; init; }
+}
+
+public sealed record UpsertPriceBandDTO
+{
+    public string? Code { get; init; }
+    public string? Name { get; init; }
+    public decimal MinArea { get; init; }
+    public decimal MaxArea { get; init; }
+    public decimal MinPrice { get; init; }
+    public decimal MaxPrice { get; init; }
+    public decimal? RecommendedPrice { get; init; }
+    public bool? IsActive { get; init; }
+    public decimal? StandardHeightM { get; init; }
+}
+
+public sealed record UpdatePolicyGroupDTO
+{
+    public Dictionary<string, JsonElement>? Value { get; init; }
+    public Dictionary<string, JsonElement>? Config { get; init; }
+    public string? EffectiveFrom { get; init; }
+    public string? Note { get; init; }
 }
 
 public sealed record AssignReservationDTO

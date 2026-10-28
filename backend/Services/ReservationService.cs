@@ -148,7 +148,6 @@ public class ReservationService : IReservationService
                     reservationItem.ReservationUnits.Add(reservationUnit);
                     reservation.ReservationUnits.Add(reservationUnit);
 
-                    // Tạo khoản cọc (Deposit) cho từng kho
                     reservation.Charges.Add(new Charge
                     {
                         Reservation = reservation,
@@ -161,7 +160,6 @@ public class ReservationService : IReservationService
                         CreatedAt = now
                     });
 
-                    // Tạo các khoản tiền thuê từng tháng (Rent) cho từng kho
                     for (var m = 0; m < request.Months; m++)
                     {
                         var periodStart = startDate.AddMonths(m);
@@ -309,7 +307,7 @@ public class ReservationService : IReservationService
                 paymentDate = latestPayment?.ConfirmedAt ?? (DateTime?)latestPayment?.CreatedAt,
                 contractId = r.Contract?.ContractID,
                 contractNumber = r.Contract?.ContractNumber,
-                contractStatus = r.Contract?.ContractStatus,
+                contractStatus = r.Contract is null ? null : (r.Contract.Signature is not null ? "Signed" : "Pending Signature"),
                 accessType = activeAccess?.AccessType,
                 accessValue = activeAccess?.AccessValue,
                 size = activeUnits.Count > 1

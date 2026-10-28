@@ -15,7 +15,8 @@ public sealed record UnitTypeResponse(
     bool IsActive = true,
     int UnitCount = 0,
     int ReservationCount = 0,
-    int RateCount = 0);
+    int RateCount = 0,
+    int? FacilityID = null);
 
 /// <summary>Body cho POST / PUT loại kho (khớp bảng UnitType trong DB).</summary>
 public sealed record UpsertUnitTypeDTO

@@ -17,12 +17,18 @@ public class UnitTypeRepository : IUnitTypeRepository
 
     public async Task<IReadOnlyList<UnitType>> GetAllAsync(CancellationToken cancellationToken)
     {
-        return await _context.UnitTypes.AsNoTracking().OrderBy(t => t.UnitTypeID).ToListAsync(cancellationToken);
+        return await _context.UnitTypes
+            .Include(t => t.FacilityUnitTypes)
+            .AsNoTracking()
+            .OrderBy(t => t.UnitTypeID)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<UnitType?> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
-        return await _context.UnitTypes.FirstOrDefaultAsync(t => t.UnitTypeID == id, cancellationToken);
+        return await _context.UnitTypes
+            .Include(t => t.FacilityUnitTypes)
+            .FirstOrDefaultAsync(t => t.UnitTypeID == id, cancellationToken);
     }
 
     public async Task<bool> ExistsByNameAsync(string name, int? excludeId = null, CancellationToken cancellationToken = default)

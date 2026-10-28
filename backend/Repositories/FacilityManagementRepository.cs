@@ -103,6 +103,7 @@ public class FacilityManagementRepository : IFacilityManagementRepository
     {
         return await _context.RentalPolicies
             .Include(p => p.CancellationRules)
+            .Include(p => p.UpdatedByUser)
             .FirstOrDefaultAsync(p => p.FacilityID == null, cancellationToken);
     }
 
@@ -146,6 +147,42 @@ public class FacilityManagementRepository : IFacilityManagementRepository
         }
     }
 
+    public async Task<List<SizeCategory>> GetSizeCategoriesWithDetailsAsync(CancellationToken cancellationToken)
+    {
+        return await _context.SizeCategories
+            .Include(c => c.UpdatedByUser)
+            .Include(c => c.UnitSizes)
+            .OrderBy(c => c.SizeCategoryID)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<SizeCategory?> GetSizeCategoryByCodeAsync(string code, CancellationToken cancellationToken)
+    {
+        var normalized = code.Trim().ToUpperInvariant();
+        return await _context.SizeCategories
+            .Include(c => c.UpdatedByUser)
+            .Include(c => c.UnitSizes)
+            .FirstOrDefaultAsync(c => c.CodePrefix == normalized || c.CategoryCode == normalized, cancellationToken);
+    }
+
+    public void AddSizeCategory(SizeCategory category) => _context.SizeCategories.Add(category);
+    public void RemoveSizeCategory(SizeCategory category) => _context.SizeCategories.Remove(category);
+
+    public async Task<List<StorageUnit>> GetAllStorageUnitsAsync(CancellationToken cancellationToken)
+    {
+        return await _context.StorageUnits.AsNoTracking().ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<RentalRate>> GetAllRentalRatesAsync(CancellationToken cancellationToken)
+    {
+        return await _context.RentalRates.ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<UnitSize>> GetAllUnitSizesAsync(CancellationToken cancellationToken)
+    {
+        return await _context.UnitSizes.AsNoTracking().ToListAsync(cancellationToken);
+    }
+
     public async Task<FacilityStaff?> GetFacilityStaffAssignmentAsync(int facilityId, int userId, CancellationToken cancellationToken)
     {
         return await _context.FacilityStaffs.FirstOrDefaultAsync(
@@ -158,10 +195,33 @@ public class FacilityManagementRepository : IFacilityManagementRepository
     public async Task<Reservation?> GetReservationByIdAsync(int reservationId, CancellationToken cancellationToken)
     {
         return await _context.Reservations
+            .Include(r => r.Contract)
             .Include(r => r.ReservationItems)
             .Include(r => r.ReservationUnits)
                 .ThenInclude(ru => ru.Unit)
             .FirstOrDefaultAsync(r => r.ReservationID == reservationId, cancellationToken);
+    }
+
+    public async Task<Contract> EnsureContractForReservationAsync(Reservation reservation, int? userId, CancellationToken cancellationToken)
+    {
+        var existing = await _context.Contracts.FirstOrDefaultAsync(c => c.ReservationID == reservation.ReservationID, cancellationToken);
+        if (existing is not null)
+            return existing;
+
+        var now = DateTime.UtcNow;
+        var contract = new Contract
+        {
+            ContractNumber = $"HD-{now:yyyy}-{reservation.ReservationID:D5}",
+            ReservationID = reservation.ReservationID,
+            StartDate = reservation.StartDate,
+            EndDate = reservation.EndDate,
+            ContractStatus = "Active",
+            CreatedAt = now,
+            CreatedByUserID = userId
+        };
+        _context.Contracts.Add(contract);
+        await _context.SaveChangesAsync(cancellationToken);
+        return contract;
     }
 
     public async Task<bool> HasConflictingReservationForUnitAsync(

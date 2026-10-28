@@ -23,6 +23,12 @@ public class UnitTypeService : IUnitTypeService
         foreach (var item in items)
         {
             var stats = await _unitTypeRepository.GetUsageStatsAsync(item.UnitTypeID, facilityId, cancellationToken);
+            int? ownerFacilityId = null;
+            if (item.CreatedByUserID.HasValue && item.FacilityUnitTypes.Count == 1)
+            {
+                ownerFacilityId = item.FacilityUnitTypes.First().FacilityID;
+            }
+
             result.Add(new UnitTypeResponse(
                 item.UnitTypeID,
                 item.TypeName,
@@ -33,7 +39,8 @@ public class UnitTypeService : IUnitTypeService
                 stats.IsActiveAtFacility,
                 stats.UnitCount,
                 stats.ReservationCount,
-                stats.RateCount));
+                stats.RateCount,
+                ownerFacilityId));
         }
 
         return result;
@@ -45,6 +52,12 @@ public class UnitTypeService : IUnitTypeService
         if (entity is null) return null;
 
         var stats = await _unitTypeRepository.GetUsageStatsAsync(entity.UnitTypeID, facilityId, cancellationToken);
+        int? ownerFacilityId = null;
+        if (entity.CreatedByUserID.HasValue && entity.FacilityUnitTypes.Count == 1)
+        {
+            ownerFacilityId = entity.FacilityUnitTypes.First().FacilityID;
+        }
+
         return new UnitTypeResponse(
             entity.UnitTypeID,
             entity.TypeName,
@@ -55,7 +68,8 @@ public class UnitTypeService : IUnitTypeService
             stats.IsActiveAtFacility,
             stats.UnitCount,
             stats.ReservationCount,
-            stats.RateCount);
+            stats.RateCount,
+            ownerFacilityId);
     }
 
     public async Task<(bool IsSuccess, string? ErrorMessage, UnitTypeResponse? Data)> CreateAsync(
@@ -88,10 +102,13 @@ public class UnitTypeService : IUnitTypeService
         _unitTypeRepository.Add(entity);
         await _unitTypeRepository.SaveChangesAsync(cancellationToken);
 
-        await _unitTypeRepository.EnsureAllFacilitiesLinkAsync(entity.UnitTypeID, user.UserID, cancellationToken);
         if (request.FacilityID.HasValue)
         {
             await _unitTypeRepository.EnsureFacilityLinkAsync(request.FacilityID.Value, entity.UnitTypeID, isActive, user.UserID, cancellationToken);
+        }
+        else
+        {
+            await _unitTypeRepository.EnsureAllFacilitiesLinkAsync(entity.UnitTypeID, user.UserID, cancellationToken);
         }
         await _unitTypeRepository.SaveChangesAsync(cancellationToken);
 
@@ -105,7 +122,8 @@ public class UnitTypeService : IUnitTypeService
             isActive,
             0,
             0,
-            0));
+            0,
+            request.FacilityID));
     }
 
     public async Task<(bool IsSuccess, string? ErrorMessage, UnitTypeResponse? Data)> UpdateAsync(
@@ -143,6 +161,10 @@ public class UnitTypeService : IUnitTypeService
                         return (false, "Cơ sở vẫn còn kho đang hoạt động thuộc loại này. Hãy ngừng hoặc đổi các kho đó trước.", null);
                 }
                 await _unitTypeRepository.EnsureFacilityLinkAsync(request.FacilityID.Value, id, request.IsActive.Value, user.UserID, cancellationToken);
+                if (entity.CreatedByUserID.HasValue && entity.FacilityUnitTypes.Count <= 1)
+                {
+                    entity.IsActive = request.IsActive.Value;
+                }
             }
             else if (user.RoleID == 4)
             {
@@ -153,6 +175,12 @@ public class UnitTypeService : IUnitTypeService
         await _unitTypeRepository.SaveChangesAsync(cancellationToken);
 
         var stats = await _unitTypeRepository.GetUsageStatsAsync(id, request.FacilityID, cancellationToken);
+        int? ownerFacilityId = null;
+        if (entity.CreatedByUserID.HasValue && entity.FacilityUnitTypes.Count == 1)
+        {
+            ownerFacilityId = entity.FacilityUnitTypes.First().FacilityID;
+        }
+
         return (true, null, new UnitTypeResponse(
             entity.UnitTypeID,
             entity.TypeName,
@@ -163,7 +191,8 @@ public class UnitTypeService : IUnitTypeService
             stats.IsActiveAtFacility,
             stats.UnitCount,
             stats.ReservationCount,
-            stats.RateCount));
+            stats.RateCount,
+            ownerFacilityId));
     }
 
     public async Task<(bool IsSuccess, string? ErrorMessage)> DeleteAsync(
