@@ -94,13 +94,57 @@ public class FacilityManagementRepository : IFacilityManagementRepository
 
     public async Task<RentalPolicy?> GetRentalPolicyByFacilityIdAsync(int facilityId, CancellationToken cancellationToken)
     {
-        return await _context.RentalPolicies.FirstOrDefaultAsync(
-            p => p.FacilityID == facilityId,
-            cancellationToken);
+        return await _context.RentalPolicies
+            .Include(p => p.CancellationRules)
+            .FirstOrDefaultAsync(p => p.FacilityID == facilityId, cancellationToken);
+    }
+
+    public async Task<RentalPolicy?> GetGlobalRentalPolicyAsync(CancellationToken cancellationToken)
+    {
+        return await _context.RentalPolicies
+            .Include(p => p.CancellationRules)
+            .FirstOrDefaultAsync(p => p.FacilityID == null, cancellationToken);
+    }
+
+    public async Task<List<RentalPolicy>> GetAllRentalPoliciesAsync(CancellationToken cancellationToken)
+    {
+        return await _context.RentalPolicies
+            .Include(p => p.CancellationRules)
+            .ToListAsync(cancellationToken);
     }
 
     public void AddRentalPolicy(RentalPolicy policy) => _context.RentalPolicies.Add(policy);
     public void RemoveRentalPolicy(RentalPolicy policy) => _context.RentalPolicies.Remove(policy);
+
+    public async Task<List<ContractType>> GetContractTypesAsync(CancellationToken cancellationToken)
+    {
+        return await _context.ContractTypes
+            .OrderBy(ct => ct.RentalMonths)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<FeePolicy>> GetFeePoliciesAsync(CancellationToken cancellationToken)
+    {
+        return await _context.FeePolicies
+            .OrderBy(fp => fp.FeePolicyID)
+            .ToListAsync(cancellationToken);
+    }
+
+    public void AddFeePolicy(FeePolicy feePolicy) => _context.FeePolicies.Add(feePolicy);
+    public void RemoveFeePolicy(FeePolicy feePolicy) => _context.FeePolicies.Remove(feePolicy);
+
+    public void ReplaceCancellationRules(RentalPolicy policy, IEnumerable<CancellationRule> rules)
+    {
+        if (policy.CancellationRules.Count > 0)
+        {
+            _context.CancellationRules.RemoveRange(policy.CancellationRules);
+            policy.CancellationRules.Clear();
+        }
+        foreach (var rule in rules)
+        {
+            policy.CancellationRules.Add(rule);
+        }
+    }
 
     public async Task<FacilityStaff?> GetFacilityStaffAssignmentAsync(int facilityId, int userId, CancellationToken cancellationToken)
     {
@@ -116,6 +160,7 @@ public class FacilityManagementRepository : IFacilityManagementRepository
         return await _context.Reservations
             .Include(r => r.ReservationItems)
             .Include(r => r.ReservationUnits)
+                .ThenInclude(ru => ru.Unit)
             .FirstOrDefaultAsync(r => r.ReservationID == reservationId, cancellationToken);
     }
 
@@ -199,6 +244,13 @@ public class FacilityManagementRepository : IFacilityManagementRepository
     public async Task<bool> UnitSizeExistsAsync(int unitSizeId, CancellationToken cancellationToken)
     {
         return await _context.UnitSizes.AnyAsync(s => s.UnitSizeID == unitSizeId, cancellationToken);
+    }
+
+    public async Task<UnitSize?> GetUnitSizeWithCategoryAsync(int unitSizeId, CancellationToken cancellationToken)
+    {
+        return await _context.UnitSizes
+            .Include(s => s.SizeCategory)
+            .FirstOrDefaultAsync(s => s.UnitSizeID == unitSizeId, cancellationToken);
     }
 
     public async Task<(UnitType unitType, UnitSize unitSize)> GetOrCreateUnitLookupsAsync(
