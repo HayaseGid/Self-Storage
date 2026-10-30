@@ -9,6 +9,8 @@ using SelfStorageAPI.Middleware;
 using SelfStorageAPI.Repositories;
 using SelfStorageAPI.Services;
 
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -26,8 +28,69 @@ builder.Services.AddCors(options =>
         });
 });
 
+
+void TryLoadEnv(string path)
+{
+    if (File.Exists(path))
+    {
+        foreach (var line in File.ReadAllLines(path))
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("#")) continue;
+            var idx = trimmed.IndexOf('=');
+            if (idx > 0)
+            {
+                var key = trimmed.Substring(0, idx).Trim();
+                var val = trimmed.Substring(idx + 1).Trim().Trim('"', '\'');
+                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(key)))
+                {
+                    Environment.SetEnvironmentVariable(key, val);
+                }
+            }
+        }
+    }
+}
+
+TryLoadEnv(Path.Combine(builder.Environment.ContentRootPath, "..", ".env.local"));
+TryLoadEnv(Path.Combine(builder.Environment.ContentRootPath, "..", ".env"));
+TryLoadEnv(Path.Combine(builder.Environment.ContentRootPath, ".env.local"));
+TryLoadEnv(Path.Combine(builder.Environment.ContentRootPath, ".env"));
+
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? "";
+
+bool isPostgres = connectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+                  connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
+                  connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase);
+
+string FormatNpgsqlConnectionString(string connStr)
+{
+    if (connStr.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+        connStr.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        var uri = new Uri(connStr);
+        var userInfo = uri.UserInfo.Split(':');
+        var username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : "";
+        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+        var port = uri.Port > 0 ? uri.Port : 5432;
+        var database = uri.AbsolutePath.TrimStart('/');
+        return $"Host={uri.Host};Port={port};Database={database};Username={username};Password={password};SSL Mode=Require;Trust Server Certificate=true";
+    }
+    return connStr;
+}
+
 builder.Services.AddDbContext<SelfStorageDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    if (isPostgres)
+    {
+        options.UseNpgsql(FormatNpgsqlConnectionString(connectionString));
+    }
+    else
+    {
+        options.UseSqlServer(connectionString);
+    }
+});
 
 // Register Repositories and Services
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -105,5 +168,15 @@ app.UseMiddleware<JwtIdentityMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<SelfStorageDbContext>();
+    if (dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        dbContext.Database.EnsureCreated();
+        DatabaseSeeder.SeedIfEmpty(dbContext);
+    }
+}
 
 app.Run();
