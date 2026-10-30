@@ -1,0 +1,5 @@
+KHÓA CHẶT KHUNG GIÁ / NHÓM SIZE (Business Operations) – chép đè vào project.
+  backend/Controllers/PriceBandRulesController.cs   (MỚI, chỉ thêm – kiểm tra rồi mới gọi lại service cũ)
+  frontend/src/priceBandRules.js                    (MỚI – cùng quy tắc, báo lỗi ngay khi nhập)
+  frontend/src/BusinessPriceBands.jsx / .css         (SỬA)
+Sau khi chép: dừng backend rồi dotnet run lại. Không cần chạy SQL.

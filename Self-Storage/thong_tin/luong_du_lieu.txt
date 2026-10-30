@@ -1,0 +1,21 @@
+[Frontend: api.js] 
+       │  (1) Gửi HTTP Request + JSON (DTO)
+       ▼
+[1. Controllers]   ---> Chỉ nhận Request, đọc Header (X-User-Email) và trả mã HTTP (200, 400, 403, 404...)
+       │  (2) Gọi qua Interface (I...Service)
+       ▼
+[2. Services]      ---> Xử lý toàn bộ LOGIC NGHIỆP VỤ (kiểm tra quyền, tính tiền cọc, kiểm tra hạn...)
+       │  (3) Gọi qua Interface (I...Repository)
+       ▼
+[3. Repositories]  ---> Chuyên viết câu lệnh truy vấn LINQ / EF Core (Select, Include, Add, Update)
+       │  (4) Tương tác qua DbContext
+       ▼
+[4. Data & Models] ---> SelfStorageDbContext ánh xạ các class C# (Models) xuống bảng SQL Server
+       │
+       ▼
+  (Database: SelfStorageDB_test)
+
+
+Sau khi Database xử lý xong, kết quả trả ngược lại từ 
+Repository → Service (đóng gói vào DTO / kết quả trả về) → Controller (chuyển thành JSON) → Frontend nhận và hiển thị lên màn hình.
+

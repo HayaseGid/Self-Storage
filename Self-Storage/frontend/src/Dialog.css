@@ -1,0 +1,137 @@
+/* Pop-up cảnh báo / xác nhận dùng chung (Dialog.jsx) */
+.ss-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(7, 37, 66, .52);
+  backdrop-filter: blur(3px);
+  animation: ss-dialog-fade .16s ease-out;
+}
+
+.ss-dialog {
+  width: min(460px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px 18px;
+  padding: 26px 26px 22px;
+  border-radius: 20px;
+  background: #fff;
+  border-top: 5px solid var(--ss-dialog-accent, #1684db);
+  box-shadow: 0 30px 80px rgba(7, 37, 66, .28);
+  color: #0b3967;
+  font-family: 'DM Sans', 'Be Vietnam Pro', sans-serif;
+  animation: ss-dialog-pop .18s ease-out;
+}
+
+.ss-dialog-info { --ss-dialog-accent: #1684db; --ss-dialog-soft: #e9f5ff; }
+.ss-dialog-success { --ss-dialog-accent: #2b8b55; --ss-dialog-soft: #eefaf2; }
+.ss-dialog-warning { --ss-dialog-accent: #d99a00; --ss-dialog-soft: #fff4d6; }
+.ss-dialog-danger { --ss-dialog-accent: #c94a4a; --ss-dialog-soft: #fff0f0; }
+
+.ss-dialog-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--ss-dialog-soft);
+  color: var(--ss-dialog-accent);
+  font: 800 22px 'Be Vietnam Pro', sans-serif;
+}
+
+.ss-dialog-body h2 {
+  margin: 4px 0 8px;
+  font: 800 19px/1.3 'Be Vietnam Pro', sans-serif;
+  color: #073d70;
+}
+
+.ss-dialog-message { color: #4f6880; font-size: 14.5px; line-height: 1.6; }
+.ss-dialog-message p { margin: 0 0 6px; }
+.ss-dialog-message p:last-child { margin-bottom: 0; }
+.ss-dialog-message strong { color: #073d70; }
+
+.ss-dialog-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.ss-dialog-btn {
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font: 700 14px 'DM Sans', sans-serif;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.ss-dialog-btn:hover { transform: translateY(-1px); }
+.ss-dialog-btn:focus-visible { outline: 3px solid rgba(22, 132, 219, .35); outline-offset: 2px; }
+
+.ss-dialog-btn-primary { background: #075a9f; color: #fff; box-shadow: 0 10px 22px rgba(7, 90, 159, .22); }
+.ss-dialog-btn-primary:hover { background: #08477f; }
+.ss-dialog-btn-danger { background: #c94a4a; color: #fff; box-shadow: 0 10px 22px rgba(201, 74, 74, .22); }
+.ss-dialog-btn-danger:hover { background: #b23c3c; }
+.ss-dialog-btn-secondary { background: #fff; color: #075a9f; border-color: #d6e4ef; }
+.ss-dialog-btn-secondary:hover { background: #f5faff; }
+
+/* Ô thông báo bản nháp đặt kho trên trang đăng nhập / đăng ký / đặt kho */
+.booking-draft-note {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: #e9f5ff;
+  border: 1px solid #cfe6fa;
+  color: #0b3967;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.booking-draft-note > span {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #1684db;
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+}
+.booking-draft-note strong { color: #073d70; }
+.booking-draft-note button {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #0877cf;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+@keyframes ss-dialog-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ss-dialog-pop { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 520px) {
+  .ss-dialog { grid-template-columns: 1fr; padding: 22px 18px 18px; }
+  .ss-dialog-actions { flex-direction: column-reverse; }
+  .ss-dialog-btn { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ss-dialog-overlay, .ss-dialog { animation: none; }
+  .ss-dialog-btn { transition: none; }
+}

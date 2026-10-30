@@ -1,0 +1,144 @@
+
+
+Đề tài 5:
+Project name:
+Hệ thống quản lý và cho thuê kho lưu trữ tự phục vụ
+Self-Storage Facility Rental and Management System
+
+
+Actors: Storage Customer
+Facility Staff
+Facility Manager
+Business Operations Manager
+System Administrator
+
+
+
+
+Main features
+1. Storage Customer
+- View storage facilities, unit types, unit sizes, rental prices, and available units.
+- Reserve a storage unit by choosing the facility, unit type, start date, and rental period.
+- Pay the deposit, rental fee, renewal fee, or extra charges.
+- Check in to receive the assigned storage unit based on the scheduled appointment.
+- Manage one or more rented storage units
+- Send support requests for problems related to the unit, lock, access code, payment, or stored items.
+
+2. Facility Staff
+- Check the customer’s reservation when the customer arrives to receive the unit.
+- Support check-in and hand over the storage unit, lock, access card, or access code.
+- Update the unit status after handover, during use, after return, or when inspection/maintenance is needed.
+- Check and confirm the unit condition when the customer returns the unit.
+- Receive and handle on-site problems such as lost keys, access code issues, damaged units, or customer support requests.
+- Track the daily list of customers who need to receive units, return units, or receive support.
+
+3. Facility Manager
+- Manage storage units at the assigned facility, including unit type, size, location, rental price, and unit status.
+- Assign suitable storage units to customers based on unit type, rental period, and availability.
+- Monitor current customers, rental contracts, rental periods, and payment status.
+- Manage the process of unit handover, unit return, rental renewal, and overdue handling at the facility.
+- Assign facility staff to support handover, unit inspection, or problem handling.
+- View facility reports on available units, rented units, revenue, usage rate, and overdue cases.
+
+4. Business Operations Manager
+- Manage the list of all storage facilities in the whole system.
+- Set general rental policies, such as deposit, renewal, cancellation, unit return, and overdue handling.
+- Manage rental price ranges, extra fees, overdue fees, and discount or fee-waiver policies.
+- Monitor revenue, storage usage rate, and operating performance of each facility.
+- View and export system-wide reports by facility, unit type, revenue, and rental status.
+
+5. System Administrator
+- Manage user accounts in the system.
+- Assign roles to Storage Customer, Facility Staff, Facility Manager, and Business Operations Manager.
+- Configure data access permissions based on user role and assigned facility.
+- Track login history and user activity logs.
+
+
+
+
+
+
+Must Have: 
+
+
+Flow 1: Storage Unit Reservation Flow
+ Flow 2: Storage Check-in and Handover Flow
+ Flow 3: Rented Storage Unit Management Flow
+ Flow 4: Business Rules, Fee Management, and Revenue Monitoring Flow
+ Flow 5: Facility Storage and Staff Management Flow
+
+
+
+Nice to have:
+Flow 6: Storage Renewal and Overdue Handling Flow
+ Flow 7: Support Request and Issue Handling Flow
+ 
+
+
+
+
+HAPPY CASE: Đặt kho → thanh toán → bàn giao → quản lý thuê (BẮT BUỘC)
+1. Business Operations Manager cấu hình cơ sở, chính sách đặt cọc và biểu phí áp dụng.
+2. Facility Manager tạo kho với loại, kích thước, giá, trạng thái và phân công Facility Staff.
+3. Storage Customer tìm kho còn trống, chọn cơ sở, loại kho, ngày bắt đầu và thời gian thuê.
+4. Hệ thống kiểm tra khả dụng cho toàn bộ kỳ thuê, tính khoản phải trả theo chính sách và tạo đặt chỗ.
+5. Customer thanh toán; hệ thống ghi nhận kết quả thành công và cập nhật trạng thái đặt chỗ.
+6. Facility Manager phân kho phù hợp; Facility Staff kiểm tra đặt chỗ, thanh toán và lịch hẹn khi Customer đến.
+7. Facility Staff xác nhận bàn giao kho và khóa/thẻ/mã truy cập; hệ thống chuyển kho sang đang thuê.
+8. Customer xem kho và kỳ thuê của mình; Facility Manager theo dõi hợp đồng, trạng thái thanh toán.
+9. Business Operations Manager xem doanh thu và tỷ lệ sử dụng; dữ liệu khớp với khoản thu và kho đã bàn giao.
+--> Kết quả mong đợi: Kho được giao đúng khách, đúng kỳ thuê; trạng thái sử dụng và doanh thu nhất quán.
+
+
+
+
+
+	
+EDGE CASE: Tranh chấp kho cuối cùng và thông báo thanh toán lặp (BẮT BUỘC)
+1. Hai Customer cùng đặt kho cuối cùng có kỳ thuê chồng lấn tại một cơ sở.
+2. Hệ thống chỉ xác nhận một đặt chỗ giữ được kho; yêu cầu còn lại nhận thông báo hết kho và không được tiến hành thanh toán cho đặt chỗ thất bại.
+3. Customer có đặt chỗ hợp lệ thanh toán, nhưng phản hồi về trình duyệt bị gián đoạn.
+4. Hệ thống giữ trạng thái chờ xác nhận cho đến khi kiểm chứng được kết quả; không cho bàn giao chỉ dựa trên ảnh chụp hoặc thông báo từ trình duyệt.
+5. Kết quả thanh toán thành công được gửi lại nhiều lần; hệ thống đối chiếu mã giao dịch và chỉ ghi nhận một lần.
+6. Facility Staff kiểm tra đúng khách, cơ sở, đặt chỗ và trạng thái thanh toán trước khi bàn giao.
+7. Nhân viên thử bàn giao lại cùng đặt chỗ; hệ thống báo đã bàn giao và không tạo thêm hợp đồng hay cấp thêm kho.
+8. Facility Manager kiểm tra kho và Business Operations Manager kiểm tra doanh thu sau xử lý.
+--> Kết quả mong đợi: Không cho thuê trùng kỳ, không bàn giao khi thanh toán chưa xác nhận, không ghi nhận doanh thu hoặc bàn giao hai lần.
+Bật chế độ hỗ trợ trình đọc màn hình
+
+
+
+
+
+
+
+
+
+
+
+VẤN ĐỀ ĐẶC THÙ: Kho là tài nguyên vật lý hữu hạn thuê theo khoảng thời gian → hệ thống phải đảm bảo mỗi kho chỉ có ĐÚNG 1 trạng thái hợp lệ và 1 khách sở hữu tại 1 thời điểm, kể cả khi nhiều yêu cầu đặt/thanh toán/bàn giao xảy ra đồng thời hoặc không đồng bộ.
+ 
+ 1. Hai khách cùng đặt 1 kho trùng khoảng thời gian thuê → kiểm tra chồng lấp thời gian trước khi đặt + giữ chỗ tạm (hold record, TTL 10-15 phút qua Redis) + ràng buộc chống trùng ở tầng DB (EXCLUDE constraint theo cặp kho + khoảng ngày) để chặn tuyệt đối dù nhiều request đồng thời.
+ 2. Thanh toán bị trừ tiền 2 lần do mất kết nối giữa chừng → xác nhận kết quả thanh toán qua Webhook/IPN từ cổng thanh toán (không dựa vào thông báo trên trình duyệt) + Idempotency Key cho mỗi giao dịch + state machine rõ ràng cho Booking/Payment.
+ 3. Bàn giao sai kho/sai khách → checklist bắt buộc (đúng khách – đúng kho – đúng cơ sở – thanh toán đã xác nhận – kho chưa bàn giao trước đó) trước khi Staff xác nhận; có thể dùng mã QR gửi sẵn cho khách để quét khi nhận kho.
+ 4. Kho chuyển ngay về "Còn trống" dù chưa kiểm tra tình trạng → thêm trạng thái trung gian "Chờ kiểm tra" → "Bảo trì" (nếu hỏng) hoặc "Còn trống" (nếu đạt); hợp đồng có thêm trạng thái Sắp hết hạn/Gia hạn/Quá hạn.
+ 5. Doanh thu lệch do lỗi đồng bộ giữa module thanh toán và hợp đồng → ghi Event Log cho mọi thay đổi trạng thái, tính báo cáo từ các sự kiện đã xác nhận (bảng Payment = nguồn sự thật duy nhất) để phát hiện giao dịch "mồ côi".
+ 6. Khách hủy đặt chỗ trước/sau khi đã thanh toán → chính sách hoàn tiền theo mốc thời gian hủy (vd hủy trước 7 ngày hoàn 100%, dưới 3 ngày không hoàn) + trạng thái riêng "Đã hủy" + tự động giải phóng khung thời gian đã giữ.
+
+
+
+
+
+
+
+
+
+Web/app lien quan
+1. Storeganise (storeganise.com) – rất sát đề tài: Customer Portal, đặt kho & thanh toán, quản lý hợp đồng, cấp mã truy cập, quản lý nhiều cơ sở, báo cáo.
+ 2. 6Storage (6storage.com) – tương tự Storeganise, có thêm quản lý phí quá hạn/công nợ và cấp quyền truy cập theo thời gian.
+ 3. SiteLink Web Edition (sitelink.com) – hệ thống quy mô lớn: phân quyền Admin/Facility Manager/Operations Manager/Staff, dashboard tỷ lệ lấp đầy & doanh thu.
+ 4. Self Storage Manager – có hợp đồng điện tử (chữ ký số), quản lý bảo trì/sự cố tại cơ sở.
+ 5. Easy Storage Solutions – mạnh về công nợ, phí trễ hạn, khóa quyền truy cập khi khách quá hạn.
+ 6. Stora (stora.co) – tự động hóa toàn trình: đặt kho → thanh toán → cấp quyền truy cập → thanh toán định kỳ → xử lý quá hạn.
+ 
+ Điểm khác biệt/cơ hội của đề tài: các nền tảng trên có tính năng tương tự nhưng KHÔNG công bố chi tiết kỹ thuật xử lý đồng thời (concurrency); đề tài có thể làm nổi bật đúng phần "giữ chỗ tạm có TTL + Idempotency Key + Event Log đối chiếu giao dịch mồ côi" mà thị trường không mô tả rõ.

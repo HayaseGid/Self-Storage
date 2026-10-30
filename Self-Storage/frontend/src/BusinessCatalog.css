@@ -1,0 +1,107 @@
+/* Danh mục thiết lập + form sửa cơ sở (BusinessCatalog.jsx, BusinessFacilityForm.jsx) */
+.bc-root .business-panel-header { align-items: flex-start; }
+.bc-root .business-panel-header p { margin: 4px 0 0; color: #6d849b; }
+
+.bc-tabs { display: flex; gap: 8px; margin: 4px 0 16px; border-bottom: 1px solid #e4edf4; }
+.bc-tabs button {
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: #4f6880;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+}
+.bc-tabs button em { margin-left: 6px; padding: 1px 8px; border-radius: 99px; background: #eef3f7; color: #6d849b; font-style: normal; font-size: 12px; }
+.bc-tabs button.active { color: #075a9f; border-bottom-color: #075a9f; }
+.bc-tabs button.active em { background: #e9f5ff; color: #075a9f; }
+
+.bc-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.bc-btn {
+  padding: 6px 12px;
+  border-radius: 9px;
+  border: 1px solid #d6e4ef;
+  background: #fff;
+  color: #075a9f;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.bc-btn:hover:not(:disabled) { background: #f5faff; }
+.bc-btn.danger { color: #c94a4a; border-color: #f3d2d2; }
+.bc-btn.danger:hover:not(:disabled) { background: #fff4f4; }
+.bc-btn.danger.muted { color: #b9a5a5; }
+.bc-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.bc-note { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.55; }
+.bc-note.warn { background: #fff8e1; color: #6b5200; border: 1px solid #f6e2a6; }
+.bc-note.error { background: #fff0f0; color: #b23c3c; border: 1px solid #ffd6d6; }
+.bc-note code { padding: 1px 5px; border-radius: 5px; background: rgba(0, 0, 0, .06); font-size: 12px; }
+
+/* Modal */
+.bc-modal-overlay { position: fixed; inset: 0; z-index: 950; display: grid; place-items: center; padding: 16px; background: rgba(7, 37, 66, .5); backdrop-filter: blur(3px); }
+.bc-modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 30px 80px rgba(7, 37, 66, .28);
+  overflow: hidden;
+}
+.bc-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 22px 24px 12px; border-bottom: 1px solid #eef3f7; }
+.bc-modal-head h3 { margin: 0; font: 800 19px 'Be Vietnam Pro', sans-serif; color: #073d70; }
+.bc-modal-head p { margin: 4px 0 0; color: #6d849b; font-size: 13px; }
+.bc-modal-close { width: 34px; height: 34px; border: 0; border-radius: 10px; background: #f2f7fc; color: #4f6880; font-size: 20px; cursor: pointer; }
+.bc-modal-body { display: grid; gap: 14px; padding: 18px 24px; overflow: auto; }
+.bc-modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px 20px; border-top: 1px solid #eef3f7; }
+
+.bc-field { display: grid; gap: 6px; flex: 1; min-width: 0; }
+.bc-field-label { color: #23475e; font-size: 13px; font-weight: 800; }
+.bc-field-label em { color: #c94a4a; font-style: normal; }
+.bc-field input, .bc-field textarea, .bc-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #d6e4ef;
+  background: #fff;
+  color: #0b3967;
+  font: inherit;
+  font-size: 14px;
+}
+.bc-field textarea { resize: vertical; min-height: 72px; }
+.bc-field input:focus, .bc-field textarea:focus, .bc-field select:focus { outline: 0; border-color: #1684db; box-shadow: 0 0 0 3px rgba(22, 132, 219, .15); }
+.bc-field input[readonly] { background: #f2f7fc; color: #4f6880; }
+.bc-field.has-error input, .bc-field.has-error textarea, .bc-field.has-error select { border-color: #e58c8c; background: #fff6f6; }
+.bc-field-error { color: #c94a4a; font-size: 12px; font-weight: 700; }
+.bc-field-hint { color: #8197ab; font-size: 12px; line-height: 1.45; margin: 0; }
+
+.bc-row { display: flex; align-items: flex-start; gap: 12px; }
+.bc-times { align-self: center; margin-top: 18px; color: #8197ab; font-size: 20px; font-weight: 700; }
+.bc-check { display: flex; align-items: center; gap: 8px; margin-top: 30px; color: #23475e; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.bc-check input { width: 18px; height: 18px; }
+
+.bc-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 14px; border-radius: 12px; background: #f5faff; color: #4f6880; font-size: 13px; }
+.bc-preview strong { color: #073d70; font-size: 15px; }
+.bc-preview small { flex-basis: 100%; color: #6d849b; }
+.bc-area { padding: 2px 8px; border-radius: 99px; background: #e9f5ff; color: #075a9f; font-weight: 800; font-size: 12px; }
+
+.bc-changes { margin: 4px 0 0; padding-left: 18px; }
+.bc-changes li { margin: 3px 0; }
+
+/* Thao tác trên thẻ cơ sở */
+.business-facility-actions .bc-btn { padding: 8px 14px; }
+
+@media (max-width: 560px) {
+  .bc-row { flex-direction: column; }
+  .bc-times { display: none; }
+  .bc-check { margin-top: 0; }
+}
+
+/* Tự đủ style khi dùng trong trang Facility Manager (không nạp BusinessOperations.css) */
+.bc-root.business-panel { background: #fff; border: 1px solid #e1edf4; border-radius: 14px; padding: 22px; box-shadow: 0 3px 12px rgba(15, 23, 42, .03); }
+.bc-root .business-panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 12px; }
+.bc-root .business-panel-header h2 { margin: 0; font: 800 20px 'Be Vietnam Pro', sans-serif; color: #073d70; }
