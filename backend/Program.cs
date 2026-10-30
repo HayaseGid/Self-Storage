@@ -13,6 +13,13 @@ AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Cloud deployment (Render, Railway, etc.) provides dynamic PORT
+var customPort = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(customPort))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{customPort}");
+}
+
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
