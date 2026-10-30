@@ -8,7 +8,8 @@ import './ContractSignFlow.css'
 
 /*
  * Chi tiết hợp đồng cho khách hàng: xem được ở mọi trạng thái
- * (chờ duyệt -> bản xem trước, chờ ký, đã ký chờ nhận kho, đang thuê).
+ * (đang tạo hợp đồng -> bản xem trước, chờ ký, đã ký chờ nhận kho, đang thuê).
+ * Luồng mới: không còn bước Manager duyệt, đặt cọc xong là hợp đồng được tạo để ký.
  * - Văn bản đầy đủ + điều khoản chi tiết + Phụ lục kho + chữ ký (nếu đã ký)
  * - In / Lưu PDF
  * - Gửi hợp đồng qua email (EmailJS - contractEmail.js, không cần backend)
@@ -25,7 +26,7 @@ export function contractStage(rentals) {
 }
 
 const STAGE_LABEL = {
-  approval: ['Chờ Manager duyệt', 'wait'],
+  approval: ['Đang tạo hợp đồng', 'wait'],
   preparing: ['Đang tạo hợp đồng', 'wait'],
   toSign: ['Chờ bạn ký', 'todo'],
   signed: ['Đã ký · Chờ nhận kho', 'done'],
@@ -92,9 +93,9 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
 
   const steps = [
     ['Đặt cọc', 'Đã thanh toán'],
-    ['Manager duyệt', stage === 'approval' ? 'Đang chờ' : 'Đã duyệt'],
+    ['Tạo hợp đồng', stage === 'approval' || stage === 'preparing' ? 'Đang tạo' : 'Đã tạo'],
     ['Ký online', stage === 'signed' || stage === 'active' ? 'Đã ký' : stage === 'toSign' ? 'Chờ bạn ký' : 'Chưa đến bước'],
-    ['Nhận kho', stage === 'active' ? 'Đã nhận' : `Ngày ${first.startDate}`]
+    ['Nhận kho & chìa khóa', stage === 'active' ? 'Đã nhận' : `Ngày ${first.startDate}`]
   ]
   const currentIndex = { approval: 1, preparing: 1, toSign: 2, signed: 3, active: 4 }[stage]
 
@@ -141,7 +142,7 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
             type="button"
             className="dashboard-secondary-btn"
             disabled={!hasAllContracts || sending}
-            title={hasAllContracts ? '' : 'Hợp đồng chưa được tạo (chờ Manager duyệt)'}
+            title={hasAllContracts ? '' : 'Hợp đồng đang được tạo, vui lòng thử lại sau ít phút'}
             onClick={sendMail}
           >
             {sending ? 'Đang gửi...' : '✉ Gửi qua email'}

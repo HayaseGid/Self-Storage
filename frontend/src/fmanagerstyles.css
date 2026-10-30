@@ -919,3 +919,120 @@
   text-transform: none;
   letter-spacing: 0;
 }
+
+/* Badge trạng thái Active / Deactive (Thiết lập đặc tính kho) */
+.fp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.fp-badge-active { background: #e6f6ec; color: #1f7a4a; border: 1px solid #b9e4c9; }
+.fp-badge-deactive { background: #fdecec; color: #b42318; border: 1px solid #f4c7c3; }
+
+/* ============================================================
+   NHÂN SỰ TẠI CƠ SỞ (Facility Manager)
+   ============================================================ */
+.fs-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.fs-stats > div {
+  padding: 14px 16px;
+  border: 1px solid #e1edf4;
+  border-radius: 14px;
+  background: #f8fbfd;
+  display: grid;
+  gap: 4px;
+}
+.fs-stats small { color: #5b7489; font-size: 12px; font-weight: 700; }
+.fs-stats strong { color: #073d70; font: 800 24px 'Be Vietnam Pro', sans-serif; }
+.fs-stats .fs-ok { color: #1f7a4a; }
+.fs-stats .fs-warn { color: #a86b00; }
+
+.fs-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.fs-card-head h3 { margin: 0; }
+.fm-staff-card.fs-card-off { background: #fbfcfd; opacity: .75; }
+.fm-staff-info { min-width: 0; }
+.fm-staff-info p { overflow-wrap: anywhere; }
+
+.fs-link-btn {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: #075a9f;
+  font-size: 12px;
+  font-weight: 800;
+}
+.fs-link-btn:hover { text-decoration: underline; }
+
+.fs-section { margin-top: 28px; }
+.fs-section h3 { margin: 0 0 4px; color: #073d70; font: 800 18px 'Be Vietnam Pro', sans-serif; }
+.fs-section > p { margin: 0 0 12px; font-size: 13px; }
+
+.fs-tag-today,
+.fs-tag-late {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.fs-tag-today { background: #e8f5ff; color: #075a9f; }
+.fs-tag-late { background: #fdecec; color: #b42318; }
+
+.fs-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 55vh; overflow-y: auto; }
+.fs-history li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid #e1edf4;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #23475e;
+}
+.fs-history-time { color: #7b91a3; font-size: 11px; font-weight: 700; }
+
+@media (max-width: 900px) {
+  .fs-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ============================================================
+   HỢP ĐỒNG TẠI CƠ SỞ (Facility Manager · chỉ xem)
+   ============================================================ */
+.fmc-left { display: block; margin-top: 3px; color: #5b7489; font-size: 11px; font-weight: 700; }
+.fmc-left.soon { color: #a86b00; }
+.fmc-left.late { color: #b42318; }
+
+.fmc-ops {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.fmc-ops div { padding: 10px 12px; border-radius: 12px; border: 1px solid #e1edf4; }
+.fmc-ops small { display: block; color: #8197ab; font-size: 11.5px; font-weight: 700; }
+.fmc-ops strong { display: block; margin-top: 2px; color: #073d70; font-size: 13px; overflow-wrap: anywhere; }
+
+.fmc-note {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #eaf6ff;
+  color: #0b4f8a;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .fmc-ops { grid-template-columns: 1fr; }
+}

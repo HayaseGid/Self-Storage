@@ -6,7 +6,7 @@ import ContractDocument, { contractUnits } from './ContractDocument'
 import './ContractSignFlow.css'
 
 /*
- * Ký hợp đồng thuê kho online (sau khi khách đã đặt cọc và Facility Manager đã duyệt).
+ * Ký hợp đồng thuê kho online (ngay sau khi khách đặt cọc; không còn bước Manager duyệt). Mỗi kho một hợp đồng.
  * Một hợp đồng có thể gồm nhiều kho cùng cơ sở, cùng kỳ thuê (đặt từ giỏ hàng) -> hiển thị
  * thành Hợp đồng chính + Phụ lục danh sách kho.
  *

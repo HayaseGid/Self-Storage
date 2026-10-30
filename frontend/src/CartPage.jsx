@@ -6,14 +6,19 @@ import { UnitTypeArt, UnitTypeChip } from './unitTypes'
 import { CHECKOUT_LIMIT, newOrderCode, removeFromCart, removeManyFromCart, saveCartOrder, useCart } from './cart'
 import { RENTAL_TERMS, formatVnd } from './storageRules'
 import { effectiveMonthly, holdMinutesFor, quote } from './pricing'
+import { announceDepositSuccess, confirmAfterDeposit, openCustomerSection } from './afterDeposit'
+import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
+import DepositConfirm from './DepositConfirm'
 import './CartPage.css'
 
 /*
  * Giỏ hàng: thuê nhiều kho trong một lần đặt.
- * Một lần đặt = MỘT đơn đặt chỗ (POST /api/reservation với units: [...]) = MỘT hợp đồng gồm nhiều kho.
- * Bước 1 – Giỏ hàng: chọn cơ sở, chọn kho, ngày bắt đầu, gói 6/12 tháng.
- * Bước 2 – Đặt cọc: hệ thống giữ các kho theo thời hạn giữ chỗ của cơ sở, khách thanh toán tiền cọc một lần.
- * Bước 3 – Hoàn tất: chờ Manager duyệt, sau đó ký hợp đồng online trong mục Hợp đồng.
+ * Yêu cầu 29/10/2026: MỖI KHO MỘT HỢP ĐỒNG (tùy sự cố mà xử lý hợp đồng khác nhau),
+ * nên mỗi kho được đặt thành MỘT đơn riêng (POST /api/reservation cho từng kho) -> mỗi đơn một hợp đồng, ký riêng.
+ * Bước 1 – Giỏ hàng: chọn cơ sở, chọn kho, ngày bắt đầu, gói thuê.
+ * Bước 2 – Đặt cọc: các kho được giữ theo thời hạn giữ chỗ của cơ sở, khách bấm thanh toán một lần
+ *          (hệ thống ghi nhận cọc cho từng đơn).
+ * Bước 3 – Không còn bước Manager duyệt: cọc xong -> thông báo -> mở tab Hợp đồng để ký từng hợp đồng.
  */
 
 const money = value => `${formatVnd(value || 0)}đ`
@@ -40,6 +45,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
   const [submitting, setSubmitting] = useState(false)
   const [order, setOrder] = useState(null) // { code, reservation, items, startDate, endDate, months, facilityName, paid }
   const [now, setNow] = useState(Date.now())
+  const [depositAgreed, setDepositAgreed] = useState(false)
 
   // Trạng thái hiện tại của từng kho trong giỏ (còn trống hay đã có người đặt).
   const enriched = items.map(item => {
@@ -116,7 +122,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
       return
     }
     if (selected.length > CHECKOUT_LIMIT) {
-      await dialog.alert({ tone: 'warning', title: 'Quá số kho cho một hợp đồng', message: `Mỗi hợp đồng tối đa ${CHECKOUT_LIMIT} kho. Hãy bỏ chọn bớt rồi đặt phần còn lại ở lần sau.` })
+      await dialog.alert({ tone: 'warning', title: 'Quá số kho cho một lần đặt', message: `Mỗi lần đặt tối đa ${CHECKOUT_LIMIT} kho. Hãy bỏ chọn bớt rồi đặt phần còn lại ở lần sau.` })
       return
     }
     if (!startDate || startDate < today) {
@@ -131,7 +137,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
           <p>Thuê từ <strong>{fmtDate(startDate)}</strong> đến <strong>{fmtDate(endDate)}</strong> ({months} tháng).</p>
           <p>Kho: <strong>{selected.map(i => i.unitId).join(', ')}</strong></p>
           <p>Tổng tiền cọc cần thanh toán: <strong>{money(depositTotal)}</strong> ({depositMonths} tháng tiền thuê mỗi kho).</p>
-          <p>Tất cả kho được làm chung <strong>một hợp đồng</strong> và giữ cho bạn {holdMinutes} phút để thanh toán cọc.</p>
+          <p>Mỗi kho được làm <strong>một hợp đồng riêng</strong>{selected.length > 1 ? ` (${selected.length} hợp đồng, ký lần lượt)` : ''}. Các kho được giữ cho bạn {holdMinutes} phút để thanh toán cọc.</p>
         </>
       ),
       confirmLabel: 'Giữ kho & đặt cọc'
@@ -139,47 +145,98 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
     if (!ok) return
 
     setSubmitting(true)
-    let reservation
-    try {
-      // Một đơn gồm nhiều kho -> backend tạo một Reservation (nhiều ReservationUnit) và sau này một hợp đồng.
-      reservation = await apiPost('/api/reservation', {
-        unitID: selected[0].unit.unitId,
-        unitNumber: selected[0].unitId,
-        units: selected.map(item => ({ unitID: item.unit.unitId, unitNumber: item.unitId })),
-        startDate: toApiDate(startDate),
-        months
-      })
-    } catch (error) {
-      setSubmitting(false)
-      await dialog.alert({ tone: 'danger', title: 'Chưa giữ được kho', message: `${error.message}\nCác kho vẫn nằm trong giỏ, bạn có thể bỏ kho bị trùng rồi đặt lại.` })
-      return
+    // Mỗi kho một đơn đặt chỗ -> mỗi đơn một hợp đồng.
+    const created = []
+    const failures = []
+    for (const item of selected) {
+      try {
+        const reservation = await apiPost('/api/reservation', {
+          unitID: item.unit.unitId,
+          unitNumber: item.unitId,
+          units: [{ unitID: item.unit.unitId, unitNumber: item.unitId }],
+          startDate: toApiDate(startDate),
+          months
+        })
+        created.push({ item, reservation, paid: false })
+      } catch (error) {
+        failures.push(`${item.unitId}: ${error.message}`)
+      }
     }
     setSubmitting(false)
 
-    const code = reservation.reservationCode || newOrderCode()
+    if (!created.length) {
+      await dialog.alert({ tone: 'danger', title: 'Chưa giữ được kho', message: `${failures.join('\n')}\nCác kho vẫn nằm trong giỏ, bạn có thể bỏ kho bị trùng rồi đặt lại.` })
+      return
+    }
+    if (failures.length) {
+      await dialog.alert({
+        tone: 'warning',
+        title: `Đã giữ ${created.length}/${selected.length} kho`,
+        message: `Không giữ được:\n${failures.join('\n')}\nCác kho này vẫn nằm trong giỏ. Bạn có thể tiếp tục đặt cọc cho ${created.length} kho đã giữ.`
+      })
+    }
+
+    const code = created[0].reservation.reservationCode || newOrderCode()
     saveCartOrder({
       code,
       facilityId: activeGroup.facilityId,
       facilityName: activeGroup.name,
-      reservationIds: [reservation.reservationId],
+      reservationIds: created.map(entry => entry.reservation.reservationId),
       startDate: toApiDate(startDate),
       months,
       createdAt: new Date().toISOString()
     })
-    removeManyFromCart(selected.map(item => item.key))
-    setOrder({ code, reservation, items: selected, startDate, endDate, months, depositMonths, facilityName: activeGroup.name, paid: false })
+    removeManyFromCart(created.map(entry => entry.item.key))
+    setOrder({
+      code,
+      entries: created,
+      items: created.map(entry => entry.item),
+      startDate,
+      endDate,
+      months,
+      depositMonths,
+      facilityName: activeGroup.name
+    })
     setStep('payment')
   }
 
-  const expiresAt = order ? Date.parse(order.reservation.depositExpiresAt) : null
+  // Thời hạn giữ kho: lấy hạn sớm nhất trong các đơn.
+  const expiresAt = order ? Math.min(...order.entries.map(entry => Date.parse(entry.reservation.depositExpiresAt)).filter(Number.isFinite)) : null
   const secondsLeft = Number.isFinite(expiresAt) ? Math.max(0, Math.ceil((expiresAt - now) / 1000)) : null
-  const orderDeposit = order ? Number(order.reservation.depositAmount || 0) : 0
+  const sumOf = field => (order ? order.entries.reduce((n, entry) => n + Number(entry.reservation[field] || 0), 0) : 0)
+  const orderDeposit = sumOf('depositAmount')
+  const orderMonthly = sumOf('monthlyPrice')
+  const orderRent = sumOf('rentalAmount')
 
   const payDeposit = async () => {
+    if (!depositAgreed) return
     if (secondsLeft === 0) {
       await dialog.alert({ tone: 'warning', title: 'Hết thời gian giữ kho', message: 'Thời gian giữ kho đã hết, các kho đã được trả lại. Vui lòng đặt lại.' })
       return
     }
+    // Thanh toán thật qua VNPay (sandbox): một giao dịch cho tất cả đơn trong lần đặt.
+    const unpaid = order.entries.filter(entry => !entry.paid)
+    if (!SIMULATED_PAYMENT_ENABLED || !(await dialog.confirm({
+      tone: 'info',
+      title: 'Chọn cách thanh toán',
+      message: 'Đang bật chế độ demo. Thanh toán mô phỏng (không qua VNPay)?',
+      confirmLabel: 'Mô phỏng',
+      cancelLabel: 'Qua VNPay'
+    }))) {
+      setSubmitting(true)
+      try {
+        await startVnPayPayment(unpaid.map(entry => entry.reservation.reservationId), {
+          amount: unpaid.reduce((n, entry) => n + Number(entry.reservation.depositAmount || 0), 0),
+          count: unpaid.length,
+          label: order.code
+        })
+      } catch (error) {
+        setSubmitting(false)
+        await dialog.alert({ tone: 'danger', title: 'Chưa mở được trang thanh toán VNPay', message: error.message })
+      }
+      return
+    }
+
     const ok = await dialog.confirm({
       tone: 'warning',
       title: 'Xác nhận đã thanh toán tiền cọc?',
@@ -189,41 +246,36 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
     })
     if (!ok) return
     setSubmitting(true)
+    // Ghi nhận cọc cho TỪNG đơn (backend yêu cầu số tiền đúng bằng tiền cọc của đơn đó).
+    const entries = order.entries.map(entry => ({ ...entry }))
     try {
-      // Backend yêu cầu số tiền đúng bằng tổng tiền cọc của đơn.
-      await apiPost('/api/payment/confirm', { reservationID: order.reservation.reservationId, amount: orderDeposit, paymentType: 'QR' })
-      setOrder(current => ({ ...current, paid: true }))
-      setStep('done')
+      for (const entry of entries) {
+        if (entry.paid) continue
+        await apiPost('/api/payment/confirm', { reservationID: entry.reservation.reservationId, amount: Number(entry.reservation.depositAmount || 0), paymentType: 'QR' })
+        entry.paid = true
+      }
     } catch (error) {
-      await dialog.alert({ tone: 'danger', title: 'Chưa ghi nhận được tiền cọc', message: error.message })
-    } finally {
+      setOrder(current => ({ ...current, entries }))
       setSubmitting(false)
+      const paidCount = entries.filter(entry => entry.paid).length
+      await dialog.alert({
+        tone: 'danger',
+        title: 'Chưa ghi nhận được tiền cọc',
+        message: `${error.message}${paidCount ? `\nĐã ghi nhận cọc cho ${paidCount}/${entries.length} kho. Bấm thanh toán lại để ghi nhận các kho còn lại.` : ''}`
+      })
+      return
     }
-  }
+    setOrder(current => ({ ...current, entries }))
 
-  /* ---------- Bước 3: hoàn tất ---------- */
-  if (step === 'done' && order) {
-    return (
-      <main className="cart-page">
-        <div className="container">
-          <section className="cart-done">
-            <span className="cart-done-icon" aria-hidden="true">✓</span>
-            <h1>Đã ghi nhận tiền cọc cho {order.items.length} kho</h1>
-            <p>Mã đơn <strong>{order.code}</strong> · {order.facilityName} · {fmtDate(order.startDate)} → {fmtDate(order.endDate)}</p>
-            <ol className="cart-next-steps">
-              <li className="done">Đặt cọc <span>Đã xong</span></li>
-              <li>Facility Manager duyệt và phân kho <span>Đang chờ</span></li>
-              <li>Ký hợp đồng online (mục Hợp đồng) <span>Sau khi được duyệt</span></li>
-              <li>Nhận kho tại cơ sở, đối chiếu CCCD</li>
-            </ol>
-            <div className="cart-actions">
-              <button type="button" className="dashboard-secondary-btn" onClick={() => navigate('/search')}>Tìm thêm kho</button>
-              <button type="button" className="dashboard-primary-btn" onClick={() => navigate('/customer')}>Xem đơn của tôi</button>
-            </div>
-          </section>
-        </div>
-      </main>
-    )
+    // Không còn bước Manager duyệt: xác nhận đơn + tạo hợp đồng ngay, rồi mở tab Hợp đồng để ký.
+    const confirmation = await confirmAfterDeposit(entries.map(entry => entry.reservation.reservationId))
+    setSubmitting(false)
+    await announceDepositSuccess(dialog, {
+      count: entries.length,
+      amountText: money(orderDeposit),
+      failed: Boolean(confirmation.error) || confirmation.failed?.length > 0
+    })
+    openCustomerSection(navigate, 'contract')
   }
 
   /* ---------- Bước 2: đặt cọc ---------- */
@@ -233,27 +285,25 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
         <div className="container">
           <div className="cart-heading">
             <div><span className="customer-eyebrow">DEPOSIT</span><h1>Thanh toán tiền cọc</h1><p>Mã đơn <strong>{order.code}</strong> · {order.facilityName}</p></div>
-            <ol className="cart-steps"><li className="done">Giỏ hàng</li><li className="active">Đặt cọc</li><li>Chờ duyệt & ký hợp đồng</li></ol>
+            <ol className="cart-steps"><li className="done">Giỏ hàng</li><li className="active">Đặt cọc</li><li>Ký hợp đồng</li></ol>
           </div>
           <div className="cart-layout">
             <section className="cart-card">
-              <h2>Kho đã được giữ cho bạn · 1 hợp đồng</h2>
-              <div className="admin-table-wrap"><table className="cart-table"><thead><tr><th>Kho</th><th>Loại · Kích thước</th><th>Giá / tháng</th><th>Tiền cọc</th></tr></thead><tbody>
-                {order.items.map(item => {
-                  const monthly = effectiveMonthly(item.price, order.months)
-                  return (
-                    <tr key={item.key}>
-                      <td><strong>{item.unitId}</strong></td>
-                      <td>{item.type} · {item.size}</td>
-                      <td>{money(monthly)}</td>
-                      <td>{money(monthly * order.depositMonths)}</td>
-                    </tr>
-                  )
-                })}
+              <h2>Kho đã được giữ cho bạn · {order.entries.length} hợp đồng (mỗi kho một hợp đồng)</h2>
+              <div className="admin-table-wrap"><table className="cart-table"><thead><tr><th>Kho</th><th>Mã đơn · Hợp đồng</th><th>Loại · Kích thước</th><th>Giá / tháng</th><th>Tiền cọc</th></tr></thead><tbody>
+                {order.entries.map(({ item, reservation, paid }) => (
+                  <tr key={item.key}>
+                    <td><strong>{item.unitId}</strong></td>
+                    <td>{reservation.reservationCode || `#${reservation.reservationId}`}{paid ? <span className="cart-paid-tag"> · đã cọc</span> : null}</td>
+                    <td>{item.type} · {item.size}</td>
+                    <td>{money(reservation.monthlyPrice)}</td>
+                    <td>{money(reservation.depositAmount)}</td>
+                  </tr>
+                ))}
               </tbody>
-              <tfoot><tr><td colSpan="2">Tổng ({order.items.length} kho)</td><td>{money(order.reservation.monthlyPrice)}</td><td><strong>{money(orderDeposit)}</strong></td></tr></tfoot>
+              <tfoot><tr><td colSpan="3">Tổng ({order.items.length} kho)</td><td>{money(orderMonthly)}</td><td><strong>{money(orderDeposit)}</strong></td></tr></tfoot>
               </table></div>
-              <p className="cart-note">Mã đơn <strong>{order.code}</strong> · thuê từ <strong>{fmtDate(order.startDate)}</strong> đến <strong>{fmtDate(order.endDate)}</strong> ({order.months} tháng). Tổng tiền thuê {money(order.reservation.rentalAmount)}. Tiền cọc hoàn lại khi trả kho.</p>
+              <p className="cart-note">Mã đơn <strong>{order.code}</strong> · thuê từ <strong>{fmtDate(order.startDate)}</strong> đến <strong>{fmtDate(order.endDate)}</strong> ({order.months} tháng). Tổng tiền thuê {money(orderRent)}. Tiền cọc hoàn lại khi trả kho.</p>
             </section>
             <aside className="cart-summary">
               <h2>Tổng tiền cọc</h2>
@@ -261,11 +311,25 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
               <p className={`cart-countdown${secondsLeft === 0 ? ' expired' : ''}`}>
                 {secondsLeft === 0 ? 'Đã hết thời gian giữ kho.' : `Thanh toán trong ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`}
               </p>
-              <p className="cart-note">Nội dung chuyển khoản: <strong>{order.code}</strong></p>
-              <button type="button" className="dashboard-primary-btn full" disabled={submitting || secondsLeft === 0} onClick={payDeposit}>
-                {submitting ? 'Đang ghi nhận...' : 'Tôi đã thanh toán tiền cọc'}
+              <DepositConfirm
+                rows={[
+                  ['Cơ sở', order.facilityName],
+                  ['Kho', order.entries.map(entry => entry.item.unitId).join(', ')],
+                  ['Thời gian thuê', `${fmtDate(order.startDate)} → ${fmtDate(order.endDate)} (${order.months} tháng)`],
+                  ['Hợp đồng', `${order.entries.length} hợp đồng (mỗi kho một hợp đồng)`]
+                ]}
+                lines={[
+                  ['Giá thuê / tháng (tất cả kho)', orderMonthly],
+                  ['Tổng tiền thuê (trả theo hợp đồng)', orderRent],
+                  [`Tiền cọc (${order.depositMonths} tháng tiền thuê / kho)`, orderDeposit]
+                ]}
+                amount={order.entries.filter(entry => !entry.paid).reduce((n, entry) => n + Number(entry.reservation.depositAmount || 0), 0)}
+                onChange={setDepositAgreed}
+              />
+              <button type="button" className="dashboard-primary-btn full" disabled={submitting || secondsLeft === 0 || !depositAgreed} onClick={payDeposit}>
+                {submitting ? 'Đang chuyển sang VNPay...' : 'Thanh toán cọc qua VNPay'}
               </button>
-              <p className="cart-note small">Thanh toán hiện là mô phỏng: hệ thống ghi nhận khi bạn bấm xác nhận.</p>
+              <p className="cart-note small">Bạn sẽ được chuyển sang cổng VNPay (môi trường thử nghiệm) để thanh toán bằng thẻ ATM / QR, rồi tự quay lại để ký hợp đồng.</p>
             </aside>
           </div>
         </div>
@@ -278,8 +342,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
     <main className="cart-page">
       <div className="container">
         <div className="cart-heading">
-          <div><span className="customer-eyebrow">MY CART</span><h1>Giỏ hàng thuê kho</h1><p>Thuê nhiều kho cùng lúc. Mỗi lần đặt gồm các kho của <strong>một cơ sở</strong> và được làm chung <strong>một hợp đồng</strong>.</p></div>
-          <ol className="cart-steps"><li className="active">Giỏ hàng</li><li>Đặt cọc</li><li>Chờ duyệt & ký hợp đồng</li></ol>
+          <div><span className="customer-eyebrow">MY CART</span><h1>Giỏ hàng thuê kho</h1><p>Thuê nhiều kho cùng lúc. Mỗi lần đặt gồm các kho của <strong>một cơ sở</strong>; <strong>mỗi kho một hợp đồng riêng</strong>.</p></div>
+          <ol className="cart-steps"><li className="active">Giỏ hàng</li><li>Đặt cọc</li><li>Ký hợp đồng</li></ol>
         </div>
 
         {items.length === 0 ? (
@@ -366,7 +430,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
               <button type="button" className="dashboard-primary-btn full" disabled={submitting || !selected.length} onClick={checkout}>
                 {submitting ? 'Đang giữ kho...' : selected.length ? `Đặt cọc ${selected.length} kho` : 'Chọn kho để đặt'}
               </button>
-              <p className="cart-note small">Kho trong giỏ chưa được giữ chỗ. Sau khi bấm đặt cọc, các kho được giữ {holdMinutes} phút và làm chung một hợp đồng.</p>
+              <p className="cart-note small">Kho trong giỏ chưa được giữ chỗ. Sau khi bấm đặt cọc, các kho được giữ {holdMinutes} phút, mỗi kho một hợp đồng riêng.</p>
             </aside>
           </div>
         )}

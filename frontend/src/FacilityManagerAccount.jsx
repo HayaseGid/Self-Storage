@@ -15,9 +15,9 @@ import {
   validateMonthlyPrice
 } from './storageRules'
 import PriceInput from './PriceInput'
+import ContractDocument from './ContractDocument'
 import { UnitTypeChip } from './unitTypes'
 import './unitTypes.css'
-import { getCartOrders } from './cart'
 
 /* Formatters */
 const fmtMoney = (n) => new Intl.NumberFormat('vi-VN').format(n || 0) + 'đ'
@@ -44,8 +44,8 @@ const UNIT_STATUS_ORDER = {
 const compareNatural = (a, b) =>
   String(a ?? '').localeCompare(String(b ?? ''), 'vi', { numeric: true, sensitivity: 'base' })
 
-// Size so theo kích thước thật (thể tích → diện tích), không theo chữ
-const unitSizeValue = (u) => Number(u.volumeM3 ?? u.sizeM2 ?? 0) || Number(u.areaM2 ?? 0)
+// Size so theo diện tích thật, không theo chữ
+const unitSizeValue = (u) => Number(u.areaM2 ?? 0) || Number(u.volumeM3 ?? u.sizeM2 ?? 0)
 
 const todayStr = () => {
   const d = new Date()
@@ -54,8 +54,8 @@ const todayStr = () => {
 const RES_STATUS_MAP = {
   PENDING_PAYMENT: { label: 'Chờ trả cọc', tone: 'warn' },
   PENDING_CONFIRMATION: { label: 'Chờ xác nhận cọc', tone: 'warn' },
-  PENDING_APPROVAL: { label: 'Chờ Manager duyệt', tone: 'info' },
-  CONFIRMED: { label: 'Đã phân kho', tone: 'info' },
+  PENDING_APPROVAL: { label: 'Đã cọc · Chờ bàn giao', tone: 'info' },
+  CONFIRMED: { label: 'Đã cọc · Chờ bàn giao', tone: 'info' },
   HANDED_OVER: { label: 'Đã bàn giao', tone: 'ok' }
 }
 
@@ -459,7 +459,7 @@ function UnitDetailModal({ unit, facility, lock, contract, onClose, onEdit, onDe
 }
 
 /* =========================================================
-   THIẾT LẬP TÍNH CHẤT KHO (Facility Manager)
+   THIẾT LẬP ĐẶC TÍNH KHO (Facility Manager)
    Loại kho + Kích thước kho tại cơ sở, gộp trong 1 màn hình.
    Dùng API sẵn có của backend:
      GET/POST/PUT/DELETE /api/unit-types   (?facilityId=...)
@@ -597,12 +597,12 @@ function TypeModal({ editing, types, activeUnits, facilityName, onClose, onSave 
           <label>
             Trạng thái tại {facilityName}
             <select value={isActive ? 'on' : 'off'} onChange={(e) => setIsActive(e.target.value === 'on')}>
-              <option value="on">Đang dùng</option>
+              <option value="on">Active</option>
               <option value="off" disabled={lockPause}>
-                Ngừng dùng{lockPause ? ` (còn ${activeUnits} kho đang dùng)` : ''}
+                Deactive{lockPause ? ` (còn ${activeUnits} kho đang dùng)` : ''}
               </option>
             </select>
-            <small className="fm-field-note">Chỉ loại "Đang dùng" mới chọn được khi tạo hoặc sửa kho.</small>
+            <small className="fm-field-note">Chỉ loại kho Active mới chọn được khi tạo hoặc sửa kho.</small>
           </label>
 
           <div className="fm-modal-actions">
@@ -635,12 +635,14 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
   const [saving, setSaving] = useState(false)
 
   const cat = categories.find(c => c.prefix === prefix) || categories[0]
+  // Chiều cao không hiển thị cho người dùng; chỉ dùng nội bộ để đổi khoảng thể tích của nhóm sang khoảng diện tích
   const h = cat?.heightM || 2.5
+  const minArea = cat.minVolume / h
+  const maxArea = cat.maxVolume / h
   const w = Number(width)
   const l = Number(length)
   const area = w > 0 && l > 0 ? w * l : 0
-  const volume = area * h
-  const volumeOk = area > 0 && volume >= cat.minVolume && volume <= cat.maxVolume
+  const areaOk = area > 0 && area * h >= cat.minVolume && area * h <= cat.maxVolume
 
   const suggested = useMemo(() => {
     const max = sizes
@@ -662,9 +664,9 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
     }
     if (!dimsLocked) {
       if (!(w >= 0.5 && w <= 50) || !(l >= 0.5 && l <= 50)) return setError('Chiều rộng và chiều dài phải từ 0,5 đến 50 m.')
-      if (!volumeOk) {
-        return setError(`Thể tích ${fpFmt(volume)} m³ không thuộc nhóm ${cat.name} (${fpFmt(cat.minVolume)}–${fpFmt(cat.maxVolume)} m³). ` +
-          `Diện tích sàn phải từ ${fpFmt(cat.minVolume / h)} đến ${fpFmt(cat.maxVolume / h)} m².`)
+      if (!areaOk) {
+        return setError(`Diện tích ${fpFmt(area)} m² không thuộc nhóm ${cat.name}. ` +
+          `Diện tích phải từ ${fpFmt(minArea)} đến ${fpFmt(maxArea)} m².`)
       }
     }
     if (!isActive && lockPause) return setError(`Còn ${activeUnits} kho tại ${facilityName} dùng kích thước này nên chưa thể ngừng.`)
@@ -710,7 +712,11 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
             <label>
               Nhóm size
               <select value={prefix} disabled={!isNew} onChange={(e) => { setPrefix(e.target.value); setCode('') }}>
-                {categories.map(c => <option key={c.prefix} value={c.prefix}>{c.name} ({c.prefix}) · {fpFmt(c.minVolume)}–{fpFmt(c.maxVolume)} m³</option>)}
+                {categories.map(c => (
+                  <option key={c.prefix} value={c.prefix}>
+                    {c.name} ({c.prefix}) · {fpFmt(c.minVolume / (c.heightM || 2.5))}–{fpFmt(c.maxVolume / (c.heightM || 2.5))} m²
+                  </option>
+                ))}
               </select>
             </label>
             <label>
@@ -726,7 +732,7 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
               onChange={(e) => setName(e.target.value)} />
           </label>
 
-          <div className="fm-form-row fp-row-3">
+          <div className="fm-form-row">
             <label>
               Rộng (m)
               <input type="number" min="0.5" max="50" step="0.01" value={width} readOnly={dimsLocked}
@@ -737,23 +743,19 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
               <input type="number" min="0.5" max="50" step="0.01" value={length} readOnly={dimsLocked}
                 onChange={(e) => setLength(e.target.value)} required />
             </label>
-            <label>
-              Cao (m)
-              <input type="text" value={fpFmt(h)} readOnly />
-            </label>
           </div>
 
-          <div className={`fp-calc ${area > 0 && !volumeOk && !dimsLocked ? 'bad' : ''}`}>
-            <span>Diện tích <strong>{fpFmt(area)} m²</strong> · Thể tích <strong>{fpFmt(volume)} m³</strong></span>
-            <small>Nhóm {cat.name}: {fpFmt(cat.minVolume)}–{fpFmt(cat.maxVolume)} m³ (sàn {fpFmt(cat.minVolume / h)}–{fpFmt(cat.maxVolume / h)} m²). Chiều cao cố định theo nhóm.</small>
+          <div className={`fp-calc ${area > 0 && !areaOk && !dimsLocked ? 'bad' : ''}`}>
+            <span>Diện tích <strong>{fpFmt(area)} m²</strong></span>
+            <small>Nhóm {cat.name}: diện tích từ {fpFmt(minArea)} đến {fpFmt(maxArea)} m².</small>
           </div>
 
           <label>
             Trạng thái tại {facilityName}
             <select value={isActive ? 'on' : 'off'} onChange={(e) => setIsActive(e.target.value === 'on')}>
-              <option value="on">Đang dùng</option>
+              <option value="on">Active</option>
               <option value="off" disabled={lockPause}>
-                Ngừng dùng{lockPause ? ` (còn ${activeUnits} kho đang dùng)` : ''}
+                Deactive{lockPause ? ` (còn ${activeUnits} kho đang dùng)` : ''}
               </option>
             </select>
           </label>
@@ -871,25 +873,25 @@ function FacilityPropertiesTab({
     if (turningOff && u.activeUnits > 0) {
       await dialog.alert({
         tone: 'warning',
-        title: 'Chưa thể ngừng dùng',
+        title: 'Chưa thể chuyển sang Deactive',
         message: `Còn ${u.activeUnits} kho tại ${facilityName} đang dùng ${label(row)}. Hãy đổi hoặc ngừng các kho đó trước.`
       })
       return
     }
     const ok = await dialog.confirm({
       tone: 'warning',
-      title: turningOff ? `Ngừng dùng ${label(row)}?` : `Bật lại ${label(row)}?`,
+      title: turningOff ? `Chuyển ${label(row)} sang Deactive?` : `Chuyển ${label(row)} sang Active?`,
       message: turningOff
         ? `Sẽ không còn chọn được khi tạo hoặc sửa kho tại ${facilityName}.`
         : `Sẽ chọn được trở lại khi tạo hoặc sửa kho tại ${facilityName}.`,
-      confirmLabel: turningOff ? 'Ngừng dùng' : 'Bật lại'
+      confirmLabel: turningOff ? 'Deactive' : 'Active'
     })
     if (!ok) return
     try {
       const body = isTypes ? typeBody(row, { isActive: !turningOff }) : sizeBody(row, { isActive: !turningOff })
       await apiPut(`${base}/${row.id}`, body)
       await onChanged()
-      showToast(turningOff ? `Đã ngừng dùng ${label(row)}.` : `Đã bật lại ${label(row)}.`)
+      showToast(turningOff ? `Đã chuyển ${label(row)} sang Deactive.` : `Đã chuyển ${label(row)} sang Active.`)
     } catch (err) {
       await dialog.alert({ tone: 'danger', title: 'Không cập nhật được', message: err.message })
     }
@@ -905,7 +907,7 @@ function FacilityPropertiesTab({
       await dialog.alert({
         tone: 'warning',
         title: `Không thể xóa ${label(row)}`,
-        message: `${reasons.join(' ')}\n\nNếu không muốn dùng nữa, hãy bấm "Ngừng dùng" (sau khi đổi hoặc ngừng các kho liên quan).`
+        message: `${reasons.join(' ')}\n\nNếu không muốn dùng nữa, hãy chuyển sang Deactive (sau khi đổi hoặc ngừng các kho liên quan).`
       })
       return
     }
@@ -944,8 +946,8 @@ function FacilityPropertiesTab({
   }
 
   const StatusBadge = ({ row }) => row.isActive
-    ? <span className="fp-status on">● Đang dùng</span>
-    : <span className="fp-status off">● Ngừng dùng</span>
+    ? <span className="fp-badge fp-badge-active">● Active</span>
+    : <span className="fp-badge fp-badge-deactive">● Deactive</span>
 
   const Actions = ({ row }) => {
     const u = usage(row)
@@ -953,7 +955,7 @@ function FacilityPropertiesTab({
     return (
       <div className="fp-actions">
         <button type="button" className="fp-btn" onClick={() => setModal({ kind: isTypes ? 'type' : 'size', row })}>Sửa</button>
-        <button type="button" className="fp-btn" onClick={() => toggle(row)}>{row.isActive ? 'Ngừng' : 'Bật lại'}</button>
+        <button type="button" className="fp-btn" onClick={() => toggle(row)}>{row.isActive ? 'Deactive' : 'Active'}</button>
         <button type="button" className={`fp-btn ${locked ? 'locked' : 'danger'}`}
           title={locked ? 'Bấm để xem lý do không xóa được' : 'Xóa'} onClick={() => remove(row)}>
           {locked ? '🔒 Xóa' : 'Xóa'}
@@ -979,8 +981,8 @@ function FacilityPropertiesTab({
     <div className="fm-section-card fp-card">
       <div className="fp-head">
         <div>
-          <h2>Thiết lập tính chất kho</h2>
-          <p>Loại kho và kích thước kho đang dùng tại {facilityName}. Thêm, sửa, ngừng dùng hoặc xóa ngay tại đây.</p>
+          <h2>Thiết lập đặc tính kho</h2>
+          <p>Loại kho và kích thước kho đang dùng tại {facilityName}. Thêm, sửa, chuyển Active / Deactive hoặc xóa ngay tại đây.</p>
         </div>
         <button type="button" className="dashboard-primary-btn" onClick={() => setModal({ kind: isTypes ? 'type' : 'size', row: null })}>
           {isTypes ? '+ Thêm loại kho' : '+ Thêm kích thước'}
@@ -998,7 +1000,7 @@ function FacilityPropertiesTab({
 
       <div className="fp-toolbar">
         <div className="fp-chips">
-          {[['all', `Tất cả ${stats.all}`], ['on', `Đang dùng ${stats.on}`], ['off', `Ngừng dùng ${stats.off}`]].map(([v, t]) => (
+          {[['all', `Tất cả ${stats.all}`], ['on', `Active ${stats.on}`], ['off', `Deactive ${stats.off}`]].map(([v, t]) => (
             <button key={v} type="button" className={filter === v ? 'active' : ''} onClick={() => setFilter(v)}>{t}</button>
           ))}
         </div>
@@ -1017,7 +1019,7 @@ function FacilityPropertiesTab({
               {isTypes ? (
                 <tr><th>Mã</th><th>Loại kho</th><th>Trạng thái</th><th>Tại cơ sở</th><th className="fp-right">Thao tác</th></tr>
               ) : (
-                <tr><th>Mã</th><th>Kích thước</th><th>Nhóm</th><th>Diện tích / Thể tích</th><th>Trạng thái</th><th>Tại cơ sở</th><th className="fp-right">Thao tác</th></tr>
+                <tr><th>Mã</th><th>Kích thước</th><th>Nhóm</th><th>Diện tích</th><th>Trạng thái</th><th>Tại cơ sở</th><th className="fp-right">Thao tác</th></tr>
               )}
             </thead>
             <tbody>
@@ -1039,10 +1041,10 @@ function FacilityPropertiesTab({
                       <td><span className="fp-code">{row.sizeCode}</span></td>
                       <td>
                         <strong>{row.displayName}</strong>
-                        <small className="fp-sub">{fpFmt(row.widthM)} × {fpFmt(row.lengthM)} × {fpFmt(row.heightM)} m</small>
+                        <small className="fp-sub">{fpFmt(row.widthM)} × {fpFmt(row.lengthM)} m</small>
                       </td>
                       <td>{fpCategoryOf(row.sizeCode, categories)?.name || '—'}</td>
-                      <td>{fpFmt(row.areaM2)} m² · {fpFmt(row.volumeM3)} m³</td>
+                      <td>{fpFmt(row.areaM2)} m²</td>
                     </>
                   )}
                   <td><StatusBadge row={row} /></td>
@@ -1070,6 +1072,554 @@ function FacilityPropertiesTab({
 }
 
 /* =========================================================
+   NHÂN SỰ TẠI CƠ SỞ (Facility Manager)
+   - Thêm nhân viên vào cơ sở: POST /api/operations/facilities/{id}/staff
+   - Xem trạng thái thật, lịch sử bàn giao (state.activity), việc chờ bàn giao
+   ========================================================= */
+const STAFF_STATUS_MAP = {
+  Active: { label: '● Active', className: 'fp-badge fp-badge-active' },
+  Inactive: { label: '● Inactive', className: 'fp-badge fp-badge-deactive' }
+}
+
+function StaffStatusBadge({ status }) {
+  const item = STAFF_STATUS_MAP[status] || { label: status || '—', className: 'fp-badge' }
+  return <span className={item.className}>{item.label}</span>
+}
+
+// Ngày hẹn bàn giao của đơn (yyyy-mm-dd) và nhãn hiển thị
+const appointmentKey = (r) => String(r.appointmentDate || r.startDate || '').slice(0, 10)
+
+function AddStaffModal({ facilityName, candidates, onClose, onSave }) {
+  const [email, setEmail] = useState('')
+  const [query, setQuery] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const filtered = candidates.filter(c =>
+    `${c.fullName} ${c.email}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const selected = candidates.find(c => c.email === email)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!selected) return setError('Vui lòng chọn một nhân viên.')
+    setError('')
+    setSaving(true)
+    try {
+      await onSave(selected)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fm-modal-overlay">
+      <div className="fm-modal-card fp-modal">
+        <div className="fm-modal-header">
+          <h2>Thêm nhân viên vào cơ sở</h2>
+          <button type="button" className="fm-modal-close" onClick={onClose} aria-label="Đóng">×</button>
+        </div>
+        <form className="fm-modal-form" onSubmit={submit}>
+          {error && <div className="auth-message error" role="alert">{error}</div>}
+          <p className="fm-form-hint">
+            Chọn tài khoản Facility Staff để làm việc tại {facilityName}. Nhân viên sẽ thấy và xử lý được các đơn bàn giao của cơ sở.
+          </p>
+
+          {candidates.length === 0 ? (
+            <div className="empty-state">Tất cả tài khoản Facility Staff đang Active đã thuộc {facilityName}.</div>
+          ) : (
+            <>
+              <label>
+                Tìm nhân viên
+                <input type="search" value={query} placeholder="Tên hoặc email..." onChange={(e) => setQuery(e.target.value)} />
+              </label>
+              <label>
+                Nhân viên
+                <select value={email} onChange={(e) => setEmail(e.target.value)} required>
+                  <option value="">-- Chọn nhân viên --</option>
+                  {filtered.map(c => (
+                    <option key={c.email} value={c.email}>
+                      {c.fullName} · {c.email}{c.wasInactive ? ' (từng làm tại cơ sở, đang Inactive)' : ''}
+                    </option>
+                  ))}
+                </select>
+                {query && filtered.length === 0 && <small className="fm-field-note">Không tìm thấy nhân viên phù hợp.</small>}
+              </label>
+            </>
+          )}
+
+          <div className="fm-modal-actions">
+            <button type="button" className="dashboard-secondary-btn" onClick={onClose}>Hủy</button>
+            <button type="submit" className="dashboard-primary-btn" disabled={saving || candidates.length === 0}>
+              {saving ? 'Đang thêm...' : 'Thêm vào cơ sở'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function StaffHistoryModal({ staff, items, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="fm-modal-overlay" onClick={onClose}>
+      <div className="fm-modal-card fp-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="fm-modal-header">
+          <h2>Lịch sử công việc · {staff.fullName}</h2>
+          <button type="button" className="fm-modal-close" onClick={onClose} aria-label="Đóng">×</button>
+        </div>
+        {items.length === 0 ? (
+          <div className="empty-state">Nhân viên chưa có lượt bàn giao nào tại cơ sở.</div>
+        ) : (
+          <ul className="fs-history">
+            {items.map(item => (
+              <li key={item.id}>
+                <span className="fs-history-time">{fmtDateTime(item.at)}</span>
+                <span>{item.text}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="fm-modal-actions">
+          <button type="button" className="dashboard-secondary-btn" onClick={onClose}>Đóng</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers = [], activity = [], awaitingHandoverList = [], showToast = () => {}, onChanged = async () => {} }) {
+  const [filter, setFilter] = useState('all')
+  const [showAdd, setShowAdd] = useState(false)
+  const [historyStaff, setHistoryStaff] = useState(null)
+
+  // Lịch sử bàn giao tại cơ sở, mới nhất trước
+  const facilityActivity = useMemo(
+    () => activity
+      .filter(a => a.facilityId === facilityName)
+      .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0)),
+    [activity, facilityName])
+
+  const historyOf = (st) => facilityActivity.filter(a => a.staffName === st.fullName)
+
+  const stats = {
+    total: staffList.length,
+    active: staffList.filter(s => s.status === 'Active').length,
+    inactive: staffList.filter(s => s.status !== 'Active').length,
+    handovers: facilityActivity.length
+  }
+
+  const visibleStaff = staffList
+    .filter(s => filter === 'all' || (filter === 'active' ? s.status === 'Active' : s.status !== 'Active'))
+    .sort((a, b) => Number(b.status === 'Active') - Number(a.status === 'Active') || a.fullName.localeCompare(b.fullName, 'vi'))
+
+  // Nhân viên có thể thêm: Staff đang Active nhưng chưa làm (hoặc đang Inactive) tại cơ sở này
+  const candidates = useMemo(() => {
+    const byEmail = new Map(staffList.map(s => [String(s.email).toLowerCase(), s]))
+    return staffUsers
+      .filter(u => {
+        const current = byEmail.get(String(u.email).toLowerCase())
+        return !current || current.status !== 'Active'
+      })
+      .map(u => ({ ...u, wasInactive: Boolean(byEmail.get(String(u.email).toLowerCase())) }))
+  }, [staffUsers, staffList])
+
+  // Việc chờ bàn giao, sắp theo ngày hẹn gần nhất
+  const today = todayStr()
+  const upcoming = [...awaitingHandoverList].sort((a, b) => appointmentKey(a).localeCompare(appointmentKey(b)))
+
+  const addStaff = async (candidate) => {
+    try {
+      await apiPost(`/api/operations/facilities/${facilityId}/staff`, { staffEmail: candidate.email })
+    } catch (err) {
+      // Backend trả 403 không kèm lời nhắn
+      if (/403/.test(err.message)) throw new Error(`Bạn không có quyền phân công nhân viên cho ${facilityName}.`)
+      throw err
+    }
+    setShowAdd(false)
+    await onChanged()
+    showToast(`Đã thêm ${candidate.fullName} vào ${facilityName}.`)
+  }
+
+  return (
+    <div className="fm-section-card">
+      <div className="fm-card-header-flex">
+        <div>
+          <h2>Đội ngũ Facility Staff tại {facilityName}</h2>
+          <p>Phân công nhân viên vào cơ sở để hỗ trợ bàn giao, kiểm tra kho và xử lý sự cố.</p>
+        </div>
+        <button type="button" className="dashboard-primary-btn" onClick={() => setShowAdd(true)} disabled={facilityId == null}>
+          + Thêm nhân viên
+        </button>
+      </div>
+
+      <div className="fs-stats">
+        <div><small>Tổng nhân viên</small><strong>{stats.total}</strong></div>
+        <div><small>Đang Active</small><strong className="fs-ok">{stats.active}</strong></div>
+        <div><small>Lượt bàn giao đã làm</small><strong>{stats.handovers}</strong></div>
+        <div><small>Đơn chờ bàn giao</small><strong className={upcoming.length ? 'fs-warn' : ''}>{upcoming.length}</strong></div>
+      </div>
+
+      <div className="fp-toolbar">
+        <div className="fp-chips">
+          {[['all', `Tất cả ${stats.total}`], ['active', `Active ${stats.active}`], ['inactive', `Inactive ${stats.inactive}`]].map(([v, t]) => (
+            <button key={v} type="button" className={filter === v ? 'active' : ''} onClick={() => setFilter(v)}>{t}</button>
+          ))}
+        </div>
+      </div>
+
+      {visibleStaff.length === 0 ? (
+        <div className="empty-state">
+          {staffList.length === 0
+            ? `${facilityName} chưa có nhân viên. Bấm "+ Thêm nhân viên" để phân công.`
+            : 'Không có nhân viên phù hợp bộ lọc.'}
+        </div>
+      ) : (
+        <div className="fm-staff-grid">
+          {visibleStaff.map(st => {
+            const history = historyOf(st)
+            const last = history[0]
+            return (
+              <div key={st.staffId ?? st.id} className={`fm-staff-card${st.status === 'Active' ? '' : ' fs-card-off'}`}>
+                <div className="fm-staff-avatar">{(st.fullName || '?').charAt(0)}</div>
+                <div className="fm-staff-info">
+                  <div className="fs-card-head">
+                    <h3>{st.fullName}</h3>
+                    <StaffStatusBadge status={st.status} />
+                  </div>
+                  <p>✉ {st.email}</p>
+                  <div className="fm-shift-tag">
+                    {history.length} lượt bàn giao{last ? ` · gần nhất ${fmtDateTime(last.at)}` : ''}
+                  </div>
+                  <div>
+                    <button type="button" className="fs-link-btn" onClick={() => setHistoryStaff(st)}>Xem lịch sử công việc →</button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="fs-section">
+        <h3>Việc chờ bàn giao tại cơ sở ({upcoming.length})</h3>
+        <p className="fm-muted">Đơn khách đã đặt cọc. Nhân viên đang Active tại cơ sở có thể nhận và bàn giao trực tiếp khi khách đến.</p>
+        {upcoming.length === 0 ? (
+          <div className="empty-state">Hiện không có đơn nào chờ bàn giao.</div>
+        ) : (
+          <div className="fm-table-wrap">
+            <table className="fm-table">
+              <thead>
+                <tr>
+                  <th>Ngày hẹn</th>
+                  <th>Mã đơn</th>
+                  <th>Khách hàng</th>
+                  <th>Kho</th>
+                  <th>Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody>
+                {upcoming.map(r => {
+                  const key = appointmentKey(r)
+                  const unitText = r.unitNumbers?.length ? r.unitNumbers.join(', ') : (r.assignedUnitId || '—')
+                  return (
+                    <tr key={r.id}>
+                      <td>
+                        <strong>{fmtDate(key)}</strong>
+                        {r.appointmentTime && <small className="fm-muted" style={{ display: 'block' }}>{r.appointmentTime}</small>}
+                        {key === today && <span className="fs-tag-today">Hôm nay</span>}
+                        {key && key < today && <span className="fs-tag-late">Quá hẹn</span>}
+                      </td>
+                      <td><strong>{formatReservationCode(r.id)}</strong></td>
+                      <td>{r.customerName}<small className="fm-muted" style={{ display: 'block' }}>{r.customerPhone || r.customerEmail}</small></td>
+                      <td>{unitText}</td>
+                      <td><Badge map={RES_STATUS_MAP} value={r.status} /></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {showAdd && (
+        <AddStaffModal
+          facilityName={facilityName}
+          candidates={candidates}
+          onClose={() => setShowAdd(false)}
+          onSave={addStaff}
+        />
+      )}
+      {historyStaff && (
+        <StaffHistoryModal staff={historyStaff} items={historyOf(historyStaff)} onClose={() => setHistoryStaff(null)} />
+      )}
+    </div>
+  )
+}
+
+/* =========================================================
+   HỢP ĐỒNG TẠI CƠ SỞ (Facility Manager · chỉ xem)
+   Dùng lại ContractDocument (văn bản hợp đồng của trang khách hàng)
+   ========================================================= */
+const DAY_MS = 24 * 60 * 60 * 1000
+const EXPIRING_DAYS = 30
+
+// Số ngày còn lại tới ngày kết thúc (âm = đã quá hạn)
+function daysLeft(endDate) {
+  const end = new Date(String(endDate || '').slice(0, 10) + 'T00:00:00')
+  const today = new Date(todayStr() + 'T00:00:00')
+  if (Number.isNaN(end.getTime())) return null
+  return Math.round((end - today) / DAY_MS)
+}
+
+function contractPhase(c) {
+  const left = daysLeft(c.endDate)
+  if (left == null) return 'active'
+  if (left < 0) return 'expired'
+  if (left <= EXPIRING_DAYS) return 'expiring'
+  return 'active'
+}
+
+const CONTRACT_PHASE_MAP = {
+  active: { label: 'Đang hiệu lực', className: 'fm-badge fm-ok' },
+  expiring: { label: 'Sắp hết hạn', className: 'fm-badge fm-warn' },
+  expired: { label: 'Đã hết hạn', className: 'fp-badge fp-badge-deactive' }
+}
+
+// Chuyển dữ liệu hợp đồng của Manager sang dạng `group` mà ContractDocument cần
+function buildContractGroup(c, r, facilityUnits, facilityName) {
+  const numbers = (c.unitNumbers?.length ? c.unitNumbers : [c.unitId]).filter(Boolean)
+  const units = numbers.map(number => {
+    const u = facilityUnits.find(x => x.id === number)
+    return { number, type: u?.type, size: u?.size, monthlyPrice: u?.pricePerMonth ?? null }
+  })
+  const monthly = units.reduce((sum, u) => sum + Number(u.monthlyPrice || 0), 0)
+  const months = Number(r?.months) || 0
+  return {
+    key: `contract-${c.id}`,
+    code: c.contractNumber || `HD-${c.id}`,
+    title: `Hợp đồng ${c.contractNumber || `HD-${c.id}`}`,
+    rentals: [{
+      facility: facilityName,
+      months,
+      startDate: fmtDate(c.startDate),
+      endDate: fmtDate(c.endDate),
+      depositMonths: r?.depositMonths || 2,
+      monthlyPrice: monthly,
+      rentalAmount: Number(c.totalFee || r?.rentalFee || monthly * months),
+      depositAmount: Number(c.deposit || r?.deposit || 0),
+      reservationCode: r?.reservationCode || formatReservationCode(c.reservationId),
+      reservationId: c.reservationId,
+      units
+    }]
+  }
+}
+
+function ManagerContractModal({ contract, reservation, facility, facilityUnits, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = previous }
+  }, [onClose])
+
+  const group = buildContractGroup(contract, reservation, facilityUnits, facility?.name || '')
+  const rental = group.rentals[0]
+  const customer = {
+    name: contract.customerName || reservation?.customerName,
+    email: reservation?.customerEmail,
+    phone: reservation?.customerPhone
+  }
+  const phase = contractPhase(contract)
+  const left = daysLeft(contract.endDate)
+  const phaseInfo = CONTRACT_PHASE_MAP[phase]
+
+  return (
+    <div className="csf-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="csf" role="dialog" aria-modal="true" aria-labelledby="fmc-title">
+        <div className="csf-head">
+          <div>
+            <span className={phaseInfo.className}>{phaseInfo.label}</span>
+            <h2 id="fmc-title">{group.title}</h2>
+            <p>
+              {customer.name} · {rental.units.length} kho · {rental.startDate} → {rental.endDate}
+              {left != null && (left >= 0 ? ` · còn ${left} ngày` : ` · quá hạn ${-left} ngày`)}
+            </p>
+          </div>
+          <button type="button" className="csf-close" onClick={onClose} aria-label="Đóng">×</button>
+        </div>
+
+        <div className="csf-body">
+          <div className="cdm-summary">
+            <div><span>Tiền thuê / tháng</span><strong>{fmtMoney(rental.monthlyPrice)}</strong></div>
+            <div><span>Tổng tiền thuê</span><strong>{fmtMoney(rental.rentalAmount)}</strong></div>
+            <div><span>Tiền cọc đã trả</span><strong>{fmtMoney(rental.depositAmount)}</strong></div>
+            <div><span>Thanh toán</span><strong>{reservation?.paymentStatus === 'PAID' ? 'Đã thanh toán cọc' : 'Chưa xác nhận'}</strong></div>
+          </div>
+
+          <div className="fmc-ops">
+            <div><small>Mã đơn</small><strong>{rental.reservationCode}</strong></div>
+            <div><small>Thông tin ra vào</small><strong>{contract.accessType ? `${contract.accessType}: ${contract.accessValue || '—'}` : 'Chưa cấp'}</strong></div>
+            <div><small>Liên hệ khách</small><strong>{customer.phone || customer.email || '—'}</strong></div>
+          </div>
+
+          <p className="fmc-note">
+            Bạn đang xem hợp đồng ở chế độ <strong>chỉ xem</strong>. Chữ ký điện tử của khách hiển thị ở trang khách hàng.
+            Giá trong Phụ lục lấy theo giá hiện tại của từng kho.
+          </p>
+
+          <ContractDocument
+            group={group}
+            customer={customer}
+            facilityAddress={facility?.address}
+            showTerms
+          />
+        </div>
+
+        <div className="csf-actions">
+          <button type="button" className="dashboard-secondary-btn" onClick={() => window.print()}>In / Lưu PDF</button>
+          <span className="csf-spacer" />
+          <button type="button" className="dashboard-primary-btn" onClick={onClose}>Đóng</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FacilityContractsTab({ facility, facilityName, contracts = [], reservations = [], facilityUnits = [] }) {
+  const [filter, setFilter] = useState('all')
+  const [query, setQuery] = useState('')
+  const [viewing, setViewing] = useState(null)
+
+  const reservationOf = (c) => reservations.find(x =>
+    String(x.contractId ?? '') === String(c.id) ||
+    (c.reservationId != null && String(x.id) === String(c.reservationId)))
+
+  const counts = {
+    all: contracts.length,
+    active: contracts.filter(c => contractPhase(c) === 'active').length,
+    expiring: contracts.filter(c => contractPhase(c) === 'expiring').length,
+    expired: contracts.filter(c => contractPhase(c) === 'expired').length
+  }
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return contracts
+      .filter(c => filter === 'all' || contractPhase(c) === filter)
+      .filter(c => {
+        if (!q) return true
+        const r = reservationOf(c)
+        return [c.contractNumber, c.id, c.customerName, r?.customerEmail, r?.reservationCode, ...(c.unitNumbers || [])]
+          .filter(Boolean).join(' ').toLowerCase().includes(q)
+      })
+      // Sắp hết hạn lên trước để Manager chú ý
+      .sort((a, b) => (daysLeft(a.endDate) ?? 0) - (daysLeft(b.endDate) ?? 0))
+  }, [contracts, reservations, filter, query])
+
+  return (
+    <div className="fm-section-card">
+      <div className="fm-card-header">
+        <h2>Hợp đồng thuê tại {facilityName}</h2>
+        <p>Theo dõi khách thuê, kỳ thuê, thông tin ra vào và tình trạng thanh toán. Bấm "Xem hợp đồng" để đọc toàn văn.</p>
+      </div>
+
+      <div className="fp-toolbar">
+        <div className="fp-chips">
+          {[
+            ['all', `Tất cả ${counts.all}`],
+            ['active', `Đang hiệu lực ${counts.active}`],
+            ['expiring', `Sắp hết hạn ${counts.expiring}`],
+            ['expired', `Đã hết hạn ${counts.expired}`]
+          ].map(([v, t]) => (
+            <button key={v} type="button" className={filter === v ? 'active' : ''} onClick={() => setFilter(v)}>{t}</button>
+          ))}
+        </div>
+        <input className="fm-input fp-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="Tìm mã hợp đồng, khách, mã kho..." aria-label="Tìm hợp đồng" />
+      </div>
+
+      <div className="fm-table-wrap">
+        <table className="fm-table">
+          <thead>
+            <tr>
+              <th>Mã HĐ</th>
+              <th>Khách hàng</th>
+              <th>Kho</th>
+              <th>Kỳ thuê</th>
+              <th>Thông tin ra vào</th>
+              <th>Thanh toán</th>
+              <th>Trạng thái</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.length === 0 && (
+              <tr>
+                <td colSpan="8" className="text-center fm-muted">
+                  {contracts.length === 0 ? 'Chưa có hợp đồng nào tại cơ sở này.' : 'Không có hợp đồng phù hợp.'}
+                </td>
+              </tr>
+            )}
+            {visible.map(c => {
+              const r = reservationOf(c)
+              const phase = contractPhase(c)
+              const left = daysLeft(c.endDate)
+              const phaseInfo = CONTRACT_PHASE_MAP[phase]
+              return (
+                <tr key={c.id}>
+                  <td>
+                    <strong>{c.contractNumber || `HD-${c.id}`}</strong>
+                    <small className="fm-muted" style={{ display: 'block' }}>Đơn {r?.reservationCode || formatReservationCode(c.reservationId)}</small>
+                  </td>
+                  <td>
+                    {c.customerName}
+                    {(r?.customerPhone || r?.customerEmail) && <small className="fm-muted" style={{ display: 'block' }}>{r.customerPhone || r.customerEmail}</small>}
+                  </td>
+                  <td><span className="fm-tag-blue">{c.unitNumbers?.length ? c.unitNumbers.join(', ') : (c.unitId || '—')}</span></td>
+                  <td>
+                    {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
+                    {left != null && (
+                      <small className={`fmc-left${left < 0 ? ' late' : left <= EXPIRING_DAYS ? ' soon' : ''}`}>
+                        {left >= 0 ? `Còn ${left} ngày` : `Quá hạn ${-left} ngày`}
+                      </small>
+                    )}
+                  </td>
+                  <td>{c.accessType ? <code>{c.accessType}: {c.accessValue || '—'}</code> : <span className="fm-muted">Chưa cấp</span>}</td>
+                  <td>{r ? <Badge map={PAY_STATUS_MAP} value={r.paymentStatus} /> : '—'}</td>
+                  <td><span className={phaseInfo.className}>{phaseInfo.label}</span></td>
+                  <td>
+                    <button type="button" className="dashboard-secondary-btn sm" onClick={() => setViewing(c)}>Xem hợp đồng</button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {viewing && (
+        <ManagerContractModal
+          contract={viewing}
+          reservation={reservationOf(viewing)}
+          facility={facility}
+          facilityUnits={facilityUnits}
+          onClose={() => setViewing(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+/* =========================================================
    MAIN DASHBOARD COMPONENT
    ========================================================= */
 export default function FacilityManagerDashboard({ embedded = false, currentUser = null, navigate = null, currentUserKey = 'storespace_current_user' }) {
@@ -1080,11 +1630,6 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
   const [activeTab, setActiveTab] = useState('overview')
   const [editingUnit, setEditingUnit] = useState(null)
   const [showUnitModal, setShowUnitModal] = useState(false)
-  const [selectedResId, setSelectedResId] = useState(null)
-  const [selectedUnitForAssign, setSelectedUnitForAssign] = useState('')
-  const [assignSlots, setAssignSlots] = useState({}) // { [resId]: [unitId kho 1, unitId kho 2, ...] }
-  const [cartOrderUnitSelections, setCartOrderUnitSelections] = useState({})
-  const [assigningCartOrderCode, setAssigningCartOrderCode] = useState(null)
   const [unitFilter, setUnitFilter] = useState('all')
   const [unitSort, setUnitSort] = useState({ key: null, dir: 'asc' })
   const [freshUnits, setFreshUnits] = useState([])
@@ -1167,219 +1712,12 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
       .filter(r => r.status === 'HANDED_OVER' && r.paymentStatus === 'PAID')
       .reduce((sum, r) => sum + (r.rentalFee || 0), 0)
 
-    const pendingApprovals = facilityReservations.filter(r => r.status === 'PENDING_APPROVAL').length
+    // Khách đã cọc xong (không còn bước Manager duyệt) → chờ nhân viên bàn giao
+    const awaitingHandover = facilityReservations.filter(r => r.status === 'PENDING_APPROVAL' || r.status === 'CONFIRMED').length
     const pendingPayments = facilityReservations.filter(r => r.status === 'PENDING_PAYMENT').length
 
-    return { totalUnits, rentedUnits, reservedUnits, availableUnits, occupancyRate, totalRevenue, pendingApprovals, pendingPayments }
+    return { totalUnits, rentedUnits, reservedUnits, availableUnits, occupancyRate, totalRevenue, awaitingHandover, pendingPayments }
   }, [facilityUnits, facilityReservations])
-
-  /* Xử lý Cập nhật DB */
-  /* Số kho của 1 đơn = số kho khách đã đặt cọc (unitNumbers). Đơn cũ không có danh sách thì tính 1 kho. */
-  const getReservedUnits = (res) => {
-    const list = Array.isArray(res.unitNumbers) && res.unitNumbers.length
-      ? res.unitNumbers
-      : [res.assignedUnitId || res.unitId].filter(Boolean)
-    // Số ô = số kho khách đặt (requestedUnitCount); thiếu kho đang giữ thì thêm ô trống để Manager chọn
-    const wanted = Math.max(Number(res.requestedUnitCount) || 0, list.length, 1)
-    return [...list, ...Array(wanted - list.length).fill('')]
-  }
-
-  // Kho đang chọn cho từng ô của đơn (mặc định = kho khách đã chọn)
-  const getSlotValues = (res) => {
-    const original = getReservedUnits(res)
-    const picked = assignSlots[res.id] || []
-    return original.map((unitId, i) => picked[i] ?? unitId ?? '')
-  }
-
-  const setSlotValue = (res, index, unitId) => {
-    setAssignSlots(current => {
-      const next = [...getSlotValues(res)]
-      next[index] = unitId
-      return { ...current, [res.id]: next }
-    })
-  }
-
-  // Kho có thể chọn cho 1 ô: cùng loại + cùng size với kho khách đã đặt (DB bắt buộc),
-  // đang trống hoặc chính là kho đang giữ cho đơn này, và chưa bị chọn ở ô khác.
-  const getSlotOptions = (res, index) => {
-    const original = getReservedUnits(res)
-    const originalUnit = facilityUnits.find(u => u.id === original[index])
-    const values = getSlotValues(res)
-    const takenByOthers = new Set(values.filter((v, i) => i !== index && v))
-    return facilityUnits.filter(u => {
-      if (takenByOthers.has(u.id)) return false
-      const ownHold = original.includes(u.id)
-      if (!ownHold && u.status !== 'AVAILABLE') return false
-      if (!originalUnit) return true
-      return String(u.unitTypeId) === String(originalUnit.unitTypeId) &&
-        String(u.sizeId ?? u.unitSizeId) === String(originalUnit.sizeId ?? originalUnit.unitSizeId)
-    })
-  }
-
-  const handleApproveAndAssign = async (res) => {
-    const unitIds = getSlotValues(res)
-    if (unitIds.some(id => !id)) {
-      await dialog.alert({
-        tone: 'warning',
-        title: 'Chưa chọn đủ kho',
-        message: `Đơn ${formatReservationCode(res.id)} có ${unitIds.length} kho. Vui lòng chọn kho cho tất cả các ô.`
-      })
-      return
-    }
-    if (new Set(unitIds).size !== unitIds.length) {
-      await dialog.alert({ tone: 'warning', title: 'Kho bị chọn trùng', message: 'Mỗi ô phải là một kho khác nhau.' })
-      return
-    }
-    const confirmed = await dialog.confirm({
-      tone: 'warning',
-      title: `Duyệt đơn ${formatReservationCode(res.id)} và phân ${unitIds.length} kho?`,
-      message: `Kho được phân: ${unitIds.join(', ')}.\nSau khi duyệt, các kho được giữ cho khách và chuyển sang chờ bàn giao.`,
-      confirmLabel: `Duyệt & phân ${unitIds.length} kho`
-    })
-    if (!confirmed) return
-    setError('')
-    try {
-      // unitNumbers: danh sách đầy đủ; unitNumber: giữ để tương thích backend cũ (1 kho)
-      await apiPost(`/api/operations/reservations/${res.id}/assign`, { unitNumber: unitIds[0], unitNumbers: unitIds })
-      await loadState({ silent: true })
-      setAssignSlots(current => { const next = { ...current }; delete next[res.id]; return next })
-      setSelectedResId(null)
-      setSelectedUnitForAssign('')
-      showToast(`Đã duyệt đơn ${formatReservationCode(res.id)} và phân kho ${unitIds.join(', ')}.`)
-    } catch (actionError) {
-      await dialog.alert({ tone: 'danger', title: 'Không phân được kho', message: actionError.message })
-    }
-  }
-
-  // Duyệt một đơn giỏ hàng có nhiều kho.
-// Mỗi reservation vẫn được phân bổ qua API hiện có.
-const handleApproveCartOrder = async (order) => {
-  const reservations = order.reservations || []
-
-  if (!reservations.length) {
-    await dialog.alert({
-      tone: 'warning',
-      title: 'Không có kho chờ duyệt',
-      message: 'Đơn này không còn reservation nào đang chờ duyệt.'
-    })
-    return
-  }
-
-  // Kiểm tra Manager đã chọn kho cho tất cả các reservation chưa.
-  const assignments = reservations.map(res => ({
-    reservation: res,
-    unitId:
-      cartOrderUnitSelections[String(res.id)] ??
-      res.assignedUnitId ??
-      res.unitId ??
-      ''
-  }))
-
-  const missing = assignments.filter(item => !item.unitId)
-
-  if (missing.length > 0) {
-    await dialog.alert({
-      tone: 'warning',
-      title: 'Chưa chọn đủ kho',
-      message:
-        'Vui lòng chọn kho phân bổ cho tất cả các dòng trước khi duyệt đơn.'
-    })
-    return
-  }
-
-  // Không cho hai reservation trong cùng đơn chọn trùng một kho.
-  const selectedUnitIds = assignments.map(item => String(item.unitId))
-  if (new Set(selectedUnitIds).size !== selectedUnitIds.length) {
-    await dialog.alert({
-      tone: 'warning',
-      title: 'Kho bị chọn trùng',
-      message:
-        'Mỗi reservation phải được phân bổ vào một kho khác nhau. Vui lòng kiểm tra lại.'
-    })
-    return
-  }
-
-  const confirmed = await dialog.confirm({
-    tone: 'warning',
-    title: `Duyệt đơn ${order.code}?`,
-    message:
-      `Đơn này có ${assignments.length} kho. ` +
-      'Hệ thống sẽ lần lượt gửi yêu cầu phân bổ từng kho. ' +
-      'Nếu một yêu cầu lỗi, những kho đã xử lý trước đó có thể vẫn được phân bổ.',
-    confirmLabel: 'Duyệt đơn'
-  })
-
-  if (!confirmed) return
-
-  setError('')
-  setAssigningCartOrderCode(order.code)
-
-  const succeeded = []
-  const failures = []
-
-  try {
-    // Gọi API riêng cho từng reservation theo đúng backend hiện tại.
-    for (const item of assignments) {
-      try {
-        await apiPost(
-          `/api/operations/reservations/${item.reservation.id}/assign`,
-          { unitNumber: item.unitId }
-        )
-
-        succeeded.push({
-          reservationId: item.reservation.id,
-          unitId: item.unitId
-        })
-      } catch (actionError) {
-        failures.push(
-          `${formatReservationCode(item.reservation.id)}: ${actionError.message}`
-        )
-
-        // Dừng ở lỗi đầu tiên để Manager kiểm tra trước khi tiếp tục.
-        break
-      }
-    }
-
-    await loadState({ silent: true })
-
-    if (failures.length > 0) {
-      await dialog.alert({
-        tone: 'warning',
-        title: 'Đơn mới được xử lý một phần',
-        message:
-          `Đã phân bổ thành công ${succeeded.length}/${assignments.length} kho.\n` +
-          (succeeded.length
-            ? 'Đã xử lý: ' +
-              succeeded.map(item =>
-                `${formatReservationCode(item.reservationId)} → ${item.unitId}`
-              ).join(', ') +
-              '\n'
-            : '') +
-          'Lỗi: ' + failures.join('\n') +
-          '\nVui lòng tải lại danh sách và kiểm tra trạng thái từng kho trước khi thao tác tiếp.'
-      })
-    } else {
-      setCartOrderUnitSelections(current => {
-        const next = { ...current }
-        assignments.forEach(item => {
-          delete next[String(item.reservation.id)]
-        })
-        return next
-      })
-
-      showToast(`Đã phân bổ đủ ${succeeded.length} kho của đơn ${order.code}.`)
-
-      await dialog.alert({
-        tone: 'success',
-        title: 'Đã gửi yêu cầu duyệt đơn',
-        message:
-          `Đã phân bổ thành công ${succeeded.length} kho thuộc đơn ${order.code}.`
-      })
-    }
-  } finally {
-    setAssigningCartOrderCode(null)
-  }
-}
 
   const openEditUnit = async unit => {
     const lock = unitLocks.get(unit.id)
@@ -1479,42 +1817,14 @@ const handleApproveCartOrder = async (order) => {
     navigate?.('/')
   }
 
-  const pendingList = facilityReservations.filter(
-    r => r.status === 'PENDING_APPROVAL'
+  // Đơn khách đã cọc, đang chờ nhân viên bàn giao (không cần Manager duyệt)
+  const awaitingHandoverList = facilityReservations.filter(
+    r => r.status === 'PENDING_APPROVAL' || r.status === 'CONFIRMED'
   )
 
+  // Đơn mới đặt, khách chưa trả cọc (kho đang được giữ tạm)
   const awaitingPaymentList = facilityReservations.filter(
     r => r.status === 'PENDING_PAYMENT'
-  )
-
-  // Đọc các đơn giỏ hàng đã được Customer lưu trong localStorage.
-  const cartOrders = getCartOrders()
-
-  // Ghép reservation trong đơn giỏ hàng với reservation đang chờ Manager duyệt.
-  const groupedCartOrders = cartOrders
-    .map(order => {
-      const orderReservationIds = (order.reservationIds || []).map(String)
-
-      const reservations = pendingList.filter(r =>
-        orderReservationIds.includes(String(r.id))
-      )
-
-      return {
-        ...order,
-        reservations
-      }
-    })
-    .filter(order => order.reservations.length > 1)
-
-  // Những reservation đã thuộc đơn nhiều kho sẽ không hiện thêm ở danh sách đơn lẻ.
-  const groupedReservationIds = new Set(
-    groupedCartOrders.flatMap(order =>
-      order.reservations.map(r => String(r.id))
-    )
-  )
-
-  const individualPendingList = pendingList.filter(
-    r => !groupedReservationIds.has(String(r.id))
   )
 
   const staffList = db.staff.filter(staff => staff.facilityId === facilityName)
@@ -1632,7 +1942,7 @@ const handleApproveCartOrder = async (order) => {
     }
   }
 
-  /* ===== THIẾT LẬP TÍNH CHẤT KHO: loại kho + kích thước tại cơ sở ===== */
+  /* ===== THIẾT LẬP ĐẶC TÍNH KHO: loại kho + kích thước tại cơ sở ===== */
   const catalogFacilityId = managedFacility?.facilityId
 
   const reloadFacilityCatalog = async () => {
@@ -1653,7 +1963,7 @@ const handleApproveCartOrder = async (order) => {
     if (catalogFacilityId != null) reloadFacilityCatalog()
   }, [catalogFacilityId, activeTab === 'unitTypes'])
 
-  // Form Tạo / Sửa kho: chỉ loại kho "Đang dùng" tại cơ sở (giữ loại hiện tại của kho đang sửa)
+  // Form Tạo / Sửa kho: chỉ loại kho Active tại cơ sở (giữ loại hiện tại của kho đang sửa)
   const unitTypesForUnitForm = useMemo(() => {
     if (!facilityCatalog.types.length) return db.unitTypes || []
     const currentId = String(editingUnit?.unitTypeId ?? '')
@@ -1662,7 +1972,7 @@ const handleApproveCartOrder = async (order) => {
       .map(t => ({ unitTypeId: t.id, name: t.isActive ? t.name : `${t.name} (ngừng dùng)`, description: t.description }))
   }, [facilityCatalog.types, db.unitTypes, editingUnit])
 
-  // Form Tạo / Sửa kho: chỉ kích thước "Đang dùng" tại cơ sở
+  // Form Tạo / Sửa kho: chỉ kích thước Active tại cơ sở
   const unitSizesForUnitForm = useMemo(() => {
     if (!facilityCatalog.sizes.length) return db.unitSizes || []
     const currentId = String(editingUnit?.unitSizeId ?? editingUnit?.sizeId ?? '')
@@ -1725,14 +2035,11 @@ const handleApproveCartOrder = async (order) => {
           <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
             <span>⌂</span> Tổng quan & Báo cáo
           </button>
-          <button className={activeTab === 'approvals' ? 'active' : ''} onClick={() => setActiveTab('approvals')}>
-            <span>◷</span> Xét duyệt đặt chỗ {(stats.pendingApprovals + stats.pendingPayments) > 0 && <span className="fm-count-badge">{stats.pendingApprovals + stats.pendingPayments}</span>}
-          </button>
           <button className={activeTab === 'units' ? 'active' : ''} onClick={() => setActiveTab('units')}>
             <span>▣</span> Quản lý kho cơ sở {freshUnitDetails.length > 0 && <span className="fm-count-badge fm-count-new">Mới {freshUnitDetails.length}</span>}
           </button>
           <button className={activeTab === 'unitTypes' ? 'active' : ''} onClick={() => setActiveTab('unitTypes')}>
-            <span>▦</span> Thiết lập tính chất kho
+            <span>▦</span> Thiết lập đặc tính kho
           </button>
           <button className={activeTab === 'contracts' ? 'active' : ''} onClick={() => setActiveTab('contracts')}>
             <span>▤</span> Hợp đồng & Khách hàng
@@ -1759,13 +2066,12 @@ const handleApproveCartOrder = async (order) => {
             <span className="customer-eyebrow">FACILITY MANAGER · {facilityName.toUpperCase()}</span>
             <h1>
               {activeTab === 'overview' && 'Tổng quan & Báo cáo cơ sở'}
-              {activeTab === 'approvals' && 'Xét duyệt & Phân bổ kho'}
               {activeTab === 'units' && 'Danh mục kho tại cơ sở'}
-              {activeTab === 'unitTypes' && 'Thiết lập tính chất kho'}
+              {activeTab === 'unitTypes' && 'Thiết lập đặc tính kho'}
               {activeTab === 'contracts' && 'Giám sát hợp đồng thuê'}
               {activeTab === 'staff' && 'Phân công nhân viên cơ sở'}
             </h1>
-            <p>Quản lý vận hành, xét duyệt đặt kho và giám sát doanh thu cơ sở {facilityName}.</p>
+            <p>Quản lý vận hành kho, theo dõi đơn thuê và doanh thu cơ sở {facilityName}.</p>
           </div>
           <div className="fm-facility-chip">
             📍 <strong>{facilityName}</strong>
@@ -1792,8 +2098,8 @@ const handleApproveCartOrder = async (order) => {
 
               <div className="customer-stat-card">
                 <span className="stat-icon yellow">⏳</span>
-                <small>Chờ duyệt & Phân kho</small>
-                <strong>{stats.pendingApprovals}</strong>
+                <small>Chờ bàn giao</small>
+                <strong>{stats.awaitingHandover}</strong>
                 <span className="stat-note warning">{stats.pendingPayments} đơn đang chờ khách trả cọc</span>
               </div>
 
@@ -1828,326 +2134,38 @@ const handleApproveCartOrder = async (order) => {
               </div>
             </section>
 
-            {/* CẦN XỬ LÝ NGAY */}
-            {(pendingList.length > 0 || awaitingPaymentList.length > 0) && (
+            {/* ĐƠN CẦN THEO DÕI */}
+            {(awaitingHandoverList.length > 0 || awaitingPaymentList.length > 0) && (
               <section className="overview-panel">
                 <div className="overview-panel-heading">
                   <div>
-                    <span className="customer-eyebrow">ACTION REQUIRED</span>
-                    <h2>Đơn đặt kho mới ({pendingList.length + awaitingPaymentList.length})</h2>
+                    <span className="customer-eyebrow">RESERVATIONS</span>
+                    <h2>Đơn đặt kho cần theo dõi ({awaitingHandoverList.length + awaitingPaymentList.length})</h2>
                   </div>
-                  <button className="overview-text-button" onClick={() => setActiveTab('approvals')}>Xem tất cả →</button>
                 </div>
 
                 <div className="fm-pending-mini-list">
-                  {[...pendingList, ...awaitingPaymentList].map(r => (
-                    <div key={r.id} className="fm-pending-mini-item">
-                      <div>
-                        <strong>{formatReservationCode(r.id)} · {r.customerName}</strong>
-                        <small>Kho {r.assignedUnitId || '—'} · {r.unitType} · Thuê {r.months} tháng</small>
+                  {[...awaitingHandoverList, ...awaitingPaymentList].map(r => {
+                    const unitText = r.unitNumbers?.length ? r.unitNumbers.join(', ') : (r.assignedUnitId || '—')
+                    return (
+                      <div key={r.id} className="fm-pending-mini-item">
+                        <div>
+                          <strong>{formatReservationCode(r.id)} · {r.customerName}</strong>
+                          <small>Kho {unitText} · {r.unitType} · Thuê {r.months} tháng · Từ {fmtDate(r.startDate)}</small>
+                        </div>
+                        <div className="fm-item-right">
+                          <Badge map={RES_STATUS_MAP} value={r.status} />
+                          {r.status === 'PENDING_PAYMENT'
+                            ? <span className="fm-amount">Hết hạn giữ chỗ {fmtDateTime(r.depositExpiresAt)}</span>
+                            : <span className="fm-amount">Cọc {fmtMoney(r.deposit)}</span>}
+                        </div>
                       </div>
-                      <div className="fm-item-right">
-                        <Badge map={RES_STATUS_MAP} value={r.status} />
-                        {r.status === 'PENDING_APPROVAL'
-                          ? <button className="dashboard-primary-btn" onClick={() => setActiveTab('approvals')}>Duyệt ngay</button>
-                          : <span className="fm-amount">Hết hạn giữ chỗ {fmtDateTime(r.depositExpiresAt)}</span>}
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </section>
             )}
           </div>
-        )}
-
-        {/* TAB 2: XÉT DUYỆT & PHÂN KHO */}
-        {activeTab === 'approvals' && (
-          <>
-            {/* ĐƠN GIỎ HÀNG GỒM NHIỀU KHO */}
-            {groupedCartOrders.length > 0 && (
-              <div className="fm-section-card">
-                <div className="fm-card-header">
-                  <h2>Đơn đặt nhiều kho ({groupedCartOrders.length})</h2>
-                  <p>
-                    Các kho thuộc cùng một lần checkout của khách hàng.
-                    Kiểm tra từng kho, chọn kho phân bổ rồi duyệt đơn.
-                  </p>
-                </div>
-
-                <div className="fm-approval-grid">
-                  {groupedCartOrders.map(order => {
-                    const isAssigning = assigningCartOrderCode === order.code
-
-                    return (
-                      <div className="fm-approval-card" key={order.code}>
-                        <div className="fm-approval-head">
-                          <div>
-                            <span className="customer-eyebrow">
-                              MÃ ĐƠN GIỎ HÀNG
-                            </span>
-                            <h3>{order.code}</h3>
-                            <p>{order.facilityName || facilityName}</p>
-                          </div>
-
-                          <span className="fm-badge fm-info">
-                            {order.reservations.length} kho chờ duyệt
-                          </span>
-                        </div>
-
-                        <div className="rental-info-grid">
-                          <div>
-                            <small>Ngày bắt đầu</small>
-                            <strong>{fmtDate(order.startDate)}</strong>
-                          </div>
-
-                          <div>
-                            <small>Thời hạn thuê</small>
-                            <strong>{order.months} tháng</strong>
-                          </div>
-
-                          <div>
-                            <small>Số kho</small>
-                            <strong>{order.reservations.length}</strong>
-                          </div>
-                        </div>
-
-                        <div className="fm-table-wrap">
-                          <table className="fm-table">
-                            <thead>
-                              <tr>
-                                <th>Mã reservation</th>
-                                <th>Loại kho</th>
-                                <th>Kho khách chọn</th>
-                                <th>Tiền cọc</th>
-                                <th>Chọn kho phân bổ</th>
-                              </tr>
-                            </thead>
-
-                            <tbody>
-                              {order.reservations.map(res => {
-                                const currentSelection =
-                                  cartOrderUnitSelections[String(res.id)] ??
-                                  res.assignedUnitId ??
-                                  res.unitId ??
-                                  ''
-
-                                return (
-                                  <tr key={res.id}>
-                                    <td>
-                                      <strong>
-                                        {formatReservationCode(res.id)}
-                                      </strong>
-                                    </td>
-
-                                    <td>{res.unitType || '—'}</td>
-
-                                    <td>{res.unitId || 'Tự động'}</td>
-
-                                    <td>{fmtMoney(res.deposit)}</td>
-
-                                    <td>
-                                      <select
-                                        className="fm-input"
-                                        value={currentSelection}
-                                        disabled={isAssigning}
-                                        onChange={e => {
-                                          const value = e.target.value
-
-                                          setCartOrderUnitSelections(current => ({
-                                            ...current,
-                                            [String(res.id)]: value
-                                          }))
-                                        }}
-                                      >
-                                        <option value="">
-                                          -- Chọn kho --
-                                        </option>
-
-                                        {facilityUnits
-                                          .filter(unit =>
-                                            unit.status === 'AVAILABLE' ||
-                                            unit.id === currentSelection
-                                          )
-                                          .map(unit => (
-                                            <option
-                                              key={unit.id}
-                                              value={unit.id}
-                                            >
-                                              {unit.id} - {unit.type}
-                                              {' '}({unit.size})
-                                              {' '} - {fmtMoney(unit.pricePerMonth)}/tháng
-                                            </option>
-                                          ))}
-                                      </select>
-                                    </td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        <div className="fm-actions-row">
-                          <button
-                            type="button"
-                            className="dashboard-primary-btn"
-                            disabled={isAssigning}
-                            onClick={() => handleApproveCartOrder(order)}
-                          >
-                            {isAssigning
-                              ? 'Đang xử lý đơn...'
-                              : `✓ Duyệt và phân bổ ${order.reservations.length} kho`}
-                          </button>
-                        </div>
-
-                        <p className="fm-muted">
-                          Mỗi dòng tương ứng với một reservation riêng.
-                          Kiểm tra trạng thái sau khi duyệt để bảo đảm tất cả
-                          các kho đã được phân bổ.
-                        </p>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-            <div className="fm-section-card">
-              <div className="fm-card-header">
-                <h2>Đơn đặt kho chờ duyệt & Phân kho cụ thể</h2>
-                <p>Khách hàng đã thanh toán tiền cọc. Hãy đối chiếu và chọn kho cụ thể còn trống để phân bổ.</p>
-              </div>
-
-              {individualPendingList.length === 0 ? (
-                <div className="empty-state">Hiện không có đơn đặt kho nào đang chờ xét duyệt.</div>
-              ) : (
-                <div className="fm-approval-grid">
-                  {individualPendingList.map(res => {
-
-                    return (
-                      <div key={res.id} className="fm-approval-card">
-                        <div className="fm-approval-head">
-                          <div>
-                            <span className="customer-eyebrow">MÃ ĐƠN: {formatReservationCode(res.id)}</span>
-                            <h3>{res.customerName}</h3>
-                            <p>✉ {res.customerEmail}</p>
-                          </div>
-                          <Badge map={RES_STATUS_MAP} value={res.status} />
-                        </div>
-
-                        <div className="rental-info-grid">
-                          <div>
-                            <small>Loại kho yêu cầu</small>
-                            <strong>{res.unitType}</strong>
-                          </div>
-                          <div>
-                            <small>Kho khách chọn</small>
-                            <strong>{res.unitNumbers?.length > 1 ? res.unitNumbers.join(', ') : (res.unitId || 'Tự động')}</strong>
-                          </div>
-                          <div>
-                            <small>Ngày bắt đầu</small>
-                            <strong>{fmtDate(res.startDate)}</strong>
-                          </div>
-                          <div>
-                            <small>Thời gian thuê</small>
-                            <strong>{res.months} tháng</strong>
-                          </div>
-                          <div>
-                            <small>Tiền cọc</small>
-                            <strong className="available-text">{fmtMoney(res.deposit)}</strong>
-                          </div>
-                          <div>
-                            <small>Tổng giá trị</small>
-                            <strong>{fmtMoney(res.rentalFee)}</strong>
-                          </div>
-                        </div>
-
-                        <div className="fm-assign-box">
-                          <label>
-                            <strong>Phân kho cụ thể tại {facilityName}</strong>
-                            {' '}· đơn này có <strong>{getReservedUnits(res).length} kho</strong>, chọn đủ cho từng kho
-                          </label>
-                          <div className="fm-assign-slots">
-                            {getReservedUnits(res).map((originalId, index) => {
-                              const originalUnit = facilityUnits.find(u => u.id === originalId)
-                              const value = getSlotValues(res)[index]
-                              return (
-                                <div key={index} className="fm-assign-slot">
-                                  <div className="fm-assign-slot-head">
-                                    <span className="fm-assign-slot-no">Kho {index + 1}</span>
-                                    <small>
-                                      Khách chọn: <strong>{originalId || 'Tự động'}</strong>
-                                      {originalUnit && <> · {originalUnit.type} · {originalUnit.size}</>}
-                                    </small>
-                                  </div>
-                                  <select
-                                    className="fm-input"
-                                    value={value}
-                                    onChange={(e) => setSlotValue(res, index, e.target.value)}
-                                  >
-                                    <option value="">-- Chọn kho phù hợp --</option>
-                                    {getSlotOptions(res, index).map(u => (
-                                      <option key={u.id} value={u.id}>
-                                        {u.id} - {u.type} ({u.size}) - {fmtMoney(u.pricePerMonth)}/tháng
-                                        {u.id === originalId ? ' · khách chọn' : ''}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              )
-                            })}
-                          </div>
-
-                          <div className="fm-actions-row">
-                            <button className="dashboard-primary-btn" onClick={() => handleApproveAndAssign(res)}>
-                              ✓ Duyệt đơn & Phân {getReservedUnits(res).length} kho
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Đơn vừa đặt, khách chưa trả cọc: trước đây không hiện ở đâu nên Manager không biết mã đơn */}
-            <div className="fm-section-card">
-              <div className="fm-card-header">
-                <h2>Đơn mới đặt · Đang chờ khách trả cọc ({awaitingPaymentList.length})</h2>
-                <p>Kho đang được giữ tạm cho khách trong thời gian chờ cọc. Đơn hết hạn sẽ tự trả kho.</p>
-              </div>
-              {awaitingPaymentList.length === 0 ? (
-                <div className="empty-state">Không có đơn nào đang chờ trả cọc.</div>
-              ) : (
-                <div className="fm-table-wrap">
-                  <table className="fm-table">
-                    <thead>
-                      <tr>
-                        <th>Mã đơn</th>
-                        <th>Khách hàng</th>
-                        <th>Kho giữ chỗ</th>
-                        <th>Kỳ thuê</th>
-                        <th>Tiền cọc</th>
-                        <th>Hết hạn giữ chỗ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {awaitingPaymentList.map(r => (
-                        <tr key={r.id}>
-                          <td><strong>{formatReservationCode(r.id)}</strong></td>
-                          <td>{r.customerName}<br /><small className="fm-muted">{r.customerEmail}</small></td>
-                          <td><span className="fm-tag-blue">{r.assignedUnitId || '—'}</span></td>
-                          <td>{fmtDate(r.startDate)} → {fmtDate(r.endDate)}</td>
-                          <td>{fmtMoney(r.deposit)}</td>
-                          <td>{fmtDateTime(r.depositExpiresAt)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
         )}
 
         {/* TAB 3: QUẢN LÝ KHO CƠ SỞ */}
@@ -2266,7 +2284,7 @@ const handleApproveCartOrder = async (order) => {
           </>
         )}
 
-        {/* TAB 4: THIẾT LẬP TÍNH CHẤT KHO (loại kho + kích thước) */}
+        {/* TAB 4: THIẾT LẬP ĐẶC TÍNH KHO (loại kho + kích thước) */}
         {activeTab === 'unitTypes' && (
           <FacilityPropertiesTab
             facilityId={managedFacility?.facilityId}
@@ -2282,91 +2300,29 @@ const handleApproveCartOrder = async (order) => {
           />
         )}
 
-        {/* TAB 5: HỢP ĐỒNG & KHÁCH HÀNG */}
+        {/* TAB 5: HỢP ĐỒNG & KHÁCH HÀNG (chỉ xem) */}
         {activeTab === 'contracts' && (
-          <div className="fm-section-card">
-            <div className="fm-card-header">
-              <h2>Hợp đồng thuê đang hoạt động tại {facilityName}</h2>
-              <p>Giám sát thời hạn hợp đồng, mã truy cập và nghĩa vụ thanh toán của khách hàng.</p>
-            </div>
-
-            <div className="fm-table-wrap">
-              <table className="fm-table">
-                <thead>
-                  <tr>
-                    <th>Mã HĐ</th>
-                    <th>Mã đơn</th>
-                    <th>Khách hàng</th>
-                    <th>Kho</th>
-                    <th>Ngày bắt đầu</th>
-                    <th>Ngày kết thúc</th>
-                    <th>Thông tin ra vào</th>
-                    <th>Thanh toán</th>
-                    <th>Trạng thái</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {facilityContracts.length === 0 ? (
-                    <tr>
-                      <td colSpan="9" className="text-center">Chưa có hợp đồng nào được khởi tạo tại cơ sở này.</td>
-                    </tr>
-                  ) : (
-                    facilityContracts.map(c => {
-                      // Hợp đồng nối với đặt chỗ gốc qua mã đặt chỗ (hoặc mã hợp đồng ghi trên đặt chỗ)
-                      const r = db.reservations.find(x =>
-                        String(x.contractId ?? '') === String(c.id) ||
-                        (c.reservationId != null && String(x.id) === String(c.reservationId)))
-                      const expired = String(c.endDate).slice(0, 10) < todayStr()
-                      return (
-                        <tr key={c.id}>
-                          <td><strong>{c.id}</strong></td>
-                          <td>{formatReservationCode(c.reservationId ?? r?.id)}</td>
-                          <td>{c.customerName}</td>
-                          <td><span className="fm-tag-blue">{c.unitNumbers?.length > 1 ? c.unitNumbers.join(', ') : c.unitId}</span></td>
-                          <td>{fmtDate(c.startDate)}</td>
-                          <td>{fmtDate(c.endDate)}</td>
-                          <td><code>{c.accessType}: {c.accessValue}</code></td>
-                          <td>{r ? <Badge map={PAY_STATUS_MAP} value={r.paymentStatus} /> : '—'}</td>
-                          <td>
-                            {expired
-                              ? <span className="fm-badge fm-warn">Đã hết hạn</span>
-                              : <span className="fm-badge fm-ok">Đang hiệu lực</span>}
-                          </td>
-                        </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <FacilityContractsTab
+            facility={managedFacility}
+            facilityName={facilityName}
+            contracts={facilityContracts}
+            reservations={db.reservations}
+            facilityUnits={facilityUnits}
+          />
         )}
 
-        {/* TAB 6: PHÂN CÔNG NHÂN VIÊN */}
+        {/* TAB 6: NHÂN SỰ TẠI CƠ SỞ */}
         {activeTab === 'staff' && (
-          <div className="fm-section-card">
-            <div className="fm-card-header">
-              <h2>Đội ngũ Facility Staff tại {facilityName}</h2>
-              <p>Danh sách nhân viên vận hành phụ trách kiểm tra kho và hỗ trợ check-in bàn giao cho khách.</p>
-            </div>
-
-            <div className="fm-staff-grid">
-              {staffList.map(st => (
-                <div key={st.id} className="fm-staff-card">
-                  <div className="fm-staff-avatar">{st.fullName.charAt(0)}</div>
-                  <div className="fm-staff-info">
-                    <h3>{st.fullName}</h3>
-                    <p>✉ {st.email}</p>
-                    <p>📞 —</p>
-                    <div className="fm-shift-tag">Trạng thái: {st.status}</div>
-                  </div>
-                  <div className="fm-staff-status">
-                    <span className="fm-badge fm-ok">Đang làm việc</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <FacilityStaffTab
+            facilityId={managedFacility?.facilityId}
+            facilityName={facilityName}
+            staffList={staffList}
+            staffUsers={db.staffUsers || []}
+            activity={db.activity || []}
+            awaitingHandoverList={awaitingHandoverList}
+            showToast={showToast}
+            onChanged={() => loadState({ silent: true })}
+          />
         )}
       </main>
 

@@ -86,3 +86,16 @@
 .pb-presets button { padding: 6px 10px; border-radius: 10px; border: 1px dashed #9cc3e6; background: #f5faff; color: #075a9f; font-weight: 700; font-size: 12.5px; cursor: pointer; }
 .pb-form-row .pb-active { display: flex; flex-direction: row; align-items: center; gap: 8px; align-self: center; }
 .mpt-table .price-input-hint { display: none; }
+
+/* Khóa chặt khung giá */
+.pb-lock { padding: 7px 10px; border-radius: 10px; background: #fff3d6; border: 1px solid #f3d98d; color: #7a5600; font-size: 12.5px; font-weight: 700; }
+.pb-lock.big { font-size: 13.5px; line-height: 1.5; }
+.pb-rules { padding: 10px 14px; border-radius: 12px; background: #f5faff; border: 1px solid #e1edf7; color: #29577f; font-size: 13px; }
+.pb-rules summary { cursor: pointer; font-weight: 800; color: #073d70; }
+.pb-rules ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.7; }
+.pb-hints { margin: 0; padding: 10px 14px 10px 30px; border-radius: 12px; background: #f5faff; color: #29577f; font-size: 12.5px; line-height: 1.6; }
+.pb-problems { margin: 0; padding: 10px 14px 10px 30px; border-radius: 12px; background: #fff3f3; border: 1px solid #f1c4c4; color: #b13b3b; font-size: 12.5px; line-height: 1.6; font-weight: 600; }
+.pb-error { white-space: pre-line; }
+.pb-modal fieldset:disabled { opacity: .6; }
+.pb-active { display: flex !important; align-items: center; gap: 8px; margin-top: 10px; color: #23475e; font-size: 13px; font-weight: 700; }
+.dashboard-secondary-btn:disabled, .dashboard-primary-btn:disabled { opacity: .5; cursor: not-allowed; }

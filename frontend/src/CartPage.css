@@ -104,3 +104,4 @@
 .cart-item-discount { display: block; color: #2b8b55; font-size: 11.5px; font-weight: 700; }
 .cart-sum-saving dt, .cart-sum-saving dd { color: #2b8b55; font-weight: 700; }
 .cart-table tfoot td { font-weight: 800; color: #073d70; background: #fbfdff; }
+.cart-paid-tag { color: #2b8b55; font-weight: 700; font-size: 12px; }

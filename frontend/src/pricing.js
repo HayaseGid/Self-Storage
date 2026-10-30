@@ -29,7 +29,13 @@ export function setCatalogPricing(catalog) {
   }
 }
 
-export const discountFor = months => state.contractTypes.find(t => t.months === Number(months))?.discountPercent || 0
+/* Tạm TẮT giảm giá theo gói (yêu cầu 29/10/2026): mọi gói đều tính đúng giá niêm yết.
+ * Backend vẫn đọc ContractType.DiscountRate, nên cần chạy database/Migrations/20261029_TamBoGiamGia.sql (đặt về 0).
+ * Khi làm lại giảm giá: đổi DISCOUNT_ENABLED = true. */
+export const DISCOUNT_ENABLED = false
+export const discountFor = months => DISCOUNT_ENABLED
+  ? state.contractTypes.find(t => t.months === Number(months))?.discountPercent || 0
+  : 0
 export const depositMonthsFor = facilityId => state.facilities.get(Number(facilityId))?.depositMonths || 2
 export const holdMinutesFor = facilityId => state.facilities.get(Number(facilityId))?.holdMinutes || 15
 

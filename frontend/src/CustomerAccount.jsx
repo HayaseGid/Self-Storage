@@ -19,6 +19,9 @@ import ContractDetailModal from './ContractDetailModal'
 import { sendContractEmail } from './contractEmail'
 import { usePolicies } from './policies'
 import { useDialog } from './Dialog'
+import { useContractRenewals, RenewalSection, RenewalModal, fmtIsoDate } from './ContractRenewal'
+import { confirmAfterDeposit, takeCustomerSection } from './afterDeposit'
+import { startVnPayPayment } from './vnpay'
 
 /* Chuyển 'dd/mm/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày. */
 const dateSortValue = value => {
@@ -37,8 +40,8 @@ const RENTAL_STATUS_TONES = {
 
 const RENTAL_STATUS_FILTERS = [
   { value: 'Pending Deposit', label: 'Chờ thanh toán cọc' },
-  { value: 'Paid', label: 'Đã cọc · Chờ phân kho' },
-  { value: 'Confirmed', label: 'Chờ bàn giao' },
+  { value: 'Paid', label: 'Đã cọc · Đang tạo hợp đồng' },
+  { value: 'Confirmed', label: 'Chờ ký hợp đồng / nhận kho' },
   { value: 'Handed Over', label: 'Đang thuê' },
   { value: 'Expired', label: 'Hết hạn giữ kho' },
   { value: 'Cancelled', label: 'Đã hủy' }
@@ -46,8 +49,10 @@ const RENTAL_STATUS_FILTERS = [
 
 const STORAGE_VIEW_KEY = 'storespace_my_storage_view'
 
-function MyStoragePage({ customerRental, customerRentals, facilities }) {
+function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsChanged }) {
   const [selectedRental, setSelectedRental] = useState(null)
+  const renewals = useContractRenewals()
+  const [renewItem, setRenewItem] = useState(null)
   const [view, setView] = useState(() => {
     try { return localStorage.getItem(STORAGE_VIEW_KEY) === 'cards' ? 'cards' : 'grid' } catch { return 'grid' }
   })
@@ -66,6 +71,14 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
 
   return (
     <div className="customer-content-page">
+      {renewItem && (
+        <RenewalModal
+          key={renewItem.reservationId}
+          item={renewItem}
+          onClose={() => setRenewItem(null)}
+          onDone={() => { renewals.reload(); onRentalsChanged?.() }}
+        />
+      )}
 
       <div className="customer-page-heading">
         <div>
@@ -271,9 +284,23 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
                   Xem chi tiết
                 </button>
 
-                <button className="dashboard-secondary-btn" type="button" disabled>
-                  Gia hạn (chưa hỗ trợ)
-                </button>
+                {(() => {
+                  const renewal = renewals.byReservation(rental.reservationId)
+                  if (renewal?.renewedBy) {
+                    return <span className="sign-badge done">Đã gia hạn đến {fmtIsoDate(renewal.renewedBy.endDate)}</span>
+                  }
+                  return (
+                    <button
+                      className="dashboard-secondary-btn"
+                      type="button"
+                      disabled={!renewal?.eligible}
+                      title={renewal && !renewal.eligible ? renewal.reason || '' : undefined}
+                      onClick={() => setRenewItem(renewal)}
+                    >
+                      ↻ Gia hạn
+                    </button>
+                  )
+                })()}
 
               </div>
 
@@ -528,7 +555,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
   )
 }
 
-function ContractPage({ customerRental, customerRentals, getCurrentUser, facilities = [] }) {
+function ContractPage({ customerRental, customerRentals, getCurrentUser, facilities = [], onRentalsChanged }) {
   // Danh sách hợp đồng đã bàn giao. Hợp đồng chờ ký trước bàn giao (đơn "Confirmed") được ký ở khu
   // "Hợp đồng chờ ký" phía trên, theo nhóm (một hợp đồng có thể gồm nhiều kho).
   const rentals = Array.isArray(customerRentals)
@@ -542,13 +569,16 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const [openRental, setOpenRental] = useState(null)
   const [signGroup, setSignGroup] = useState(null)
   const [detail, setDetail] = useState(null) // { group, signature?, mail? }
+  const renewals = useContractRenewals()
+  const [renewItem, setRenewItem] = useState(null)
+  const [creatingContracts, setCreatingContracts] = useState(false)
   const policies = usePolicies()
   const dialog = useDialog()
   const customer = getCurrentUser()
   const customerName = customer?.name
 
   /*
-   * Hợp đồng ký online SAU KHI khách đã đặt cọc và Facility Manager đã duyệt.
+   * Hợp đồng ký online NGAY SAU KHI khách đặt cọc (không còn bước Facility Manager duyệt).
    * Backend: MỘT đơn đặt chỗ (có thể nhiều kho, đặt từ giỏ hàng) = MỘT hợp đồng (ContractNumber),
    * nên mỗi nhóm ở đây là một đơn; danh sách kho nằm trong rental.units (Phụ lục 01).
    */
@@ -568,6 +598,28 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const preparing = allRentals.filter(r => r.status === 'Confirmed' && !r.contractId)
   const waitingApproval = allRentals.filter(r => r.status === 'Paid')
   const signedBeforeHandover = allRentals.filter(r => r.status === 'Confirmed' && r.contractId && isSignedRental(r))
+
+  /*
+   * Không còn bước Manager duyệt: đơn đã cọc ("Paid") được xác nhận + tạo hợp đồng ngay.
+   * Thường đã làm lúc thanh toán; ở đây tự thử lại nếu lần đó lỗi mạng.
+   */
+  const createPendingContracts = async (ids, showResult = false) => {
+    setCreatingContracts(true)
+    const result = await confirmAfterDeposit(ids)
+    setCreatingContracts(false)
+    if (result.confirmed?.length) onRentalsChanged?.()
+    if (showResult && (result.error || result.failed?.length)) {
+      await dialog.alert({
+        tone: 'danger',
+        title: 'Chưa tạo được hợp đồng',
+        message: result.error?.message || result.failed.map(f => f.message).join('\n')
+      })
+    }
+  }
+  const waitingKey = waitingApproval.map(r => r.reservationId).join(',')
+  useEffect(() => {
+    if (waitingKey) createPendingContracts(waitingKey.split(','))
+  }, [waitingKey])
 
   const signGroupContracts = async ({ image, termsVersion }) => {
     const done = []
@@ -595,6 +647,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     }
     if (errors.length) throw new Error(`Chưa ký được: ${errors.join('; ')}`)
     const signedGroup = signGroup
+    const remainingToSign = toSign.filter(r => !signedGroup.rentals.some(x => x.reservationId === r.reservationId)).length
     setSignGroup(null)
     const first = done[0]?.result
     const signature = first ? { image: first.signatureImage, signerName: first.signerName, signedAt: first.signedAt } : null
@@ -610,7 +663,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     await dialog.alert({
       tone: 'success',
       title: 'Đã ký hợp đồng',
-      message: `Bạn đã ký hợp đồng ${signedGroup.code} (${unitCountOf(signedGroup.rentals[0])} kho). Hãy đến cơ sở vào ngày ${signedGroup.rentals[0].startDate} để nhận kho, mang theo CCCD.\n${mail.text}`
+      message: `Bạn đã ký hợp đồng ${signedGroup.code} (${unitCountOf(signedGroup.rentals[0])} kho). Hãy đến cơ sở vào ngày ${signedGroup.rentals[0].startDate} để nhận kho, mang theo CCCD.\n${mail.text}${remainingToSign > 0 ? `\nBạn còn ${remainingToSign} hợp đồng chờ ký.` : ''}`
     })
   }
 
@@ -674,7 +727,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
       setLoadedSignatures(nextLoaded)
     })
     return () => { cancelled = true }
-  }, [customerName])
+  }, [customerName, rentals.map(keyOf).join(',')])
 
   const handleSign = async (rental, record) => {
     const contractId = keyOf(rental)
@@ -722,6 +775,17 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         )}
       </div>
 
+      <RenewalSection renewals={renewals} onRenew={setRenewItem} />
+
+      {renewItem && (
+        <RenewalModal
+          key={renewItem.reservationId}
+          item={renewItem}
+          onClose={() => setRenewItem(null)}
+          onDone={() => { renewals.reload(); onRentalsChanged?.() }}
+        />
+      )}
+
       {(toSign.length > 0 || preparing.length > 0 || waitingApproval.length > 0 || signedBeforeHandover.length > 0) && (
         <section className="sign-queue" aria-label="Hợp đồng đang xử lý">
           {buildGroups(toSign).map(group => (
@@ -729,7 +793,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
               <div>
                 <span className="sign-badge todo">Chờ bạn ký</span>
                 <h3>{group.title}</h3>
-                <p>Mã {group.code} · {group.rentals[0].startDate} → {group.rentals[0].endDate} · Đã đặt cọc, Manager đã duyệt.</p>
+                <p>Mã {group.code} · {group.rentals[0].startDate} → {group.rentals[0].endDate} · Đã đặt cọc, kho đã được giữ cho bạn.</p>
                 <div className="sign-units">{group.rentals.flatMap(r => r.units || []).map(u => <span key={u.number}>{u.number}</span>)}</div>
               </div>
               <div className="sign-actions">
@@ -743,20 +807,23 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
               <div>
                 <span className="sign-badge wait">Đang tạo hợp đồng</span>
                 <h3>{group.title}</h3>
-                <p>Manager đã duyệt. Hợp đồng sẽ sẵn sàng để ký ngay khi hệ thống tạo xong.</p>
+                <p>Đã nhận tiền cọc. Hợp đồng sẽ sẵn sàng để ký ngay khi hệ thống tạo xong.</p>
               </div>
             </article>
           ))}
           {buildGroups(waitingApproval).map(group => (
             <article key={group.key} className="sign-card waiting">
               <div>
-                <span className="sign-badge wait">Chờ Manager duyệt</span>
+                <span className="sign-badge wait">Đang tạo hợp đồng</span>
                 <h3>{group.title}</h3>
-                <p>Đã nhận tiền cọc. Bạn sẽ ký hợp đồng online sau khi Facility Manager duyệt và phân kho.</p>
+                <p>Đã nhận tiền cọc, hệ thống đang tạo hợp đồng để bạn ký. Nếu chờ lâu, bấm "Tạo hợp đồng ngay".</p>
                 <div className="sign-units">{group.rentals.flatMap(r => r.units || []).map(u => <span key={u.number}>{u.number}</span>)}</div>
               </div>
               <div className="sign-actions">
                 <button type="button" className="dashboard-secondary-btn" onClick={() => setDetail({ group })}>Xem bản xem trước</button>
+                <button type="button" className="dashboard-primary-btn" disabled={creatingContracts} onClick={() => createPendingContracts(group.rentals.map(r => r.reservationId), true)}>
+                  {creatingContracts ? 'Đang tạo...' : 'Tạo hợp đồng ngay'}
+                </button>
               </div>
             </article>
           ))}
@@ -799,6 +866,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         const isSigned = !!signature
         const signatureError = signatureErrors[keyOf(rental)]
         const signatureLoaded = loadedSignatures[keyOf(rental)]
+        const renewal = renewals.byReservation(rental.reservationId)
 
         return (
           <div key={keyOf(rental)} style={{ marginBottom: 28 }}>
@@ -826,6 +894,17 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
                 </span>
 
               </div>
+
+              {renewal?.renewedFrom && (
+                <p className="contract-renew-note">
+                  Hợp đồng gia hạn từ <strong>{renewal.renewedFrom.contractNumber}</strong> ({fmtIsoDate(renewal.renewedFrom.startDate)} → {fmtIsoDate(renewal.renewedFrom.endDate)}). Bạn tiếp tục dùng kho, không cần nhận lại.
+                </p>
+              )}
+              {renewal?.renewedBy && (
+                <p className="contract-renew-note">
+                  Đã gia hạn bằng hợp đồng <strong>{renewal.renewedBy.contractNumber}</strong> đến {fmtIsoDate(renewal.renewedBy.endDate)}.
+                </p>
+              )}
 
               {signatureError && (
                 <div className="auth-message error">
@@ -933,6 +1012,12 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
                   Xem chi tiết hợp đồng
                 </button>
 
+                {renewal?.eligible && (
+                  <button type="button" className="dashboard-secondary-btn" onClick={() => setRenewItem(renewal)}>
+                    ↻ Gia hạn
+                  </button>
+                )}
+
               </div>
 
             </div>
@@ -955,6 +1040,17 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
 }
 
 function CustomerPaymentPage({ reservations }) {
+  const dialog = useDialog()
+  const [paying, setPaying] = useState(null)
+  const payWithVnPay = async items => {
+    setPaying(items.map(i => i.reservationId).join(','))
+    try {
+      await startVnPayPayment(items.map(i => i.reservationId), { amount: items.reduce((n, i) => n + Number(i.depositAmount || 0), 0), count: items.length })
+    } catch (error) {
+      setPaying(null)
+      await dialog.alert({ tone: 'danger', title: 'Chưa mở được trang thanh toán VNPay', message: error.message })
+    }
+  }
   const pending = reservations.filter(item =>
     item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed'
   )
@@ -979,6 +1075,11 @@ function CustomerPaymentPage({ reservations }) {
           <small>Tiền cọc đang chờ</small>
           <strong>{formatMoney(pendingAmount)}</strong>
           <span className="stat-note">{pending.length} đặt chỗ</span>
+          {pending.length > 1 && (
+            <button type="button" className="dashboard-primary-btn" disabled={Boolean(paying)} onClick={() => payWithVnPay(pending)}>
+              {paying ? 'Đang chuyển...' : `Thanh toán tất cả qua VNPay`}
+            </button>
+          )}
         </div>
         <div className="customer-stat-card">
           <small>Giao dịch đã ghi nhận</small>
@@ -1006,11 +1107,18 @@ function CustomerPaymentPage({ reservations }) {
               <div><span>Mã giao dịch</span><strong>{item.paymentReference || '—'}</strong></div>
               <div><span>Ngày giao dịch</span><strong>{item.paymentDate ? item.paymentDate.slice(0, 10) : '—'}</strong></div>
             </div>
+            {item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed' && (
+              <div className="contract-actions">
+                <button type="button" className="dashboard-primary-btn" disabled={Boolean(paying)} onClick={() => payWithVnPay([item])}>
+                  {paying === String(item.reservationId) ? 'Đang chuyển sang VNPay...' : `Thanh toán ${formatMoney(item.depositAmount)} qua VNPay`}
+                </button>
+              </div>
+            )}
           </div>
         </section>
       ))}
       <div className="payment-warning">
-        Backend hiện chưa kết nối ngân hàng. Trạng thái giao dịch được hiển thị theo database, không xác minh thanh toán ngoài hệ thống.
+        Tiền cọc được thanh toán qua cổng VNPay (môi trường thử nghiệm). Giao dịch chỉ được ghi nhận khi VNPay xác nhận và hệ thống kiểm tra đúng chữ ký, số tiền.
       </div>
     </div>
   )
@@ -1064,7 +1172,7 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
   )
 }
 
-function CustomerDashboard({ facilities, storageUnits, customerRental, customerRentals, getCurrentUser, navigate, currentUserKey }) {
+function CustomerDashboard({ facilities, storageUnits, customerRental, customerRentals, getCurrentUser, navigate, currentUserKey, onReloadRentals }) {
   const user = getCurrentUser()
   // Đã cập nhật: Danh sách kho đang thuê, kho Staff vừa bàn giao đứng đầu (05/10/2026)
   const rentals = Array.isArray(customerRentals)
@@ -1082,7 +1190,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
     0
   )
   const expiringRentals = activeRentals.filter(item => item.remainingDays <= 30)
-  const [activeSection, setActiveSection] = useState('overview')
+  const [activeSection, setActiveSection] = useState(() => takeCustomerSection('overview'))
 
   const logout = () => {
     localStorage.removeItem(currentUserKey)
@@ -1701,11 +1809,11 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
         )}
 
         {activeSection === 'storage' && (
-          <MyStoragePage customerRental={customerRental} customerRentals={rentals} facilities={facilities} />
+          <MyStoragePage customerRental={customerRental} customerRentals={rentals} facilities={facilities} onRentalsChanged={onReloadRentals} />
         )}
 
         {activeSection === 'contract' && (
-          <ContractPage customerRental={customerRental} customerRentals={rentals} getCurrentUser={getCurrentUser} facilities={facilities} />
+          <ContractPage customerRental={customerRental} customerRentals={rentals} getCurrentUser={getCurrentUser} facilities={facilities} onRentalsChanged={onReloadRentals} />
         )}
 
 

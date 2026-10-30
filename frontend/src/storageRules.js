@@ -53,8 +53,12 @@ export const ACTIVE_RESERVATION_STATUSES = ['PENDING_PAYMENT', 'PENDING_APPROVAL
 
 export const RESERVATION_STATUS_LABELS = {
   PENDING_PAYMENT: 'Chờ khách trả cọc',
-  PENDING_APPROVAL: 'Đã cọc · Chờ duyệt',
-  CONFIRMED: 'Đã phân kho · Chờ bàn giao',
+
+  //Đã cập nhật: Vì bỏ luôn phần xét duyệt từ Facility Manager
+  PENDING_APPROVAL: 'Đã cọc · Chờ bàn giao',
+  CONFIRMED: 'Đã cọc · Chờ bàn giao',
+  //Đã sửa: 29/10/2026
+
   HANDED_OVER: 'Đang thuê',
   COMPLETED: 'Đã hoàn tất',
   CANCELLED: 'Đã hủy',
