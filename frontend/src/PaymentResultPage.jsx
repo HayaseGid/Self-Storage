@@ -54,6 +54,13 @@ export default function PaymentResultPage({ navigate }) {
           openCustomerSection(navigate, 'contract')
           return
         }
+        if (result.success && (result.kind === 'fee' || pending?.kind === 'fee')) {
+          clearPendingVnPay()
+          setState({ loading: false, result: { ...result, fee: true }, error: '' })
+          await dialog.alert({ tone: 'success', title: 'Đã thanh toán phí phát sinh', message: `Đã nhận ${formatVnd(result.amount)}đ qua VNPay. Cảm ơn bạn đã hoàn tất trả kho.` })
+          openCustomerSection(navigate, 'contract')
+          return
+        }
         setState({ loading: false, result, error: '' })
         if (result.success) {
           clearPendingVnPay()
@@ -84,7 +91,7 @@ export default function PaymentResultPage({ navigate }) {
         {!loading && result?.success && (
           <>
             <span className="pr-icon ok" aria-hidden="true">✓</span>
-            <h1>{result.renewal ? 'Gia hạn thành công' : 'Đặt cọc thành công'}</h1>
+            <h1>{result.fee ? 'Đã thanh toán phí phát sinh' : result.renewal ? 'Gia hạn thành công' : 'Đặt cọc thành công'}</h1>
             <p>Đã nhận {formatVnd(result.amount)}đ qua VNPay{result.transactionNo ? ` · Mã GD ${result.transactionNo}` : ''}.</p>
             <button
               type="button"
@@ -94,7 +101,7 @@ export default function PaymentResultPage({ navigate }) {
                 openCustomerSection(navigate, 'contract')
               }}
             >
-              {result.renewal ? 'Ký phụ lục gia hạn' : 'Ký hợp đồng'}
+              {result.fee ? 'Về trang Hợp đồng' : result.renewal ? 'Ký phụ lục gia hạn' : 'Ký hợp đồng'}
             </button>
           </>
         )}

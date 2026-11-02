@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import StaffReturns from "./StaffReturns";
 import "./styles.css";
 import "./staffstyles.css";
 import { apiGet, apiPost } from "./api";
@@ -355,6 +356,7 @@ const NAV = [
   ["all", "▤", "Tất cả đặt chỗ"],
   ["units", "▣", "Kho tại cơ sở"],
   ["log", "◫", "Nhật ký bàn giao"],
+  ["returns", "⇦", "Trả kho & kiểm kho"],
 ];
 
 function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, onHandover }) {
@@ -405,6 +407,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
     all: ["RESERVATIONS", "Tất cả đặt chỗ", "Toàn bộ đặt chỗ thuộc cơ sở của bạn."],
     units: ["FACILITY UNITS", "Kho tại cơ sở", "Trạng thái các kho tại cơ sở."],
     log: ["ACTIVITY LOG", "Nhật ký bàn giao", "Lịch sử bàn giao kho tại cơ sở của bạn."],
+    returns: ["MOVE-OUT & INSPECTION", "Trả kho & kiểm kho", "Nhận lại kho khách trả, kiểm tra tình trạng và quyết toán tiền cọc."],
   }[section];
   const initial = staff.fullName.trim().split(" ").pop().charAt(0).toUpperCase();
 
@@ -521,6 +524,8 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
             </table>
           </div>
         )}
+
+        {section === "returns" && <StaffReturns staff={staff} />}
 
         {section === "log" && (
           <div className="st-card">

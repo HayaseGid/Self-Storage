@@ -56,6 +56,9 @@ public sealed class ReservationCancellationsController(
 
     private string? TmnCode => configuration["VnPay:TmnCode"]?.Trim();
     private string? HashSecret => configuration["VnPay:HashSecret"]?.Trim();
+    private bool SandboxRefundFallback =>
+        string.Equals(configuration["VnPay:SandboxRefundFallback"]?.Trim(), "true", StringComparison.OrdinalIgnoreCase) &&
+        (configuration["VnPay:BaseUrl"] ?? "sandbox").Contains("sandbox", StringComparison.OrdinalIgnoreCase);
 
     // ------------------------------------------------------------------ Báo giá hủy
 
@@ -211,11 +214,22 @@ public sealed class ReservationCancellationsController(
         }
         else
         {
-            var (ok, txn, text) = await CallVnPayRefundAsync(refund, customerId, ct);
-            if (!ok)
+            var (ok, txn, text, code) = await CallVnPayRefundAsync(refund, customerId, ct);
+            if (!ok && (code is "99" or "403") && SandboxRefundFallback)
+            {
+                // VNPay SANDBOX hạn chế API hoàn tiền (trả mã 99 / chặn 403 dù yêu cầu đúng). Chỉ khi bật cấu hình
+                // VnPay:SandboxRefundFallback=true mới ghi nhận hoàn MÔ PHỎNG để demo trọn luồng; production không bật.
+                providerTxn = $"SIM-RFC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+                message = $"VNPay sandbox không hỗ trợ hoàn tiền ({text}) nên hệ thống ghi nhận hoàn MÔ PHỎNG.";
+                refund.PaymentMethod = "Hoàn mô phỏng (VNPay sandbox không hỗ trợ API hoàn)";
+            }
+            else if (!ok)
                 return new RefundResult(refund.PaymentID, refund.Amount, "Pending", refund.Provider, text);
-            providerTxn = txn;
-            message = text;
+            else
+            {
+                providerTxn = txn;
+                message = text;
+            }
         }
 
         try
@@ -236,13 +250,13 @@ public sealed class ReservationCancellationsController(
     }
 
     /* API hoàn tiền VNPay 2.1.0 (POST JSON). Chuỗi ký nối bằng '|' theo đúng thứ tự tài liệu, HMAC-SHA512. */
-    private async Task<(bool Ok, string? ProviderTxn, string Message)> CallVnPayRefundAsync(Payment refund, int customerId, CancellationToken ct)
+    private async Task<(bool Ok, string? ProviderTxn, string Message, string? Code)> CallVnPayRefundAsync(Payment refund, int customerId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(TmnCode) || string.IsNullOrWhiteSpace(HashSecret))
-            return (false, null, "Chưa cấu hình VNPay ở backend nên chưa hoàn tiền được. Yêu cầu hoàn đang chờ xử lý.");
+            return (false, null, "Chưa cấu hình VNPay ở backend nên chưa hoàn tiền được. Yêu cầu hoàn đang chờ xử lý.", null);
         var original = refund.RefundOfPayment;
         if (original is null || original.Provider != VnPayProvider || original.Status != "Completed")
-            return (false, null, "Không tìm thấy giao dịch VNPay gốc để hoàn tiền. Vui lòng liên hệ cơ sở.");
+            return (false, null, "Không tìm thấy giao dịch VNPay gốc để hoàn tiền. Vui lòng liên hệ cơ sở.", null);
 
         // OrderCode gốc = "{vnp_TxnRef}-{ReservationID}", ProviderTransactionId gốc = "{vnp_TransactionNo}-{ReservationID}"
         var txnRef = StripSuffix(original.OrderCode, original.ReservationID);
@@ -297,7 +311,7 @@ public sealed class ReservationCancellationsController(
         {
             logger.LogWarning(exception, "Không gọi được API hoàn tiền VNPay ({PaymentId})", refund.PaymentID);
             await LogAsync(refund.PaymentID, txnRef, null, null, refund.Amount, JsonSerializer.Serialize(req), false, "Error", "Refund: không kết nối được VNPay", ct);
-            return (false, null, "Không kết nối được VNPay. Yêu cầu hoàn đang chờ, vui lòng thử lại sau.");
+            return (false, null, "Không kết nối được VNPay. Yêu cầu hoàn đang chờ, vui lòng thử lại sau.", null);
         }
 
         Dictionary<string, string> res;
@@ -315,11 +329,11 @@ public sealed class ReservationCancellationsController(
             {
                 await LogAsync(refund.PaymentID, txnRef, null, "403", refund.Amount,
                     $"REQUEST: {requestJson}\nRESPONSE (HTTP 403): {body}", false, "Error", "Refund: HTTP 403, VNPay chặn yêu cầu (tường lửa)", ct);
-                return (false, null, "VNPay chặn yêu cầu hoàn tiền (HTTP 403). Kiểm tra mạng / VPN rồi gửi lại; nếu vẫn bị, cần liên hệ VNPay mở quyền gọi API hoàn tiền cho mã website sandbox.");
+                return (false, null, "VNPay chặn yêu cầu hoàn tiền (HTTP 403). Kiểm tra mạng / VPN rồi gửi lại; nếu vẫn bị, cần liên hệ VNPay mở quyền gọi API hoàn tiền cho mã website sandbox.", "403");
             }
             await LogAsync(refund.PaymentID, txnRef, null, httpStatus.ToString(CultureInfo.InvariantCulture), refund.Amount,
                 $"REQUEST: {requestJson}\nRESPONSE (HTTP {httpStatus}): {body}", false, "Error", $"Refund: HTTP {httpStatus}, phản hồi không phải JSON: {snippet}", ct);
-            return (false, null, $"VNPay trả về dữ liệu không đọc được (HTTP {httpStatus}: {snippet}). Yêu cầu hoàn đang chờ.");
+            return (false, null, $"VNPay trả về dữ liệu không đọc được (HTTP {httpStatus}: {snippet}). Yêu cầu hoàn đang chờ.", null);
         }
 
         string Get(string key) => res.TryGetValue(key, out var v) ? v : "";
@@ -340,9 +354,9 @@ public sealed class ReservationCancellationsController(
             success ? "Applied" : (hashOk ? "Rejected" : "Error"), $"Refund {(full ? "02" : "03")}: {code} {Get("vnp_Message")}", ct);
 
         if (success)
-            return (true, $"RFC-{Get("vnp_TransactionNo")}-{refund.PaymentID}", "VNPay đã nhận yêu cầu hoàn tiền về thẻ / tài khoản đã thanh toán.");
+            return (true, $"RFC-{Get("vnp_TransactionNo")}-{refund.PaymentID}", "VNPay đã nhận yêu cầu hoàn tiền về thẻ / tài khoản đã thanh toán.", null);
         if (!hashOk)
-            return (false, null, "Chữ ký phản hồi VNPay không hợp lệ. Yêu cầu hoàn đang chờ kiểm tra.");
+            return (false, null, "Chữ ký phản hồi VNPay không hợp lệ. Yêu cầu hoàn đang chờ kiểm tra.", null);
         return (false, null, code switch
         {
             "94" => "VNPay đang xử lý yêu cầu hoàn tiền trước đó của giao dịch này.",
@@ -351,7 +365,7 @@ public sealed class ReservationCancellationsController(
             "97" => "VNPay báo sai chữ ký (kiểm tra VnPay:HashSecret).",
             "02" => "VNPay báo sai mã website (kiểm tra VnPay:TmnCode).",
             _ => $"VNPay chưa hoàn được tiền (mã {code}{(string.IsNullOrWhiteSpace(Get("vnp_Message")) ? "" : $": {Get("vnp_Message")}")})."
-        });
+        }, code);
     }
 
     // ------------------------------------------------------------------ Báo giá

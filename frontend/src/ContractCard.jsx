@@ -4,6 +4,7 @@ import { formatSignedAt } from './contractSignatures'
 import { formatVnd } from './storageRules'
 import { fmtIsoDate } from './ContractRenewal'
 import './ContractCard.css'
+import './UnitReturn.css'
 
 /*
  * Thẻ hợp đồng ở tab "Hợp đồng" của khách: chia rõ từng nhóm
@@ -34,7 +35,7 @@ const STATUS_TONE = {
 
 export default function ContractCard({
   rental, facility, customerName, signature, signatureLoaded, signatureError, renewal,
-  onReloadSignature, onSign, onDetail, onRenew
+  onReloadSignature, onSign, onDetail, onRenew, onReturn, returnInfo
 }) {
   const isSigned = Boolean(signature)
   const isRenewal = Boolean(rental.isRenewal || rental.renewedFrom || renewal?.renewedFrom)
@@ -48,7 +49,7 @@ export default function ContractCard({
   const ended = ['Completed', 'Cancelled', 'Expired'].includes(rental.status)
 
   return (
-    <article className={`cc-card${ended ? ' ended' : ''}`}>
+    <article id={`contract-${rental.reservationId}`} className={`cc-card${ended ? ' ended' : ''}`}>
       {/* ---- Đầu thẻ ---- */}
       <header className="cc-head">
         <div>
@@ -81,6 +82,17 @@ export default function ContractCard({
       )}
       {renewal?.renewedBy && (
         <p className="cc-note">↻ Đã gia hạn bằng phụ lục <strong>{renewal.renewedBy.contractNumber}</strong> đến {fmtIsoDate(renewal.renewedBy.endDate)}.</p>
+      )}
+      {returnInfo?.request && (
+        <p className="cc-return">
+          ⇦ {{
+            Scheduled: `Đã hẹn trả kho ngày ${fmtIsoDate(returnInfo.request.scheduledDate)}${returnInfo.request.staffName ? ` · nhân viên ${returnInfo.request.staffName}` : ''}.`,
+            'In Progress': 'Nhân viên đang kiểm tra kho bạn trả.',
+            Completed: Number(returnInfo.request.amountOwed) > 0
+              ? `Đã kiểm tra kho · cần đóng thêm ${money(returnInfo.request.amountOwed)} phí phát sinh.`
+              : `Đã trả kho · hoàn cọc ${money(returnInfo.request.refundAmount)}${returnInfo.request.refundStatus === 'Completed' ? ' (đã chuyển)' : returnInfo.request.refundDueDate ? ` dự kiến ${fmtIsoDate(returnInfo.request.refundDueDate)}` : ''}.`
+          }[returnInfo.request.status]} Xem chi tiết ở mục "Trả kho" phía trên.
+        </p>
       )}
       {signatureError && (
         <div className="auth-message error cc-alert">
@@ -145,6 +157,7 @@ export default function ContractCard({
           )}
           <button type="button" className={isSigned ? 'dashboard-primary-btn' : 'dashboard-secondary-btn'} onClick={onDetail}>Xem chi tiết hợp đồng</button>
           {onRenew && <button type="button" className="dashboard-secondary-btn" onClick={onRenew}>↻ Gia hạn</button>}
+          {onReturn && <button type="button" className="dashboard-secondary-btn" onClick={onReturn}>⇦ Trả kho</button>}
         </div>
       </footer>
     </article>

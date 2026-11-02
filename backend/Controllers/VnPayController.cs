@@ -100,6 +100,9 @@ public sealed class VnPayController(
 
         foreach (var r in reservations)
         {
+            // Phí phát sinh khi trả kho (đơn đã nhận / đã trả kho): không có hạn giữ kho.
+            if (IsFeeCollection(r))
+                continue;
             if (r.Status != ReservationStatus.PendingPayment)
                 return Conflict(new { message = $"Đơn {r.ReservationCode} không còn ở trạng thái chờ thanh toán cọc." });
             if (r.HoldExpiresAt <= now.AddSeconds(30))
@@ -111,7 +114,7 @@ public sealed class VnPayController(
         }
 
         var txnRef = $"SS{now.AddHours(7):yyMMddHHmmss}{Random.Shared.Next(100, 999)}";
-        var expiresAt = reservations.Min(r => r.HoldExpiresAt);
+        var expiresAt = reservations.Select(r => IsFeeCollection(r) ? now.AddMinutes(15) : r.HoldExpiresAt).Min();
         decimal total = 0;
 
         await using (var transaction = await context.Database.BeginTransactionAsync(ct))
@@ -136,7 +139,7 @@ public sealed class VnPayController(
                     PaymentMethod = "VNPay",
                     Status = "Pending",
                     CreatedAt = now,
-                    ExpiresAt = r.HoldExpiresAt,
+                    ExpiresAt = IsFeeCollection(r) ? now.AddMinutes(15) : r.HoldExpiresAt,
                     CreatedByUserID = customerId.Value
                 };
                 context.Payments.Add(payment);
@@ -179,9 +182,16 @@ public sealed class VnPayController(
 
     /* Đặt cọc: các khoản cọc chưa trả. Gia hạn: tiền thuê tháng đầu + cọc bổ sung. */
     private static IEnumerable<Charge> ChargesToCollect(Reservation r) =>
-        ContractRenewalFinalizer.IsRenewal(r)
-            ? r.Charges.Where(c => ContractRenewalFinalizer.IsPayableNow(c, r))
-            : r.Charges.Where(c => c.ChargeType == "Deposit" && c.Status == "Unpaid");
+        IsFeeCollection(r)
+            ? r.Charges.Where(c => c.ChargeType is "ExtraFee" or "LateFee" && c.Status == "Unpaid")
+            : ContractRenewalFinalizer.IsRenewal(r)
+                ? r.Charges.Where(c => ContractRenewalFinalizer.IsPayableNow(c, r))
+                : r.Charges.Where(c => c.ChargeType == "Deposit" && c.Status == "Unpaid");
+
+    /* Đơn đang thuê / đã trả kho còn phí phát sinh chưa đóng (UnitReturnsController: cọc không đủ bù phí). */
+    private static bool IsFeeCollection(Reservation r) =>
+        r.Status is ReservationStatus.HandedOver or ReservationStatus.Completed &&
+        r.Charges.Any(c => c.ChargeType is "ExtraFee" or "LateFee" && c.Status == "Unpaid");
 
     // ------------------------------------------------------------------ VNPay chuyển về / IPN
 
@@ -201,11 +211,12 @@ public sealed class VnPayController(
             })
             .ToListAsync(ct);
         var isRenewal = result.Payments.Count > 0 && result.Payments.All(p => p.Reservation != null && ContractRenewalFinalizer.IsRenewal(p.Reservation));
+        var isFee = result.Payments.Count > 0 && result.Payments.All(p => p.Charges.Count > 0 && p.Charges.All(c => c.ChargeType is "ExtraFee" or "LateFee"));
 
         return Ok(new
         {
             success = result.Paid,
-            kind = isRenewal ? "renewal" : "deposit",
+            kind = isRenewal ? "renewal" : isFee ? "fee" : "deposit",
             code = result.Code,
             message = result.Message,
             txnRef = result.TxnRef,
@@ -321,7 +332,7 @@ public sealed class VnPayController(
             notes.Count == 0 ? "Applied" : "Error", $"{source}: {(notes.Count == 0 ? "đã ghi nhận" : string.Join(" | ", notes))}", ct);
 
         return allPaid
-            ? new ProcessResult(true, "00", payments.All(p => ContractRenewalFinalizer.IsRenewal(p.Reservation)) ? "Gia hạn thành công." : "Đặt cọc thành công.", "Confirm Success", txnRef, amount, payments)
+            ? new ProcessResult(true, "00", payments.All(p => ContractRenewalFinalizer.IsRenewal(p.Reservation)) ? "Gia hạn thành công." : payments.All(p => p.Charges.Count > 0 && p.Charges.All(c => c.ChargeType is "ExtraFee" or "LateFee")) ? "Đã thanh toán phí phát sinh." : "Đặt cọc thành công.", "Confirm Success", txnRef, amount, payments)
             : new ProcessResult(false, "99", "VNPay đã nhận tiền nhưng hệ thống chưa ghi nhận được đơn (có thể đơn đã hết thời gian giữ kho). Vui lòng liên hệ cơ sở.", "Unknown error", txnRef, amount, payments);
     }
 
@@ -330,6 +341,20 @@ public sealed class VnPayController(
     {
         await using var transaction = await context.Database.BeginTransactionAsync(ct);
         var reservation = payment.Reservation;
+        var feePayment = payment.Charges.Count > 0 && payment.Charges.All(c => c.ChargeType is "ExtraFee" or "LateFee");
+        if (feePayment)
+        {
+            // Đóng phí phát sinh khi trả kho: chỉ ghi nhận thanh toán, không đổi trạng thái đơn.
+            payment.Status = "Completed";
+            payment.ProviderTransactionId = $"{transactionNo}-{payment.ReservationID}";
+            payment.ReceivedAmount = payment.Amount;
+            payment.ConfirmedAt = now;
+            await context.SaveChangesAsync(ct);
+            foreach (var charge in payment.Charges.Where(c => c.Status == "Unpaid")) { charge.Status = "Paid"; charge.PaidAt = now; }
+            await context.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return;
+        }
         if (reservation.Status != ReservationStatus.PendingPayment)
         {
             // Đơn đã hết hạn giữ kho / bị hủy trong lúc khách đang trả: đóng giao dịch, cần hoàn tiền thủ công.

@@ -31,7 +31,7 @@ const stageOf = days => (days <= 3 ? 'd3' : days <= 7 ? 'd7' : days <= 14 ? 'd14
 const unitsText = r => (r?.units?.length ? r.units.map(u => u.number).filter(Boolean).join(', ') : r?.unitId) || ''
 const TONE_RANK = { danger: 0, warn: 1, info: 2, ok: 3 }
 
-export function buildCustomerNotifications({ rentals = [], renewals = null, policies = null }) {
+export function buildCustomerNotifications({ rentals = [], renewals = null, policies = null, returns = null }) {
   const list = []
   const push = item => list.push({ priority: 50, ...item })
   const values = policies?.values || {}
@@ -72,7 +72,7 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
       message: renewal
         ? `Bạn đã thanh toán gia hạn kho ${unitsText(r)}. Ký phụ lục ${r.contractNumber || ''} để hoàn tất (${r.startDate} → ${r.endDate}).`
         : `Hợp đồng ${r.contractNumber || ''} cho kho ${unitsText(r)} tại ${r.facility} đã sẵn sàng. Ký online để chuẩn bị nhận kho ngày ${r.startDate}.`,
-      action: { label: renewal ? 'Ký phụ lục' : 'Ký hợp đồng', section: 'contract', signContractId: r.contractId }
+      action: { label: renewal ? 'Ký phụ lục' : 'Ký hợp đồng', section: 'contract', signContractId: r.contractId, focusReservationId: r.reservationId }
     })
   })
 
@@ -103,7 +103,7 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
         section: 'contract', tone: 'danger', priority: 0,
         title: 'Hợp đồng đã quá hạn',
         message: `Hợp đồng ${item.contractNumber} (kho ${units}) đã hết hạn ngày ${fmtDay(item.endDate)}. Vui lòng liên hệ ${item.facility} để gia hạn hoặc trả kho. Phí trễ hạn: ${describePolicy('overdue', values.overdue).summary}`,
-        action: { label: 'Xem hợp đồng', section: 'contract' }
+        action: { label: 'Xem hợp đồng', section: 'contract', focusReservationId: item.reservationId }
       })
       return
     }
@@ -116,7 +116,7 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
         : `Kho ${units} tại ${item.facility} hết hạn ngày ${fmtDay(item.endDate)}. ${item.reason || ''} Nếu không gia hạn, vui lòng báo trả kho trước ít nhất ${returnNotice} ngày; tiền cọc được hoàn trong ${refundDays} ngày làm việc sau khi trả kho.`,
       action: item.eligible
         ? { label: 'Gia hạn ngay', section: 'contract', renewReservationId: item.reservationId }
-        : { label: 'Xem hợp đồng', section: 'contract' }
+        : { label: 'Xem hợp đồng', section: 'contract', focusReservationId: item.reservationId }
     })
   })
   // Không tải được dữ liệu gia hạn: vẫn nhắc theo ngày hết hạn của đơn.
@@ -127,7 +127,7 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
       section: 'contract', tone: r.remainingDays <= 7 ? 'danger' : 'warn', priority: r.remainingDays <= 7 ? 1 : 20,
       title: `Kho của bạn sắp hết hạn (còn ${r.remainingDays} ngày)`,
       message: `Kho ${unitsText(r)} tại ${r.facility} hết hạn ngày ${r.endDate}. Bạn có thể gia hạn trong mục Hợp đồng, hoặc báo trả kho trước ít nhất ${returnNotice} ngày.`,
-      action: { label: 'Xem hợp đồng', section: 'contract' }
+      action: { label: 'Xem hợp đồng', section: 'contract', focusReservationId: r.reservationId }
     })
   })
 
@@ -153,6 +153,50 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
     }
   })
 
+  // 4c) Trả kho: lịch hẹn, kết quả kiểm kho, quyết toán / hoàn cọc
+  ;(Array.isArray(returns?.items) ? returns.items : []).filter(i => i.request).forEach(i => {
+    const q = i.request
+    const units = i.units.join(', ')
+    if (q.status === 'Scheduled') {
+      push({
+        id: `return-scheduled:${i.reservationId}:${isoDay(q.scheduledDate)}`,
+        section: 'contract', tone: 'info', priority: 25,
+        title: 'Lịch trả kho',
+        message: `Bạn hẹn trả kho ${units} tại ${i.facility} ngày ${fmtDay(q.scheduledDate)}${q.staffName ? `, nhân viên ${q.staffName} sẽ nhận lại kho` : ''}. Nhớ dọn hết đồ, vệ sinh kho và mang theo khóa / thẻ ra vào.`,
+        action: { label: 'Xem trả kho', section: 'contract', focusReservationId: i.reservationId }
+      })
+    } else if (q.status === 'Completed') {
+      const owed = Number(q.amountOwed) || 0
+      const refund = Number(q.refundAmount) || 0
+      if (owed > 0) {
+        push({
+          id: `return-owed:${i.reservationId}`,
+          section: 'contract', tone: 'danger', priority: 3,
+          title: 'Kiểm tra kho: cần đóng thêm phí',
+          message: `Kho ${units} có phát sinh ${money(q.deductedFromDeposit + owed)} phí. Tiền cọc ${money(q.depositTotal)} đã được trừ hết, bạn cần đóng thêm ${money(owed)}.${q.notes ? ` Ghi chú: ${q.notes}` : ''}`,
+          action: { label: 'Đóng phí', section: 'contract', focusReservationId: i.reservationId }
+        })
+      } else {
+        push({
+          id: `return-done:${i.reservationId}`,
+          section: 'contract', tone: 'ok', priority: 35,
+          title: q.conditionResult === 'Damaged' ? 'Kiểm tra kho xong: có phí trừ vào cọc' : 'Kiểm tra kho xong: không có vấn đề',
+          message: `${Number(q.deductedFromDeposit) > 0 ? `Đã trừ ${money(q.deductedFromDeposit)} phí phát sinh vào tiền cọc. ` : ''}${refund > 0 ? `Bạn được hoàn ${money(refund)} tiền cọc, dự kiến ngày ${fmtDay(q.refundDueDate)}.` : 'Tiền cọc đã dùng hết để bù phí.'}`,
+          action: { label: 'Xem chi tiết', section: 'contract', focusReservationId: i.reservationId }
+        })
+        if (refund > 0 && q.refundStatus === 'Completed') {
+          push({
+            id: `return-refunded:${i.reservationId}`,
+            section: 'payment', tone: 'ok', priority: 36,
+            title: 'Đã hoàn tiền cọc',
+            message: `Đã chuyển ${money(refund)} tiền cọc của kho ${units} cho bạn.`,
+            action: { label: 'Xem chi tiết', section: 'contract', focusReservationId: i.reservationId }
+          })
+        }
+      }
+    }
+  })
+
   // 5) Gia hạn thành công
   renewalItems.filter(item => item.renewedBy?.isSigned && daysUntil(item.renewedBy.startDate) >= 0).forEach(item => {
     push({
@@ -160,7 +204,7 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
       section: 'contract', tone: 'ok', priority: 40,
       title: 'Gia hạn thành công',
       message: `Hợp đồng ${item.contractNumber} đã được gia hạn bằng phụ lục ${item.renewedBy.contractNumber}, bạn tiếp tục thuê đến ${fmtDay(item.renewedBy.endDate)}.`,
-      action: { label: 'Xem hợp đồng', section: 'contract' }
+      action: { label: 'Xem hợp đồng', section: 'contract', focusReservationId: item.renewedBy.reservationId }
     })
   })
 
@@ -201,10 +245,10 @@ const writeSeen = (email, set) => {
   try { localStorage.setItem(seenKey(email), JSON.stringify([...set].slice(-400))) } catch { /* bỏ qua */ }
 }
 
-export function useCustomerNotifications({ email, rentals, renewals, policies }) {
+export function useCustomerNotifications({ email, rentals, renewals, policies, returns }) {
   const notifications = useMemo(
-    () => buildCustomerNotifications({ rentals, renewals, policies }),
-    [rentals, renewals, policies]
+    () => buildCustomerNotifications({ rentals, renewals, policies, returns }),
+    [rentals, renewals, policies, returns]
   )
   const [seen, setSeen] = useState(() => readSeen(email))
   useEffect(() => { setSeen(readSeen(email)) }, [email])

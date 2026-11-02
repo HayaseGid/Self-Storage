@@ -68,3 +68,16 @@
   .cc-actions { width: 100%; }
   .cc-actions button { flex: 1; }
 }
+
+/* Nháy sáng khi được mở từ thông báo / khối gia hạn / trả kho */
+.cc-card { scroll-margin: 90px; }
+.cc-card.cc-flash { animation: cc-flash 2.4s ease-out; }
+@keyframes cc-flash {
+  0%, 30% { box-shadow: 0 0 0 4px #ffd84d, 0 10px 30px rgba(15, 69, 111, .12); border-color: #f0b429; }
+  100% { box-shadow: 0 10px 30px rgba(15, 69, 111, .06); border-color: #e1edf4; }
+}
+/* Thẻ bấm được để tới hợp đồng */
+.rn-card.clickable, .ur-card.clickable { cursor: pointer; transition: transform .12s, box-shadow .12s; }
+.rn-card.clickable:hover, .ur-card.clickable:hover { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(15, 69, 111, .12); }
+.rn-card.clickable:focus-visible, .ur-card.clickable:focus-visible { outline: 3px solid #9cc7ea; outline-offset: 2px; }
+.go-contract { display: inline-block; margin-top: 6px; color: #0877cf; font-size: 12.5px; font-weight: 700; }

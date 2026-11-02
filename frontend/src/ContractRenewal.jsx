@@ -4,7 +4,7 @@ import { formatVnd } from './storageRules'
 import { useDialog } from './Dialog'
 import DepositConfirm from './DepositConfirm'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
-import { announceRenewalSuccess, requestContractSign } from './afterDeposit'
+import { announceRenewalSuccess, focusContract, requestContractSign } from './afterDeposit'
 import './ContractSignFlow.css'
 import './ContractRenewal.css'
 
@@ -160,7 +160,7 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
         {pending.map(item => {
           const p = item.pendingRenewal
           return (
-            <article key={`p-${item.reservationId}`} className="rn-card soon">
+            <article key={`p-${item.reservationId}`} className="rn-card soon clickable" role="link" tabIndex={0} onClick={e => { if (!e.target.closest('button, a, input')) focusContract(item.reservationId) }} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) focusContract(item.reservationId) }}>
               <div>
                 <span className="sign-badge todo">{p.paid ? 'Đã thanh toán · Chưa hoàn tất' : `Chờ thanh toán · còn ${minutesLeft(p.holdExpiresAt)} phút`}</span>
                 <h3>Gia hạn hợp đồng {item.contractNumber} thêm {p.months} tháng</h3>
@@ -179,7 +179,7 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
           )
         })}
         {active.map(item => (
-          <article key={item.reservationId} className={`rn-card${item.eligible ? '' : ' blocked'}${item.eligible && item.daysLeft <= 30 ? ' soon' : ''}`}>
+          <article key={item.reservationId} className={`rn-card clickable${item.eligible ? '' : ' blocked'}${item.eligible && item.daysLeft <= 30 ? ' soon' : ''}`} role="link" tabIndex={0} onClick={e => { if (!e.target.closest('button, a, input')) focusContract(item.reservationId) }} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) focusContract(item.reservationId) }} title="Bấm để xem hợp đồng">
             <div>
               <span className={`sign-badge ${item.eligible ? (item.daysLeft <= 30 ? 'todo' : 'done') : 'wait'}`}>
                 {item.eligible ? (item.daysLeft <= 30 ? `Sắp hết hạn · còn ${item.daysLeft} ngày` : `Còn ${item.daysLeft} ngày`) : 'Chưa thể gia hạn'}
@@ -190,6 +190,7 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
                 {item.eligible ? <> · gia hạn trước <strong>{fmtIsoDate(item.renewDeadline)}</strong></> : null}
               </p>
               {!item.eligible && item.reason && <p className="rn-reason">{item.reason}</p>}
+              <span className="go-contract">Xem hợp đồng ↓</span>
             </div>
             {item.eligible && (
               <div className="sign-actions">
@@ -199,13 +200,14 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
           </article>
         ))}
         {renewed.map(item => (
-          <article key={item.reservationId} className={`rn-card${item.renewedBy.isSigned === false ? ' soon' : ' done'}`}>
+          <article key={item.reservationId} className={`rn-card clickable${item.renewedBy.isSigned === false ? ' soon' : ' done'}`} role="link" tabIndex={0} onClick={e => { if (!e.target.closest('button, a, input')) focusContract(item.renewedBy.reservationId) }} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) focusContract(item.renewedBy.reservationId) }} title="Bấm để xem phụ lục gia hạn">
             <div>
               <span className={`sign-badge ${item.renewedBy.isSigned === false ? 'todo' : 'done'}`}>
                 {item.renewedBy.isSigned === false ? 'Đã gia hạn · Chờ ký phụ lục' : 'Đã gia hạn'}
               </span>
               <h3>Hợp đồng {item.contractNumber} → phụ lục gia hạn {item.renewedBy.contractNumber}</h3>
               <p>Tiếp tục thuê từ <strong>{fmtIsoDate(item.renewedBy.startDate)}</strong> đến <strong>{fmtIsoDate(item.renewedBy.endDate)}</strong> ({item.renewedBy.months} tháng).</p>
+              <span className="go-contract">Xem phụ lục gia hạn ↓</span>
             </div>
             {item.renewedBy.isSigned === false && (
               <div className="sign-actions">

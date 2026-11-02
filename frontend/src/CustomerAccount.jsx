@@ -20,11 +20,13 @@ import { sendContractEmail } from './contractEmail'
 import { usePolicies } from './policies'
 import { useDialog } from './Dialog'
 import { useContractRenewals, RenewalSection, RenewalModal, fmtIsoDate } from './ContractRenewal'
+import { focusContract, takePendingContractFocus } from './afterDeposit'
 import { OPEN_SECTION_EVENT, RENEW_REQUEST_KEY, clearContractSignRequest, confirmAfterDeposit, peekContractSignRequest, requestContractSign, requestRenewal, takeCustomerSection, takeRenewalRequest } from './afterDeposit'
 import { useCustomerNotifications } from './customerNoticeData'
 import CustomerNotificationsPage, { NotificationsPreview } from './CustomerNotifications'
 import CancelReservationModal, { retryRefund } from './CancelReservation'
 import ContractCard from './ContractCard'
+import { ReturnRequestModal, ReturnSection, useUnitReturns } from './UnitReturn'
 import { startVnPayPayment } from './vnpay'
 
 /* Chuyển 'dd/mm/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày. */
@@ -576,6 +578,8 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const renewals = useContractRenewals()
   const [renewItem, setRenewItem] = useState(null)
   const [cancelRental, setCancelRental] = useState(null)
+  const returns = useUnitReturns()
+  const [returnItem, setReturnItem] = useState(null)
   const [creatingContracts, setCreatingContracts] = useState(false)
   const policies = usePolicies()
   const dialog = useDialog()
@@ -633,6 +637,25 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   useEffect(() => {
     if (waitingKey) createPendingContracts(waitingKey.split(','))
   }, [waitingKey])
+
+  // Mở từ thông báo / chỗ khác: cuộn tới đúng thẻ hợp đồng khi danh sách đã hiển thị.
+  const [focusTick, setFocusTick] = useState(0)
+  useEffect(() => {
+    const onOpen = () => setFocusTick(t => t + 1)
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
+  }, [])
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      let wanted = null
+      try { wanted = sessionStorage.getItem('storespace_focus_contract') } catch { /* bỏ qua */ }
+      if (wanted && document.getElementById(`contract-${wanted}`)) {
+        takePendingContractFocus()
+        focusContract(wanted)
+      }
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [focusTick, rentals.map(r => r.reservationId).join(',')])
 
   // Thông báo "Kho sắp hết hạn" -> "Gia hạn ngay": mở hộp thoại gia hạn của đúng hợp đồng.
   const [renewTick, setRenewTick] = useState(0)
@@ -830,7 +853,19 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         )}
       </div>
 
+      <ReturnSection returns={returns} onChanged={onRentalsChanged} />
+
       <RenewalSection renewals={renewals} onRenew={setRenewItem} onChanged={onRentalsChanged} />
+
+      {returnItem && (
+        <ReturnRequestModal
+          item={returnItem}
+          rules={returns.rules}
+          fees={returns.fees}
+          onClose={() => setReturnItem(null)}
+          onDone={() => { returns.reload(); onRentalsChanged?.() }}
+        />
+      )}
 
       {cancelRental && (
         <CancelReservationModal
@@ -957,6 +992,18 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
             onSign={() => setOpenRental(rental)}
             onDetail={() => setDetail({ group: buildGroups([rental])[0], signature: signature || undefined })}
             onRenew={renewal?.eligible ? () => setRenewItem(renewal) : undefined}
+            returnInfo={returns.byReservation(rental.reservationId)}
+            onReturn={rental.status === 'Handed Over' ? () => {
+              const info = returns.byReservation(rental.reservationId)
+              if (info?.eligible) setReturnItem(info)
+              else dialog.alert({
+                tone: 'warning',
+                title: 'Chưa trả kho được',
+                message: returns.error
+                  ? `Không tải được thông tin trả kho: ${returns.error}`
+                  : info?.reason || (returns.loading ? 'Đang tải thông tin trả kho, thử lại sau giây lát.' : 'Hợp đồng này hiện chưa thể báo trả kho.')
+              })
+            } : undefined}
           />
         )
       })}
@@ -984,6 +1031,8 @@ const fmtUtc = iso => {
 function RefundTimeline({ item, formatMoney }) {
   const done = item.refundStatus === 'Completed'
   const viaVnPay = item.refundProvider === 'VNPay'
+  // VNPay sandbox hạn chế API hoàn tiền -> backend có thể ghi nhận hoàn mô phỏng (mã hoàn bắt đầu bằng SIM-).
+  const simulatedFallback = viaVnPay && done && String(item.refundReference || '').startsWith('SIM-')
   const steps = [
     { label: 'Đã hủy đơn, tạo yêu cầu hoàn', note: fmtUtc(item.refundRequestedAt || item.cancelledAt), state: 'done' },
     viaVnPay && {
@@ -992,7 +1041,7 @@ function RefundTimeline({ item, formatMoney }) {
       state: done ? 'done' : item.refundLastAttempt ? 'error' : 'todo'
     },
     {
-      label: viaVnPay ? 'VNPay xác nhận đã hoàn' : 'Đã hoàn tiền (thanh toán mô phỏng)',
+      label: simulatedFallback ? 'Ghi nhận hoàn (mô phỏng)' : viaVnPay ? 'VNPay xác nhận đã hoàn' : 'Đã hoàn tiền (thanh toán mô phỏng)',
       note: done ? `${fmtUtc(item.refundCompletedAt)}${item.refundReference ? ` · Mã hoàn ${item.refundReference}` : ''}` : 'Đang chờ',
       state: done ? 'done' : 'todo'
     }
@@ -1013,7 +1062,9 @@ function RefundTimeline({ item, formatMoney }) {
       </ol>
       <p className="refund-help">
         {viaVnPay
-          ? done
+          ? simulatedFallback
+            ? 'VNPay sandbox không cho dùng API hoàn tiền (trả lỗi 99), nên hệ thống ghi nhận hoàn MÔ PHỎNG để hoàn tất luồng. Ở môi trường thật, lệnh hoàn sẽ được gửi sang VNPay và tiền về thẻ / tài khoản của khách.'
+            : done
             ? 'VNPay đã nhận lệnh hoàn. Tiền về đúng thẻ / tài khoản đã thanh toán, thường trong 1–3 ngày làm việc tùy ngân hàng. Môi trường thử nghiệm (sandbox) không có tiền thật: xem giao dịch hoàn trong trang quản trị merchant của VNPay.'
             : 'VNPay chưa xác nhận lệnh hoàn. Xem lý do ở bước 2, sau đó bấm "Gửi lại yêu cầu hoàn tiền".'
           : 'Đơn được thanh toán mô phỏng nên hoàn tiền cũng là mô phỏng.'}
@@ -1202,11 +1253,13 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
   // Thông báo: tính từ đơn thuê + gia hạn + chính sách; mở mục nào thì thông báo của mục đó được tính là đã xem.
   const renewalsForNotices = useContractRenewals()
   const policiesForNotices = usePolicies()
+  const returnsForNotices = useUnitReturns()
   const notices = useCustomerNotifications({
     email: user?.email,
     rentals,
     renewals: renewalsForNotices.data,
-    policies: policiesForNotices
+    policies: policiesForNotices,
+    returns: returnsForNotices.data
   })
   const noticeIdsKey = notices.notifications.map(n => n.id).join('|')
   useEffect(() => {
@@ -1215,12 +1268,13 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
   // Dữ liệu đặt chỗ thay đổi (gia hạn, ký, thanh toán) -> tải lại thông tin gia hạn cho thông báo.
   const rentalsKey = rentals.map(r => `${r.reservationId}:${r.status}:${r.contractStatus}`).join(',')
   const firstRentalsKey = React.useRef(rentalsKey)
-  useEffect(() => { if (rentalsKey !== firstRentalsKey.current) renewalsForNotices.reload() }, [rentalsKey])
+  useEffect(() => { if (rentalsKey !== firstRentalsKey.current) { renewalsForNotices.reload(); returnsForNotices.reload() } }, [rentalsKey])
   const openNotice = item => {
     const action = item.action || {}
     if (action.signContractId) requestContractSign(action.signContractId)
     if (action.renewReservationId) requestRenewal(action.renewReservationId)
     if (action.section) setActiveSection(action.section)
+    if (action.focusReservationId && !action.renewReservationId && !action.signContractId) focusContract(action.focusReservationId)
   }
   const navBadge = section => {
     const count = section === 'notifications' ? notices.unseenCount : notices.countBySection[section] || 0
