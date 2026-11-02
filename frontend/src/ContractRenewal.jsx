@@ -2,19 +2,35 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from './api'
 import { formatVnd } from './storageRules'
 import { useDialog } from './Dialog'
+import DepositConfirm from './DepositConfirm'
+import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
+import { announceRenewalSuccess, requestContractSign } from './afterDeposit'
 import './ContractSignFlow.css'
 import './ContractRenewal.css'
 
 /*
  * GIA HẠN HỢP ĐỒNG (khách hàng).
- *   GET  /api/contract-renewals/mine  -> điều kiện + báo giá từng hợp đồng (backend tính, frontend chỉ hiển thị)
- *   POST /api/contract-renewals       -> { reservationId, months, expectedAmount }
- * Gia hạn tạo hợp đồng MỚI nối tiếp hợp đồng cũ (bắt đầu ngay ngày hôm sau ngày hết hạn), giá theo bảng giá hiện hành.
- * Tiền cọc hiện tại được chuyển sang kỳ mới, khách chỉ thanh toán phần chênh lệch.
+ *   GET  /api/contract-renewals/mine            -> điều kiện + báo giá từng hợp đồng (backend tính, frontend chỉ hiển thị)
+ *   POST /api/contract-renewals                 -> { reservationId, months, expectedAmount } tạo yêu cầu gia hạn chờ thanh toán
+ *   POST /api/vnpay/create { reservationIds }   -> thanh toán qua VNPay (như đặt cọc)
+ *   POST /api/contract-renewals/{id}/pay-demo   -> thanh toán mô phỏng (chỉ khi VITE_ALLOW_SIMULATED_PAYMENT=true)
+ *   POST /api/contract-renewals/{id}/finalize | cancel
+ *
+ * Luồng: Gia hạn -> chọn số tháng -> xác nhận + thanh toán (tiền thuê THÁNG ĐẦU của kỳ mới + cọc bổ sung nếu giá tăng;
+ * cọc cũ được chuyển sang kỳ mới; các tháng sau trả hằng tháng) -> "Gia hạn thành công, vui lòng ký phụ lục gia hạn"
+ * -> OK -> mở màn hình ký phụ lục gia hạn. Khách tiếp tục dùng kho, không cần bàn giao lại.
  */
 
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
 export const fmtIsoDate = iso => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—')
+const addMonthsIso = (iso, months) => {
+  if (!iso) return null
+  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1 + months, d))
+  date.setUTCDate(date.getUTCDate() - 1)
+  return date.toISOString().slice(0, 10)
+}
+const minutesLeft = iso => Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 60000))
 
 export function useContractRenewals() {
   const [state, setState] = useState({ loading: true, error: '', data: null })
@@ -38,8 +54,38 @@ export function useContractRenewals() {
   return { ...state, items, rules: state.data?.rules || null, byReservation, reload }
 }
 
-/* Khối "Gia hạn hợp đồng" ở đầu trang Hợp đồng: hợp đồng sắp hết hạn, có thể gia hạn, hoặc đã gia hạn. */
-export function RenewalSection({ renewals, onRenew }) {
+/*
+ * Thanh toán một yêu cầu gia hạn đang chờ. Trả về:
+ *   { redirected: true }  -> đã chuyển sang VNPay (VNPay chuyển về /payment-result)
+ *   { contractId, ... }   -> thanh toán mô phỏng xong, gia hạn đã hoàn tất
+ */
+export async function payRenewal(dialog, { reservationId, amount, label }) {
+  const demo = SIMULATED_PAYMENT_ENABLED && await dialog.confirm({
+    tone: 'info',
+    title: 'Chọn cách thanh toán',
+    message: 'Đang bật chế độ demo. Thanh toán mô phỏng (không qua VNPay)?',
+    confirmLabel: 'Mô phỏng',
+    cancelLabel: 'Qua VNPay'
+  })
+  if (demo) return apiPost(`/api/contract-renewals/${reservationId}/pay-demo`, {})
+  await startVnPayPayment([reservationId], { amount, count: 1, label, kind: 'renewal' })
+  return { redirected: true }
+}
+
+/* Gia hạn xong: "Gia hạn thành công, vui lòng ký phụ lục gia hạn" -> OK -> mở màn hình ký. */
+export async function finishRenewal(dialog, result, amount) {
+  await announceRenewalSuccess(dialog, {
+    contractNumber: result.contractNumber,
+    renewedFromContractNumber: result.renewedFromContractNumber,
+    amountText: amount ? money(amount) : ''
+  })
+  if (result.contractId) requestContractSign(result.contractId)
+}
+
+/* Khối "Gia hạn hợp đồng" ở đầu trang Hợp đồng: chờ thanh toán, sắp hết hạn, đã gia hạn (chờ ký phụ lục). */
+export function RenewalSection({ renewals, onRenew, onChanged }) {
+  const dialog = useDialog()
+  const [busy, setBusy] = useState(null)
   if (renewals.loading && !renewals.data) return null
   if (renewals.error) {
     return (
@@ -50,13 +96,54 @@ export function RenewalSection({ renewals, onRenew }) {
     )
   }
   const rules = renewals.rules
+  const refresh = () => { renewals.reload(); onChanged?.() }
+
+  const pending = renewals.items.filter(item => item.pendingRenewal && !item.renewedBy)
   // Chỉ nhắc các hợp đồng sắp hết hạn; hợp đồng còn xa vẫn gia hạn được bằng nút "Gia hạn" trên thẻ hợp đồng.
   const soonDays = Math.max(30, Number(rules?.renewalNoticeDays || 0) + 30)
   const active = renewals.items.filter(item =>
-    !item.renewedBy && item.daysLeft >= 0 && item.daysLeft <= soonDays &&
+    !item.renewedBy && !item.pendingRenewal && item.daysLeft >= 0 && item.daysLeft <= soonDays &&
     (item.eligible || (item.reason && item.contractStatus !== 'Renewed' && !/kết thúc|chỉ gia hạn/i.test(item.reason))))
   const renewed = renewals.items.filter(item => item.renewedBy && item.daysLeft >= 0)
-  if (active.length === 0 && renewed.length === 0) return null
+  if (pending.length === 0 && active.length === 0 && renewed.length === 0) return null
+
+  const continuePay = async item => {
+    const p = item.pendingRenewal
+    setBusy(p.reservationId)
+    try {
+      const result = p.paid
+        ? await apiPost(`/api/contract-renewals/${p.reservationId}/finalize`, {})
+        : await payRenewal(dialog, { reservationId: p.reservationId, amount: p.amountDue, label: p.reservationCode })
+      if (result.redirected) return
+      refresh()
+      await finishRenewal(dialog, result, p.paid ? 0 : p.amountDue)
+    } catch (error) {
+      await dialog.alert({ tone: 'danger', title: 'Chưa gia hạn được', message: error.message })
+      refresh()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const cancelPending = async item => {
+    const ok = await dialog.confirm({
+      tone: 'warning',
+      title: 'Hủy yêu cầu gia hạn?',
+      message: `Hủy yêu cầu gia hạn ${item.pendingRenewal.months} tháng của hợp đồng ${item.contractNumber}. Bạn có thể gia hạn lại sau.`,
+      confirmLabel: 'Hủy yêu cầu',
+      cancelLabel: 'Không'
+    })
+    if (!ok) return
+    setBusy(item.pendingRenewal.reservationId)
+    try {
+      await apiPost(`/api/contract-renewals/${item.pendingRenewal.reservationId}/cancel`, {})
+    } catch (error) {
+      await dialog.alert({ tone: 'danger', title: 'Chưa hủy được', message: error.message })
+    } finally {
+      setBusy(null)
+      refresh()
+    }
+  }
 
   return (
     <section className="rn-section" aria-label="Gia hạn hợp đồng">
@@ -65,11 +152,32 @@ export function RenewalSection({ renewals, onRenew }) {
         {rules && (
           <p>
             Gia hạn trước ngày hết hạn ít nhất <strong>{rules.renewalNoticeDays} ngày</strong> · kỳ gia hạn {rules.minRenewalMonths}–{rules.maxRenewalMonths} tháng
-            {rules.requireNoOverdue ? ' · không còn khoản phí quá hạn' : ''}. Giá theo bảng giá hiện hành, tiền cọc được chuyển sang kỳ mới.
+            {rules.requireNoOverdue ? ' · không còn khoản phí quá hạn' : ''}. Khi gia hạn bạn trả trước tiền thuê tháng đầu của kỳ mới, tiền cọc được chuyển sang kỳ mới.
           </p>
         )}
       </div>
       <div className="rn-list">
+        {pending.map(item => {
+          const p = item.pendingRenewal
+          return (
+            <article key={`p-${item.reservationId}`} className="rn-card soon">
+              <div>
+                <span className="sign-badge todo">{p.paid ? 'Đã thanh toán · Chưa hoàn tất' : `Chờ thanh toán · còn ${minutesLeft(p.holdExpiresAt)} phút`}</span>
+                <h3>Gia hạn hợp đồng {item.contractNumber} thêm {p.months} tháng</h3>
+                <p>
+                  {fmtIsoDate(p.startDate)} → {fmtIsoDate(p.endDate)} · Mã {p.reservationCode}
+                  {!p.paid && <> · cần thanh toán <strong>{money(p.amountDue)}</strong></>}
+                </p>
+              </div>
+              <div className="sign-actions">
+                {!p.paid && <button type="button" className="dashboard-secondary-btn" disabled={busy === p.reservationId} onClick={() => cancelPending(item)}>Hủy</button>}
+                <button type="button" className="dashboard-primary-btn" disabled={busy === p.reservationId} onClick={() => continuePay(item)}>
+                  {busy === p.reservationId ? 'Đang xử lý...' : p.paid ? 'Hoàn tất gia hạn' : `Thanh toán ${money(p.amountDue)}`}
+                </button>
+              </div>
+            </article>
+          )
+        })}
         {active.map(item => (
           <article key={item.reservationId} className={`rn-card${item.eligible ? '' : ' blocked'}${item.eligible && item.daysLeft <= 30 ? ' soon' : ''}`}>
             <div>
@@ -91,12 +199,19 @@ export function RenewalSection({ renewals, onRenew }) {
           </article>
         ))}
         {renewed.map(item => (
-          <article key={item.reservationId} className="rn-card done">
+          <article key={item.reservationId} className={`rn-card${item.renewedBy.isSigned === false ? ' soon' : ' done'}`}>
             <div>
-              <span className="sign-badge done">Đã gia hạn</span>
-              <h3>Hợp đồng {item.contractNumber} → {item.renewedBy.contractNumber}</h3>
-              <p>Tiếp tục thuê từ <strong>{fmtIsoDate(item.renewedBy.startDate)}</strong> đến <strong>{fmtIsoDate(item.renewedBy.endDate)}</strong> ({item.renewedBy.months} tháng). Hãy ký hợp đồng gia hạn bên dưới.</p>
+              <span className={`sign-badge ${item.renewedBy.isSigned === false ? 'todo' : 'done'}`}>
+                {item.renewedBy.isSigned === false ? 'Đã gia hạn · Chờ ký phụ lục' : 'Đã gia hạn'}
+              </span>
+              <h3>Hợp đồng {item.contractNumber} → phụ lục gia hạn {item.renewedBy.contractNumber}</h3>
+              <p>Tiếp tục thuê từ <strong>{fmtIsoDate(item.renewedBy.startDate)}</strong> đến <strong>{fmtIsoDate(item.renewedBy.endDate)}</strong> ({item.renewedBy.months} tháng).</p>
             </div>
+            {item.renewedBy.isSigned === false && (
+              <div className="sign-actions">
+                <button type="button" className="dashboard-primary-btn" onClick={() => requestContractSign(item.renewedBy.contractId)}>Ký phụ lục gia hạn</button>
+              </div>
+            )}
           </article>
         ))}
       </div>
@@ -104,16 +219,15 @@ export function RenewalSection({ renewals, onRenew }) {
   )
 }
 
-/* Hộp thoại gia hạn: 1) chọn kỳ  2) thanh toán  3) hoàn tất. */
+/* Hộp thoại gia hạn: 1) chọn kỳ  2) xác nhận & thanh toán  3) ký phụ lục (mở màn hình ký sau khi thanh toán). */
 export function RenewalModal({ item, onClose, onDone }) {
   const dialog = useDialog()
   const quotes = Array.isArray(item.quotes) ? item.quotes : []
   const [months, setMonths] = useState(() => (quotes.find(q => q.months === item.months) || quotes[0])?.months ?? null)
-  const [agreed, setAgreed] = useState(false)
   const [step, setStep] = useState('plan')
+  const [agreed, setAgreed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [result, setResult] = useState(null)
   const [override, setOverride] = useState(null) // báo giá mới nếu bảng giá vừa đổi
   const quote = (override && override.months === months ? override : null) || quotes.find(q => q.months === months) || null
 
@@ -124,37 +238,33 @@ export function RenewalModal({ item, onClose, onDone }) {
   }, [onClose, submitting])
 
   const submit = async () => {
-    if (!quote) return
-    const ok = await dialog.confirm({
-      tone: 'warning',
-      title: quote.amountDue > 0 ? 'Xác nhận đã thanh toán?' : 'Xác nhận gia hạn?',
-      message: quote.amountDue > 0
-        ? `Bạn xác nhận đã chuyển ${money(quote.amountDue)} (chênh lệch tiền cọc) để gia hạn hợp đồng ${item.contractNumber} thêm ${quote.months} tháng.`
-        : `Gia hạn hợp đồng ${item.contractNumber} thêm ${quote.months} tháng.${quote.refundAmount > 0 ? ` Bạn được hoàn ${money(quote.refundAmount)} tiền cọc chênh lệch.` : ''}`,
-      confirmLabel: quote.amountDue > 0 ? 'Tôi đã thanh toán' : 'Gia hạn',
-      cancelLabel: 'Chưa'
-    })
-    if (!ok) return
+    if (!quote || !agreed) return
     setSubmitting(true)
     setError('')
+    let created = null
     try {
-      const data = await apiPost('/api/contract-renewals', { reservationId: item.reservationId, months: quote.months, expectedAmount: quote.amountDue })
-      setResult(data)
-      setStep('done')
-      onDone?.(data)
+      created = await apiPost('/api/contract-renewals', { reservationId: item.reservationId, months: quote.months, expectedAmount: quote.amountDue })
+      const result = await payRenewal(dialog, { reservationId: created.reservationId, amount: created.amountDue, label: created.reservationCode })
+      if (result.redirected) return // đang chuyển sang VNPay
+      onDone?.(result)
+      onClose()
+      await finishRenewal(dialog, result, created.amountDue)
     } catch (err) {
       if (err?.data?.quote) {
         setOverride(err.data.quote)
-        setStep('plan')
+        setAgreed(false)
       }
-      setError(err.message)
-    } finally {
+      // Đã tạo yêu cầu nhưng chưa thanh toán được: yêu cầu vẫn được giữ, khách thanh toán tiếp trong mục Gia hạn hợp đồng.
+      setError(created ? `${err.message} Yêu cầu gia hạn được giữ ${minutesLeft(created.holdExpiresAt)} phút, bạn có thể thanh toán lại.` : err.message)
+      if (created) onDone?.(null)
       setSubmitting(false)
     }
   }
 
-  const steps = [['plan', 'Chọn kỳ gia hạn'], ['pay', 'Thanh toán'], ['done', 'Hoàn tất']]
+  const steps = [['plan', 'Chọn kỳ gia hạn'], ['pay', 'Xác nhận & thanh toán'], ['sign', 'Ký phụ lục gia hạn']]
   const stepIndex = steps.findIndex(([key]) => key === step)
+  const firstMonthEnd = quote ? addMonthsIso(quote.startDate, 1) : null
+  const laterMonths = quote ? Number(quote.laterMonths ?? Math.max(0, quote.months - 1)) : 0
 
   return (
     <div className="csf-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !submitting) onClose() }}>
@@ -178,7 +288,7 @@ export function RenewalModal({ item, onClose, onDone }) {
 
           {step === 'plan' && (
             <>
-              <p className="csf-lead">Chọn thời gian muốn thuê thêm. Hợp đồng mới bắt đầu ngay sau ngày hết hạn hiện tại, các kho giữ nguyên.</p>
+              <p className="csf-lead">Chọn thời gian muốn thuê thêm. Kỳ gia hạn bắt đầu ngay sau ngày hết hạn hiện tại, các kho giữ nguyên, bạn tiếp tục sử dụng kho mà không cần đến cơ sở.</p>
               <div className="rn-plans" role="radiogroup" aria-label="Kỳ gia hạn">
                 {quotes.map(q => (
                   <button
@@ -187,7 +297,7 @@ export function RenewalModal({ item, onClose, onDone }) {
                     role="radio"
                     aria-checked={q.months === months}
                     className={`rn-plan${q.months === months ? ' active' : ''}`}
-                    onClick={() => { setMonths(q.months); setError('') }}
+                    onClick={() => { setMonths(q.months); setError(''); setAgreed(false) }}
                   >
                     <strong>{q.months} tháng</strong>
                     {Number(q.discountPercent) > 0 && <span className="rn-plan-off">-{Number(q.discountPercent)}%</span>}
@@ -200,10 +310,10 @@ export function RenewalModal({ item, onClose, onDone }) {
               {quote && (
                 <>
                   <div className="cdm-summary rn-summary">
-                    <div><span>Thời gian mới</span><strong>{fmtIsoDate(quote.startDate)} → {fmtIsoDate(quote.endDate)}</strong></div>
+                    <div><span>Thời gian gia hạn</span><strong>{fmtIsoDate(quote.startDate)} → {fmtIsoDate(quote.endDate)}</strong></div>
                     <div><span>Tiền thuê / tháng</span><strong>{money(quote.monthly)}</strong></div>
                     <div><span>Tổng tiền thuê {quote.months} tháng</span><strong>{money(quote.rent)}</strong></div>
-                    <div><span>Tiền cọc kỳ mới</span><strong>{money(quote.newDeposit)}</strong></div>
+                    <div><span>Trả ngay khi gia hạn</span><strong>{money(quote.amountDue)}</strong></div>
                   </div>
                   <div className="csf-table-wrap">
                     <table className="csf-table">
@@ -220,13 +330,6 @@ export function RenewalModal({ item, onClose, onDone }) {
                       </tbody>
                     </table>
                   </div>
-                  <label className={`csf-term rn-agree${agreed ? ' checked' : ''}`}>
-                    <input type="checkbox" checked={agreed} onChange={event => setAgreed(event.target.checked)} />
-                    <div>
-                      <strong>Tôi đồng ý gia hạn</strong>
-                      <p>Hợp đồng gia hạn giữ nguyên các điều khoản của hợp đồng {item.contractNumber}, áp dụng giá thuê hiện hành ở trên. Tôi sẽ ký điện tử hợp đồng gia hạn sau khi thanh toán.</p>
-                    </div>
-                  </label>
                 </>
               )}
             </>
@@ -234,50 +337,49 @@ export function RenewalModal({ item, onClose, onDone }) {
 
           {step === 'pay' && quote && (
             <div className="rn-pay">
-              <table className="csf-table rn-pay-table">
-                <tbody>
-                  <tr><td>Tiền cọc kỳ gia hạn ({quote.units.length} kho)</td><td>{money(quote.newDeposit)}</td></tr>
-                  <tr><td>Tiền cọc hiện tại chuyển sang</td><td>− {money(quote.oldDeposit)}</td></tr>
-                </tbody>
-                <tfoot>
-                  {quote.amountDue > 0
-                    ? <tr><td>Cần thanh toán</td><td>{money(quote.amountDue)}</td></tr>
-                    : <tr><td>{quote.refundAmount > 0 ? 'Bạn được hoàn' : 'Cần thanh toán'}</td><td>{money(quote.refundAmount)}</td></tr>}
-                </tfoot>
-              </table>
+              <DepositConfirm
+                key={`${quote.months}-${quote.amountDue}`}
+                title="Xác nhận gia hạn"
+                rows={[
+                  ['Hợp đồng gốc', `${item.contractNumber} · ${item.facility}`],
+                  ['Kho', quote.units.map(u => u.unitNumber).join(', ')],
+                  ['Thời gian gia hạn', `${quote.months} tháng · ${fmtIsoDate(quote.startDate)} → ${fmtIsoDate(quote.endDate)}`]
+                ]}
+                lines={[
+                  [`Tiền thuê tháng đầu (${fmtIsoDate(quote.startDate)} → ${fmtIsoDate(firstMonthEnd)})`, Number(quote.firstMonth ?? quote.monthly)],
+                  [`Tiền cọc ${money(quote.depositTransfer ?? quote.oldDeposit)}`, 'Chuyển từ hợp đồng cũ'],
+                  ...(Number(quote.depositTopUp) > 0 ? [['Bổ sung tiền cọc (giá thuê tăng)', Number(quote.depositTopUp)]] : []),
+                  ...(Number(quote.refundAmount) > 0 ? [['Tiền cọc dư được hoàn lại', `${money(quote.refundAmount)} (hoàn sau)`]] : []),
+                  ...(laterMonths > 0 ? [[`Tháng 2 → ${quote.months}`, `${money(quote.monthly)}/tháng, trả hằng tháng`]] : [])
+                ]}
+                amount={quote.amountDue}
+                onChange={setAgreed}
+                infoText={<>Tôi đã kiểm tra đúng <strong>kho, thời gian gia hạn và giá thuê</strong> ở trên.</>}
+                policyText={<>Tôi đồng ý gia hạn với <strong>các điều khoản của hợp đồng {item.contractNumber}</strong>, áp dụng giá thuê hiện hành, và sẽ <strong>ký điện tử phụ lục gia hạn</strong> ngay sau khi thanh toán.</>}
+                hint="Tick đủ 2 ô để thanh toán và gia hạn."
+              />
               <p className="csf-hint">
-                Tiền thuê hàng tháng của kỳ gia hạn ({money(quote.monthly)}/tháng) thanh toán theo từng tháng như hợp đồng hiện tại.
-                {quote.amountDue > 0 ? <> Nội dung chuyển khoản: <strong>GH {item.contractNumber}</strong>.</> : null}
+                {SIMULATED_PAYMENT_ENABLED
+                  ? 'Đang bật chế độ demo: bạn có thể chọn thanh toán mô phỏng hoặc qua VNPay.'
+                  : 'Bạn sẽ được chuyển sang cổng VNPay (môi trường thử nghiệm) để thanh toán. Yêu cầu gia hạn được giữ 15 phút.'}
               </p>
-              <p className="csf-hint">Thanh toán hiện là mô phỏng: hệ thống ghi nhận khi bạn bấm xác nhận.</p>
-            </div>
-          )}
-
-          {step === 'done' && result && (
-            <div className="rn-done">
-              <span className="rn-done-icon" aria-hidden="true">✓</span>
-              <h3>{result.message}</h3>
-              <p>Hợp đồng mới <strong>{result.contractNumber}</strong> · {fmtIsoDate(result.startDate)} → {fmtIsoDate(result.endDate)} ({result.months} tháng).</p>
-              {result.paymentReference && <p className="csf-hint">Mã giao dịch: {result.paymentReference}</p>}
-              <p className="csf-hint">Bạn tiếp tục dùng kho như hiện tại, không cần đến cơ sở. Vui lòng ký điện tử hợp đồng {result.contractNumber} trong danh sách hợp đồng.</p>
             </div>
           )}
         </div>
 
         <div className="csf-actions">
-          {step === 'pay' && <button type="button" className="dashboard-secondary-btn" disabled={submitting} onClick={() => setStep('plan')}>Quay lại</button>}
+          {step === 'pay' && <button type="button" className="dashboard-secondary-btn" disabled={submitting} onClick={() => { setStep('plan'); setAgreed(false); setError('') }}>Quay lại</button>}
           <span className="csf-spacer" />
           {step === 'plan' && (
-            <button type="button" className="dashboard-primary-btn" disabled={!quote || !agreed} onClick={() => { setError(''); setStep('pay') }}>
+            <button type="button" className="dashboard-primary-btn" disabled={!quote} onClick={() => { setError(''); setAgreed(false); setStep('pay') }}>
               Tiếp tục
             </button>
           )}
           {step === 'pay' && (
-            <button type="button" className="dashboard-primary-btn" disabled={submitting} onClick={submit}>
-              {submitting ? 'Đang gia hạn...' : quote?.amountDue > 0 ? `Tôi đã thanh toán ${money(quote.amountDue)}` : 'Xác nhận gia hạn'}
+            <button type="button" className="dashboard-primary-btn" disabled={submitting || !agreed} onClick={submit}>
+              {submitting ? 'Đang xử lý...' : `Thanh toán ${money(quote?.amountDue)}`}
             </button>
           )}
-          {step === 'done' && <button type="button" className="dashboard-primary-btn" onClick={onClose}>Xong</button>}
         </div>
       </div>
     </div>

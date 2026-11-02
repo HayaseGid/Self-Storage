@@ -47,3 +47,49 @@ export async function announceDepositSuccess(dialog, { count = 1, amountText = '
     okLabel: 'OK, ký hợp đồng'
   })
 }
+
+/*
+ * Mở màn hình ký cho một hợp đồng cụ thể (dùng sau khi gia hạn: "Gia hạn thành công, vui lòng ký phụ lục gia hạn").
+ * Trang Hợp đồng đọc yêu cầu này khi dữ liệu có hợp đồng đó, rồi mở ContractSignFlow.
+ */
+export const SIGN_REQUEST_KEY = 'storespace_sign_contract'
+export const OPEN_SECTION_EVENT = 'storespace:open-section'
+
+export function requestContractSign(contractId) {
+  try { sessionStorage.setItem(SIGN_REQUEST_KEY, String(contractId)) } catch { /* bỏ qua */ }
+  window.dispatchEvent(new CustomEvent(OPEN_SECTION_EVENT, { detail: 'contract' }))
+}
+
+export function peekContractSignRequest() {
+  try { return sessionStorage.getItem(SIGN_REQUEST_KEY) } catch { return null }
+}
+
+export function clearContractSignRequest() {
+  try { sessionStorage.removeItem(SIGN_REQUEST_KEY) } catch { /* bỏ qua */ }
+}
+
+/* Thông báo sau khi gia hạn thành công. */
+export async function announceRenewalSuccess(dialog, { contractNumber, renewedFromContractNumber, amountText = '' } = {}) {
+  await dialog.alert({
+    tone: 'success',
+    title: 'Gia hạn thành công',
+    message: `Đã ghi nhận thanh toán${amountText ? ` ${amountText}` : ''}${renewedFromContractNumber ? ` cho hợp đồng ${renewedFromContractNumber}` : ''}. Vui lòng ký phụ lục gia hạn${contractNumber ? ` ${contractNumber}` : ''} để hoàn tất. Bạn tiếp tục sử dụng kho như hiện tại, không cần đến cơ sở.`,
+    okLabel: 'OK, ký phụ lục'
+  })
+}
+
+/* Mở hộp thoại gia hạn của một hợp đồng (từ thông báo "Kho sắp hết hạn"). */
+export const RENEW_REQUEST_KEY = 'storespace_renew_request'
+export function requestRenewal(reservationId) {
+  try { sessionStorage.setItem(RENEW_REQUEST_KEY, String(reservationId)) } catch { /* bỏ qua */ }
+  window.dispatchEvent(new CustomEvent(OPEN_SECTION_EVENT, { detail: 'contract' }))
+}
+export function takeRenewalRequest() {
+  try {
+    const value = sessionStorage.getItem(RENEW_REQUEST_KEY)
+    sessionStorage.removeItem(RENEW_REQUEST_KEY)
+    return value
+  } catch {
+    return null
+  }
+}

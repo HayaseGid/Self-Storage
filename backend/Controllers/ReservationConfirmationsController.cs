@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SelfStorageAPI.Constants;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.Models;
+using SelfStorageAPI.Services;
 
 namespace SelfStorageAPI.Controllers;
 
@@ -84,6 +85,11 @@ public sealed class ReservationConfirmationsController(
 
     private async Task<Contract?> ConfirmOneAsync(int reservationId, CancellationToken ct)
     {
+        // Đơn gia hạn (GH-...): hoàn tất theo luồng gia hạn (chuyển cọc, phụ lục gia hạn, không cần bàn giao lại).
+        var code = await context.Reservations.Where(r => r.ReservationID == reservationId).Select(r => r.ReservationCode).FirstOrDefaultAsync(ct);
+        if (code != null && code.StartsWith(ContractRenewalFinalizer.CodePrefix, StringComparison.OrdinalIgnoreCase))
+            return await ContractRenewalFinalizer.FinalizeAsync(context, reservationId, null, ct);
+
         await using var transaction = await context.Database.BeginTransactionAsync(ct);
 
         var reservation = await context.Reservations

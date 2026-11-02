@@ -18,6 +18,8 @@ const money = value => `${formatVnd(value || 0)}đ`
 
 export function contractStage(rentals) {
   const r = rentals[0] || {}
+  // Phụ lục gia hạn: khách đang dùng kho (Handed Over) nhưng phụ lục chưa ký.
+  if (r.status === 'Handed Over' && (r.isRenewal || r.renewedFrom) && r.contractId && r.contractStatus === 'Pending Signature') return 'toSign'
   if (r.status === 'Handed Over') return 'active'
   if (r.contractStatus === 'Signed' || r.contractStatus === 'Active') return r.status === 'Handed Over' ? 'active' : 'signed'
   if (r.status === 'Confirmed' && r.contractId) return 'toSign'
@@ -33,7 +35,7 @@ const STAGE_LABEL = {
   active: ['Đang hiệu lực', 'done']
 }
 
-export default function ContractDetailModal({ group, customer, facilityAddress, knownSignature, autoMailResult, onClose, onSign }) {
+export default function ContractDetailModal({ group, customer, facilityAddress, knownSignature, autoMailResult, onClose, onSign, onRenew, onCancel }) {
   const [signature, setSignature] = useState(knownSignature || null)
   const [loading, setLoading] = useState(!knownSignature)
   const [mail, setMail] = useState(autoMailResult || null)
@@ -91,7 +93,13 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
     }
   }
 
-  const steps = [
+  const isRenewal = Boolean(group.renewedFrom || first.isRenewal)
+  const steps = isRenewal ? [
+    ['Thanh toán gia hạn', 'Đã thanh toán'],
+    ['Tạo phụ lục', 'Đã tạo'],
+    ['Ký online', stage === 'signed' || stage === 'active' ? 'Đã ký' : 'Chờ bạn ký'],
+    ['Tiếp tục dùng kho', `Từ ${first.startDate}`]
+  ] : [
     ['Đặt cọc', 'Đã thanh toán'],
     ['Tạo hợp đồng', stage === 'approval' || stage === 'preparing' ? 'Đang tạo' : 'Đã tạo'],
     ['Ký online', stage === 'signed' || stage === 'active' ? 'Đã ký' : stage === 'toSign' ? 'Chờ bạn ký' : 'Chưa đến bước'],
@@ -123,7 +131,7 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
           <div className="cdm-summary">
             <div><span>Tiền thuê / tháng</span><strong>{money(rentals.reduce((n, r) => n + Number(r.monthlyPrice || 0), 0))}</strong></div>
             <div><span>Tổng tiền thuê</span><strong>{money(rentals.reduce((n, r) => n + Number(r.rentalAmount || 0), 0))}</strong></div>
-            <div><span>Tiền cọc đã trả</span><strong>{money(rentals.reduce((n, r) => n + Number(r.depositAmount || 0), 0))}</strong></div>
+            <div><span>{isRenewal ? 'Tiền cọc (chuyển từ HĐ cũ)' : 'Tiền cọc đã trả'}</span><strong>{money(rentals.reduce((n, r) => n + Number(r.depositAmount || 0), 0))}</strong></div>
             <div><span>Chữ ký</span><strong>{loading ? 'Đang tải...' : signature ? 'Đã ký điện tử' : signedLocally ? 'Đã ký' : 'Chưa ký'}</strong></div>
           </div>
           <ContractDocument
@@ -148,7 +156,9 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
             {sending ? 'Đang gửi...' : '✉ Gửi qua email'}
           </button>
           <span className="csf-spacer" />
-          {stage === 'toSign' && onSign && <button type="button" className="dashboard-primary-btn" onClick={() => onSign(group)}>Ký hợp đồng</button>}
+          {onCancel && <button type="button" className="cr-link-btn" onClick={onCancel}>Hủy đặt kho</button>}
+          {onRenew && <button type="button" className="dashboard-secondary-btn" onClick={onRenew}>↻ Gia hạn</button>}
+          {stage === 'toSign' && onSign && <button type="button" className="dashboard-primary-btn" onClick={() => onSign(group)}>{isRenewal ? 'Ký phụ lục' : 'Ký hợp đồng'}</button>}
           <button type="button" className={stage === 'toSign' ? 'dashboard-secondary-btn' : 'dashboard-primary-btn'} onClick={onClose}>Đóng</button>
         </div>
       </div>

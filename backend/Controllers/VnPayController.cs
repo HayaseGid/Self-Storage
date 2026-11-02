@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using SelfStorageAPI.Constants;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.Models;
+using SelfStorageAPI.Services;
 
 namespace SelfStorageAPI.Controllers;
 
@@ -29,6 +30,8 @@ namespace SelfStorageAPI.Controllers;
  * Luồng: tạo Payment "Pending" (Provider = VNPay) cho từng đơn + gắn khoản cọc -> chuyển khách sang VNPay
  *   -> VNPay chuyển về / gọi IPN -> KIỂM TRA CHỮ KÝ + số tiền -> Payment Completed -> cọc Paid -> đơn Paid
  *   -> xác nhận đơn + tạo hợp đồng (không còn bước Manager duyệt) -> khách ký hợp đồng.
+ * Đơn GIA HẠN (mã "GH-..."): thu tiền thuê tháng đầu + cọc bổ sung thay vì tiền cọc; thanh toán xong
+ *   -> ContractRenewalFinalizer hoàn tất gia hạn (chuyển cọc, tạo phụ lục gia hạn) -> khách ký phụ lục.
  * return-verify và IPN dùng chung một hàm, gọi nhiều lần cũng chỉ ghi nhận 1 lần (idempotent),
  * nên chạy ở localhost (VNPay không gọi được IPN) vẫn hoạt động.
  */
@@ -44,9 +47,31 @@ public sealed class VnPayController(
 
     public sealed record CreateVnPayRequest(List<int>? ReservationIds, string? ReturnUrl);
 
-    private string? TmnCode => configuration["VnPay:TmnCode"];
-    private string? HashSecret => configuration["VnPay:HashSecret"];
+    // Trim: copy từ email VNPay hay dính khoảng trắng / xuống dòng làm sai chữ ký.
+    private string? TmnCode => configuration["VnPay:TmnCode"]?.Trim();
+    private string? HashSecret => configuration["VnPay:HashSecret"]?.Trim();
     private bool Configured => !string.IsNullOrWhiteSpace(TmnCode) && !string.IsNullOrWhiteSpace(HashSecret);
+
+    // ------------------------------------------------------------------ Kiểm tra cấu hình
+
+    /* GET /api/vnpay/status: xem backend đã đọc được cấu hình VNPay chưa (không lộ HashSecret). */
+    [HttpGet("status")]
+    public IActionResult Status()
+    {
+        var tmn = TmnCode ?? "";
+        var secret = HashSecret ?? "";
+        return Ok(new
+        {
+            configured = Configured,
+            tmnCode = tmn.Length > 4 ? $"{tmn[..2]}***{tmn[^2..]}" : (tmn.Length > 0 ? "***" : null),
+            hashSecretLength = secret.Length,
+            baseUrl = configuration["VnPay:BaseUrl"] ?? DefaultBaseUrl,
+            returnUrl = configuration["VnPay:ReturnUrl"] ?? "http://localhost:5173/payment-result",
+            hint = Configured
+                ? "Đã cấu hình. Đặt cọc thử bằng thẻ NCB 9704198526191432198 · NGUYEN VAN A · 07/15 · OTP 123456."
+                : "Chưa có VnPay:TmnCode / VnPay:HashSecret. Xem HUONG-DAN-VNPAY.md."
+        });
+    }
 
     // ------------------------------------------------------------------ Tạo giao dịch
 
@@ -54,7 +79,7 @@ public sealed class VnPayController(
     public async Task<IActionResult> Create([FromBody] CreateVnPayRequest request, CancellationToken ct)
     {
         if (!Configured)
-            return StatusCode(503, new { message = "Chưa cấu hình VNPay (VnPay:TmnCode, VnPay:HashSecret) trong appsettings của backend." });
+            return StatusCode(503, new { message = "Chưa cấu hình VNPay: backend chưa đọc được VnPay:TmnCode và VnPay:HashSecret. Xem HUONG-DAN-VNPAY.md, cấu hình xong thì chạy lại backend và mở /api/vnpay/status để kiểm tra." });
 
         var customerId = await GetCustomerIdAsync(ct);
         if (customerId is null)
@@ -79,8 +104,10 @@ public sealed class VnPayController(
                 return Conflict(new { message = $"Đơn {r.ReservationCode} không còn ở trạng thái chờ thanh toán cọc." });
             if (r.HoldExpiresAt <= now.AddSeconds(30))
                 return Conflict(new { message = $"Đơn {r.ReservationCode} đã hết thời gian giữ kho. Vui lòng đặt lại." });
-            if (!r.Charges.Any(c => c.ChargeType == "Deposit" && c.Status == "Unpaid"))
-                return Conflict(new { message = $"Đơn {r.ReservationCode} không có khoản cọc cần thanh toán." });
+            if (!ChargesToCollect(r).Any())
+                return Conflict(new { message = ContractRenewalFinalizer.IsRenewal(r)
+                    ? $"Yêu cầu gia hạn {r.ReservationCode} không còn khoản cần thanh toán."
+                    : $"Đơn {r.ReservationCode} không có khoản cọc cần thanh toán." });
         }
 
         var txnRef = $"SS{now.AddHours(7):yyMMddHHmmss}{Random.Shared.Next(100, 999)}";
@@ -97,7 +124,7 @@ public sealed class VnPayController(
             var created = new List<(Payment Payment, List<Charge> Charges)>();
             foreach (var r in reservations)
             {
-                var deposits = r.Charges.Where(c => c.ChargeType == "Deposit" && c.Status == "Unpaid").ToList();
+                var deposits = ChargesToCollect(r).ToList();
                 var payment = new Payment
                 {
                     ReservationID = r.ReservationID,
@@ -133,7 +160,9 @@ public sealed class VnPayController(
             ["vnp_Amount"] = ((long)decimal.Round(total * 100m, 0)).ToString(CultureInfo.InvariantCulture),
             ["vnp_CurrCode"] = "VND",
             ["vnp_TxnRef"] = txnRef,
-            ["vnp_OrderInfo"] = $"Thanh toan tien coc {string.Join(" ", reservations.Select(r => r.ReservationCode))}",
+            ["vnp_OrderInfo"] = reservations.All(ContractRenewalFinalizer.IsRenewal)
+                ? $"Thanh toan gia han hop dong {string.Join(" ", reservations.Select(r => r.ReservationCode))}"
+                : $"Thanh toan tien coc {string.Join(" ", reservations.Select(r => r.ReservationCode))}",
             ["vnp_OrderType"] = "other",
             ["vnp_Locale"] = "vn",
             ["vnp_ReturnUrl"] = ResolveReturnUrl(request.ReturnUrl),
@@ -148,6 +177,12 @@ public sealed class VnPayController(
         return Ok(new { paymentUrl, txnRef, amount = total, expiresAt });
     }
 
+    /* Đặt cọc: các khoản cọc chưa trả. Gia hạn: tiền thuê tháng đầu + cọc bổ sung. */
+    private static IEnumerable<Charge> ChargesToCollect(Reservation r) =>
+        ContractRenewalFinalizer.IsRenewal(r)
+            ? r.Charges.Where(c => ContractRenewalFinalizer.IsPayableNow(c, r))
+            : r.Charges.Where(c => c.ChargeType == "Deposit" && c.Status == "Unpaid");
+
     // ------------------------------------------------------------------ VNPay chuyển về / IPN
 
     [HttpGet("return-verify")]
@@ -157,12 +192,20 @@ public sealed class VnPayController(
         var reservationIds = result.Payments.Select(p => p.ReservationID).Distinct().ToList();
         var contracts = await context.Contracts.AsNoTracking()
             .Where(c => reservationIds.Contains(c.ReservationID))
-            .Select(c => new { reservationId = c.ReservationID, contractId = c.ContractID, contractNumber = c.ContractNumber })
+            .Select(c => new
+            {
+                reservationId = c.ReservationID,
+                contractId = c.ContractID,
+                contractNumber = c.ContractNumber,
+                renewedFromContractNumber = c.RenewedFromContract != null ? c.RenewedFromContract.ContractNumber : null
+            })
             .ToListAsync(ct);
+        var isRenewal = result.Payments.Count > 0 && result.Payments.All(p => p.Reservation != null && ContractRenewalFinalizer.IsRenewal(p.Reservation));
 
         return Ok(new
         {
             success = result.Paid,
+            kind = isRenewal ? "renewal" : "deposit",
             code = result.Code,
             message = result.Message,
             txnRef = result.TxnRef,
@@ -256,8 +299,12 @@ public sealed class VnPayController(
                 .FirstAsync(p => p.PaymentID == paymentId, ct);
             try
             {
+                var renewal = ContractRenewalFinalizer.IsRenewal(payment.Reservation);
                 await ApplyPaidAsync(payment, transactionNo, now, ct);
-                await TryConfirmAsync(payment.ReservationID, ct);
+                if (renewal)
+                    await ContractRenewalFinalizer.FinalizeAsync(context, payment.ReservationID, payment.CreatedByUserID, ct);
+                else
+                    await TryConfirmAsync(payment.ReservationID, ct);
             }
             catch (Exception exception)
             {
@@ -274,7 +321,7 @@ public sealed class VnPayController(
             notes.Count == 0 ? "Applied" : "Error", $"{source}: {(notes.Count == 0 ? "đã ghi nhận" : string.Join(" | ", notes))}", ct);
 
         return allPaid
-            ? new ProcessResult(true, "00", "Đặt cọc thành công.", "Confirm Success", txnRef, amount, payments)
+            ? new ProcessResult(true, "00", payments.All(p => ContractRenewalFinalizer.IsRenewal(p.Reservation)) ? "Gia hạn thành công." : "Đặt cọc thành công.", "Confirm Success", txnRef, amount, payments)
             : new ProcessResult(false, "99", "VNPay đã nhận tiền nhưng hệ thống chưa ghi nhận được đơn (có thể đơn đã hết thời gian giữ kho). Vui lòng liên hệ cơ sở.", "Unknown error", txnRef, amount, payments);
     }
 
@@ -305,9 +352,13 @@ public sealed class VnPayController(
         }
         await context.SaveChangesAsync(ct);
 
-        reservation.Status = ReservationStatus.Paid;
-        reservation.PaidAt = now;
-        await context.SaveChangesAsync(ct);
+        // Đơn gia hạn: cọc được chuyển từ kỳ cũ trong ContractRenewalFinalizer, chuyển trạng thái ở đó.
+        if (!ContractRenewalFinalizer.IsRenewal(reservation))
+        {
+            reservation.Status = ReservationStatus.Paid;
+            reservation.PaidAt = now;
+            await context.SaveChangesAsync(ct);
+        }
         await transaction.CommitAsync(ct);
     }
 

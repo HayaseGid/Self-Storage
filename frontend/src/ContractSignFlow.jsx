@@ -72,14 +72,14 @@ export default function ContractSignFlow({ group, customer, onClose, onSign }) {
       <div className="csf" role="dialog" aria-modal="true" aria-labelledby="csf-title">
         <div className="csf-head">
           <div>
-            <span className="customer-eyebrow">HỢP ĐỒNG THUÊ KHO</span>
+            <span className="customer-eyebrow">{group.renewedFrom ? `PHỤ LỤC GIA HẠN HĐ ${group.renewedFrom.contractNumber}` : 'HỢP ĐỒNG THUÊ KHO'}</span>
             <h2 id="csf-title">{group.title}</h2>
             <p>{unitCount} kho · {first.facility} · {first.startDate} → {first.endDate}</p>
           </div>
           <button type="button" className="csf-close" onClick={onClose} aria-label="Đóng" disabled={submitting}>×</button>
         </div>
         <ol className="csf-steps">
-          {['Xem hợp đồng', 'Xác nhận điều khoản', 'Ký hợp đồng'].map((label, index) => (
+          {[group.renewedFrom ? 'Xem phụ lục' : 'Xem hợp đồng', 'Xác nhận điều khoản', group.renewedFrom ? 'Ký phụ lục' : 'Ký hợp đồng'].map((label, index) => (
             <li key={label} className={step === index + 1 ? 'active' : step > index + 1 ? 'done' : ''}>{label}</li>
           ))}
         </ol>
@@ -131,7 +131,7 @@ export default function ContractSignFlow({ group, customer, onClose, onSign }) {
           {step > 1 && <button type="button" className="dashboard-secondary-btn" onClick={() => { setError(''); setStep(step - 1) }} disabled={submitting}>Quay lại</button>}
           {step === 1 && <button type="button" className="dashboard-primary-btn" onClick={() => setStep(2)}>Tiếp tục: Điều khoản</button>}
           {step === 2 && <button type="button" className="dashboard-primary-btn" disabled={!allAccepted} onClick={() => { setError(''); setStep(3) }}>{allAccepted ? 'Tiếp tục: Ký' : `Xác nhận ${TERM_POLICIES.length - accepted.size} nhóm còn lại`}</button>}
-          {step === 3 && <button type="button" className="dashboard-primary-btn" disabled={submitting} onClick={submit}>{submitting ? 'Đang ký...' : 'Ký hợp đồng'}</button>}
+          {step === 3 && <button type="button" className="dashboard-primary-btn" disabled={submitting} onClick={submit}>{submitting ? 'Đang ký...' : group.renewedFrom ? 'Ký phụ lục gia hạn' : 'Ký hợp đồng'}</button>}
         </div>
       </div>
     </div>
