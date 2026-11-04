@@ -44,7 +44,7 @@ public class AuthController : ControllerBase
             UserID = user.UserID,
             Action = "Login",
             IPAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            Timestamp = DateTime.Now,
+            Timestamp = DateTime.UtcNow,
             Details = "Đăng nhập thành công"
         });
         await _context.SaveChangesAsync(cancellationToken);
