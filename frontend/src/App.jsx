@@ -2465,8 +2465,13 @@ function mapCustomerReservation(reservation) {
     }
   })
 
+  // Đơn gia hạn (mã GH-...) đang chờ thanh toán: số tiền phải trả ngay là tiền thuê tháng đầu + cọc bổ sung, không phải tiền cọc.
+  const renewalPending = reservation.isRenewal && status === 'Pending Deposit' && reservation.amountDueNow != null
+  const renewalToSign = reservation.isRenewal && status === 'Handed Over' && reservation.contractStatus === 'Pending Signature'
+
   return {
     ...reservation,
+    ...(renewalPending ? { depositAmount: Number(reservation.amountDueNow) } : {}),
     status,
     units,
     unitId: reservation.unitNumber,
@@ -2478,7 +2483,13 @@ function mapCustomerReservation(reservation) {
     totalDays,
     remainingDays: Math.max(0, totalDays - elapsedDays),
     progress: Math.min(100, Math.round((Math.min(totalDays, elapsedDays) / totalDays) * 100)),
-    statusLabel: status === 'Confirmed' && reservation.contractStatus === 'Pending Signature'
+    statusLabel: status === 'Cancelled' && reservation.refundAmount > 0
+      ? `Đã hủy · ${reservation.refundStatus === 'Completed' ? 'Đã hoàn' : 'Đang hoàn'} ${new Intl.NumberFormat('vi-VN').format(reservation.refundAmount)}đ`
+      : renewalPending
+      ? 'Gia hạn · Chờ thanh toán'
+      : renewalToSign
+        ? 'Đang thuê · Chờ ký phụ lục gia hạn'
+        : status === 'Confirmed' && reservation.contractStatus === 'Pending Signature'
       ? 'Đã cọc · Chờ ký hợp đồng'
       : status === 'Confirmed' && reservation.contractStatus === 'Signed'
         ? 'Đã ký hợp đồng · Chờ nhận kho'
@@ -2499,7 +2510,12 @@ function CustomerPage() {
     }
     setError('')
     if (!silent) setReservations(null)
-    apiGet(`/api/reservation/customer/${encodeURIComponent(user.email)}`)
+    // API nhanh (CustomerReservationsController.cs). Backend chưa có file đó (404) thì dùng API cũ.
+    apiGet('/api/customer-reservations/mine')
+      .catch(fastError => {
+        if (fastError?.status !== 404) throw fastError
+        return apiGet(`/api/reservation/customer/${encodeURIComponent(user.email)}`)
+      })
       .then(data => {
         if (!Array.isArray(data)) {
           throw new Error('Backend trả về danh sách đặt chỗ không hợp lệ.')

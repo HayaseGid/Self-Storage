@@ -20,7 +20,13 @@ import { sendContractEmail } from './contractEmail'
 import { usePolicies } from './policies'
 import { useDialog } from './Dialog'
 import { useContractRenewals, RenewalSection, RenewalModal, fmtIsoDate } from './ContractRenewal'
-import { confirmAfterDeposit, takeCustomerSection } from './afterDeposit'
+import { focusContract, takePendingContractFocus } from './afterDeposit'
+import { OPEN_SECTION_EVENT, RENEW_REQUEST_KEY, clearContractSignRequest, confirmAfterDeposit, peekContractSignRequest, requestContractSign, requestRenewal, takeCustomerSection, takeRenewalRequest } from './afterDeposit'
+import { useCustomerNotifications } from './customerNoticeData'
+import CustomerNotificationsPage, { NotificationsPreview } from './CustomerNotifications'
+import CancelReservationModal, { retryRefund } from './CancelReservation'
+import ContractCard from './ContractCard'
+import { ReturnRequestModal, ReturnSection, useUnitReturns } from './UnitReturn'
 import { startVnPayPayment } from './vnpay'
 
 /* Chuyển 'dd/mm/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày. */
@@ -571,6 +577,9 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const [detail, setDetail] = useState(null) // { group, signature?, mail? }
   const renewals = useContractRenewals()
   const [renewItem, setRenewItem] = useState(null)
+  const [cancelRental, setCancelRental] = useState(null)
+  const returns = useUnitReturns()
+  const [returnItem, setReturnItem] = useState(null)
   const [creatingContracts, setCreatingContracts] = useState(false)
   const policies = usePolicies()
   const dialog = useDialog()
@@ -584,17 +593,25 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
    */
   const allRentals = Array.isArray(customerRentals) ? customerRentals.filter(Boolean) : []
   const unitCountOf = r => (r.units?.length || r.unitCount || 1)
+  // Phụ lục gia hạn: lấy hợp đồng gốc từ API danh sách đặt chỗ, hoặc từ API gia hạn (nếu backend dùng API cũ).
+  const renewedFromOf = r => r.renewedFrom || renewals.byReservation(r.reservationId)?.renewedFrom || null
+  const isRenewalRental = r => Boolean(r.isRenewal || renewedFromOf(r))
   const buildGroups = list => list.map(r => ({
     key: String(r.reservationId),
     code: r.contractNumber || r.reservationCode || `HĐ-${r.contractId || r.reservationId}`,
-    title: unitCountOf(r) > 1
-      ? `Hợp đồng thuê ${unitCountOf(r)} kho · ${r.facility}`
-      : `Hợp đồng thuê kho ${r.unitId || ''}`.trim(),
+    title: isRenewalRental(r)
+      ? `Phụ lục gia hạn${renewedFromOf(r)?.contractNumber ? ` HĐ ${renewedFromOf(r).contractNumber}` : ''} · ${unitCountOf(r) > 1 ? `${unitCountOf(r)} kho` : `kho ${r.unitId || ''}`.trim()}`
+      : unitCountOf(r) > 1
+        ? `Hợp đồng thuê ${unitCountOf(r)} kho · ${r.facility}`
+        : `Hợp đồng thuê kho ${r.unitId || ''}`.trim(),
+    renewedFrom: renewedFromOf(r),
     rentals: [r]
   }))
   const facilityAddressOf = group => facilities.find(f => f.name === group.rentals[0].facility)?.location
   const isSignedRental = r => Boolean(signatures[String(r.contractId)]) || r.contractStatus === 'Signed' || r.contractStatus === 'Active'
-  const toSign = allRentals.filter(r => r.status === 'Confirmed' && r.contractId && !isSignedRental(r))
+  // Chờ ký: hợp đồng mới (đã cọc) + phụ lục gia hạn chưa ký (khách vẫn đang dùng kho nên đơn ở trạng thái "Handed Over").
+  const toSign = allRentals.filter(r => r.contractId && !isSignedRental(r) &&
+    (r.status === 'Confirmed' || (r.status === 'Handed Over' && isRenewalRental(r))))
   const preparing = allRentals.filter(r => r.status === 'Confirmed' && !r.contractId)
   const waitingApproval = allRentals.filter(r => r.status === 'Paid')
   const signedBeforeHandover = allRentals.filter(r => r.status === 'Confirmed' && r.contractId && isSignedRental(r))
@@ -620,6 +637,63 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   useEffect(() => {
     if (waitingKey) createPendingContracts(waitingKey.split(','))
   }, [waitingKey])
+
+  // Mở từ thông báo / chỗ khác: cuộn tới đúng thẻ hợp đồng khi danh sách đã hiển thị.
+  const [focusTick, setFocusTick] = useState(0)
+  useEffect(() => {
+    const onOpen = () => setFocusTick(t => t + 1)
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
+  }, [])
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      let wanted = null
+      try { wanted = sessionStorage.getItem('storespace_focus_contract') } catch { /* bỏ qua */ }
+      if (wanted && document.getElementById(`contract-${wanted}`)) {
+        takePendingContractFocus()
+        focusContract(wanted)
+      }
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [focusTick, rentals.map(r => r.reservationId).join(',')])
+
+  // Thông báo "Kho sắp hết hạn" -> "Gia hạn ngay": mở hộp thoại gia hạn của đúng hợp đồng.
+  const [renewTick, setRenewTick] = useState(0)
+  useEffect(() => {
+    const onOpen = () => setRenewTick(t => t + 1)
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
+  }, [])
+  useEffect(() => {
+    let wanted = null
+    try { wanted = sessionStorage.getItem(RENEW_REQUEST_KEY) } catch { /* bỏ qua */ }
+    if (!wanted || !renewals.data) return
+    takeRenewalRequest()
+    const item = renewals.byReservation(wanted)
+    if (item?.eligible && !item.pendingRenewal) setRenewItem(item)
+  }, [renewals.data, renewTick])
+
+  // "Gia hạn thành công, vui lòng ký phụ lục gia hạn" -> OK: mở màn hình ký đúng hợp đồng khi dữ liệu đã có.
+  const [signRequest, setSignRequest] = useState(() => peekContractSignRequest())
+  useEffect(() => {
+    const onOpen = () => setSignRequest(peekContractSignRequest())
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
+  }, [])
+  useEffect(() => {
+    if (!signRequest) return
+    const target = allRentals.find(r => String(r.contractId) === String(signRequest))
+    if (!target) {
+      onRentalsChanged?.() // hợp đồng vừa tạo chưa có trong danh sách -> tải lại
+      return
+    }
+    clearContractSignRequest()
+    setSignRequest(null)
+    if (!isSignedRental(target)) {
+      setDetail(null)
+      setSignGroup(buildGroups([target])[0])
+    }
+  }, [signRequest, allRentals.map(r => `${r.contractId}:${r.contractStatus}`).join(',')])
 
   const signGroupContracts = async ({ image, termsVersion }) => {
     const done = []
@@ -662,9 +736,13 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     setDetail({ group: signedGroup, signature, mail })
     await dialog.alert({
       tone: 'success',
-      title: 'Đã ký hợp đồng',
-      message: `Bạn đã ký hợp đồng ${signedGroup.code} (${unitCountOf(signedGroup.rentals[0])} kho). Hãy đến cơ sở vào ngày ${signedGroup.rentals[0].startDate} để nhận kho, mang theo CCCD.\n${mail.text}${remainingToSign > 0 ? `\nBạn còn ${remainingToSign} hợp đồng chờ ký.` : ''}`
+      title: signedGroup.renewedFrom ? 'Đã ký phụ lục gia hạn' : 'Đã ký hợp đồng',
+      message: signedGroup.renewedFrom
+        ? `Bạn đã ký phụ lục gia hạn ${signedGroup.code} của hợp đồng ${signedGroup.renewedFrom.contractNumber}, thời hạn ${signedGroup.rentals[0].startDate} → ${signedGroup.rentals[0].endDate}. Bạn tiếp tục sử dụng kho như hiện tại, không cần đến cơ sở.\n${mail.text}${remainingToSign > 0 ? `\nBạn còn ${remainingToSign} hợp đồng chờ ký.` : ''}`
+        : `Bạn đã ký hợp đồng ${signedGroup.code} (${unitCountOf(signedGroup.rentals[0])} kho). Hãy đến cơ sở vào ngày ${signedGroup.rentals[0].startDate} để nhận kho, mang theo CCCD.\n${mail.text}${remainingToSign > 0 ? `\nBạn còn ${remainingToSign} hợp đồng chờ ký.` : ''}`
     })
+    renewals.reload()
+    onRentalsChanged?.()
   }
 
   const keyOf = rental => String(rental.contractId)
@@ -775,7 +853,27 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         )}
       </div>
 
-      <RenewalSection renewals={renewals} onRenew={setRenewItem} />
+      <ReturnSection returns={returns} onChanged={onRentalsChanged} />
+
+      <RenewalSection renewals={renewals} onRenew={setRenewItem} onChanged={onRentalsChanged} />
+
+      {returnItem && (
+        <ReturnRequestModal
+          item={returnItem}
+          rules={returns.rules}
+          fees={returns.fees}
+          onClose={() => setReturnItem(null)}
+          onDone={() => { returns.reload(); onRentalsChanged?.() }}
+        />
+      )}
+
+      {cancelRental && (
+        <CancelReservationModal
+          rental={cancelRental}
+          onClose={() => setCancelRental(null)}
+          onDone={() => { onRentalsChanged?.(); renewals.reload() }}
+        />
+      )}
 
       {renewItem && (
         <RenewalModal
@@ -791,14 +889,17 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
           {buildGroups(toSign).map(group => (
             <article key={group.key} className="sign-card">
               <div>
-                <span className="sign-badge todo">Chờ bạn ký</span>
+                <span className="sign-badge todo">{group.renewedFrom ? 'Chờ ký phụ lục gia hạn' : 'Chờ bạn ký'}</span>
                 <h3>{group.title}</h3>
-                <p>Mã {group.code} · {group.rentals[0].startDate} → {group.rentals[0].endDate} · Đã đặt cọc, kho đã được giữ cho bạn.</p>
+                <p>Mã {group.code} · {group.rentals[0].startDate} → {group.rentals[0].endDate} · {group.renewedFrom
+                  ? `Đã thanh toán gia hạn hợp đồng ${group.renewedFrom.contractNumber}. Bạn tiếp tục dùng kho, chỉ cần ký phụ lục.`
+                  : 'Đã đặt cọc, kho đã được giữ cho bạn.'}</p>
                 <div className="sign-units">{group.rentals.flatMap(r => r.units || []).map(u => <span key={u.number}>{u.number}</span>)}</div>
               </div>
               <div className="sign-actions">
+                {!group.renewedFrom && <button type="button" className="cr-link-btn" onClick={() => setCancelRental(group.rentals[0])}>Hủy đặt kho</button>}
                 <button type="button" className="dashboard-secondary-btn" onClick={() => setDetail({ group })}>Xem chi tiết</button>
-                <button type="button" className="dashboard-primary-btn" onClick={() => setSignGroup(group)}>Xem & ký hợp đồng</button>
+                <button type="button" className="dashboard-primary-btn" onClick={() => setSignGroup(group)}>{group.renewedFrom ? 'Xem & ký phụ lục' : 'Xem & ký hợp đồng'}</button>
               </div>
             </article>
           ))}
@@ -820,6 +921,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
                 <div className="sign-units">{group.rentals.flatMap(r => r.units || []).map(u => <span key={u.number}>{u.number}</span>)}</div>
               </div>
               <div className="sign-actions">
+                <button type="button" className="cr-link-btn" onClick={() => setCancelRental(group.rentals[0])}>Hủy đặt kho</button>
                 <button type="button" className="dashboard-secondary-btn" onClick={() => setDetail({ group })}>Xem bản xem trước</button>
                 <button type="button" className="dashboard-primary-btn" disabled={creatingContracts} onClick={() => createPendingContracts(group.rentals.map(r => r.reservationId), true)}>
                   {creatingContracts ? 'Đang tạo...' : 'Tạo hợp đồng ngay'}
@@ -836,6 +938,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
                 <div className="sign-units">{group.rentals.flatMap(r => r.units || []).map(u => <span key={u.number}>{u.number}</span>)}</div>
               </div>
               <div className="sign-actions">
+                <button type="button" className="cr-link-btn" onClick={() => setCancelRental(group.rentals[0])}>Hủy đặt kho</button>
                 <button type="button" className="dashboard-primary-btn" onClick={() => setDetail({ group })}>Xem chi tiết hợp đồng</button>
               </div>
             </article>
@@ -857,6 +960,13 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
           autoMailResult={detail.mail}
           onClose={() => setDetail(null)}
           onSign={group => { setDetail(null); setSignGroup(group) }}
+          onCancel={['Paid', 'Confirmed'].includes(detail.group.rentals[0]?.status) && !detail.group.renewedFrom && !detail.group.rentals[0]?.isRenewal
+            ? () => { const r = detail.group.rentals[0]; setDetail(null); setCancelRental(r) }
+            : undefined}
+          onRenew={(() => {
+            const renewal = renewals.byReservation(detail.group.rentals[0]?.reservationId)
+            return renewal?.eligible && !renewal.pendingRenewal ? () => { setDetail(null); setRenewItem(renewal) } : undefined
+          })()}
         />
       )}
 
@@ -869,160 +979,32 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         const renewal = renewals.byReservation(rental.reservationId)
 
         return (
-          <div key={keyOf(rental)} style={{ marginBottom: 28 }}>
-            <div className="contract-card">
-
-              <div className="contract-header">
-
-                <div>
-                  <span>HỢP ĐỒNG THUÊ KHO</span>
-
-                  <h2>
-                    Hợp đồng {rental.contractNumber || `#${keyOf(rental)}`}
-                  </h2>
-
-                  <p>
-                    StoreSpace · {rental.facility}
-                  </p>
-                </div>
-
-                <span
-                  className="contract-status"
-                  style={isSigned ? undefined : { background: '#fff3d6', color: '#9a6700' }}
-                >
-                  {isSigned ? 'Đã ký' : rental.contractStatus || 'Chưa ký'}
-                </span>
-
-              </div>
-
-              {renewal?.renewedFrom && (
-                <p className="contract-renew-note">
-                  Hợp đồng gia hạn từ <strong>{renewal.renewedFrom.contractNumber}</strong> ({fmtIsoDate(renewal.renewedFrom.startDate)} → {fmtIsoDate(renewal.renewedFrom.endDate)}). Bạn tiếp tục dùng kho, không cần nhận lại.
-                </p>
-              )}
-              {renewal?.renewedBy && (
-                <p className="contract-renew-note">
-                  Đã gia hạn bằng hợp đồng <strong>{renewal.renewedBy.contractNumber}</strong> đến {fmtIsoDate(renewal.renewedBy.endDate)}.
-                </p>
-              )}
-
-              {signatureError && (
-                <div className="auth-message error">
-                  Không tải được trạng thái chữ ký: {signatureError}
-                  <button type="button" onClick={() => reloadSignature(rental)} style={{ marginLeft: 12 }}>
-                    Thử lại
-                  </button>
-                </div>
-              )}
-              {!isSigned && !signatureError && (
-                <div style={{ margin: '0 0 16px', padding: '12px 16px', borderRadius: 12, background: '#fff8e6', border: '1px solid #f3d98b', color: '#7a5600' }}>
-                  {signatureLoaded ? 'Hợp đồng chưa có chữ ký điện tử.' : 'Đang tải trạng thái chữ ký từ backend...'}
-                </div>
-              )}
-
-              <div className="contract-details">
-
-                <div>
-                  <small>Khách hàng</small>
-                  <strong>
-                    {customerName}
-                  </strong>
-                </div>
-
-                <div>
-                  <small>Mã kho</small>
-                  <strong>{rental.unitId}</strong>
-                </div>
-
-                <div>
-                  <small>Loại kho</small>
-                  <strong>{rental.type}</strong>
-                </div>
-
-                <div>
-                  <small>Diện tích</small>
-                  <strong>{rental.size}</strong>
-                </div>
-
-                <div>
-                  <small>Ngày bắt đầu</small>
-                  <strong>{rental.startDate}</strong>
-                </div>
-
-                <div>
-                  <small>Ngày kết thúc</small>
-                  <strong>{rental.endDate}</strong>
-                </div>
-
-                <div>
-                  <small>Tiền thuê</small>
-                  <strong>{rental.price}</strong>
-                </div>
-
-                <div>
-                  <small>Trạng thái ký</small>
-                  <strong className={isSigned ? 'status-text' : undefined}>
-                    {isSigned ? `Đã ký ${formatSignedAt(signature.signedAt)}` : 'Chưa ký'}
-                  </strong>
-                </div>
-
-              </div>
-
-              <div className="contract-progress">
-
-                <div>
-                  <span>Tiến độ thời hạn hợp đồng</span>
-                  <strong>
-                    {rental.progress}%
-                  </strong>
-                </div>
-
-                <div className="rental-progress">
-                  <div
-                    style={{
-                      width: `${rental.progress}%`
-                    }}
-                  />
-                </div>
-
-                <small>
-                  Còn {rental.remainingDays} ngày
-                  trước khi hợp đồng kết thúc.
-                </small>
-
-              </div>
-
-              <div className="contract-actions">
-
-                {!isSigned && signatureLoaded && (
-                  <button
-                    type="button"
-                    className="dashboard-primary-btn"
-                    onClick={() => setOpenRental(rental)}
-                  >
-                    ✍ Ký hợp đồng
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  className={isSigned ? 'dashboard-primary-btn' : 'dashboard-secondary-btn'}
-                  onClick={() => setDetail({ group: buildGroups([rental])[0], signature: signature || undefined })}
-                >
-                  Xem chi tiết hợp đồng
-                </button>
-
-                {renewal?.eligible && (
-                  <button type="button" className="dashboard-secondary-btn" onClick={() => setRenewItem(renewal)}>
-                    ↻ Gia hạn
-                  </button>
-                )}
-
-              </div>
-
-            </div>
-
-          </div>
+          <ContractCard
+            key={keyOf(rental)}
+            rental={rental}
+            facility={facilities.find(f => f.name === rental.facility)}
+            customerName={customerName}
+            signature={signature}
+            signatureLoaded={signatureLoaded}
+            signatureError={signatureError}
+            renewal={renewal}
+            onReloadSignature={() => reloadSignature(rental)}
+            onSign={() => setOpenRental(rental)}
+            onDetail={() => setDetail({ group: buildGroups([rental])[0], signature: signature || undefined })}
+            onRenew={renewal?.eligible ? () => setRenewItem(renewal) : undefined}
+            returnInfo={returns.byReservation(rental.reservationId)}
+            onReturn={rental.status === 'Handed Over' ? () => {
+              const info = returns.byReservation(rental.reservationId)
+              if (info?.eligible) setReturnItem(info)
+              else dialog.alert({
+                tone: 'warning',
+                title: 'Chưa trả kho được',
+                message: returns.error
+                  ? `Không tải được thông tin trả kho: ${returns.error}`
+                  : info?.reason || (returns.loading ? 'Đang tải thông tin trả kho, thử lại sau giây lát.' : 'Hợp đồng này hiện chưa thể báo trả kho.')
+              })
+            } : undefined}
+          />
         )
       })}
 
@@ -1039,13 +1021,71 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   )
 }
 
-function CustomerPaymentPage({ reservations }) {
+/* Tiến trình hoàn cọc khi khách hủy: tạo yêu cầu -> gửi cổng thanh toán -> cổng xác nhận đã hoàn. */
+const fmtUtc = iso => {
+  if (!iso) return ''
+  const text = String(iso)
+  const d = new Date(/Z|[+-]\d{2}:?\d{2}$/.test(text) ? text : `${text}Z`)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+function RefundTimeline({ item, formatMoney }) {
+  const done = item.refundStatus === 'Completed'
+  const viaVnPay = item.refundProvider === 'VNPay'
+  // VNPay sandbox hạn chế API hoàn tiền -> backend có thể ghi nhận hoàn mô phỏng (mã hoàn bắt đầu bằng SIM-).
+  const simulatedFallback = viaVnPay && done && String(item.refundReference || '').startsWith('SIM-')
+  const steps = [
+    { label: 'Đã hủy đơn, tạo yêu cầu hoàn', note: fmtUtc(item.refundRequestedAt || item.cancelledAt), state: 'done' },
+    viaVnPay && {
+      label: 'Gửi yêu cầu hoàn sang VNPay',
+      note: item.refundLastAttempt ? `${fmtUtc(item.refundLastAttemptAt)} · ${item.refundLastAttempt}` : (done ? '' : 'Chưa gửi được'),
+      state: done ? 'done' : item.refundLastAttempt ? 'error' : 'todo'
+    },
+    {
+      label: simulatedFallback ? 'Ghi nhận hoàn (mô phỏng)' : viaVnPay ? 'VNPay xác nhận đã hoàn' : 'Đã hoàn tiền (thanh toán mô phỏng)',
+      note: done ? `${fmtUtc(item.refundCompletedAt)}${item.refundReference ? ` · Mã hoàn ${item.refundReference}` : ''}` : 'Đang chờ',
+      state: done ? 'done' : 'todo'
+    }
+  ].filter(Boolean)
+  return (
+    <div className={`refund-box ${done ? 'ok' : 'pending'}`}>
+      <div className="refund-box-head">
+        <strong>Hoàn cọc {formatMoney(item.refundAmount)}</strong>
+        <span>{done ? 'Đã hoàn' : 'Đang hoàn'}</span>
+      </div>
+      <ol className="refund-steps">
+        {steps.map(step => (
+          <li key={step.label} className={step.state}>
+            <b>{step.label}</b>
+            {step.note && <small>{step.note}</small>}
+          </li>
+        ))}
+      </ol>
+      <p className="refund-help">
+        {viaVnPay
+          ? simulatedFallback
+            ? 'VNPay sandbox không cho dùng API hoàn tiền (trả lỗi 99), nên hệ thống ghi nhận hoàn MÔ PHỎNG để hoàn tất luồng. Ở môi trường thật, lệnh hoàn sẽ được gửi sang VNPay và tiền về thẻ / tài khoản của khách.'
+            : done
+            ? 'VNPay đã nhận lệnh hoàn. Tiền về đúng thẻ / tài khoản đã thanh toán, thường trong 1–3 ngày làm việc tùy ngân hàng. Môi trường thử nghiệm (sandbox) không có tiền thật: xem giao dịch hoàn trong trang quản trị merchant của VNPay.'
+            : 'VNPay chưa xác nhận lệnh hoàn. Xem lý do ở bước 2, sau đó bấm "Gửi lại yêu cầu hoàn tiền".'
+          : 'Đơn được thanh toán mô phỏng nên hoàn tiền cũng là mô phỏng.'}
+      </p>
+    </div>
+  )
+}
+
+function CustomerPaymentPage({ reservations, onChanged }) {
   const dialog = useDialog()
   const [paying, setPaying] = useState(null)
+  const [cancelRental, setCancelRental] = useState(null)
+  const [retrying, setRetrying] = useState(null)
   const payWithVnPay = async items => {
     setPaying(items.map(i => i.reservationId).join(','))
     try {
-      await startVnPayPayment(items.map(i => i.reservationId), { amount: items.reduce((n, i) => n + Number(i.depositAmount || 0), 0), count: items.length })
+      await startVnPayPayment(items.map(i => i.reservationId), {
+        amount: items.reduce((n, i) => n + Number(i.depositAmount || 0), 0),
+        count: items.length,
+        kind: items.every(i => i.isRenewal) ? 'renewal' : 'deposit'
+      })
     } catch (error) {
       setPaying(null)
       await dialog.alert({ tone: 'danger', title: 'Chưa mở được trang thanh toán VNPay', message: error.message })
@@ -1055,6 +1095,12 @@ function CustomerPaymentPage({ reservations }) {
     item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed'
   )
   const paid = reservations.filter(item => item.paymentStatus === 'Completed')
+  const retry = async item => {
+    setRetrying(item.reservationId)
+    await retryRefund(dialog, item.reservationId)
+    setRetrying(null)
+    onChanged?.()
+  }
   const pendingAmount = pending.reduce(
     (total, item) => total + Number(item.depositAmount || 0),
     0
@@ -1101,14 +1147,23 @@ function CustomerPaymentPage({ reservations }) {
               </span>
             </div>
             <div className="contract-summary">
-              <div><span>Tiền cọc yêu cầu</span><strong>{formatMoney(item.depositAmount)}</strong></div>
+              <div><span>{item.isRenewal ? 'Gia hạn · trả ngay' : 'Tiền cọc yêu cầu'}</span><strong>{formatMoney(item.depositAmount)}</strong></div>
               <div><span>Đã thanh toán</span><strong>{item.paymentAmount == null ? '—' : formatMoney(item.paymentAmount)}</strong></div>
               <div><span>Trạng thái đặt chỗ</span><strong>{item.statusLabel}</strong></div>
               <div><span>Mã giao dịch</span><strong>{item.paymentReference || '—'}</strong></div>
               <div><span>Ngày giao dịch</span><strong>{item.paymentDate ? item.paymentDate.slice(0, 10) : '—'}</strong></div>
             </div>
+            {item.refundAmount > 0 && <RefundTimeline item={item} formatMoney={formatMoney} />}
+            {item.refundStatus === 'Pending' && (
+              <div className="contract-actions">
+                <button type="button" className="dashboard-secondary-btn" disabled={retrying === item.reservationId} onClick={() => retry(item)}>
+                  {retrying === item.reservationId ? 'Đang gửi...' : 'Gửi lại yêu cầu hoàn tiền'}
+                </button>
+              </div>
+            )}
             {item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed' && (
               <div className="contract-actions">
+                {!item.isRenewal && <button type="button" className="cr-link-btn" onClick={() => setCancelRental(item)}>Hủy đặt chỗ</button>}
                 <button type="button" className="dashboard-primary-btn" disabled={Boolean(paying)} onClick={() => payWithVnPay([item])}>
                   {paying === String(item.reservationId) ? 'Đang chuyển sang VNPay...' : `Thanh toán ${formatMoney(item.depositAmount)} qua VNPay`}
                 </button>
@@ -1117,6 +1172,9 @@ function CustomerPaymentPage({ reservations }) {
           </div>
         </section>
       ))}
+      {cancelRental && (
+        <CancelReservationModal rental={cancelRental} onClose={() => setCancelRental(null)} onDone={() => onChanged?.()} />
+      )}
       <div className="payment-warning">
         Tiền cọc được thanh toán qua cổng VNPay (môi trường thử nghiệm). Giao dịch chỉ được ghi nhận khi VNPay xác nhận và hệ thống kiểm tra đúng chữ ký, số tiền.
       </div>
@@ -1192,6 +1250,45 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
   const expiringRentals = activeRentals.filter(item => item.remainingDays <= 30)
   const [activeSection, setActiveSection] = useState(() => takeCustomerSection('overview'))
 
+  // Thông báo: tính từ đơn thuê + gia hạn + chính sách; mở mục nào thì thông báo của mục đó được tính là đã xem.
+  const renewalsForNotices = useContractRenewals()
+  const policiesForNotices = usePolicies()
+  const returnsForNotices = useUnitReturns()
+  const notices = useCustomerNotifications({
+    email: user?.email,
+    rentals,
+    renewals: renewalsForNotices.data,
+    policies: policiesForNotices,
+    returns: returnsForNotices.data
+  })
+  const noticeIdsKey = notices.notifications.map(n => n.id).join('|')
+  useEffect(() => {
+    if (['contract', 'payment', 'storage'].includes(activeSection)) notices.markSection(activeSection)
+  }, [activeSection, noticeIdsKey])
+  // Dữ liệu đặt chỗ thay đổi (gia hạn, ký, thanh toán) -> tải lại thông tin gia hạn cho thông báo.
+  const rentalsKey = rentals.map(r => `${r.reservationId}:${r.status}:${r.contractStatus}`).join(',')
+  const firstRentalsKey = React.useRef(rentalsKey)
+  useEffect(() => { if (rentalsKey !== firstRentalsKey.current) { renewalsForNotices.reload(); returnsForNotices.reload() } }, [rentalsKey])
+  const openNotice = item => {
+    const action = item.action || {}
+    if (action.signContractId) requestContractSign(action.signContractId)
+    if (action.renewReservationId) requestRenewal(action.renewReservationId)
+    if (action.section) setActiveSection(action.section)
+    if (action.focusReservationId && !action.renewReservationId && !action.signContractId) focusContract(action.focusReservationId)
+  }
+  const navBadge = section => {
+    const count = section === 'notifications' ? notices.unseenCount : notices.countBySection[section] || 0
+    return count > 0 && activeSection !== section
+      ? <span className="cnav-badge" aria-label={`${count} thông báo mới`}>{count > 9 ? '9+' : count}</span>
+      : null
+  }
+  // Mở tab theo yêu cầu (vd sau khi gia hạn: tab Hợp đồng để ký phụ lục).
+  useEffect(() => {
+    const onOpen = event => { if (event.detail) setActiveSection(event.detail) }
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
+  }, [])
+
   const logout = () => {
     localStorage.removeItem(currentUserKey)
     navigate('/')
@@ -1266,6 +1363,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
           >
             <span>▣</span>
             Kho của tôi
+            {navBadge('storage')}
           </button>
 
           <button
@@ -1284,6 +1382,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
           >
             <span>▤</span>
             Hợp đồng
+            {navBadge('contract')}
           </button>
 
           <button
@@ -1293,6 +1392,17 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
           >
             <span>◫</span>
             Thanh toán
+            {navBadge('payment')}
+          </button>
+
+          <button
+            type="button"
+            className={activeSection === 'notifications' ? 'active' : ''}
+            onClick={() => setActiveSection('notifications')}
+          >
+            <span>🔔</span>
+            Thông báo
+            {navBadge('notifications')}
           </button>
 
           <button
@@ -1332,13 +1442,27 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             </p>
           </div>
 
-          <button className="customer-profile-button">
-            {user?.name?.charAt(0)?.toUpperCase() || 'U'}
-          </button>
+          <div className="customer-topbar-actions">
+            <button
+              type="button"
+              className="customer-bell"
+              onClick={() => setActiveSection('notifications')}
+              aria-label={notices.unseenCount ? `Thông báo, ${notices.unseenCount} chưa xem` : 'Thông báo'}
+              title="Thông báo"
+            >
+              🔔
+              {notices.unseenCount > 0 && <span className="cnav-badge">{notices.unseenCount > 9 ? '9+' : notices.unseenCount}</span>}
+            </button>
+            <button className="customer-profile-button">
+              {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+            </button>
+          </div>
         </div>
 
         {activeSection === 'overview' && (
           <div className="overview-page">
+
+            <NotificationsPreview center={notices} onAction={openNotice} onOpenAll={() => setActiveSection('notifications')} />
 
             {/* ===== STATS ===== */}
 
@@ -1818,7 +1942,11 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
 
         {activeSection === 'payment' && (
-          <CustomerPaymentPage reservations={rentals} />
+          <CustomerPaymentPage reservations={rentals} onChanged={onReloadRentals} />
+        )}
+
+        {activeSection === 'notifications' && (
+          <CustomerNotificationsPage center={notices} onAction={openNotice} />
         )}
 
         {activeSection === 'profile' && (

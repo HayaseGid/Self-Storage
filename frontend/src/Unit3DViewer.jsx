@@ -3,6 +3,8 @@ import { getUnitTypeStyle } from './unitTypes'
 import { formatVnd } from './storageRules'
 import { formatMeters, unitGeometry, unitPlanStatus } from './unitGeometry'
 import './Unit3DViewer.css'
+import { PackPlanner, SampleRoom } from './UnitPackPlanner'
+import './UnitPackPlanner.css'
 
 /*
  * Xem kho dạng 3D (CSS 3D, không cần thư viện / mạng).
@@ -19,6 +21,7 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
   const status = unitPlanStatus(unit)
   const typeStyle = getUnitTypeStyle(unit.type)
   const [view, setView] = useState(DEFAULT_VIEW)
+  const [mode, setMode] = useState('empty') // empty | sample | pack
   const drag = useRef(null)
   const sceneRef = useRef(null)
   const closeRef = useRef(null)
@@ -34,7 +37,7 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
     const observer = new ResizeObserver(update)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [])
+  }, [mode])
 
   useEffect(() => {
     closeRef.current?.focus()
@@ -59,7 +62,7 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [])
+  }, [mode])
 
   const onPointerDown = event => {
     drag.current = { x: event.clientX, y: event.clientY, view }
@@ -98,7 +101,16 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
           <button ref={closeRef} type="button" className="u3d-close" onClick={onClose} aria-label="Đóng">×</button>
         </div>
 
-        <div className="u3d-body">
+        <div className="u3d-tabs" role="tablist" aria-label="Chế độ xem kho">
+          {[['empty', 'Kho trống'], ['sample', 'Có đồ mẫu'], ['pack', 'Tự xếp thùng']].map(([key, label]) => (
+            <button key={key} type="button" role="tab" aria-selected={mode === key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}>{label}</button>
+          ))}
+        </div>
+
+        <div className={`u3d-body mode-${mode}`}>
+          {mode === 'sample' && <div className="u3d-three"><SampleRoom geo={geo} color={typeStyle.color || '#075a9f'} /></div>}
+          {mode === 'pack' && <div className="u3d-three"><PackPlanner geo={geo} color={typeStyle.color || '#075a9f'} /></div>}
+          {mode === 'empty' && (
           <div
             ref={sceneRef}
             className="u3d-scene"
@@ -150,6 +162,7 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
             </div>
             <p className="u3d-tip">Kéo để xoay · lăn chuột để phóng to</p>
           </div>
+          )}
 
           <aside className="u3d-info">
             <dl>
@@ -161,14 +174,14 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
               <div><dt>Giá thuê</dt><dd>{formatVnd(unit.price)}đ/tháng</dd></div>
             </dl>
             <p className="u3d-hint">{hintFor(geo)}</p>
-            <div className="u3d-controls" role="group" aria-label="Điều khiển góc nhìn">
+            {mode === 'empty' && <div className="u3d-controls" role="group" aria-label="Điều khiển góc nhìn">
               <button type="button" onClick={() => setView(v => ({ ...v, ry: v.ry - 30 }))} aria-label="Xoay trái">⟲</button>
               <button type="button" onClick={() => setView(v => ({ ...v, ry: v.ry + 30 }))} aria-label="Xoay phải">⟳</button>
               <button type="button" onClick={() => setView(v => ({ ...v, zoom: clamp(v.zoom * 1.15, 0.55, 2.2) }))} aria-label="Phóng to">+</button>
               <button type="button" onClick={() => setView(v => ({ ...v, zoom: clamp(v.zoom / 1.15, 0.55, 2.2) }))} aria-label="Thu nhỏ">−</button>
               <button type="button" onClick={() => setView(v => ({ ...v, rx: -72, ry: 0 }))}>Nhìn từ trên</button>
               <button type="button" onClick={() => setView(DEFAULT_VIEW)}>Đặt lại</button>
-            </div>
+            </div>}
             <div className="u3d-actions">
               {onOpenDetail && <button type="button" className="dashboard-secondary-btn" onClick={() => onOpenDetail(unit)}>Xem chi tiết kho</button>}
               {status === 'free' && onBook && <button type="button" className="dashboard-primary-btn" onClick={() => onBook(unit)}>Đặt kho này</button>}

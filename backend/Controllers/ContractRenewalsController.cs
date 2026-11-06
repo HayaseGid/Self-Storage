@@ -6,23 +6,29 @@ using SelfStorageAPI.Constants;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Models;
+using SelfStorageAPI.Services;
 
 namespace SelfStorageAPI.Controllers;
 
 /*
  * GIA HẠN HỢP ĐỒNG CỦA KHÁCH HÀNG (file THÊM MỚI, không sửa code cũ, không cần sửa Program.cs).
  *
- *   GET  /api/contract-renewals/mine   -> các hợp đồng của khách + điều kiện & báo giá gia hạn
- *   POST /api/contract-renewals        -> { reservationId, months, expectedAmount } gia hạn + thanh toán (mô phỏng)
+ *   GET  /api/contract-renewals/mine           -> các hợp đồng của khách + điều kiện & báo giá gia hạn
+ *   POST /api/contract-renewals                -> { reservationId, months, expectedAmount } tạo đơn gia hạn CHỜ THANH TOÁN
+ *   POST /api/contract-renewals/{id}/pay-demo  -> thanh toán mô phỏng (khi chưa dùng VNPay) rồi hoàn tất gia hạn
+ *   POST /api/contract-renewals/{id}/finalize  -> thử hoàn tất lại (đã thanh toán nhưng lỗi giữa chừng)
+ *   POST /api/contract-renewals/{id}/cancel    -> hủy đơn gia hạn đang chờ thanh toán
+ *   Thanh toán thật: POST /api/vnpay/create { reservationIds: [id đơn gia hạn] } như đặt cọc.
  *
  * Cách làm (đúng ràng buộc của SelfStorageDB_test.sql):
  *   - Mỗi Reservation chỉ có 1 Contract và ngày của Contract phải trùng Reservation, nên gia hạn = tạo
  *     Reservation MỚI cho đúng các kho đang thuê, bắt đầu từ ngày hôm sau ngày hết hạn cũ,
  *     cùng Contract MỚI có RenewedFromContractID = hợp đồng cũ.
  *   - Giá gia hạn: bảng giá (RentalRate) hiện hành + % giảm của gói (ContractType), giống lúc đặt mới.
- *   - Tiền cọc được chuyển sang kỳ mới: thu cọc kỳ mới và hoàn cọc kỳ cũ trong cùng giao dịch,
- *     khách chỉ trả (hoặc được hoàn) phần chênh lệch.
- *   - Khách đang giữ kho nên đơn gia hạn được xác nhận + bàn giao ngay (không cần Staff bàn giao lại).
+ *   - Khi gia hạn khách trả ngay: tiền thuê THÁNG ĐẦU của kỳ mới + phần cọc bổ sung nếu giá tăng.
+ *     Tiền cọc kỳ cũ được chuyển sang kỳ mới (không phải trả lại cọc); các tháng sau trả hằng tháng.
+ *   - Thanh toán xong (ContractRenewalFinalizer): đơn được xác nhận + tạo hợp đồng (phụ lục gia hạn) + bàn giao ngay
+ *     (khách đang giữ kho, không cần Staff bàn giao lại). Khách ký phụ lục gia hạn online ngay sau đó.
  *   - Khi kỳ cũ kết thúc: kỳ cũ được đóng (Completed), hợp đồng cũ chuyển "Renewed",
  *     quyền truy cập kho (mã/thẻ) được chuyển sang kỳ mới. Việc này chạy mỗi khi gọi API này.
  *   - Điều kiện lấy từ chính sách "renewal_return" (BOM chỉnh): renewalNoticeDays, min/maxRenewalMonths, requireNoOverdue.
@@ -38,6 +44,8 @@ public sealed class ContractRenewalsController(
     // Tạm bỏ giảm giá theo gói (yêu cầu 29/10/2026). Làm lại giảm giá thì đổi thành true.
     private const bool ApplyContractDiscount = false;
     private static readonly string[] RenewableContractStatuses = ["Active", "Expiring Soon"];
+    // Thời gian giữ yêu cầu gia hạn chờ thanh toán (giống giữ kho khi đặt cọc).
+    private const int PaymentHoldMinutes = 15;
 
     public sealed record RenewContractRequest(int ReservationId, int Months, decimal? ExpectedAmount);
 
@@ -45,11 +53,20 @@ public sealed class ContractRenewalsController(
 
     private sealed record UnitQuote(
         int UnitId, string UnitNumber, int UnitTypeId, int UnitSizeId, string? TypeName, string? SizeLabel,
-        decimal ListPrice, decimal MonthlyPrice, decimal OldDeposit);
+        decimal ListPrice, decimal MonthlyPrice, decimal OldDeposit, decimal NewDeposit)
+    {
+        /* Phần cọc chuyển từ kỳ cũ sang (không thu tiền). */
+        public decimal Transfer => Math.Min(NewDeposit, OldDeposit);
+        /* Cọc phải thu thêm: giá tăng, hoặc kho không còn cọc cũ. */
+        public decimal TopUp => Math.Max(0m, NewDeposit - OldDeposit);
+        /* Cọc cũ dư (giá giảm) -> hoàn lại khách. */
+        public decimal Excess => Math.Max(0m, OldDeposit - NewDeposit);
+    }
 
     private sealed record PlanQuote(
         int Months, decimal DiscountPercent, DateTime StartDate, DateTime EndDate,
         decimal MonthlyBase, decimal Monthly, decimal Rent, decimal NewDeposit, decimal OldDeposit,
+        decimal FirstMonth, decimal DepositTransfer, decimal DepositTopUp,
         decimal AmountDue, decimal RefundAmount, List<UnitQuote> Units);
 
     // ------------------------------------------------------------------ GET
@@ -61,11 +78,23 @@ public sealed class ContractRenewalsController(
         if (customerId is null)
             return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
 
+        await TryFinalizePaidRenewalsAsync(customerId.Value, cancellationToken);
         await TrySettleEndedTermsAsync(customerId.Value, cancellationToken);
 
         var rules = await ReadRulesAsync(cancellationToken);
         var plans = await GetPlansAsync(rules, cancellationToken);
         var reservations = await LoadCustomerReservationsAsync(customerId.Value, null, cancellationToken);
+
+        // Yêu cầu gia hạn đang chờ thanh toán (còn thời gian giữ) -> cho khách thanh toán tiếp hoặc hủy.
+        var nowUtc = DateTime.UtcNow;
+        var prefix = ContractRenewalFinalizer.CodePrefix;
+        var pendingRenewals = await context.Reservations.AsNoTracking()
+            .Include(r => r.Charges)
+            .Where(r => r.CustomerID == customerId.Value &&
+                        r.ReservationCode.StartsWith(prefix) &&
+                        r.Status == ReservationStatus.PendingPayment &&
+                        r.HoldExpiresAt > nowUtc)
+            .ToListAsync(cancellationToken);
 
         var contractIds = reservations.Where(r => r.Contract != null).Select(r => r.Contract!.ContractID).ToList();
         var renewals = await context.Contracts.AsNoTracking()
@@ -80,6 +109,11 @@ public sealed class ContractRenewalsController(
             .Include(c => c.Reservation)
             .Where(c => parentIds.Contains(c.ContractID))
             .ToListAsync(cancellationToken);
+        var renewalContractIds = renewals.Select(c => c.ContractID).ToList();
+        var signedRenewalIds = await context.Contracts.AsNoTracking()
+            .Where(c => renewalContractIds.Contains(c.ContractID) && c.Signature != null)
+            .Select(c => c.ContractID)
+            .ToListAsync(cancellationToken);
 
         var today = Today();
         var items = reservations.Where(r => r.Contract != null).Select(r =>
@@ -92,6 +126,8 @@ public sealed class ContractRenewalsController(
                 : parents.FirstOrDefault(c => c.ContractID == contract.RenewedFromContractID);
             var (eligible, reason) = CheckEligibility(r, renewedBy != null, rules, today);
             var deadline = r.EndDate.Date.AddDays(-rules.NoticeDays);
+            var pending = renewedBy != null ? null : pendingRenewals.FirstOrDefault(p =>
+                p.FacilityID == r.FacilityID && p.StartDate.Date == r.EndDate.Date.AddDays(1));
 
             return new
             {
@@ -117,7 +153,19 @@ public sealed class ContractRenewalsController(
                     contractNumber = renewedBy.ContractNumber,
                     startDate = renewedBy.StartDate.Date,
                     endDate = renewedBy.EndDate.Date,
-                    months = renewedBy.Reservation.RentalPeriod
+                    months = renewedBy.Reservation.RentalPeriod,
+                    isSigned = signedRenewalIds.Contains(renewedBy.ContractID)
+                },
+                pendingRenewal = pending == null ? null : new
+                {
+                    reservationId = pending.ReservationID,
+                    reservationCode = pending.ReservationCode,
+                    months = pending.RentalPeriod,
+                    startDate = pending.StartDate.Date,
+                    endDate = pending.EndDate.Date,
+                    amountDue = pending.Charges.Where(c => ContractRenewalFinalizer.IsPayableNow(c, pending)).Sum(c => c.Amount),
+                    paid = !pending.Charges.Any(c => ContractRenewalFinalizer.IsPayableNow(c, pending)),
+                    holdExpiresAt = pending.HoldExpiresAt
                 },
                 renewedFrom = renewedFrom == null ? null : new
                 {
@@ -146,7 +194,7 @@ public sealed class ContractRenewalsController(
         });
     }
 
-    // ------------------------------------------------------------------ POST
+    // ------------------------------------------------------------------ POST: tạo đơn gia hạn chờ thanh toán
 
     [HttpPost]
     public async Task<IActionResult> Renew([FromBody] RenewContractRequest request, CancellationToken cancellationToken)
@@ -168,7 +216,7 @@ public sealed class ContractRenewalsController(
 
         try
         {
-            await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
             var old = (await LoadCustomerReservationsAsync(customerId.Value, request.ReservationId, cancellationToken)).FirstOrDefault();
             if (old?.Contract is null)
@@ -196,42 +244,241 @@ public sealed class ContractRenewalsController(
                 });
 
             var now = DateTime.UtcNow;
-            var renewal = await CreateRenewalAsync(old, quote, customerId.Value, now, cancellationToken);
+
+            // Đã có đơn gia hạn đang chờ thanh toán: cùng kỳ + cùng số tiền thì dùng lại, khác thì hủy để tạo đơn mới.
+            var pending = await FindPendingRenewalsAsync(old, now, cancellationToken);
+            var reusable = pending.FirstOrDefault(p => p.RentalPeriod == quote.Months &&
+                                                       p.Charges.Where(c => ContractRenewalFinalizer.IsPayableNow(c, p)).Sum(c => c.Amount) == quote.AmountDue);
+            foreach (var stale in pending.Where(p => p != reusable))
+                await CancelPendingAsync(stale, customerId.Value, "Khách chọn lại kỳ gia hạn", now, cancellationToken);
+
+            var renewal = reusable ?? await CreatePendingRenewalAsync(old, quote, customerId.Value, now, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
-            return StatusCode(201, new
+            return StatusCode(reusable is null ? 201 : 200, new
             {
-                message = $"Đã gia hạn hợp đồng {old.Contract.ContractNumber} thêm {quote.Months} tháng.",
-                reservationId = renewal.Reservation.ReservationID,
-                reservationCode = renewal.Reservation.ReservationCode,
-                contractId = renewal.Contract.ContractID,
-                contractNumber = renewal.Contract.ContractNumber,
+                message = $"Đã tạo yêu cầu gia hạn hợp đồng {old.Contract.ContractNumber} thêm {quote.Months} tháng. Vui lòng thanh toán để hoàn tất.",
+                reservationId = renewal.ReservationID,
+                reservationCode = renewal.ReservationCode,
                 renewedFromContractNumber = old.Contract.ContractNumber,
                 startDate = quote.StartDate,
                 endDate = quote.EndDate,
                 months = quote.Months,
-                paymentReference = renewal.PaymentReference,
+                amountDue = quote.AmountDue,
+                holdExpiresAt = renewal.HoldExpiresAt,
                 quote = ToQuoteDto(quote)
             });
         }
         catch (DbUpdateException exception)
         {
             var text = exception.InnerException?.Message ?? exception.Message;
-            logger.LogWarning(exception, "Gia hạn hợp đồng thất bại (reservation {ReservationId})", request.ReservationId);
+            logger.LogWarning(exception, "Tạo đơn gia hạn thất bại (reservation {ReservationId})", request.ReservationId);
             if (text.Contains("RESERVATION_OVERLAP", StringComparison.OrdinalIgnoreCase))
                 return Conflict(new { message = "Kho đã có người đặt cho thời gian sau hợp đồng hiện tại nên không thể gia hạn. Vui lòng liên hệ cơ sở." });
-            var colon = text.IndexOf(':');
-            return Conflict(new { message = colon > 0 && colon < 60 ? text[(colon + 1)..].Trim() : "Không thể gia hạn hợp đồng lúc này. Vui lòng thử lại." });
+            return Conflict(new { message = CleanDbMessage(text, "Không thể gia hạn hợp đồng lúc này. Vui lòng thử lại.") });
         }
     }
 
-    // ------------------------------------------------------------------ Tạo đơn gia hạn
+    // ------------------------------------------------------------------ POST: thanh toán mô phỏng / hoàn tất / hủy
 
-    private sealed record RenewalResult(Reservation Reservation, Contract Contract, string PaymentReference);
-
-    private async Task<RenewalResult> CreateRenewalAsync(Reservation old, PlanQuote quote, int customerId, DateTime now, CancellationToken ct)
+    /* Thanh toán mô phỏng (giống POST /api/payment/confirm của đặt cọc) rồi hoàn tất gia hạn. */
+    [HttpPost("{reservationId:int}/pay-demo")]
+    public async Task<IActionResult> PayDemo(int reservationId, CancellationToken cancellationToken)
     {
-        // 1) Đơn mới (chờ thanh toán) + dòng yêu cầu + kho + các khoản phí, giống ReservationService.
+        var customerId = await GetCustomerIdAsync(cancellationToken);
+        if (customerId is null)
+            return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
+
+        var renewal = await context.Reservations
+            .Include(r => r.Charges)
+            .Include(r => r.Payments)
+            .FirstOrDefaultAsync(r => r.ReservationID == reservationId && r.CustomerID == customerId.Value, cancellationToken);
+        if (renewal is null || !ContractRenewalFinalizer.IsRenewal(renewal))
+            return NotFound(new { message = "Không tìm thấy đơn gia hạn thuộc tài khoản này." });
+
+        var now = DateTime.UtcNow;
+        if (renewal.Status == ReservationStatus.PendingPayment)
+        {
+            if (renewal.HoldExpiresAt <= now)
+                return Conflict(new { message = "Yêu cầu gia hạn đã quá thời gian chờ thanh toán. Vui lòng gia hạn lại." });
+
+            var payable = renewal.Charges.Where(c => ContractRenewalFinalizer.IsPayableNow(c, renewal)).ToList();
+            if (payable.Count > 0)
+            {
+                try
+                {
+                    await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+                    foreach (var old in renewal.Payments.Where(p => p.Status == "Pending")) old.Status = "Cancelled";
+                    await context.SaveChangesAsync(cancellationToken);
+
+                    var payment = new Payment
+                    {
+                        ReservationID = renewal.ReservationID,
+                        OrderCode = $"ORD-{Guid.NewGuid().ToString("N")[..10].ToUpperInvariant()}",
+                        IdempotencyKey = $"RENEW-PAY-{renewal.ReservationID}-{Guid.NewGuid():N}",
+                        Provider = "Simulator",
+                        Direction = "Collection",
+                        Amount = payable.Sum(c => c.Amount),
+                        PaymentMethod = "QR",
+                        Status = "Pending",
+                        CreatedAt = now,
+                        ExpiresAt = renewal.HoldExpiresAt,
+                        CreatedByUserID = customerId.Value
+                    };
+                    context.Payments.Add(payment);
+                    await context.SaveChangesAsync(cancellationToken);
+
+                    foreach (var charge in payable) charge.PaymentID = payment.PaymentID;
+                    await context.SaveChangesAsync(cancellationToken);
+
+                    payment.Status = "Completed";
+                    payment.ProviderTransactionId = $"SIM-{now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+                    payment.ReceivedAmount = payment.Amount;
+                    payment.ConfirmedAt = now;
+                    await context.SaveChangesAsync(cancellationToken);
+
+                    foreach (var charge in payable) { charge.Status = "Paid"; charge.PaidAt = now; }
+                    await context.SaveChangesAsync(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                }
+                catch (DbUpdateException exception)
+                {
+                    logger.LogWarning(exception, "Thanh toán mô phỏng gia hạn thất bại ({ReservationId})", reservationId);
+                    return Conflict(new { message = CleanDbMessage(exception.InnerException?.Message ?? exception.Message, "Chưa thanh toán được, vui lòng thử lại.") });
+                }
+            }
+        }
+
+        return await FinalizeResponseAsync(reservationId, customerId.Value, cancellationToken);
+    }
+
+    [HttpPost("{reservationId:int}/finalize")]
+    public async Task<IActionResult> Finalize(int reservationId, CancellationToken cancellationToken)
+    {
+        var customerId = await GetCustomerIdAsync(cancellationToken);
+        if (customerId is null)
+            return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
+        var owns = await context.Reservations.AnyAsync(r => r.ReservationID == reservationId && r.CustomerID == customerId.Value, cancellationToken);
+        if (!owns)
+            return NotFound(new { message = "Không tìm thấy đơn gia hạn thuộc tài khoản này." });
+        return await FinalizeResponseAsync(reservationId, customerId.Value, cancellationToken);
+    }
+
+    [HttpPost("{reservationId:int}/cancel")]
+    public async Task<IActionResult> Cancel(int reservationId, CancellationToken cancellationToken)
+    {
+        var customerId = await GetCustomerIdAsync(cancellationToken);
+        if (customerId is null)
+            return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
+
+        var renewal = await context.Reservations
+            .Include(r => r.Charges)
+            .Include(r => r.Payments)
+            .Include(r => r.ReservationUnits)
+            .FirstOrDefaultAsync(r => r.ReservationID == reservationId && r.CustomerID == customerId.Value, cancellationToken);
+        if (renewal is null || !ContractRenewalFinalizer.IsRenewal(renewal))
+            return NotFound(new { message = "Không tìm thấy đơn gia hạn thuộc tài khoản này." });
+        if (renewal.Status != ReservationStatus.PendingPayment)
+            return Conflict(new { message = "Chỉ hủy được yêu cầu gia hạn đang chờ thanh toán." });
+        if (renewal.Charges.Any(c => c.Status == "Paid"))
+            return Conflict(new { message = "Yêu cầu gia hạn đã được thanh toán, không thể hủy. Vui lòng bấm \"Hoàn tất gia hạn\" hoặc liên hệ cơ sở." });
+
+        try
+        {
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+            await CancelPendingAsync(renewal, customerId.Value, "Khách hủy yêu cầu gia hạn", DateTime.UtcNow, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return Ok(new { message = "Đã hủy yêu cầu gia hạn." });
+        }
+        catch (DbUpdateException exception)
+        {
+            logger.LogWarning(exception, "Hủy đơn gia hạn thất bại ({ReservationId})", reservationId);
+            return Conflict(new { message = CleanDbMessage(exception.InnerException?.Message ?? exception.Message, "Chưa hủy được, vui lòng thử lại.") });
+        }
+    }
+
+    private async Task<IActionResult> FinalizeResponseAsync(int reservationId, int customerId, CancellationToken ct)
+    {
+        try
+        {
+            var contract = await ContractRenewalFinalizer.FinalizeAsync(context, reservationId, customerId, ct);
+            if (contract is null)
+                return Conflict(new { message = "Yêu cầu gia hạn chưa được thanh toán." });
+
+            await TrySettleEndedTermsAsync(customerId, ct);
+            var previous = await context.Contracts.AsNoTracking()
+                .Where(c => c.ContractID == contract.RenewedFromContractID)
+                .Select(c => c.ContractNumber)
+                .FirstOrDefaultAsync(ct);
+            return Ok(new
+            {
+                message = "Gia hạn thành công. Vui lòng ký phụ lục gia hạn.",
+                reservationId,
+                contractId = contract.ContractID,
+                contractNumber = contract.ContractNumber,
+                renewedFromContractNumber = previous,
+                startDate = contract.StartDate,
+                endDate = contract.EndDate
+            });
+        }
+        catch (Exception exception) when (exception is DbUpdateException or InvalidOperationException)
+        {
+            context.ChangeTracker.Clear();
+            logger.LogWarning(exception, "Hoàn tất gia hạn thất bại ({ReservationId})", reservationId);
+            var text = (exception as DbUpdateException)?.InnerException?.Message ?? exception.Message;
+            if (text.Contains("RESERVATION_OVERLAP", StringComparison.OrdinalIgnoreCase))
+                return Conflict(new { message = "Kho đã có người đặt cho thời gian sau hợp đồng hiện tại. Đã nhận tiền, vui lòng liên hệ cơ sở để được hỗ trợ." });
+            return Conflict(new { message = CleanDbMessage(text, "Đã nhận thanh toán nhưng chưa hoàn tất được gia hạn. Vui lòng thử lại hoặc liên hệ cơ sở.") });
+        }
+    }
+
+    private static string CleanDbMessage(string text, string fallback)
+    {
+        var colon = text.IndexOf(':');
+        return colon > 0 && colon < 60 ? text[(colon + 1)..].Trim() : fallback;
+    }
+
+    // ------------------------------------------------------------------ Đơn gia hạn chờ thanh toán
+
+    private async Task<List<Reservation>> FindPendingRenewalsAsync(Reservation old, DateTime now, CancellationToken ct)
+    {
+        var start = old.EndDate.Date.AddDays(1);
+        var prefix = ContractRenewalFinalizer.CodePrefix;
+        var unitIds = old.ReservationUnits.Where(ru => ru.Status == "Active").Select(ru => ru.UnitID).ToList();
+        return await context.Reservations
+            .Include(r => r.Charges)
+            .Include(r => r.Payments)
+            .Include(r => r.ReservationUnits)
+            .AsSplitQuery()
+            .Where(r => r.CustomerID == old.CustomerID &&
+                        r.FacilityID == old.FacilityID &&
+                        r.StartDate == start &&
+                        r.ReservationCode.StartsWith(prefix) &&
+                        r.Status == ReservationStatus.PendingPayment &&
+                        r.HoldExpiresAt > now &&
+                        r.ReservationUnits.Any(ru => ru.Status == "Held" && unitIds.Contains(ru.UnitID)))
+            .ToListAsync(ct);
+    }
+
+    private async Task CancelPendingAsync(Reservation renewal, int customerId, string reason, DateTime now, CancellationToken ct)
+    {
+        if (renewal.Charges.Any(c => c.Status == "Paid"))
+            throw new DbUpdateException("RENEWAL_PAID: Yêu cầu gia hạn trước đó đã được thanh toán, vui lòng hoàn tất yêu cầu đó.");
+        foreach (var payment in renewal.Payments.Where(p => p.Status == "Pending")) payment.Status = "Cancelled";
+        await context.SaveChangesAsync(ct);
+        foreach (var charge in renewal.Charges.Where(c => c.Status == "Unpaid")) { charge.Status = "Cancelled"; charge.PaymentID = null; }
+        foreach (var ru in renewal.ReservationUnits.Where(ru => ru.Status == "Held")) { ru.Status = "Released"; ru.ReleasedAt = now; }
+        await context.SaveChangesAsync(ct);
+        renewal.Status = ReservationStatus.Cancelled;
+        renewal.CancelledAt = now;
+        renewal.CancelledByUserID = customerId;
+        renewal.CancelReason = reason;
+        await context.SaveChangesAsync(ct);
+    }
+
+    /* Tạo đơn gia hạn (chờ thanh toán) + dòng yêu cầu + kho + các khoản phí, giống ReservationService. */
+    private async Task<Reservation> CreatePendingRenewalAsync(Reservation old, PlanQuote quote, int customerId, DateTime now, CancellationToken ct)
+    {
         var reservation = new Reservation
         {
             ReservationCode = await NewReservationCodeAsync(now, ct),
@@ -242,15 +489,14 @@ public sealed class ContractRenewalsController(
             RentalPeriod = quote.Months,
             EndDate = quote.EndDate,
             DepositMonths = old.DepositMonths,
-            HoldExpiresAt = now.AddMinutes(15),
+            HoldExpiresAt = now.AddMinutes(PaymentHoldMinutes),
             AppointmentDate = quote.StartDate,
             AppointmentTime = new TimeSpan(9, 0, 0),
             Status = ReservationStatus.PendingPayment,
             CreatedAt = now
         };
 
-        var depositCharges = new List<Charge>();
-        var newUnits = new List<ReservationUnit>();
+        var previousNumber = old.Contract!.ContractNumber;
         foreach (var group in quote.Units.GroupBy(u => new { u.UnitTypeId, u.UnitSizeId }))
         {
             var item = new ReservationItem
@@ -281,22 +527,38 @@ public sealed class ContractRenewalsController(
                 };
                 item.ReservationUnits.Add(ru);
                 reservation.ReservationUnits.Add(ru);
-                newUnits.Add(ru);
 
-                var deposit = new Charge
+                // Cọc: mỗi kho đúng 1 dòng (UX_Charge_Deposit). Có cọc cũ -> dòng cọc = phần chuyển sang (không thu tiền),
+                // phần tăng thêm (nếu giá tăng) là khoản "Renewal" khách trả ngay. Không có cọc cũ -> dòng cọc phải thu.
+                var hasOldDeposit = unit.OldDeposit > 0;
+                reservation.Charges.Add(new Charge
                 {
                     Reservation = reservation,
                     ReservationUnit = ru,
                     ChargeType = "Deposit",
-                    Description = $"Tiền cọc {old.DepositMonths} tháng (gia hạn) - kho {unit.UnitNumber}",
-                    Amount = unit.MonthlyPrice * old.DepositMonths,
+                    Description = hasOldDeposit
+                        ? $"Tiền cọc kho {unit.UnitNumber} ({ContractRenewalFinalizer.TransferMarker} - HĐ {previousNumber})"
+                        : $"Tiền cọc {old.DepositMonths} tháng (gia hạn) - kho {unit.UnitNumber}",
+                    Amount = hasOldDeposit ? unit.Transfer : unit.NewDeposit,
                     DueDate = now.Date,
                     Status = "Unpaid",
                     CreatedAt = now,
                     CreatedByUserID = customerId
-                };
-                reservation.Charges.Add(deposit);
-                depositCharges.Add(deposit);
+                });
+                if (hasOldDeposit && unit.TopUp > 0)
+                {
+                    reservation.Charges.Add(new Charge
+                    {
+                        Reservation = reservation,
+                        ChargeType = "Renewal",
+                        Description = $"Bổ sung tiền cọc do giá thuê tăng - kho {unit.UnitNumber}",
+                        Amount = unit.TopUp,
+                        DueDate = now.Date,
+                        Status = "Unpaid",
+                        CreatedAt = now,
+                        CreatedByUserID = customerId
+                    });
+                }
 
                 for (var m = 0; m < quote.Months; m++)
                 {
@@ -310,7 +572,8 @@ public sealed class ContractRenewalsController(
                         PeriodStart = periodStart,
                         PeriodEnd = quote.StartDate.AddMonths(m + 1).AddDays(-1),
                         Amount = unit.MonthlyPrice,
-                        DueDate = periodStart,
+                        // Tháng đầu trả ngay khi gia hạn, các tháng sau đến hạn vào đầu mỗi kỳ.
+                        DueDate = m == 0 ? now.Date : periodStart,
                         Status = "Unpaid",
                         CreatedAt = now,
                         CreatedByUserID = customerId
@@ -321,106 +584,33 @@ public sealed class ContractRenewalsController(
 
         context.Reservations.Add(reservation);
         await context.SaveChangesAsync(ct);
-
-        // 2) Thu cọc kỳ mới (cổng thanh toán mô phỏng, đúng thứ tự trigger: Pending -> gán khoản -> Completed).
-        var providerTxn = $"SIM-{now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
-        var collection = new Payment
-        {
-            ReservationID = reservation.ReservationID,
-            OrderCode = $"ORD-{Guid.NewGuid().ToString("N")[..10].ToUpperInvariant()}",
-            IdempotencyKey = $"RENEW-{reservation.ReservationID}-{Guid.NewGuid():N}",
-            Provider = "Simulator",
-            Direction = "Collection",
-            Amount = depositCharges.Sum(c => c.Amount),
-            PaymentMethod = "QR",
-            Status = "Pending",
-            CreatedAt = now,
-            ExpiresAt = now.AddMinutes(15),
-            CreatedByUserID = customerId
-        };
-        context.Payments.Add(collection);
-        await context.SaveChangesAsync(ct);
-
-        foreach (var charge in depositCharges) charge.PaymentID = collection.PaymentID;
-        await context.SaveChangesAsync(ct);
-
-        collection.Status = "Completed";
-        collection.ProviderTransactionId = providerTxn;
-        collection.ReceivedAmount = collection.Amount;
-        collection.ConfirmedAt = now;
-        await context.SaveChangesAsync(ct);
-
-        foreach (var charge in depositCharges) { charge.Status = "Paid"; charge.PaidAt = now; }
-        await context.SaveChangesAsync(ct);
-
-        // 3) Đơn: Paid -> Confirmed (đã đủ kho) -> tạo hợp đồng mới -> bàn giao ngay (khách đang giữ kho).
-        reservation.Status = ReservationStatus.Paid;
-        reservation.PaidAt = now;
-        await context.SaveChangesAsync(ct);
-
-        reservation.Status = ReservationStatus.Confirmed;
-        reservation.ConfirmedAt = now;
-        await context.SaveChangesAsync(ct);
-
-        var contract = new Contract
-        {
-            ContractNumber = $"HD-{now:yyyy}-{reservation.ReservationID:D5}",
-            ReservationID = reservation.ReservationID,
-            StartDate = reservation.StartDate,
-            EndDate = reservation.EndDate,
-            ContractStatus = "Active",
-            RenewedFromContractID = old.Contract!.ContractID,
-            CreatedAt = now,
-            CreatedByUserID = customerId
-        };
-        context.Contracts.Add(contract);
-        await context.SaveChangesAsync(ct);
-
-        foreach (var ru in newUnits) { ru.Status = "Active"; ru.HandedOverAt = now; }
-        await context.SaveChangesAsync(ct);
-
-        reservation.Status = ReservationStatus.HandedOver;
-        await context.SaveChangesAsync(ct);
-
-        // 4) Hoàn cọc kỳ cũ (cọc được chuyển sang kỳ mới).
-        var oldDeposits = old.Charges
-            .Where(c => c.ChargeType == "Deposit" && c.Status == "Paid" && c.RefundedAmount == 0 &&
-                        quote.Units.Any(u => old.ReservationUnits.Any(ru => ru.ReservationUnitID == c.ReservationUnitID && ru.UnitID == u.UnitId)))
-            .ToList();
-        var refundTotal = oldDeposits.Sum(c => c.Amount);
-        if (refundTotal > 0)
-        {
-            var refund = new Payment
-            {
-                ReservationID = old.ReservationID,
-                OrderCode = $"RFD-{Guid.NewGuid().ToString("N")[..10].ToUpperInvariant()}",
-                IdempotencyKey = $"RENEW-REFUND-{old.ReservationID}-{Guid.NewGuid():N}",
-                Provider = "Simulator",
-                Direction = "Refund",
-                RefundReason = "DepositReturn",
-                Amount = refundTotal,
-                PaymentMethod = "Transfer to renewal",
-                Status = "Pending",
-                CreatedAt = now,
-                CreatedByUserID = customerId
-            };
-            context.Payments.Add(refund);
-            await context.SaveChangesAsync(ct);
-
-            foreach (var charge in oldDeposits) { charge.RefundedAmount = charge.Amount; charge.RefundPaymentID = refund.PaymentID; }
-            await context.SaveChangesAsync(ct);
-
-            refund.Status = "Completed";
-            refund.ProviderTransactionId = $"SIM-RFD-{now:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
-            refund.ReceivedAmount = refund.Amount;
-            refund.ConfirmedAt = now;
-            await context.SaveChangesAsync(ct);
-        }
-
-        return new RenewalResult(reservation, contract, providerTxn);
+        return reservation;
     }
 
     // ------------------------------------------------------------------ Đóng kỳ cũ khi đã qua ngày hết hạn
+
+    /* Đơn gia hạn đã thanh toán đủ nhưng chưa hoàn tất (lỗi giữa chừng) -> hoàn tất lại. */
+    private async Task TryFinalizePaidRenewalsAsync(int customerId, CancellationToken ct)
+    {
+        var prefix = ContractRenewalFinalizer.CodePrefix;
+        var candidates = await context.Reservations.AsNoTracking()
+            .Include(r => r.Charges)
+            .Where(r => r.CustomerID == customerId &&
+                        r.ReservationCode.StartsWith(prefix) &&
+                        (r.Status == ReservationStatus.PendingPayment || r.Status == ReservationStatus.Paid || r.Status == ReservationStatus.Confirmed) &&
+                        r.Charges.Any(c => c.Status == "Paid" && c.ChargeType != "Deposit"))
+            .ToListAsync(ct);
+        foreach (var renewal in candidates.Where(r => !r.Charges.Any(c => ContractRenewalFinalizer.IsPayableNow(c, r))))
+        {
+            try { await ContractRenewalFinalizer.FinalizeAsync(context, renewal.ReservationID, customerId, ct); }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                context.ChangeTracker.Clear();
+                logger.LogWarning(exception, "Chưa hoàn tất được đơn gia hạn {ReservationId}", renewal.ReservationID);
+            }
+        }
+        context.ChangeTracker.Clear();
+    }
 
     private async Task TrySettleEndedTermsAsync(int customerId, CancellationToken ct)
     {
@@ -547,20 +737,24 @@ public sealed class ContractRenewalsController(
                     ru.UnitID, ru.Unit.UnitNumber, ru.Unit.UnitTypeID, ru.Unit.UnitSizeID,
                     ru.Unit.UnitType?.TypeName,
                     ru.Unit.UnitSize == null ? null : $"{ru.Unit.UnitSize.SizeCode}: {ru.Unit.UnitSize.DisplayName}",
-                    listPrice, monthly, oldDeposit);
+                    listPrice, monthly, oldDeposit, monthly * r.DepositMonths);
             })
             .ToList();
 
-        var monthlyBase = units.Sum(u => u.ListPrice);
         var monthlyTotal = units.Sum(u => u.MonthlyPrice);
-        var newDeposit = monthlyTotal * r.DepositMonths;
-        var oldDepositTotal = units.Sum(u => u.OldDeposit);
-        var difference = newDeposit - oldDepositTotal;
+        var topUp = units.Sum(u => u.TopUp);
         return new PlanQuote(
-            months, discountRate, start, end, monthlyBase, monthlyTotal, monthlyTotal * months,
-            newDeposit, oldDepositTotal,
-            AmountDue: Math.Max(0m, difference),
-            RefundAmount: Math.Max(0m, -difference),
+            months, discountRate, start, end,
+            MonthlyBase: units.Sum(u => u.ListPrice),
+            Monthly: monthlyTotal,
+            Rent: monthlyTotal * months,
+            NewDeposit: units.Sum(u => u.NewDeposit),
+            OldDeposit: units.Sum(u => u.OldDeposit),
+            FirstMonth: monthlyTotal,
+            DepositTransfer: units.Sum(u => u.Transfer),
+            DepositTopUp: topUp,
+            AmountDue: monthlyTotal + topUp,
+            RefundAmount: units.Sum(u => u.Excess),
             units);
     }
 
@@ -575,6 +769,10 @@ public sealed class ContractRenewalsController(
         rent = q.Rent,
         newDeposit = q.NewDeposit,
         oldDeposit = q.OldDeposit,
+        firstMonth = q.FirstMonth,
+        depositTransfer = q.DepositTransfer,
+        depositTopUp = q.DepositTopUp,
+        laterMonths = Math.Max(0, q.Months - 1),
         amountDue = q.AmountDue,
         refundAmount = q.RefundAmount,
         units = q.Units.Select(u => new
@@ -665,11 +863,11 @@ public sealed class ContractRenewalsController(
     {
         for (var attempt = 0; attempt < 10; attempt++)
         {
-            var code = $"RS-{now:yyyy}-{Random.Shared.Next(10000, 99999)}";
+            var code = $"{ContractRenewalFinalizer.CodePrefix}{now:yyyy}-{Random.Shared.Next(10000, 99999)}";
             if (!await context.Reservations.AnyAsync(r => r.ReservationCode == code, ct))
                 return code;
         }
-        return $"RS-{now:yyyy}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
+        return $"{ContractRenewalFinalizer.CodePrefix}{now:yyyy}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
     }
 
     /* Ngày hiện tại: lấy ngày muộn hơn giữa giờ máy chủ và UTC (khớp cách trigger DB tính "quá hạn"). */

@@ -22,3 +22,5 @@ Tất cả các tài khoản mặc định dùng chung mật khẩu: 123456
 
 5. Quản Trị Viên (System Admin)
 - Username: sys_admin (Tên: Quản Trị Viên, Email: admin@test.com)
+
+-6. VNPay: 9704198526191432198     Nguyen Van A   07/15   123456

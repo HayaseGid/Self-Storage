@@ -13,7 +13,7 @@ export const PAYMENT_RESULT_PATH = '/payment-result'
 /* Chỉ bật nút "thanh toán mô phỏng" khi cần demo không có mạng: VITE_ALLOW_SIMULATED_PAYMENT=true trong .env */
 export const SIMULATED_PAYMENT_ENABLED = import.meta.env.VITE_ALLOW_SIMULATED_PAYMENT === 'true'
 
-export async function startVnPayPayment(reservationIds, { amount, count, label } = {}) {
+export async function startVnPayPayment(reservationIds, { amount, count, label, kind = 'deposit' } = {}) {
   const ids = (Array.isArray(reservationIds) ? reservationIds : [reservationIds]).map(Number).filter(Boolean)
   const data = await apiPost('/api/vnpay/create', {
     reservationIds: ids,
@@ -25,6 +25,7 @@ export async function startVnPayPayment(reservationIds, { amount, count, label }
       amount: amount ?? data.amount,
       count: count ?? ids.length,
       label: label || '',
+      kind,
       txnRef: data.txnRef,
       createdAt: new Date().toISOString()
     }))

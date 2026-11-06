@@ -11,10 +11,11 @@ import './DepositConfirm.css'
  * lines:  [[nhãn, số tiền], ...]  các dòng tiền (giá thuê, tiền cọc...)
  * amount: số tiền cần thanh toán ngay
  * onChange(agreed: boolean)
+ * infoText / policyText / hint: thay nội dung 2 ô xác nhận (dùng cho gia hạn hợp đồng).
  */
 const money = value => `${formatVnd(Math.round(Number(value) || 0))}đ`
 
-export default function DepositConfirm({ title = 'Xác nhận đặt cọc', rows = [], lines = [], amount, onChange }) {
+export default function DepositConfirm({ title = 'Xác nhận đặt cọc', rows = [], lines = [], amount, onChange, infoText, policyText, hint }) {
   const policies = usePolicies()
   const [checkedInfo, setCheckedInfo] = useState(false)
   const [checkedPolicy, setCheckedPolicy] = useState(false)
@@ -51,15 +52,15 @@ export default function DepositConfirm({ title = 'Xác nhận đặt cọc', row
 
       <label className={`dc-check${checkedInfo ? ' on' : ''}`}>
         <input type="checkbox" checked={checkedInfo} onChange={event => toggle('info', event.target.checked)} />
-        <span>Tôi đã kiểm tra đúng <strong>kho, cơ sở và thời gian thuê</strong> ở trên.</span>
+        <span>{infoText || <>Tôi đã kiểm tra đúng <strong>kho, cơ sở và thời gian thuê</strong> ở trên.</>}</span>
       </label>
       <label className={`dc-check${checkedPolicy ? ' on' : ''}`}>
         <input type="checkbox" checked={checkedPolicy} onChange={event => toggle('policy', event.target.checked)} />
         <span>
-          Tôi đồng ý <strong>chính sách đặt cọc</strong>: {deposit} {reservation}
+          {policyText || <>Tôi đồng ý <strong>chính sách đặt cọc</strong>: {deposit} {reservation}</>}
         </span>
       </label>
-      {!agreed && <p className="dc-hint">Tick đủ 2 ô để thanh toán tiền cọc.</p>}
+      {!agreed && <p className="dc-hint">{hint || 'Tick đủ 2 ô để thanh toán tiền cọc.'}</p>}
     </section>
   )
 }
