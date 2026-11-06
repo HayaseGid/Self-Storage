@@ -197,14 +197,20 @@ export default function StaffReturns({ staff }) {
             </div>
             {req.notes && <p className="ur-help" style={{ whiteSpace: 'pre-line' }}>{req.notes}</p>}
 
-            {item.requestStatus === 'Scheduled' && (
+            {/* Chỉ người được phân công mới thao tác (backend cũng chặn). Muốn đổi người: báo Facility Manager. */}
+            {item.requestStatus !== 'Completed' && !item.assignedToMe && (
+              <div className="st-alert st-info">Yêu cầu này do NV {req.staffName} phụ trách nên bạn không thao tác được. Nếu cần đổi người, báo Facility Manager.</div>
+            )}
+            {item.requestStatus === 'Scheduled' && item.assignedToMe && (
               <div className="sr-actions">
-                <button type="button" className="dashboard-primary-btn" disabled={busy === item.reservationId} onClick={() => start(item)}>
-                  {busy === item.reservationId ? 'Đang xử lý...' : 'Nhận lại kho & bắt đầu kiểm tra'}
-                </button>
+                {String(item.scheduledDate || '').slice(0, 10) > todayIso()
+                  ? <div className="st-alert st-info">Khách hẹn trả ngày {fmtDay(item.scheduledDate)}. Từ ngày đó mới nhận lại kho được.</div>
+                  : <button type="button" className="dashboard-primary-btn" disabled={busy === item.reservationId} onClick={() => start(item)}>
+                      {busy === item.reservationId ? 'Đang xử lý...' : 'Nhận lại kho & bắt đầu kiểm tra'}
+                    </button>}
               </div>
             )}
-            {item.requestStatus === 'In Progress' && (inspecting === item.reservationId
+            {item.requestStatus === 'In Progress' && item.assignedToMe && (inspecting === item.reservationId
               ? <InspectForm item={item} catalog={catalog} refundDays={data.rules?.depositRefundDays ?? 7} onCancel={() => setInspecting(null)} onDone={() => { setInspecting(null); data.reload(); setFilter('done') }} />
               : <div className="sr-actions"><button type="button" className="dashboard-primary-btn" onClick={() => setInspecting(item.reservationId)}>Nhập kết quả kiểm tra</button></div>)}
             {item.requestStatus === 'Completed' && (

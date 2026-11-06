@@ -16,6 +16,7 @@ import {
 } from './storageRules'
 import PriceInput from './PriceInput'
 import ContractDocument from './ContractDocument'
+import ManagerPriceTable from './ManagerPriceTable'
 import { UnitTypeChip } from './unitTypes'
 import './unitTypes.css'
 
@@ -111,6 +112,12 @@ function previewNextUnitCode(prefix, units) {
 }
 
 /* Badge Component */
+// [FM11] Vị trí kho: Tầng · Dãy/Khu · Ghi chú (cột Floor / Zone / LocationNote trong StorageUnit)
+function formatUnitLocation(unit) {
+  if (!unit) return ''
+  return [unit.floor, unit.zone, unit.locationNote].map(v => String(v || '').trim()).filter(Boolean).join(' · ')
+}
+
 function Badge({ map, value }) {
   const item = map[value] || { label: value, tone: 'info' }
   return <span className={`fm-badge fm-${item.tone}`}>{item.label}</span>
@@ -126,13 +133,20 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
     typeId: String(editingUnit.unitTypeId ?? currentType?.unitTypeId ?? ''),
     sizeId: String(editingUnit.unitSizeId ?? editingUnit.sizeId ?? currentSize?.unitSizeId ?? ''),
     price: String(editingUnit.pricePerMonth ?? ''),
-    status: editingUnit.status
+    status: editingUnit.status,
+    floor: editingUnit.floor || '',
+    zone: editingUnit.zone || '',
+    locationNote: editingUnit.locationNote || ''
   } : null, [editingUnit])
 
   const [typeId, setTypeId] = useState(original?.typeId || String(unitTypes[0]?.unitTypeId ?? ''))
   const [sizeId, setSizeId] = useState(original?.sizeId || String(unitSizes[0]?.unitSizeId ?? ''))
   const [pricePerMonth, setPricePerMonth] = useState(original?.price ?? '')
   const [status, setStatus] = useState(original?.status || 'AVAILABLE')
+  // [FM11] Vị trí kho trong cơ sở
+  const [floor, setFloor] = useState(original?.floor || '')
+  const [zone, setZone] = useState(original?.zone || '')
+  const [locationNote, setLocationNote] = useState(original?.locationNote || '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -162,7 +176,10 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
     typeId !== original.typeId && ['Loại kho', unitTypes.find(t => String(t.unitTypeId) === original.typeId)?.name || '—', selectedType?.name || '—'],
     sizeId !== original.sizeId && ['Size', unitSizes.find(s => String(s.unitSizeId) === original.sizeId)?.dimensions || '—', selectedSize?.dimensions || '—'],
     Number(effectivePrice) !== Number(original.price) && ['Giá thuê', fmtMoney(Number(original.price)), fmtMoney(Number(effectivePrice))],
-    status !== original.status && ['Trạng thái', UNIT_STATUS_LABELS[original.status] || original.status, UNIT_STATUS_LABELS[status] || status]
+    status !== original.status && ['Trạng thái', UNIT_STATUS_LABELS[original.status] || original.status, UNIT_STATUS_LABELS[status] || status],
+    floor.trim() !== original.floor.trim() && ['Tầng', original.floor || '—', floor.trim() || '—'],
+    zone.trim() !== original.zone.trim() && ['Dãy / Khu', original.zone || '—', zone.trim() || '—'],
+    locationNote.trim() !== original.locationNote.trim() && ['Ghi chú vị trí', original.locationNote || '—', locationNote.trim() || '—']
   ].filter(Boolean) : []
   const changedField = label => changes.some(change => change[0] === label)
 
@@ -172,6 +189,9 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
     setSizeId(original.sizeId)
     setPricePerMonth(original.price)
     setStatus(original.status)
+    setFloor(original.floor)
+    setZone(original.zone)
+    setLocationNote(original.locationNote)
     setError('')
   }
 
@@ -227,7 +247,10 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
         unitSizeId: selectedSize.unitSizeId,
         sizeM2: selectedSize.volume,
         pricePerMonth: Number(effectivePrice),
-        status
+        status,
+        floor: floor.trim(),
+        zone: zone.trim(),
+        locationNote: locationNote.trim()
       })
     } finally {
       setSaving(false)
@@ -283,7 +306,7 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
                 referenceLabel={referenceLabel}
                 ariaLabel="Giá thuê theo tháng"
               />
-              {rate && <small className="fm-field-note">Theo biểu giá của cơ sở cho loại + size này. Muốn đổi giá, cập nhật ở mục Giá &amp; phí (Business Operations).</small>}
+              {rate && <small className="fm-field-note">Theo biểu giá của cơ sở cho loại + size này. Muốn đổi giá, vào tab "Bảng giá tại cơ sở".</small>}
             </label>
 
             <label className={changedField('Trạng thái') ? 'fm-field-changed' : ''}>
@@ -299,11 +322,28 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
             </label>
           </div>
 
+          {/* [FM11] Vị trí kho trong cơ sở */}
+          <div className="fm-form-row fm-location-row">
+            <label className={changedField('Tầng') ? 'fm-field-changed' : ''}>
+              Tầng
+              <input value={floor} maxLength={20} onChange={(e) => setFloor(e.target.value)} placeholder="VD: Tầng 1, Ngoài trời" />
+            </label>
+            <label className={changedField('Dãy / Khu') ? 'fm-field-changed' : ''}>
+              Dãy / Khu
+              <input value={zone} maxLength={20} onChange={(e) => setZone(e.target.value)} placeholder="VD: Dãy A" />
+            </label>
+          </div>
+          <label className={`fm-location-note${changedField('Ghi chú vị trí') ? ' fm-field-changed' : ''}`}>
+            Ghi chú vị trí <small className="fm-muted">(không bắt buộc)</small>
+            <input value={locationNote} maxLength={200} onChange={(e) => setLocationNote(e.target.value)} placeholder="VD: Gần thang máy, cạnh cửa số 2" />
+          </label>
+
           {editingUnit && (
             <div className="fm-original-box">
               <div>
                 <strong>Giá trị ban đầu:</strong>{' '}
                 {editingUnit.type} · {editingUnit.size} · {fmtMoney(editingUnit.pricePerMonth)} · {UNIT_STATUS_LABELS[editingUnit.status] || editingUnit.status}
+                {formatUnitLocation(editingUnit) && <> · 📍 {formatUnitLocation(editingUnit)}</>}
               </div>
               {changes.length > 0
                 ? <button type="button" className="dashboard-secondary-btn sm" onClick={resetToOriginal}>Khôi phục giá trị ban đầu</button>
@@ -381,6 +421,7 @@ function UnitDetailModal({ unit, facility, lock, contract, onClose, onEdit, onDe
             <Tile label="Mã kho">{unit.id}</Tile>
             <Tile label="Loại kho"><UnitTypeChip type={unit.type} compact /></Tile>
             <Tile label="Diện tích / kích thước">{unit.size}</Tile>
+            <Tile label="Vị trí trong cơ sở">{formatUnitLocation(unit) || <span className="fm-muted">Chưa cập nhật</span>}</Tile>
             <Tile label="Giá thuê">{fmtMoney(unit.pricePerMonth)}/tháng</Tile>
             <Tile label="Trạng thái"><Badge map={UNIT_STATUS_MAP} value={unit.status} /></Tile>
           </div>
@@ -1195,10 +1236,330 @@ function StaffHistoryModal({ staff, items, onClose }) {
   )
 }
 
-function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers = [], activity = [], awaitingHandoverList = [], showToast = () => {}, onChanged = async () => {} }) {
+/* [MANAGER-TOOLS] Việc giao cho nhân viên (HandoverTask) – giá trị khớp CHECK trong DB */
+const TASK_TYPE_LABEL = { 'Move In': 'Nhận kho', 'Move Out': 'Trả kho', Inspection: 'Kiểm tra kho', Support: 'Hỗ trợ khách' }
+const TASK_STATUS_MAP = {
+  Scheduled: { label: 'Đã lên lịch', className: 'fp-badge fp-badge-active' },
+  'In Progress': { label: 'Đang làm', className: 'fm-badge fm-warn' },
+  Completed: { label: 'Hoàn thành', className: 'fm-badge fm-ok' },
+  Cancelled: { label: 'Đã hủy', className: 'fp-badge fp-badge-deactive' }
+}
+const isOpenTask = t => t.status === 'Scheduled' || t.status === 'In Progress'
+
+/* [AUTO-ASSIGN] Giờ hẹn dạng "HH:mm" -> số phút (giờ hẹn "Cả ngày" thì null) */
+const toMinutes = (value) => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(value || ''))
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null
+}
+const CONFLICT_MINUTES = 60
+
+/* [AUTO-ASSIGN] Modal giao / đổi người phụ trách đơn.
+   Hiện số việc trong ngày hẹn và cảnh báo trùng giờ của từng nhân viên (GET .../workload),
+   tự chọn sẵn người ít việc nhất, không trùng giờ. */
+function OwnerModal({ facilityId, reservation, currentOwnerId, onClose, onSave }) {
+  const baseDate = String(reservation.appointmentDate || '').slice(0, 10)
+  const initialDate = baseDate && baseDate >= todayStr() ? baseDate : todayStr()
+  const [date, setDate] = useState(initialDate)
+  const [workload, setWorkload] = useState(null)
+  const [loadError, setLoadError] = useState('')
+  const [staffUserId, setStaffUserId] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const apptMinutes = toMinutes(reservation.appointmentTime)
+
+  useEffect(() => {
+    let cancelled = false
+    setWorkload(null)
+    setLoadError('')
+    apiGet(`/api/manager-tools/facilities/${facilityId}/workload?date=${date}`)
+      .then(data => { if (!cancelled) setWorkload(Array.isArray(data?.staff) ? data.staff : []) })
+      .catch(err => { if (!cancelled) { setWorkload([]); setLoadError(err.message) } })
+    return () => { cancelled = true }
+  }, [facilityId, date])
+
+  // Việc của nhân viên trùng giờ hẹn (±60 phút), không tính việc của chính đơn này
+  const conflictsOf = (st) => apptMinutes == null ? [] : st.tasks.filter(t => {
+    if (Number(t.reservationId) === Number(reservation.id)) return false
+    const m = toMinutes(t.scheduledTime)
+    return m != null && Math.abs(m - apptMinutes) < CONFLICT_MINUTES
+  })
+  // Số lần hẹn trong ngày, không tính chính đơn này
+  const loadOf = (st) => new Set(st.tasks.filter(t => Number(t.reservationId) !== Number(reservation.id)).map(t => t.reservationId ?? `t${t.taskId}`)).size
+
+  const ranked = (workload || []).map(st => ({ ...st, load: loadOf(st), conflicts: conflictsOf(st) }))
+    .sort((a, b) => (a.conflicts.length > 0) - (b.conflicts.length > 0) || a.load - b.load || a.weekCount - b.weekCount || a.fullName.localeCompare(b.fullName, 'vi'))
+
+  // Chọn sẵn người phù hợp nhất (ưu tiên người khác người phụ trách hiện tại)
+  useEffect(() => {
+    if (!workload) return
+    const best = ranked.find(st => st.userId !== currentOwnerId && st.conflicts.length === 0) || ranked.find(st => st.userId !== currentOwnerId) || ranked[0]
+    setStaffUserId(best ? String(best.userId) : '')
+  }, [workload])
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!staffUserId) return setError('Vui lòng chọn nhân viên.')
+    setError('')
+    setSaving(true)
+    try {
+      await onSave({ staffUserId: Number(staffUserId), scheduledDate: date !== initialDate ? date : null, scheduledTime: null })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fm-modal-overlay">
+      <div className="fm-modal-card fp-modal">
+        <div className="fm-modal-header">
+          <h2>{currentOwnerId ? 'Đổi người phụ trách' : 'Giao người phụ trách'} · {formatReservationCode(reservation.id)}</h2>
+          <button type="button" className="fm-modal-close" onClick={onClose} aria-label="Đóng">×</button>
+        </div>
+        <form className="fm-modal-form" onSubmit={submit}>
+          {error && <div className="auth-message error" role="alert">{error}</div>}
+          <p className="fm-form-hint">
+            Khách {reservation.customerName} · hẹn {fmtDate(reservation.appointmentDate)}{apptMinutes != null ? ` lúc ${reservation.appointmentTime}` : ''}.
+            Người phụ trách lo đơn từ bàn giao tới trả kho; mọi việc chưa xong của đơn sẽ chuyển sang người được chọn.
+          </p>
+
+          <label>
+            Ngày hẹn
+            <input type="date" value={date} min={todayStr()} onChange={(e) => setDate(e.target.value || initialDate)} />
+          </label>
+
+          {loadError && <div className="auth-message error" role="alert">{loadError}</div>}
+          {workload === null ? <p className="fm-muted">Đang tải lịch việc của nhân viên...</p> : ranked.length === 0 ? (
+            <div className="empty-state">Cơ sở chưa có nhân viên Active. Hãy thêm nhân viên trước.</div>
+          ) : (
+            <div className="fm-owner-list" role="radiogroup" aria-label="Chọn nhân viên">
+              {ranked.map(st => (
+                <label key={st.userId} className={`fm-owner-option${String(st.userId) === staffUserId ? ' selected' : ''}${st.conflicts.length ? ' conflict' : ''}`}>
+                  <input type="radio" name="owner" value={st.userId} checked={String(st.userId) === staffUserId} onChange={() => setStaffUserId(String(st.userId))} />
+                  <span className="fm-owner-main">
+                    <strong>{st.fullName}{st.userId === currentOwnerId && ' (đang phụ trách)'}</strong>
+                    <small>{st.load} lần hẹn ngày {fmtDate(date)} · {st.weekCount} trong tuần</small>
+                    {st.tasks.length > 0 && (
+                      <span className="fm-owner-times">
+                        {st.tasks.map(t => <em key={t.taskId}>{t.scheduledTime || 'Cả ngày'} · {TASK_TYPE_LABEL[t.taskType] || t.taskType} {t.unitNumber}</em>)}
+                      </span>
+                    )}
+                  </span>
+                  {st.conflicts.length > 0
+                    ? <span className="fm-badge fm-warn">Trùng giờ {st.conflicts[0].scheduledTime}</span>
+                    : <span className="fm-badge fm-ok">Rảnh giờ hẹn</span>}
+                </label>
+              ))}
+            </div>
+          )}
+
+          <div className="fm-modal-actions">
+            <button type="button" className="dashboard-secondary-btn" onClick={onClose}>Hủy</button>
+            <button type="submit" className="dashboard-primary-btn" disabled={saving || !staffUserId}>
+              {saving ? 'Đang lưu...' : currentOwnerId ? 'Đổi người' : 'Giao việc'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* [AUTO-ASSIGN] Tab "Báo cáo sự cố kho": Staff gửi qua POST /api/staff-tools/unit-reports */
+const REPORT_RESULT_MAP = {
+  Damaged: { label: 'Hư hỏng', className: 'fm-badge fm-warn' },
+  Good: { label: 'Bình thường', className: 'fm-badge fm-ok' }
+}
+const DB_UNIT_STATUS_LABEL = {
+  Available: 'Còn trống', 'In Use': 'Đang thuê', 'Pending Inspection': 'Chờ kiểm tra', Maintenance: 'Bảo trì', Inactive: 'Ngừng sử dụng'
+}
+
+function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async () => {} }) {
+  const dialog = useDialog()
+  const [reports, setReports] = useState(null)
+  const [error, setError] = useState('')
+  const [filter, setFilter] = useState('damaged')
+  const [preview, setPreview] = useState(null)
+
+  const load = async () => {
+    if (facilityId == null) return
+    try {
+      setError('')
+      const data = await apiGet(`/api/manager-tools/facilities/${facilityId}/unit-reports`)
+      setReports(Array.isArray(data) ? data : [])
+    } catch (err) {
+      setReports([])
+      setError(err.message)
+    }
+  }
+  useEffect(() => { load() }, [facilityId])
+
+  // Mỗi kho chỉ cần xử lý báo cáo mới nhất
+  const latestByUnit = new Map()
+  ;(reports || []).forEach(r => { if (!latestByUnit.has(r.unitId)) latestByUnit.set(r.unitId, r.taskId) })
+  const needsAction = (r) => r.result === 'Damaged' && latestByUnit.get(r.unitId) === r.taskId && (r.unitStatus === 'Maintenance' || r.unitStatus === 'Pending Inspection')
+
+  const visible = (reports || []).filter(r => filter === 'all' || (filter === 'damaged' ? r.result === 'Damaged' : needsAction(r)))
+  const counts = {
+    damaged: (reports || []).filter(r => r.result === 'Damaged').length,
+    open: (reports || []).filter(needsAction).length,
+    all: (reports || []).length
+  }
+
+  const reopenUnit = async (r) => {
+    const ok = await dialog.confirm({
+      tone: 'warning',
+      title: `Mở lại kho ${r.unitNumber}?`,
+      message: 'Chỉ mở lại khi kho đã được sửa xong. Kho sẽ chuyển sang "Còn trống" và khách có thể đặt.',
+      confirmLabel: 'Mở lại kho'
+    })
+    if (!ok) return
+    try {
+      await apiPut(`/api/staff-tools/units/${r.unitId}/status`, { status: 'Available' })
+      await Promise.all([load(), onChanged()])
+      showToast(`Đã mở lại kho ${r.unitNumber}.`)
+    } catch (err) {
+      await dialog.alert({ tone: 'danger', title: 'Không mở lại được kho', message: err.message })
+    }
+  }
+
+  return (
+    <div className="fm-section-card">
+      <div className="fm-card-header-flex">
+        <div>
+          <h2>Báo cáo sự cố kho</h2>
+          <p>Nhân viên tự kiểm tra và báo cáo. Kho báo "Hư hỏng" được chuyển sang Bảo trì; sửa xong thì mở lại kho.</p>
+        </div>
+        <button type="button" className="dashboard-secondary-btn" onClick={load}>Tải lại</button>
+      </div>
+      <div className="fp-toolbar">
+        <div className="fp-chips">
+          {[['open', `Cần xử lý ${counts.open}`], ['damaged', `Hư hỏng ${counts.damaged}`], ['all', `Tất cả ${counts.all}`]].map(([v, t]) => (
+            <button key={v} type="button" className={filter === v ? 'active' : ''} onClick={() => setFilter(v)}>{t}</button>
+          ))}
+        </div>
+      </div>
+      {error && <div className="auth-message error" role="alert">{error}</div>}
+      {reports === null ? <p className="fm-muted">Đang tải báo cáo...</p> : visible.length === 0 ? (
+        <div className="empty-state">Không có báo cáo nào trong mục này.</div>
+      ) : (
+        <div className="fm-table-wrap">
+          <table className="fm-table">
+            <thead>
+              <tr>
+                <th>Thời gian</th>
+                <th>Kho</th>
+                <th>Nhân viên</th>
+                <th>Kết quả</th>
+                <th>Tình trạng</th>
+                <th>Ảnh</th>
+                <th>Kho hiện tại</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(r => {
+                const res = REPORT_RESULT_MAP[r.result] || { label: r.result, className: 'fm-badge' }
+                return (
+                  <tr key={r.taskId}>
+                    <td>{fmtDateTime(r.reportedAt)}</td>
+                    <td><strong>{r.unitNumber}</strong></td>
+                    <td>{r.staffName}</td>
+                    <td><span className={res.className}>{res.label}</span></td>
+                    <td className="fm-report-notes">{r.notes || <span className="fm-muted">—</span>}</td>
+                    <td>
+                      {r.images?.length ? (
+                        <div className="fm-report-thumbs">
+                          {r.images.map((src, i) => (
+                            <button key={i} type="button" onClick={() => setPreview(src)} aria-label={`Xem ảnh ${i + 1}`}>
+                              <img src={src} alt={`Ảnh kho ${r.unitNumber} ${i + 1}`} />
+                            </button>
+                          ))}
+                        </div>
+                      ) : <span className="fm-muted">—</span>}
+                    </td>
+                    <td>{DB_UNIT_STATUS_LABEL[r.unitStatus] || r.unitStatus}</td>
+                    <td>
+                      {needsAction(r)
+                        ? <button type="button" className="fp-btn" onClick={() => reopenUnit(r)}>Mở lại kho</button>
+                        : <span className="fm-muted">—</span>}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {preview && (
+        <div className="fm-modal-overlay" onClick={() => setPreview(null)}>
+          <div className="fm-image-preview" onClick={(e) => e.stopPropagation()}>
+            <img src={preview} alt="Ảnh báo cáo kho" />
+            <button type="button" className="dashboard-secondary-btn" onClick={() => setPreview(null)}>Đóng</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers = [], activity = [], awaitingHandoverList = [], assignVersion = 0, showToast = () => {}, onChanged = async () => {} }) {
   const [filter, setFilter] = useState('all')
   const [showAdd, setShowAdd] = useState(false)
   const [historyStaff, setHistoryStaff] = useState(null)
+  // [MANAGER-TOOLS] việc đã giao + giao việc + gỡ nhân viên
+  const dialog = useDialog()
+  const [tasks, setTasks] = useState([])
+  const [tasksError, setTasksError] = useState('')
+  const [ownerDraft, setOwnerDraft] = useState(null) // [AUTO-ASSIGN] { reservation, currentOwnerId }
+  const [taskFilter, setTaskFilter] = useState('open')
+
+  const loadTasks = async () => {
+    if (facilityId == null) return
+    try {
+      setTasksError('')
+      const data = await apiGet(`/api/manager-tools/facilities/${facilityId}/tasks`)
+      setTasks(Array.isArray(data) ? data : [])
+    } catch (err) {
+      setTasksError(err.message)
+    }
+  }
+  useEffect(() => { loadTasks() }, [facilityId, assignVersion]) // tải lại sau mỗi lần hệ thống tự phân công
+
+  const activeStaff = staffList.filter(s => s.status === 'Active')
+  const openTasksOf = (st) => tasks.filter(t => t.staffUserId === st.id && isOpenTask(t))
+  const moveInTasksOf = (r) => tasks.filter(t => t.taskType === 'Move In' && Number(t.reservationId) === Number(r.id) && t.status !== 'Cancelled')
+  const visibleTasks = tasks.filter(t => taskFilter === 'all' || (taskFilter === 'open' ? isOpenTask(t) : !isOpenTask(t)))
+
+  // [AUTO-ASSIGN] Giao / đổi người phụ trách đơn: PUT /api/manager-tools/reservations/{id}/owner
+  const changeOwner = async (body) => {
+    const result = await apiPut(`/api/manager-tools/reservations/${ownerDraft.reservation.id}/owner`, body)
+    setOwnerDraft(null)
+    await loadTasks()
+    showToast(result?.message || 'Đã cập nhật người phụ trách.')
+  }
+  const reservationOf = (id) => awaitingHandoverList.find(r => Number(r.id) === Number(id))
+
+  const removeStaff = async (st) => {
+    const open = openTasksOf(st).length
+    const ok = await dialog.confirm({
+      tone: 'warning',
+      title: `Gỡ ${st.fullName} khỏi ${facilityName}?`,
+      message: open
+        ? `Nhân viên còn ${open} việc chưa xong. Hệ thống sẽ từ chối, hãy đổi người phụ trách các đơn đó trước.`
+        : 'Nhân viên chuyển sang Inactive tại cơ sở, lịch sử công việc vẫn được giữ. Có thể thêm lại sau.',
+      confirmLabel: 'Gỡ nhân viên'
+    })
+    if (!ok) return
+    try {
+      const result = await apiDelete(`/api/manager-tools/facilities/${facilityId}/staff/${st.id}`)
+      await onChanged()
+      showToast(result?.message || `Đã gỡ ${st.fullName} khỏi cơ sở.`)
+    } catch (err) {
+      await dialog.alert({ tone: 'danger', title: 'Không gỡ được nhân viên', message: err.message })
+    }
+  }
 
   // Lịch sử bàn giao tại cơ sở, mới nhất trước
   const facilityActivity = useMemo(
@@ -1253,11 +1614,13 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
       <div className="fm-card-header-flex">
         <div>
           <h2>Đội ngũ Facility Staff tại {facilityName}</h2>
-          <p>Phân công nhân viên vào cơ sở để hỗ trợ bàn giao, kiểm tra kho và xử lý sự cố.</p>
+          <p>Hệ thống tự phân công đơn đã cọc cho nhân viên rảnh nhất. Bạn chỉ cần đổi người khi nhân viên trùng ca hoặc bận đột xuất.</p>
         </div>
-        <button type="button" className="dashboard-primary-btn" onClick={() => setShowAdd(true)} disabled={facilityId == null}>
-          + Thêm nhân viên
-        </button>
+        <div className="fs-head-actions">
+          <button type="button" className="dashboard-primary-btn" onClick={() => setShowAdd(true)} disabled={facilityId == null}>
+            + Thêm nhân viên
+          </button>
+        </div>
       </div>
 
       <div className="fs-stats">
@@ -1297,9 +1660,13 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
                   <p>✉ {st.email}</p>
                   <div className="fm-shift-tag">
                     {history.length} lượt bàn giao{last ? ` · gần nhất ${fmtDateTime(last.at)}` : ''}
+                    {openTasksOf(st).length > 0 && ` · đang có ${openTasksOf(st).length} việc`}
                   </div>
-                  <div>
+                  <div className="fs-card-actions">
                     <button type="button" className="fs-link-btn" onClick={() => setHistoryStaff(st)}>Xem lịch sử công việc →</button>
+                    {st.status === 'Active' && (
+                      <button type="button" className="fs-link-btn fs-danger" onClick={() => removeStaff(st)}>Gỡ khỏi cơ sở</button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1310,7 +1677,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
 
       <div className="fs-section">
         <h3>Việc chờ bàn giao tại cơ sở ({upcoming.length})</h3>
-        <p className="fm-muted">Đơn khách đã đặt cọc. Nhân viên đang Active tại cơ sở có thể nhận và bàn giao trực tiếp khi khách đến.</p>
+        <p className="fm-muted">Đơn khách đã đặt cọc. Hệ thống tự giao cho nhân viên không trùng giờ hẹn và ít việc nhất trong ngày; chỉ người phụ trách mới bàn giao được.</p>
         {upcoming.length === 0 ? (
           <div className="empty-state">Hiện không có đơn nào chờ bàn giao.</div>
         ) : (
@@ -1323,10 +1690,13 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
                   <th>Khách hàng</th>
                   <th>Kho</th>
                   <th>Trạng thái</th>
+                  <th>Phụ trách</th>
                 </tr>
               </thead>
               <tbody>
                 {upcoming.map(r => {
+                  const assigned = moveInTasksOf(r)
+                  const assignedNames = [...new Set(assigned.map(t => t.staffName))]
                   const key = appointmentKey(r)
                   const unitText = r.unitNumbers?.length ? r.unitNumbers.join(', ') : (r.assignedUnitId || '—')
                   return (
@@ -1341,6 +1711,19 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
                       <td>{r.customerName}<small className="fm-muted" style={{ display: 'block' }}>{r.customerPhone || r.customerEmail}</small></td>
                       <td>{unitText}</td>
                       <td><Badge map={RES_STATUS_MAP} value={r.status} /></td>
+                      <td>
+                        {assignedNames.length > 0
+                          ? <strong style={{ display: 'block' }}>{assignedNames.join(', ')}</strong>
+                          : <span className="fs-unassigned">Chưa có người nhận</span>}
+                        <button
+                          type="button"
+                          className="dashboard-secondary-btn sm"
+                          disabled={activeStaff.length === 0}
+                          onClick={() => setOwnerDraft({ reservation: r, currentOwnerId: assigned[0]?.staffUserId ?? null })}
+                        >
+                          {assignedNames.length ? 'Đổi người' : 'Giao người'}
+                        </button>
+                      </td>
                     </tr>
                   )
                 })}
@@ -1349,6 +1732,68 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
           </div>
         )}
       </div>
+
+      {/* [MANAGER-TOOLS] VIỆC ĐÃ GIAO */}
+      <div className="fs-section">
+        <h3>Việc của nhân viên ({tasks.filter(isOpenTask).length} chưa xong)</h3>
+        <div className="fp-toolbar">
+          <div className="fp-chips">
+            {[['open', 'Chưa xong'], ['done', 'Đã xong / đã hủy'], ['all', 'Tất cả']].map(([v, t]) => (
+              <button key={v} type="button" className={taskFilter === v ? 'active' : ''} onClick={() => setTaskFilter(v)}>{t}</button>
+            ))}
+          </div>
+        </div>
+        {tasksError && <div className="auth-message error" role="alert">{tasksError}</div>}
+        {visibleTasks.length === 0 ? (
+          <div className="empty-state">Không có việc nào trong mục này.</div>
+        ) : (
+          <div className="fm-table-wrap">
+            <table className="fm-table">
+              <thead>
+                <tr>
+                  <th>Ngày hẹn</th>
+                  <th>Loại việc</th>
+                  <th>Kho</th>
+                  <th>Đơn / Khách</th>
+                  <th>Nhân viên</th>
+                  <th>Trạng thái</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleTasks.map(t => {
+                  const st = TASK_STATUS_MAP[t.status] || { label: t.status, className: 'fp-badge' }
+                  return (
+                    <tr key={t.taskId}>
+                      <td><strong>{fmtDate(t.scheduledDate)}</strong>{t.scheduledTime && <small className="fm-muted" style={{ display: 'block' }}>{t.scheduledTime}</small>}</td>
+                      <td>{TASK_TYPE_LABEL[t.taskType] || t.taskType}{t.notes && <small className="fm-muted" style={{ display: 'block' }}>{t.notes}</small>}</td>
+                      <td><strong>{t.unitNumber}</strong></td>
+                      <td>{t.reservationId ? formatReservationCode(t.reservationId) : '—'}{t.customerName && <small className="fm-muted" style={{ display: 'block' }}>{t.customerName}</small>}</td>
+                      <td>{t.staffName}</td>
+                      <td><span className={st.className}>{st.label}</span></td>
+                      <td>
+                        {isOpenTask(t) && reservationOf(t.reservationId)
+                          ? <button type="button" className="fp-btn" onClick={() => setOwnerDraft({ reservation: reservationOf(t.reservationId), currentOwnerId: t.staffUserId })}>Đổi người</button>
+                          : <span className="fm-muted">—</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {ownerDraft && (
+        <OwnerModal
+          facilityId={facilityId}
+          reservation={ownerDraft.reservation}
+          currentOwnerId={ownerDraft.currentOwnerId}
+          onClose={() => setOwnerDraft(null)}
+          onSave={changeOwner}
+        />
+      )}
 
       {showAdd && (
         <AddStaffModal
@@ -1381,6 +1826,11 @@ function daysLeft(endDate) {
 }
 
 function contractPhase(c) {
+  // [MAIN-9] Hợp đồng đã gia hạn (ContractRenewalsController đặt "Renewed") hoặc đã kết thúc
+  // không còn tính là sắp hết hạn / quá hạn nữa
+  const status = String(c.status || '').toLowerCase()
+  if (status === 'renewed') return 'renewed'
+  if (status === 'completed' || status === 'terminated') return 'closed'
   const left = daysLeft(c.endDate)
   if (left == null) return 'active'
   if (left < 0) return 'expired'
@@ -1391,7 +1841,9 @@ function contractPhase(c) {
 const CONTRACT_PHASE_MAP = {
   active: { label: 'Đang hiệu lực', className: 'fm-badge fm-ok' },
   expiring: { label: 'Sắp hết hạn', className: 'fm-badge fm-warn' },
-  expired: { label: 'Đã hết hạn', className: 'fp-badge fp-badge-deactive' }
+  expired: { label: 'Đã hết hạn', className: 'fp-badge fp-badge-deactive' },
+  renewed: { label: 'Đã gia hạn', className: 'fp-badge fp-badge-active' },
+  closed: { label: 'Đã kết thúc', className: 'fp-badge' }
 }
 
 // Chuyển dữ liệu hợp đồng của Manager sang dạng `group` mà ContractDocument cần
@@ -1587,7 +2039,7 @@ function FacilityContractsTab({ facility, facilityName, contracts = [], reservat
                   <td><span className="fm-tag-blue">{c.unitNumbers?.length ? c.unitNumbers.join(', ') : (c.unitId || '—')}</span></td>
                   <td>
                     {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
-                    {left != null && (
+                    {left != null && phase !== 'renewed' && phase !== 'closed' && (
                       <small className={`fmc-left${left < 0 ? ' late' : left <= EXPIRING_DAYS ? ' soon' : ''}`}>
                         {left >= 0 ? `Còn ${left} ngày` : `Quá hạn ${-left} ngày`}
                       </small>
@@ -1706,6 +2158,9 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     const rentedUnits = facilityUnits.filter(u => u.status === 'RENTED').length
     const reservedUnits = facilityUnits.filter(u => u.status === 'RESERVED' || u.status === 'BOOKING').length
     const availableUnits = facilityUnits.filter(u => u.status === 'AVAILABLE').length
+    // [FM11] Kho bảo trì / ngừng dùng
+    const maintenanceUnits = facilityUnits.filter(u => u.status === 'MAINTENANCE').length
+    const inactiveUnits = facilityUnits.filter(u => u.status === 'INACTIVE').length
     const occupancyRate = totalUnits > 0 ? Math.round((rentedUnits / totalUnits) * 100) : 0
 
     const totalRevenue = facilityReservations
@@ -1716,8 +2171,15 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     const awaitingHandover = facilityReservations.filter(r => r.status === 'PENDING_APPROVAL' || r.status === 'CONFIRMED').length
     const pendingPayments = facilityReservations.filter(r => r.status === 'PENDING_PAYMENT').length
 
-    return { totalUnits, rentedUnits, reservedUnits, availableUnits, occupancyRate, totalRevenue, awaitingHandover, pendingPayments }
-  }, [facilityUnits, facilityReservations])
+    // [FM11] Hợp đồng sắp hết hạn / quá hạn (cùng quy tắc với tab Hợp đồng)
+    const expiringContracts = facilityContracts.filter(c => contractPhase(c) === 'expiring')
+    const expiredContracts = facilityContracts.filter(c => contractPhase(c) === 'expired')
+
+    return {
+      totalUnits, rentedUnits, reservedUnits, availableUnits, maintenanceUnits, inactiveUnits, occupancyRate,
+      totalRevenue, awaitingHandover, pendingPayments, expiringContracts, expiredContracts
+    }
+  }, [facilityUnits, facilityReservations, facilityContracts])
 
   const openEditUnit = async unit => {
     const lock = unitLocks.get(unit.id)
@@ -1744,7 +2206,11 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
       size: unitData.size,
       sizeM2: unitData.sizeM2 ?? undefined,
       basePrice: Number(unitData.pricePerMonth),
-      status: unitData.status
+      status: unitData.status,
+      // [FM11] Vị trí kho (backend đã nhận Floor / Zone / LocationNote)
+      floor: unitData.floor ?? '',
+      zone: unitData.zone ?? '',
+      locationNote: unitData.locationNote ?? ''
     }
     if (!Number.isInteger(request.facilityID) || !request.unitTypeID || !request.unitSizeID) {
       setError('Thiếu cơ sở, loại kho hoặc size hợp lệ từ database. Hãy tải lại dữ liệu.')
@@ -1847,6 +2313,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
       code: (a, b) => compareNatural(a.id, b.id),
       type: (a, b) => compareNatural(a.type, b.type),
       size: (a, b) => unitSizeValue(a) - unitSizeValue(b),
+      location: (a, b) => compareNatural(formatUnitLocation(a) || '\uffff', formatUnitLocation(b) || '\uffff'),
       price: (a, b) => Number(a.pricePerMonth || 0) - Number(b.pricePerMonth || 0),
       status: (a, b) => (UNIT_STATUS_ORDER[a.status] ?? 99) - (UNIT_STATUS_ORDER[b.status] ?? 99),
       reservation: (a, b) => (firstResId(a) ?? 0) - (firstResId(b) ?? 0)
@@ -1961,7 +2428,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
   // Tải khi vào trang (form tạo kho cần danh sách) và mỗi lần mở tab
   useEffect(() => {
     if (catalogFacilityId != null) reloadFacilityCatalog()
-  }, [catalogFacilityId, activeTab === 'unitTypes'])
+  }, [catalogFacilityId, activeTab === 'unitTypes' || activeTab === 'prices'])
 
   // Form Tạo / Sửa kho: chỉ loại kho Active tại cơ sở (giữ loại hiện tại của kho đang sửa)
   const unitTypesForUnitForm = useMemo(() => {
@@ -1984,6 +2451,69 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
         volume: s.volumeM3
       }))
   }, [facilityCatalog.sizes, db.unitSizes, editingUnit])
+
+  /* ===== [MANAGER-TOOLS] BÁO CÁO THỰC THU: GET /api/manager-tools/facilities/{id}/reports ===== */
+  const [report, setReport] = useState(null)
+  const [reportError, setReportError] = useState('')
+  useEffect(() => {
+    if (activeTab !== 'overview' || managedFacility?.facilityId == null) return
+    let cancelled = false
+    apiGet(`/api/manager-tools/facilities/${managedFacility.facilityId}/reports?months=6`)
+      .then(data => { if (!cancelled) { setReport(data); setReportError('') } })
+      .catch(err => { if (!cancelled) setReportError(err.message) })
+    return () => { cancelled = true }
+  }, [activeTab, managedFacility?.facilityId, db])
+
+  /* ===== [AUTO-ASSIGN] TỰ PHÂN CÔNG mỗi khi trang tải dữ liệu =====
+     POST /api/manager-tools/facilities/{id}/auto-assign: đơn đã cọc chưa có người -> giao cho nhân viên phù hợp nhất.
+     unassigned = đơn chưa giao được (không có nhân viên / tất cả trùng giờ) -> cảnh báo ở Tổng quan. */
+  const [assignInfo, setAssignInfo] = useState({ unassigned: [], version: 0 })
+  useEffect(() => {
+    if (managedFacility?.facilityId == null) return
+    let cancelled = false
+    apiPost(`/api/manager-tools/facilities/${managedFacility.facilityId}/auto-assign`, {})
+      .then(res => {
+        if (cancelled) return
+        setAssignInfo(prev => ({ unassigned: Array.isArray(res?.unassigned) ? res.unassigned : [], version: prev.version + 1 }))
+        if (res?.assigned?.length) showToast(`Hệ thống đã tự phân công ${res.assigned.length} đơn cho nhân viên.`)
+      })
+      .catch(() => { /* lỗi phân công không chặn trang; lần tải sau sẽ thử lại */ })
+    return () => { cancelled = true }
+  }, [managedFacility?.facilityId, db])
+
+  /* ===== [FM11] BẢNG GIÁ TẠI CƠ SỞ ===== */
+  // Khung giá nhóm (S/M/L...) do Business Operations đặt: GET /api/price-bands trả { bands, unassignedSizes }
+  const [priceBands, setPriceBands] = useState([])
+  useEffect(() => {
+    if (activeTab !== 'prices') return
+    let cancelled = false
+    const normalizeBands = raw => (Array.isArray(raw) ? raw : raw?.bands || [])
+      .filter(b => b && b.code && b.isActive !== false)
+      .map(b => ({
+        code: String(b.code).toUpperCase(),
+        name: b.name || b.categoryName || b.code,
+        minArea: Number(b.minArea ?? 0),
+        maxArea: Number(b.maxArea ?? 0),
+        minPrice: Number(b.minPrice ?? b.minMonthlyPrice ?? 0),
+        maxPrice: Number(b.maxPrice ?? b.maxMonthlyPrice ?? 0)
+      }))
+    apiGet('/api/price-bands')
+      .then(data => { if (!cancelled) setPriceBands(normalizeBands(data)) })
+      .catch(() => { if (!cancelled) setPriceBands(normalizeBands(db.priceBands)) })
+    return () => { cancelled = true }
+  }, [activeTab])
+
+  // Loại kho / kích thước đang Active tại cơ sở (lấy từ tab Thiết lập đặc tính kho)
+  const priceTableTypes = useMemo(() => facilityCatalog.types.length
+    ? facilityCatalog.types.filter(t => t.isActive).map(t => ({ unitTypeId: t.id, name: t.name }))
+    : (db.unitTypes || []), [facilityCatalog.types, db.unitTypes])
+  const priceTableSizes = useMemo(() => facilityCatalog.sizes.length
+    ? facilityCatalog.sizes.filter(s => s.isActive).map(s => ({
+      unitSizeId: s.id,
+      dimensions: `${s.sizeCode}: ${s.displayName}`,
+      volume: s.areaM2 // ManagerPriceTable dùng giá trị này làm diện tích (m²)
+    }))
+    : (db.unitSizes || []), [facilityCatalog.sizes, db.unitSizes])
 
   if (loading) return <div className="customer-main" style={{ padding: 32 }}>Đang tải dữ liệu cơ sở từ backend...</div>
   if (error && !db.facilities.length) {
@@ -2041,6 +2571,12 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
           <button className={activeTab === 'unitTypes' ? 'active' : ''} onClick={() => setActiveTab('unitTypes')}>
             <span>▦</span> Thiết lập đặc tính kho
           </button>
+          <button className={activeTab === 'prices' ? 'active' : ''} onClick={() => setActiveTab('prices')}>
+            <span>₫</span> Bảng giá tại cơ sở
+          </button>
+          <button className={activeTab === 'reports' ? 'active' : ''} onClick={() => setActiveTab('reports')}>
+            <span>⚠</span> Báo cáo sự cố kho
+          </button>
           <button className={activeTab === 'contracts' ? 'active' : ''} onClick={() => setActiveTab('contracts')}>
             <span>▤</span> Hợp đồng & Khách hàng
           </button>
@@ -2068,6 +2604,8 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
               {activeTab === 'overview' && 'Tổng quan & Báo cáo cơ sở'}
               {activeTab === 'units' && 'Danh mục kho tại cơ sở'}
               {activeTab === 'unitTypes' && 'Thiết lập đặc tính kho'}
+              {activeTab === 'prices' && 'Bảng giá tại cơ sở'}
+              {activeTab === 'reports' && 'Báo cáo sự cố kho'}
               {activeTab === 'contracts' && 'Giám sát hợp đồng thuê'}
               {activeTab === 'staff' && 'Phân công nhân viên cơ sở'}
             </h1>
@@ -2103,12 +2641,22 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                 <span className="stat-note warning">{stats.pendingPayments} đơn đang chờ khách trả cọc</span>
               </div>
 
-              <div className="customer-stat-card">
-                <span className="stat-icon blue">₫</span>
-                <small>Doanh thu ghi nhận</small>
-                <strong>{fmtMoney(stats.totalRevenue)}</strong>
-                <span className="stat-note">Hợp đồng đã bàn giao</span>
-              </div>
+              {/* [MANAGER-TOOLS] Thực thu lấy từ Payment Completed; lỗi API thì quay về số tạm tính */}
+              {report ? (
+                <div className="customer-stat-card">
+                  <span className="stat-icon blue">₫</span>
+                  <small>Thực thu 6 tháng</small>
+                  <strong>{fmtMoney(report.revenue.inRange.net)}</strong>
+                  <span className="stat-note">Đã trừ tiền hoàn · tháng này {fmtMoney(report.revenue.monthly.at(-1)?.net)}</span>
+                </div>
+              ) : (
+                <div className="customer-stat-card">
+                  <span className="stat-icon blue">₫</span>
+                  <small>Giá trị đơn đã bàn giao</small>
+                  <strong>{fmtMoney(stats.totalRevenue)}</strong>
+                  <span className="stat-note">Tạm tính từ tiền thuê, chưa phải doanh thu thực thu</span>
+                </div>
+              )}
             </section>
 
             {/* BÁO CÁO NHANH TRẠNG THÁI KHO */}
@@ -2125,13 +2673,132 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                   <div className="fm-bar-rented" style={{ width: `${(stats.rentedUnits / (stats.totalUnits || 1)) * 100}%` }} title="Đang thuê" />
                   <div className="fm-bar-reserved" style={{ width: `${(stats.reservedUnits / (stats.totalUnits || 1)) * 100}%` }} title="Đã giữ chỗ" />
                   <div className="fm-bar-available" style={{ width: `${(stats.availableUnits / (stats.totalUnits || 1)) * 100}%` }} title="Còn trống" />
+                  <div className="fm-bar-maintenance" style={{ width: `${(stats.maintenanceUnits / (stats.totalUnits || 1)) * 100}%` }} title="Bảo trì" />
                 </div>
                 <div className="fm-progress-legend">
                   <span><i className="dot rented" /> Đang thuê ({stats.rentedUnits})</span>
                   <span><i className="dot reserved" /> Đã giữ chỗ ({stats.reservedUnits})</span>
                   <span><i className="dot available" /> Còn trống ({stats.availableUnits})</span>
+                  <span><i className="dot maintenance" /> Bảo trì ({stats.maintenanceUnits})</span>
+                  {stats.inactiveUnits > 0 && <span><i className="dot inactive" /> Ngừng sử dụng ({stats.inactiveUnits})</span>}
                 </div>
               </div>
+            </section>
+
+            {/* [AUTO-ASSIGN] ĐƠN CHƯA CÓ NGƯỜI NHẬN (không có nhân viên / tất cả trùng giờ hẹn) */}
+            {assignInfo.unassigned.length > 0 && (
+              <section className="overview-panel fm-unassigned-panel">
+                <div className="overview-panel-heading">
+                  <div>
+                    <span className="customer-eyebrow">CẦN XỬ LÝ</span>
+                    <h2>{assignInfo.unassigned.length} đơn chưa có người nhận kho</h2>
+                  </div>
+                  <button type="button" className="overview-text-button" onClick={() => setActiveTab('staff')}>Giao người ở Nhân sự →</button>
+                </div>
+                <div className="fm-pending-mini-list">
+                  {assignInfo.unassigned.map(u => (
+                    <div key={u.reservationId} className="fm-pending-mini-item">
+                      <div>
+                        <strong>{u.reservationCode || formatReservationCode(u.reservationId)}</strong>
+                        <small>Hẹn {fmtDate(u.scheduledDate)} · {u.reason}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* [MANAGER-TOOLS] DOANH THU THỰC THU & KHOẢN PHÍ */}
+            <section className="overview-panel">
+              <div className="overview-panel-heading">
+                <div>
+                  <span className="customer-eyebrow">REVENUE</span>
+                  <h2>Doanh thu thực thu 6 tháng gần nhất</h2>
+                </div>
+              </div>
+              {reportError && !report && <div className="auth-message error" role="alert">Chưa tải được báo cáo: {reportError}</div>}
+              {!report && !reportError && <p className="fm-muted">Đang tải báo cáo...</p>}
+              {report && (() => {
+                const monthly = report.revenue.monthly
+                const peak = Math.max(1, ...monthly.map(m => Number(m.net) || 0))
+                const charge = type => report.charges.find(c => c.chargeType === type) || { paid: 0, unpaid: 0, refunded: 0 }
+                return (
+                  <>
+                    <div className="fm-revenue-bars" role="list" aria-label="Thực thu theo tháng">
+                      {monthly.map(m => (
+                        <div key={m.month} className="fm-revenue-bar" role="listitem">
+                          <span className="fm-revenue-value">{fmtMoney(m.net)}</span>
+                          <div className="fm-revenue-track">
+                            <div className="fm-revenue-fill" style={{ height: `${Math.max(0, (Number(m.net) || 0) / peak) * 100}%` }} />
+                          </div>
+                          <small>{m.month.slice(5)}/{m.month.slice(2, 4)}</small>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="fm-report-mini">
+                      <div className="fm-report-box">
+                        <small>Tiền cọc đang giữ</small>
+                        <strong>{fmtMoney(report.depositHeld)}</strong>
+                      </div>
+                      <div className="fm-report-box">
+                        <small>Tiền thuê đã thu</small>
+                        <strong>{fmtMoney(charge('Rent').paid + charge('Renewal').paid)}</strong>
+                      </div>
+                      <div className={`fm-report-box${report.overdueCharges.count ? ' bad' : ''}`}>
+                        <small>Khoản quá hạn chưa thu</small>
+                        <strong>{fmtMoney(report.overdueCharges.amount)}</strong>
+                      </div>
+                    </div>
+                    <p className="fm-muted" style={{ margin: '8px 0 0' }}>
+                      Phí trễ hạn đã thu {fmtMoney(charge('LateFee').paid)} · phí khác {fmtMoney(charge('ExtraFee').paid)} · đã hoàn cho khách {fmtMoney(report.revenue.inRange.refunded)}.
+                    </p>
+                  </>
+                )
+              })()}
+            </section>
+
+            {/* [FM11] HỢP ĐỒNG CẦN CHÚ Ý */}
+            <section className="overview-panel">
+              <div className="overview-panel-heading">
+                <div>
+                  <span className="customer-eyebrow">CONTRACTS</span>
+                  <h2>Hợp đồng cần chú ý</h2>
+                </div>
+                <button type="button" className="overview-text-button" onClick={() => setActiveTab('contracts')}>Xem tất cả hợp đồng →</button>
+              </div>
+              <div className="fm-report-mini">
+                <div className="fm-report-box warn">
+                  <small>Sắp hết hạn (≤ {EXPIRING_DAYS} ngày)</small>
+                  <strong>{stats.expiringContracts.length}</strong>
+                </div>
+                <div className="fm-report-box bad">
+                  <small>Đã quá hạn</small>
+                  <strong>{stats.expiredContracts.length}</strong>
+                </div>
+                <div className="fm-report-box">
+                  <small>Tổng hợp đồng tại cơ sở</small>
+                  <strong>{facilityContracts.length}</strong>
+                </div>
+              </div>
+              {[...stats.expiredContracts, ...stats.expiringContracts].length > 0 ? (
+                <div className="fm-pending-mini-list">
+                  {[...stats.expiredContracts, ...stats.expiringContracts].slice(0, 6).map(c => {
+                    const left = daysLeft(c.endDate)
+                    return (
+                      <div key={c.id} className="fm-pending-mini-item">
+                        <div>
+                          <strong>{c.contractNumber || c.id} · {c.customerName}</strong>
+                          <small>Kho {(c.unitNumbers || []).join(', ') || '—'} · Kết thúc {fmtDate(c.endDate)}</small>
+                        </div>
+                        <div className="fm-item-right">
+                          <span className={CONTRACT_PHASE_MAP[contractPhase(c)].className}>{CONTRACT_PHASE_MAP[contractPhase(c)].label}</span>
+                          <span className="fm-amount">{left < 0 ? `Quá hạn ${-left} ngày` : `Còn ${left} ngày`}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : <p className="fm-muted" style={{ margin: '12px 0 0' }}>Không có hợp đồng sắp hết hạn hoặc quá hạn.</p>}
             </section>
 
             {/* ĐƠN CẦN THEO DÕI */}
@@ -2230,6 +2897,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                       {renderSortHeader('code', 'Mã kho')}
                       {renderSortHeader('type', 'Loại kho')}
                       {renderSortHeader('size', 'Size')}
+                      {renderSortHeader('location', 'Vị trí')}
                       {renderSortHeader('price', 'Giá thuê / tháng')}
                       {renderSortHeader('status', 'Trạng thái')}
                       {renderSortHeader('reservation', 'Mã đơn')}
@@ -2245,7 +2913,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                   </thead>
                   <tbody>
                     {visibleUnits.length === 0 && (
-                      <tr><td colSpan="7" className="text-center">Không có kho phù hợp bộ lọc.</td></tr>
+                      <tr><td colSpan="8" className="text-center">Không có kho phù hợp bộ lọc.</td></tr>
                     )}
                     {visibleUnits.map(unit => {
                       const lock = unitLocks.get(unit.id)
@@ -2262,6 +2930,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                           <td><strong>{unit.id}</strong>{isFresh && <span className="fm-new-tag">Mới</span>}</td>
                           <td><UnitTypeChip type={unit.type} compact /><small className="fm-muted" style={{ display: 'block', marginTop: 4 }}>{unit.type}</small></td>
                           <td>{unit.size}</td>
+                          <td>{formatUnitLocation(unit) || <span className="fm-muted">—</span>}</td>
                           <td><strong>{fmtMoney(unit.pricePerMonth)}</strong></td>
                           <td><Badge map={UNIT_STATUS_MAP} value={unit.status} /></td>
                           <td>{renderReservationCodes(unit)}</td>
@@ -2300,6 +2969,29 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
           />
         )}
 
+        {/* [AUTO-ASSIGN] TAB BÁO CÁO SỰ CỐ KHO */}
+        {activeTab === 'reports' && (
+          <UnitReportsTab
+            facilityId={managedFacility?.facilityId}
+            showToast={showToast}
+            onChanged={() => loadState({ silent: true })}
+          />
+        )}
+
+        {/* [FM11] TAB BẢNG GIÁ TẠI CƠ SỞ (giá theo loại + size, trong khung giá của Business Operations) */}
+        {activeTab === 'prices' && (
+          <ManagerPriceTable
+            facility={managedFacility}
+            units={facilityUnits}
+            rentalRates={db.rentalRates || []}
+            unitTypes={priceTableTypes}
+            unitSizes={priceTableSizes}
+            priceBands={priceBands}
+            dialog={dialog}
+            onChanged={() => loadState({ silent: true })}
+          />
+        )}
+
         {/* TAB 5: HỢP ĐỒNG & KHÁCH HÀNG (chỉ xem) */}
         {activeTab === 'contracts' && (
           <FacilityContractsTab
@@ -2320,6 +3012,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
             staffUsers={db.staffUsers || []}
             activity={db.activity || []}
             awaitingHandoverList={awaitingHandoverList}
+            assignVersion={assignInfo.version}
             showToast={showToast}
             onChanged={() => loadState({ silent: true })}
           />

@@ -124,6 +124,14 @@ builder.Services.AddScoped<IOperationsStateService, OperationsStateService>();
 builder.Services.AddScoped<IFacilityManagementRepository, FacilityManagementRepository>();
 builder.Services.AddScoped<IFacilityManagementService, FacilityManagementService>();
 
+//Đã cập nhật các repository và service cho StaffTools và ManagerTools
+builder.Services.AddScoped<IStaffToolsRepository, StaffToolsRepository>();
+builder.Services.AddScoped<IStaffToolsService, StaffToolsService>();
+builder.Services.AddScoped<IManagerToolsRepository, ManagerToolsRepository>();
+builder.Services.AddScoped<IManagerToolsService, ManagerToolsService>();
+//Đã sửa: 05/11/2026
+
+
 // JWT authentication
 var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
 builder.Services.Configure<JwtOptions>(jwtSection);

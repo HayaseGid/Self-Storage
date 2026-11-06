@@ -1,5 +1,6 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
+using SelfStorageAPI.Constants;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Models;
@@ -22,8 +23,11 @@ public class HandoverRepository : IHandoverRepository
                 .ThenInclude(ru => ru.Unit)
             .Include(r => r.Customer)
             .Include(r => r.Payments)
+            .Include(r => r.Charges)
             .Include(r => r.Contract)
             .Include(r => r.HandoverTasks)
+                .ThenInclude(t => t.AssignedStaff)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.ReservationID == reservationId, cancellationToken);
     }
 
@@ -41,8 +45,23 @@ public class HandoverRepository : IHandoverRepository
             fs.Status == "Active", cancellationToken);
     }
 
-    public void AddHandoverTask(HandoverTask task) => _context.HandoverTasks.Add(task);
-    public void AddContract(Contract contract) => _context.Contracts.Add(contract);
+    // Chỉ kiểm tra có chữ ký hay không, không tải ảnh chữ ký (base64 rất nặng)
+    public Task<bool> IsContractSignedAsync(int contractId, CancellationToken cancellationToken)
+        => _context.ContractSignatures.AnyAsync(s => s.ContractID == contractId, cancellationToken);
+
+    // Kho đang có người khác dùng thật sự: dòng ReservationUnit "Active" của đơn khác (kể cả đơn đã quá hạn chưa trả)
+    public async Task<List<string>> GetUnitsOccupiedByOtherReservationsAsync(int reservationId, IReadOnlyCollection<int> unitIds, CancellationToken cancellationToken)
+    {
+        return await _context.ReservationUnits
+            .Where(ru => unitIds.Contains(ru.UnitID) &&
+                         ru.ReservationID != reservationId &&
+                         ru.Status == "Active" &&
+                         ru.Reservation.Status == ReservationStatus.HandedOver)
+            .Select(ru => ru.Unit.UnitNumber)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
+
     public void AddUnitAccess(UnitAccess access) => _context.UnitAccesses.Add(access);
 
     public async Task<T> ExecuteInTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
