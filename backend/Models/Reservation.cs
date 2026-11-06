@@ -14,6 +14,7 @@ public class Reservation
     public int RentalPeriod { get; set; }
     public DateTime EndDate { get; set; }
     public byte DepositMonths { get; set; } = 2;
+    public string PaymentPlan { get; set; } = "Monthly";
     public DateTime HoldExpiresAt { get; set; }
     public DateTime? AppointmentDate { get; set; }
     public TimeSpan? AppointmentTime { get; set; }
