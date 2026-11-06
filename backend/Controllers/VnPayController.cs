@@ -30,7 +30,9 @@ namespace SelfStorageAPI.Controllers;
  * Luồng: tạo Payment "Pending" (Provider = VNPay) cho từng đơn + gắn khoản cọc -> chuyển khách sang VNPay
  *   -> VNPay chuyển về / gọi IPN -> KIỂM TRA CHỮ KÝ + số tiền -> Payment Completed -> cọc Paid -> đơn Paid
  *   -> xác nhận đơn + tạo hợp đồng (không còn bước Manager duyệt) -> khách ký hợp đồng.
- * Đơn GIA HẠN (mã "GH-..."): thu tiền thuê tháng đầu + cọc bổ sung thay vì tiền cọc; thanh toán xong
+ * TIỀN THUÊ (đơn đã xác nhận / đang thuê): thu các khoản RentPaymentRules.PayableNow — ngày nhận kho đóng toàn bộ
+ *   (trả 1 lần) hoặc tháng đầu (trả theo tháng), sau đó đóng từng kỳ. Ghi nhận xong không đổi trạng thái đơn.
+ * Đơn GIA HẠN (mã "GH-..."): thu tiền thuê kỳ mới (toàn bộ hoặc tháng đầu theo hình thức trả) + cọc bổ sung; thanh toán xong
  *   -> ContractRenewalFinalizer hoàn tất gia hạn (chuyển cọc, tạo phụ lục gia hạn) -> khách ký phụ lục.
  * return-verify và IPN dùng chung một hàm, gọi nhiều lần cũng chỉ ghi nhận 1 lần (idempotent),
  * nên chạy ở localhost (VNPay không gọi được IPN) vẫn hoạt động.
@@ -100,9 +102,14 @@ public sealed class VnPayController(
 
         foreach (var r in reservations)
         {
-            // Phí phát sinh khi trả kho (đơn đã nhận / đã trả kho): không có hạn giữ kho.
-            if (IsFeeCollection(r))
+            // Sau khi đặt cọc (tiền thuê ngày nhận kho / hằng tháng, phí phát sinh khi trả kho): không có hạn giữ kho.
+            if (r.Status != ReservationStatus.PendingPayment)
+            {
+                if (!ChargesToCollect(r).Any())
+                    return Conflict(new { message = RentPaymentRules.WhyNotPayable(r, BusinessClock.Today)
+                        ?? $"Đơn {r.ReservationCode} hiện không có khoản nào cần thanh toán." });
                 continue;
+            }
             if (r.Status != ReservationStatus.PendingPayment)
                 return Conflict(new { message = $"Đơn {r.ReservationCode} không còn ở trạng thái chờ thanh toán cọc." });
             if (r.HoldExpiresAt <= now.AddSeconds(30))
@@ -114,7 +121,7 @@ public sealed class VnPayController(
         }
 
         var txnRef = $"SS{now.AddHours(7):yyMMddHHmmss}{Random.Shared.Next(100, 999)}";
-        var expiresAt = reservations.Select(r => IsFeeCollection(r) ? now.AddMinutes(15) : r.HoldExpiresAt).Min();
+        var expiresAt = reservations.Select(r => IsPostBooking(r) ? now.AddMinutes(15) : r.HoldExpiresAt).Min();
         decimal total = 0;
 
         await using (var transaction = await context.Database.BeginTransactionAsync(ct))
@@ -139,7 +146,7 @@ public sealed class VnPayController(
                     PaymentMethod = "VNPay",
                     Status = "Pending",
                     CreatedAt = now,
-                    ExpiresAt = IsFeeCollection(r) ? now.AddMinutes(15) : r.HoldExpiresAt,
+                    ExpiresAt = IsPostBooking(r) ? now.AddMinutes(15) : r.HoldExpiresAt,
                     CreatedByUserID = customerId.Value
                 };
                 context.Payments.Add(payment);
@@ -163,9 +170,11 @@ public sealed class VnPayController(
             ["vnp_Amount"] = ((long)decimal.Round(total * 100m, 0)).ToString(CultureInfo.InvariantCulture),
             ["vnp_CurrCode"] = "VND",
             ["vnp_TxnRef"] = txnRef,
-            ["vnp_OrderInfo"] = reservations.All(ContractRenewalFinalizer.IsRenewal)
-                ? $"Thanh toan gia han hop dong {string.Join(" ", reservations.Select(r => r.ReservationCode))}"
-                : $"Thanh toan tien coc {string.Join(" ", reservations.Select(r => r.ReservationCode))}",
+            ["vnp_OrderInfo"] = reservations.All(IsPostBooking)
+                ? $"Thanh toan tien thue va phi {string.Join(" ", reservations.Select(r => r.ReservationCode))}"
+                : reservations.All(ContractRenewalFinalizer.IsRenewal)
+                    ? $"Thanh toan gia han hop dong {string.Join(" ", reservations.Select(r => r.ReservationCode))}"
+                    : $"Thanh toan tien coc {string.Join(" ", reservations.Select(r => r.ReservationCode))}",
             ["vnp_OrderType"] = "other",
             ["vnp_Locale"] = "vn",
             ["vnp_ReturnUrl"] = ResolveReturnUrl(request.ReturnUrl),
@@ -180,18 +189,20 @@ public sealed class VnPayController(
         return Ok(new { paymentUrl, txnRef, amount = total, expiresAt });
     }
 
-    /* Đặt cọc: các khoản cọc chưa trả. Gia hạn: tiền thuê tháng đầu + cọc bổ sung. */
+    /* Khoản cần thu theo trạng thái đơn:
+         - Chờ cọc (đơn thường): các khoản cọc chưa trả.
+         - Chờ thanh toán (đơn gia hạn): ContractRenewalFinalizer.IsPayableNow.
+         - Sau khi đặt cọc: tiền thuê đóng được ngay (RentPaymentRules.PayableNow) + phí phát sinh chưa đóng. */
     private static IEnumerable<Charge> ChargesToCollect(Reservation r) =>
-        IsFeeCollection(r)
-            ? r.Charges.Where(c => c.ChargeType is "ExtraFee" or "LateFee" && c.Status == "Unpaid")
-            : ContractRenewalFinalizer.IsRenewal(r)
+        r.Status == ReservationStatus.PendingPayment
+            ? ContractRenewalFinalizer.IsRenewal(r)
                 ? r.Charges.Where(c => ContractRenewalFinalizer.IsPayableNow(c, r))
-                : r.Charges.Where(c => c.ChargeType == "Deposit" && c.Status == "Unpaid");
+                : r.Charges.Where(c => c.ChargeType == "Deposit" && c.Status == "Unpaid")
+            : RentPaymentRules.PayableNow(r, BusinessClock.Today)
+                .Concat(r.Charges.Where(c => c.ChargeType is "ExtraFee" or "LateFee" && c.Status == "Unpaid"));
 
-    /* Đơn đang thuê / đã trả kho còn phí phát sinh chưa đóng (UnitReturnsController: cọc không đủ bù phí). */
-    private static bool IsFeeCollection(Reservation r) =>
-        r.Status is ReservationStatus.HandedOver or ReservationStatus.Completed &&
-        r.Charges.Any(c => c.ChargeType is "ExtraFee" or "LateFee" && c.Status == "Unpaid");
+    /* Thu tiền SAU khi đặt cọc: không còn hạn giữ kho, ghi nhận không đổi trạng thái đơn. */
+    private static bool IsPostBooking(Reservation r) => r.Status != ReservationStatus.PendingPayment;
 
     // ------------------------------------------------------------------ VNPay chuyển về / IPN
 
@@ -212,11 +223,12 @@ public sealed class VnPayController(
             .ToListAsync(ct);
         var isRenewal = result.Payments.Count > 0 && result.Payments.All(p => p.Reservation != null && ContractRenewalFinalizer.IsRenewal(p.Reservation));
         var isFee = result.Payments.Count > 0 && result.Payments.All(p => p.Charges.Count > 0 && p.Charges.All(c => c.ChargeType is "ExtraFee" or "LateFee"));
+        var isRent = !isFee && result.Payments.Count > 0 && result.Payments.All(p => IsPostBookingPayment(p));
 
         return Ok(new
         {
             success = result.Paid,
-            kind = isRenewal ? "renewal" : isFee ? "fee" : "deposit",
+            kind = isFee ? "fee" : isRent ? "rent" : isRenewal ? "renewal" : "deposit",
             code = result.Code,
             message = result.Message,
             txnRef = result.TxnRef,
@@ -311,7 +323,10 @@ public sealed class VnPayController(
             try
             {
                 var renewal = ContractRenewalFinalizer.IsRenewal(payment.Reservation);
+                var postBooking = IsPostBookingPayment(payment);
                 await ApplyPaidAsync(payment, transactionNo, now, ct);
+                if (postBooking)
+                    continue; // tiền thuê / phí: không đổi trạng thái đơn, không cần xác nhận / hoàn tất gia hạn
                 if (renewal)
                     await ContractRenewalFinalizer.FinalizeAsync(context, payment.ReservationID, payment.CreatedByUserID, ct);
                 else
@@ -332,7 +347,11 @@ public sealed class VnPayController(
             notes.Count == 0 ? "Applied" : "Error", $"{source}: {(notes.Count == 0 ? "đã ghi nhận" : string.Join(" | ", notes))}", ct);
 
         return allPaid
-            ? new ProcessResult(true, "00", payments.All(p => ContractRenewalFinalizer.IsRenewal(p.Reservation)) ? "Gia hạn thành công." : payments.All(p => p.Charges.Count > 0 && p.Charges.All(c => c.ChargeType is "ExtraFee" or "LateFee")) ? "Đã thanh toán phí phát sinh." : "Đặt cọc thành công.", "Confirm Success", txnRef, amount, payments)
+            ? new ProcessResult(true, "00",
+                payments.All(p => p.Charges.Count > 0 && p.Charges.All(c => c.ChargeType is "ExtraFee" or "LateFee")) ? "Đã thanh toán phí phát sinh."
+                : payments.All(IsPostBookingPayment) ? "Đã đóng tiền thuê."
+                : payments.All(p => ContractRenewalFinalizer.IsRenewal(p.Reservation)) ? "Gia hạn thành công."
+                : "Đặt cọc thành công.", "Confirm Success", txnRef, amount, payments)
             : new ProcessResult(false, "99", "VNPay đã nhận tiền nhưng hệ thống chưa ghi nhận được đơn (có thể đơn đã hết thời gian giữ kho). Vui lòng liên hệ cơ sở.", "Unknown error", txnRef, amount, payments);
     }
 
@@ -341,10 +360,9 @@ public sealed class VnPayController(
     {
         await using var transaction = await context.Database.BeginTransactionAsync(ct);
         var reservation = payment.Reservation;
-        var feePayment = payment.Charges.Count > 0 && payment.Charges.All(c => c.ChargeType is "ExtraFee" or "LateFee");
-        if (feePayment)
+        if (IsPostBookingPayment(payment))
         {
-            // Đóng phí phát sinh khi trả kho: chỉ ghi nhận thanh toán, không đổi trạng thái đơn.
+            // Tiền thuê / phí phát sinh (sau khi đặt cọc): chỉ ghi nhận thanh toán, không đổi trạng thái đơn.
             payment.Status = "Completed";
             payment.ProviderTransactionId = $"{transactionNo}-{payment.ReservationID}";
             payment.ReceivedAmount = payment.Amount;
@@ -386,6 +404,12 @@ public sealed class VnPayController(
         }
         await transaction.CommitAsync(ct);
     }
+
+    /* Giao dịch thu SAU khi đặt cọc: chỉ gồm tiền thuê / phí phát sinh, không phải đơn gia hạn đang chờ thanh toán. */
+    private static bool IsPostBookingPayment(Payment p) =>
+        p.Charges.Count > 0 &&
+        p.Charges.All(c => c.ChargeType is "Rent" or "ExtraFee" or "LateFee") &&
+        !(ContractRenewalFinalizer.IsRenewal(p.Reservation) && p.Reservation.Status == ReservationStatus.PendingPayment);
 
     /* Không còn bước Manager duyệt: Paid -> Confirmed + tạo hợp đồng (lỗi thì trang Hợp đồng tự thử lại). */
     private async Task TryConfirmAsync(int reservationId, CancellationToken ct)

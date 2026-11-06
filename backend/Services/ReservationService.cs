@@ -19,6 +19,10 @@ public class ReservationService : IReservationService
         if (request.Months is not (1 or 3 or 6 or 12))
             return new ReservationServiceResponse(false, "Thời hạn thuê chỉ được chọn 1, 3, 6 hoặc 12 tháng.", 400, null);
 
+        var paymentPlan = PaymentPlan.Normalize(request.PaymentPlan);
+        if (paymentPlan is null)
+            return new ReservationServiceResponse(false, "Vui lòng chọn hình thức trả tiền thuê: trả theo tháng hoặc trả 1 lần.", 400, null);
+
         if (string.IsNullOrWhiteSpace(userEmail))
             return new ReservationServiceResponse(false, null, 401, null);
 
@@ -27,7 +31,7 @@ public class ReservationService : IReservationService
             return new ReservationServiceResponse(false, "Không tìm thấy tài khoản khách hàng.", 404, null);
 
         var startDate = request.StartDate.Date;
-        if (startDate < DateTime.Today)
+        if (startDate < BusinessClock.Today)
             return new ReservationServiceResponse(false, "Ngày bắt đầu thuê không được ở trong quá khứ.", 400, null);
 
         var requestedItems = request.Units is { Count: > 0 }
@@ -94,6 +98,7 @@ public class ReservationService : IReservationService
                 RentalPeriod = request.Months,
                 EndDate = endDate,
                 DepositMonths = depositMonths,
+                PaymentPlan = paymentPlan,
                 HoldExpiresAt = now.AddMinutes(holdMinutes),
                 AppointmentDate = startDate,
                 AppointmentTime = new TimeSpan(9, 0, 0),
@@ -173,7 +178,8 @@ public class ReservationService : IReservationService
                             PeriodStart = periodStart,
                             PeriodEnd = periodEnd,
                             Amount = effectiveMonthlyPrice,
-                            DueDate = m == 0 ? now.Date : periodStart,
+                            // Hạn đóng theo RentPaymentRules: trả 1 lần -> tất cả đến hạn ngày nhận kho; theo tháng -> ngày đầu mỗi kỳ
+                            DueDate = RentPaymentRules.DueDateFor(paymentPlan, startDate, periodStart),
                             Status = "Unpaid",
                             CreatedAt = now
                         });
@@ -189,6 +195,9 @@ public class ReservationService : IReservationService
             {
                 message = "Đặt kho thành công, đang chờ thanh toán tiền cọc.",
                 reservationId = reservation.ReservationID,
+                paymentPlan = reservation.PaymentPlan,
+                // Số tiền thuê phải đóng ngày nhận kho: trả 1 lần = toàn bộ, theo tháng = tháng đầu
+                rentDueAtHandover = paymentPlan == PaymentPlan.Upfront ? totalRent : totalMonthlyPrice,
                 reservationCode = reservation.ReservationCode,
                 unitNumber = string.Join(", ", unitNumbers),
                 unitNumbers,

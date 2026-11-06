@@ -11,7 +11,8 @@ import './ContractRenewal.css'
 /*
  * GIA HẠN HỢP ĐỒNG (khách hàng).
  *   GET  /api/contract-renewals/mine            -> điều kiện + báo giá từng hợp đồng (backend tính, frontend chỉ hiển thị)
- *   POST /api/contract-renewals                 -> { reservationId, months, expectedAmount } tạo yêu cầu gia hạn chờ thanh toán
+ *   POST /api/contract-renewals                 -> { reservationId, months, paymentPlan, expectedAmount } tạo yêu cầu gia hạn chờ thanh toán
+ *     paymentPlan: "Monthly" (trả ngay tháng đầu kỳ mới) | "Upfront" (trả ngay toàn bộ kỳ mới) — mặc định giữ hình thức cũ
  *   POST /api/vnpay/create { reservationIds }   -> thanh toán qua VNPay (như đặt cọc)
  *   POST /api/contract-renewals/{id}/pay-demo   -> thanh toán mô phỏng (chỉ khi VITE_ALLOW_SIMULATED_PAYMENT=true)
  *   POST /api/contract-renewals/{id}/finalize | cancel
@@ -227,11 +228,16 @@ export function RenewalModal({ item, onClose, onDone }) {
   const quotes = Array.isArray(item.quotes) ? item.quotes : []
   const [months, setMonths] = useState(() => (quotes.find(q => q.months === item.months) || quotes[0])?.months ?? null)
   const [step, setStep] = useState('plan')
+  // Khách chọn lại hình thức trả; chọn sẵn hình thức của hợp đồng hiện tại
+  const [paymentPlan, setPaymentPlan] = useState(item.paymentPlan === 'Upfront' ? 'Upfront' : 'Monthly')
   const [agreed, setAgreed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [override, setOverride] = useState(null) // báo giá mới nếu bảng giá vừa đổi
   const quote = (override && override.months === months ? override : null) || quotes.find(q => q.months === months) || null
+  // Số tiền trả ngay theo hình thức trả (backend tính: amountDueMonthly / amountDueUpfront)
+  const dueOf = q => (q ? Number(paymentPlan === 'Upfront' ? (q.amountDueUpfront ?? q.amountDue) : (q.amountDueMonthly ?? q.amountDue)) : 0)
+  const amountDue = dueOf(quote)
 
   useEffect(() => {
     const onKey = event => { if (event.key === 'Escape' && !submitting) onClose() }
@@ -245,7 +251,7 @@ export function RenewalModal({ item, onClose, onDone }) {
     setError('')
     let created = null
     try {
-      created = await apiPost('/api/contract-renewals', { reservationId: item.reservationId, months: quote.months, expectedAmount: quote.amountDue })
+      created = await apiPost('/api/contract-renewals', { reservationId: item.reservationId, months: quote.months, paymentPlan, expectedAmount: amountDue })
       const result = await payRenewal(dialog, { reservationId: created.reservationId, amount: created.amountDue, label: created.reservationCode })
       if (result.redirected) return // đang chuyển sang VNPay
       onDone?.(result)
@@ -311,11 +317,23 @@ export function RenewalModal({ item, onClose, onDone }) {
 
               {quote && (
                 <>
+                  <p className="csf-label">Hình thức trả tiền thuê kỳ mới</p>
+                  <div className="rn-plans" role="radiogroup" aria-label="Hình thức trả">
+                    {[['Monthly', 'Trả theo tháng', `Trả ngay ${money(quote.amountDueMonthly ?? quote.amountDue)}, các tháng sau trả hằng tháng`],
+                      ['Upfront', 'Trả 1 lần', `Trả ngay ${money(quote.amountDueUpfront ?? quote.rent)} (toàn bộ ${quote.months} tháng)`]].map(([value, label, note]) => (
+                      <button key={value} type="button" role="radio" aria-checked={paymentPlan === value}
+                        className={`rn-plan${paymentPlan === value ? ' active' : ''}`}
+                        onClick={() => { setPaymentPlan(value); setError(''); setAgreed(false) }}>
+                        <strong>{label}</strong>
+                        <small>{note}</small>
+                      </button>
+                    ))}
+                  </div>
                   <div className="cdm-summary rn-summary">
                     <div><span>Thời gian gia hạn</span><strong>{fmtIsoDate(quote.startDate)} → {fmtIsoDate(quote.endDate)}</strong></div>
                     <div><span>Tiền thuê / tháng</span><strong>{money(quote.monthly)}</strong></div>
                     <div><span>Tổng tiền thuê {quote.months} tháng</span><strong>{money(quote.rent)}</strong></div>
-                    <div><span>Trả ngay khi gia hạn</span><strong>{money(quote.amountDue)}</strong></div>
+                    <div><span>Trả ngay khi gia hạn</span><strong>{money(amountDue)}</strong></div>
                   </div>
                   <div className="csf-table-wrap">
                     <table className="csf-table">
@@ -340,21 +358,24 @@ export function RenewalModal({ item, onClose, onDone }) {
           {step === 'pay' && quote && (
             <div className="rn-pay">
               <DepositConfirm
-                key={`${quote.months}-${quote.amountDue}`}
+                key={`${quote.months}-${paymentPlan}-${amountDue}`}
                 title="Xác nhận gia hạn"
                 rows={[
                   ['Hợp đồng gốc', `${item.contractNumber} · ${item.facility}`],
                   ['Kho', quote.units.map(u => u.unitNumber).join(', ')],
-                  ['Thời gian gia hạn', `${quote.months} tháng · ${fmtIsoDate(quote.startDate)} → ${fmtIsoDate(quote.endDate)}`]
+                  ['Thời gian gia hạn', `${quote.months} tháng · ${fmtIsoDate(quote.startDate)} → ${fmtIsoDate(quote.endDate)}`],
+                  ['Hình thức trả', paymentPlan === 'Upfront' ? 'Trả 1 lần' : 'Trả theo tháng']
                 ]}
                 lines={[
-                  [`Tiền thuê tháng đầu (${fmtIsoDate(quote.startDate)} → ${fmtIsoDate(firstMonthEnd)})`, Number(quote.firstMonth ?? quote.monthly)],
+                  paymentPlan === 'Upfront'
+                    ? [`Tiền thuê toàn bộ ${quote.months} tháng (${fmtIsoDate(quote.startDate)} → ${fmtIsoDate(quote.endDate)})`, Number(quote.rent)]
+                    : [`Tiền thuê tháng đầu (${fmtIsoDate(quote.startDate)} → ${fmtIsoDate(firstMonthEnd)})`, Number(quote.firstMonth ?? quote.monthly)],
                   [`Tiền cọc ${money(quote.depositTransfer ?? quote.oldDeposit)}`, 'Chuyển từ hợp đồng cũ'],
                   ...(Number(quote.depositTopUp) > 0 ? [['Bổ sung tiền cọc (giá thuê tăng)', Number(quote.depositTopUp)]] : []),
                   ...(Number(quote.refundAmount) > 0 ? [['Tiền cọc dư được hoàn lại', `${money(quote.refundAmount)} (hoàn sau)`]] : []),
-                  ...(laterMonths > 0 ? [[`Tháng 2 → ${quote.months}`, `${money(quote.monthly)}/tháng, trả hằng tháng`]] : [])
+                  ...(paymentPlan === 'Monthly' && laterMonths > 0 ? [[`Tháng 2 → ${quote.months}`, `${money(quote.monthly)}/tháng, trả hằng tháng`]] : [])
                 ]}
-                amount={quote.amountDue}
+                amount={amountDue}
                 onChange={setAgreed}
                 infoText={<>Tôi đã kiểm tra đúng <strong>kho, thời gian gia hạn và giá thuê</strong> ở trên.</>}
                 policyText={<>Tôi đồng ý gia hạn với <strong>các điều khoản của hợp đồng {item.contractNumber}</strong>, áp dụng giá thuê hiện hành, và sẽ <strong>ký điện tử phụ lục gia hạn</strong> ngay sau khi thanh toán.</>}
@@ -379,7 +400,7 @@ export function RenewalModal({ item, onClose, onDone }) {
           )}
           {step === 'pay' && (
             <button type="button" className="dashboard-primary-btn" disabled={submitting || !agreed} onClick={submit}>
-              {submitting ? 'Đang xử lý...' : `Thanh toán ${money(quote?.amountDue)}`}
+              {submitting ? 'Đang xử lý...' : `Thanh toán ${money(amountDue)}`}
             </button>
           )}
         </div>

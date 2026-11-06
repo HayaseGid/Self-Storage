@@ -30,6 +30,14 @@ export default function PaymentResultPage({ navigate }) {
     }
     apiGet(`/api/vnpay/return-verify${search}`)
       .then(async result => {
+        // Tiền thuê (ngày nhận kho / hằng tháng): chỉ ghi nhận, không đổi đơn
+        if (result.success && (result.kind === 'rent' || pending?.kind === 'rent')) {
+          clearPendingVnPay()
+          setState({ loading: false, result: { ...result, rent: true }, error: '' })
+          await dialog.alert({ tone: 'success', title: 'Đã đóng tiền thuê', message: `Đã nhận ${formatVnd(result.amount)}đ tiền thuê qua VNPay.` })
+          openCustomerSection(navigate, 'contract')
+          return
+        }
         const isRenewal = result.kind === 'renewal' || pending?.kind === 'renewal'
         if (result.success && isRenewal) {
           clearPendingVnPay()
@@ -91,7 +99,7 @@ export default function PaymentResultPage({ navigate }) {
         {!loading && result?.success && (
           <>
             <span className="pr-icon ok" aria-hidden="true">✓</span>
-            <h1>{result.fee ? 'Đã thanh toán phí phát sinh' : result.renewal ? 'Gia hạn thành công' : 'Đặt cọc thành công'}</h1>
+            <h1>{result.rent ? 'Đã đóng tiền thuê' : result.fee ? 'Đã thanh toán phí phát sinh' : result.renewal ? 'Gia hạn thành công' : 'Đặt cọc thành công'}</h1>
             <p>Đã nhận {formatVnd(result.amount)}đ qua VNPay{result.transactionNo ? ` · Mã GD ${result.transactionNo}` : ''}.</p>
             <button
               type="button"
@@ -101,7 +109,7 @@ export default function PaymentResultPage({ navigate }) {
                 openCustomerSection(navigate, 'contract')
               }}
             >
-              {result.fee ? 'Về trang Hợp đồng' : result.renewal ? 'Ký phụ lục gia hạn' : 'Ký hợp đồng'}
+              {result.fee || result.rent ? 'Về trang Hợp đồng' : result.renewal ? 'Ký phụ lục gia hạn' : 'Ký hợp đồng'}
             </button>
           </>
         )}
@@ -111,12 +119,14 @@ export default function PaymentResultPage({ navigate }) {
             <h1>Chưa thanh toán được</h1>
             <p>{error || result?.message}</p>
             {result?.txnRef && <p className="pr-muted">Mã giao dịch: {result.txnRef}</p>}
-            <p className="pr-muted">{pending?.kind === 'renewal'
-              ? 'Yêu cầu gia hạn vẫn được giữ đến hết thời gian chờ. Bạn có thể thanh toán lại trong mục Hợp đồng > Gia hạn hợp đồng.'
-              : 'Kho vẫn được giữ cho bạn đến hết thời gian giữ chỗ. Bạn có thể thanh toán lại trong mục Thanh toán.'}</p>
+            <p className="pr-muted">{pending?.kind === 'rent'
+              ? 'Tiền thuê chưa được ghi nhận. Bạn có thể đóng lại trong mục Hợp đồng.'
+              : pending?.kind === 'renewal'
+                ? 'Yêu cầu gia hạn vẫn được giữ đến hết thời gian chờ. Bạn có thể thanh toán lại trong mục Hợp đồng > Gia hạn hợp đồng.'
+                : 'Kho vẫn được giữ cho bạn đến hết thời gian giữ chỗ. Bạn có thể thanh toán lại trong mục Thanh toán.'}</p>
             <div className="pr-actions">
               <button type="button" className="dashboard-secondary-btn" onClick={() => navigate('/')}>Về trang chủ</button>
-              <button type="button" className="dashboard-primary-btn" onClick={() => openCustomerSection(navigate, pending?.kind === 'renewal' ? 'contract' : 'payment')}>Thanh toán lại</button>
+              <button type="button" className="dashboard-primary-btn" onClick={() => openCustomerSection(navigate, pending?.kind === 'renewal' || pending?.kind === 'rent' ? 'contract' : 'payment')}>Thanh toán lại</button>
             </div>
           </>
         )}

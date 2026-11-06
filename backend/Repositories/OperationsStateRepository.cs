@@ -3,6 +3,7 @@ using SelfStorageAPI.Constants;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Models;
+using SelfStorageAPI.Services;
 
 namespace SelfStorageAPI.Repositories;
 
@@ -238,6 +239,11 @@ public class OperationsStateRepository : IOperationsStateRepository
                 RentalFee = r.Charges
                     .Where(c => c.ChargeType == "Rent" && c.Status != "Cancelled")
                     .Sum(c => (decimal?)c.Amount) ?? 0m,
+                r.PaymentPlan,
+                RentRows = r.Charges
+                    .Where(c => c.ChargeType == "Rent")
+                    .Select(c => new { c.Status, c.Amount, c.DueDate, c.PeriodStart })
+                    .ToList(),
                 IsPaid = r.Payments.Any(p => p.Status == "Completed" && p.Direction == "Collection"),
                 PaymentTxn = r.Payments
                     .Where(p => p.Status == "Completed" && p.Direction == "Collection")
@@ -252,7 +258,14 @@ public class OperationsStateRepository : IOperationsStateRepository
             })
             .ToListAsync(cancellationToken);
 
-        var reservations = rawReservations.Select(r => new
+        var today = BusinessClock.Today;
+        var reservations = rawReservations.Select(r =>
+        {
+            // Tiền thuê phải đóng lúc nhận kho: tính bằng RentPaymentRules (cùng luật với HandoverService)
+            var rentState = RentPaymentRules.Snapshot(r.Status, r.StartDate, r.EndDate, r.PaymentPlan,
+                r.RentRows.Select(x => (x.Status, x.Amount, x.DueDate, x.PeriodStart)));
+            var dueAtStart = RentPaymentRules.DueAtStart(rentState);
+            return new
         {
             id = r.ReservationID,
             reservationCode = r.ReservationCode,
@@ -275,6 +288,11 @@ public class OperationsStateRepository : IOperationsStateRepository
             appointmentTime = r.AppointmentTime.HasValue ? r.AppointmentTime.Value.ToString(@"hh\:mm") : "Cả ngày",
             deposit = r.Deposit,
             rentalFee = r.RentalFee,
+            paymentPlan = r.PaymentPlan,
+            startRentAmount = dueAtStart.Sum(c => c.Amount),
+            startRentUnpaid = dueAtStart.Where(c => c.Status == "Unpaid").Sum(c => c.Amount),
+            startRentPaid = RentPaymentRules.IsStartRentPaid(rentState),
+            rentOverdue = RentPaymentRules.Overdue(rentState, today).Sum(c => c.Amount),
             paymentStatus = r.IsPaid ? "PAID" : "PENDING",
             paymentTxn = r.PaymentTxn,
             status = NormalizeReservationStatus(
@@ -287,6 +305,7 @@ public class OperationsStateRepository : IOperationsStateRepository
             isSigned = r.IsSigned,
             signedAt = r.SignedAt,
             source = "live"
+        };
         }).ToList();
 
         var rawContracts = await _context.Contracts

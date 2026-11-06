@@ -81,3 +81,9 @@
 .rn-card.clickable:hover, .ur-card.clickable:hover { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(15, 69, 111, .12); }
 .rn-card.clickable:focus-visible, .ur-card.clickable:focus-visible { outline: 3px solid #9cc7ea; outline-offset: 2px; }
 .go-contract { display: inline-block; margin-top: 6px; color: #0877cf; font-size: 12.5px; font-weight: 700; }
+
+/* Tiền thuê (ngày nhận kho / hằng tháng) */
+.cc-rent { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0; padding: 10px 14px; border-radius: 12px; background: #fff8ec; border: 1px solid #f1d9a8; color: #5c4214; font-size: 13.5px; }
+.cc-rent p { margin: 0; }
+.cc-rent.ok { background: #effaf3; border-color: #bfe5cc; color: #1f5a35; }
+.cc-rent.bad { background: #fdf0f0; border-color: #f0c4c4; color: #7a2020; }

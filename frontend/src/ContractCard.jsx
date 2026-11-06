@@ -35,7 +35,7 @@ const STATUS_TONE = {
 
 export default function ContractCard({
   rental, facility, customerName, signature, signatureLoaded, signatureError, renewal,
-  onReloadSignature, onSign, onDetail, onRenew, onReturn, returnInfo
+  onReloadSignature, onSign, onDetail, onRenew, onReturn, returnInfo, onPayRent, payingRent
 }) {
   const isSigned = Boolean(signature)
   const isRenewal = Boolean(rental.isRenewal || rental.renewedFrom || renewal?.renewedFrom)
@@ -137,9 +137,24 @@ export default function ContractCard({
             <div><dt>Tiền thuê / tháng</dt><dd>{money(rental.monthlyPrice)}</dd></div>
             {rental.rentalAmount > 0 && <div><dt>Tổng {rental.months} tháng</dt><dd>{money(rental.rentalAmount)}</dd></div>}
             {rental.depositAmount > 0 && <div><dt>Tiền cọc</dt><dd>{money(rental.depositAmount)}</dd></div>}
+            {rental.paymentPlan && <div><dt>Hình thức trả</dt><dd>{rental.paymentPlanLabel || (rental.paymentPlan === 'Upfront' ? 'Trả 1 lần' : 'Trả theo tháng')}</dd></div>}
           </dl>
         </section>
       </div>
+
+      {/* ---- Tiền thuê (luật ở backend: RentPaymentRules) ---- */}
+      {!ended && rental.paymentPlan && Number(rental.rentDueAtStart) > 0 && (
+        <section className={`cc-rent${Number(rental.rentOverdue) > 0 ? ' bad' : rental.startRentPaid ? ' ok' : ''}`} aria-label="Tiền thuê">
+          {Number(rental.rentOverdue) > 0
+            ? <p><strong>Tiền thuê quá hạn: {money(rental.rentOverdue)}.</strong> Vui lòng đóng sớm để tránh phí trễ hạn.</p>
+            : rental.startRentPaid
+              ? <p>✓ Đã đóng tiền thuê {rental.paymentPlan === 'Upfront' ? 'toàn bộ kỳ thuê' : 'tháng đầu'} ({money(rental.rentDueAtStart)}).</p>
+              : <p>Ngày nhận kho cần đóng <strong>{money(rental.rentDueAtStart)}</strong> tiền thuê ({rental.paymentPlan === 'Upfront' ? 'toàn bộ kỳ thuê' : 'tháng đầu'}). Chưa đóng thì nhân viên chưa bàn giao kho.</p>}
+          {Number(rental.rentPayableNow) > 0 && onPayRent
+            ? <button type="button" className="dashboard-primary-btn" disabled={payingRent} onClick={onPayRent}>{payingRent ? 'Đang xử lý...' : `Đóng ${money(rental.rentPayableNow)} tiền thuê`}</button>
+            : rental.rentNote && <p className="cc-sub">{rental.rentNote}</p>}
+        </section>
+      )}
 
       {/* ---- Chân thẻ ---- */}
       <footer className="cc-foot">

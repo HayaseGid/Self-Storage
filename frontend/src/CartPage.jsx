@@ -42,6 +42,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
   const [excluded, setExcluded] = useState(() => new Set())
   const [startDate, setStartDate] = useState(null)
   const [months, setMonths] = useState(RENTAL_TERMS[0])
+  // Hình thức trả tiền thuê (khớp CK_Reservation_PaymentPlan): Monthly = theo tháng, Upfront = 1 lần
+  const [paymentPlan, setPaymentPlan] = useState('Monthly')
   const [submitting, setSubmitting] = useState(false)
   const [order, setOrder] = useState(null) // { code, reservation, items, startDate, endDate, months, facilityName, paid }
   const [now, setNow] = useState(Date.now())
@@ -89,6 +91,9 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
   const monthlyTotal = cartQuote.monthly
   const rentTotal = cartQuote.rent
   const depositTotal = cartQuote.deposit
+  // Tiền thuê phải đóng ngày nhận kho (backend tính lại bằng RentPaymentRules)
+  const rentAtHandover = paymentPlan === 'Upfront' ? rentTotal : monthlyTotal
+  const planLabel = paymentPlan === 'Upfront' ? 'Trả 1 lần' : 'Trả theo tháng'
   const depositMonths = cartQuote.depositMonths
   const holdMinutes = holdMinutesFor(activeGroup?.facilityId)
   const endDate = endDateFor(startDate, months)
@@ -137,6 +142,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
           <p>Thuê từ <strong>{fmtDate(startDate)}</strong> đến <strong>{fmtDate(endDate)}</strong> ({months} tháng).</p>
           <p>Kho: <strong>{selected.map(i => i.unitId).join(', ')}</strong></p>
           <p>Tổng tiền cọc cần thanh toán: <strong>{money(depositTotal)}</strong> ({depositMonths} tháng tiền thuê mỗi kho).</p>
+          <p>Hình thức trả tiền thuê: <strong>{planLabel}</strong> — ngày nhận kho đóng <strong>{money(rentAtHandover)}</strong>{paymentPlan === 'Upfront' ? ' (toàn bộ kỳ thuê)' : ' (tháng đầu), các tháng sau đóng trước ngày đầu mỗi kỳ'}.</p>
           <p>Mỗi kho được làm <strong>một hợp đồng riêng</strong>{selected.length > 1 ? ` (${selected.length} hợp đồng, ký lần lượt)` : ''}. Các kho được giữ cho bạn {holdMinutes} phút để thanh toán cọc.</p>
         </>
       ),
@@ -155,7 +161,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
           unitNumber: item.unitId,
           units: [{ unitID: item.unit.unitId, unitNumber: item.unitId }],
           startDate: toApiDate(startDate),
-          months
+          months,
+          paymentPlan
         })
         created.push({ item, reservation, paid: false })
       } catch (error) {
@@ -184,6 +191,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
       reservationIds: created.map(entry => entry.reservation.reservationId),
       startDate: toApiDate(startDate),
       months,
+      paymentPlan,
       createdAt: new Date().toISOString()
     })
     removeManyFromCart(created.map(entry => entry.item.key))
@@ -195,6 +203,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
       endDate,
       months,
       depositMonths,
+      paymentPlan,
       facilityName: activeGroup.name
     })
     setStep('payment')
@@ -320,7 +329,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                 ]}
                 lines={[
                   ['Giá thuê / tháng (tất cả kho)', orderMonthly],
-                  ['Tổng tiền thuê (trả theo hợp đồng)', orderRent],
+                  [`Tổng tiền thuê (${order.paymentPlan === 'Upfront' ? 'trả 1 lần' : 'trả theo tháng'}, đóng từ ngày nhận kho)`, orderRent],
                   [`Tiền cọc (${order.depositMonths} tháng tiền thuê / kho)`, orderDeposit]
                 ]}
                 amount={order.entries.filter(entry => !entry.paid).reduce((n, entry) => n + Number(entry.reservation.depositAmount || 0), 0)}
@@ -413,6 +422,24 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                   <RentalCalendar value={startDate} endDate={endDate} durationMonths={months} onChange={setStartDate} />
                 </section>
               )}
+
+              {activeGroup && (
+                <section className="cart-card">
+                  <h2>Hình thức trả tiền thuê</h2>
+                  <div className="cart-terms" role="radiogroup" aria-label="Hình thức trả tiền thuê">
+                    {[
+                      ['Monthly', 'Trả theo tháng', `Ngày nhận kho đóng ${money(monthlyTotal)} (tháng đầu), các tháng sau đóng trước ngày đầu mỗi kỳ.`],
+                      ['Upfront', 'Trả 1 lần', `Ngày nhận kho đóng ${money(rentTotal)} (toàn bộ ${months} tháng).`]
+                    ].map(([value, label, note]) => (
+                      <button key={value} type="button" role="radio" aria-checked={paymentPlan === value} className={`duration-package${paymentPlan === value ? ' active' : ''}`} onClick={() => setPaymentPlan(value)}>
+                        <span className="duration-package-months"><strong>{label}</strong></span>
+                        <span className="duration-package-end">{note}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="cart-note small">Đặt kho chỉ đóng tiền cọc. Tiền thuê đóng vào ngày nhận kho; chưa đóng thì nhân viên chưa bàn giao kho.</p>
+                </section>
+              )}
             </div>
 
             <aside className="cart-summary">
@@ -425,8 +452,10 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                 <div><dt>Tổng tiền thuê</dt><dd>{money(rentTotal)}</dd></div>
                 {cartQuote.saving > 0 && <div className="cart-sum-saving"><dt>Tiết kiệm nhờ gói {months} tháng</dt><dd>−{money(cartQuote.saving)}</dd></div>}
                 <div className="cart-sum-deposit"><dt>Tiền cọc ({depositMonths} tháng / kho)</dt><dd>{money(depositTotal)}</dd></div>
+                <div><dt>Hình thức trả</dt><dd>{planLabel}</dd></div>
+                <div><dt>Đóng ngày nhận kho</dt><dd>{money(rentAtHandover)}</dd></div>
               </dl>
-              <p className="cart-note">Thanh toán ngay: <strong>tiền cọc</strong>. Tiền thuê thanh toán sau khi ký hợp đồng.</p>
+              <p className="cart-note">Thanh toán ngay: <strong>tiền cọc</strong>. Tiền thuê đóng vào ngày nhận kho ({planLabel.toLowerCase()}).</p>
               <button type="button" className="dashboard-primary-btn full" disabled={submitting || !selected.length} onClick={checkout}>
                 {submitting ? 'Đang giữ kho...' : selected.length ? `Đặt cọc ${selected.length} kho` : 'Chọn kho để đặt'}
               </button>

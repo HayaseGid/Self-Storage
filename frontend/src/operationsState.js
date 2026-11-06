@@ -66,6 +66,12 @@ export function mapOperationsState(raw = {}) {
       appointmentTime: r.appointmentTime || 'Cả ngày',
       deposit: Number(r.deposit || 0),
       rentalFee: Number(r.rentalFee || 0),
+      // Tiền thuê phải đóng lúc nhận kho (backend: RentPaymentRules)
+      paymentPlan: r.paymentPlan || 'Monthly',
+      startRentAmount: Number(r.startRentAmount || 0),
+      startRentUnpaid: Number(r.startRentUnpaid || 0),
+      startRentPaid: Boolean(r.startRentPaid),
+      rentOverdue: Number(r.rentOverdue || 0),
       paymentStatus: r.paymentStatus || 'PENDING',
       paymentTxn: r.paymentTxn || null,
       status: r.status || 'PENDING_PAYMENT',

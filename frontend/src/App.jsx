@@ -1086,7 +1086,9 @@ function BookingPage({ facility, unit }) {
         unitID: availableUnit.unitId,
         unitNumber: availableUnit.unitNumber,
         startDate: startDateValue,
-        months: totalMonths
+        months: totalMonths,
+        // Khớp CK_Reservation_PaymentPlan: trả theo tháng / trả 1 lần (tiền thuê đóng ngày nhận kho)
+        paymentPlan: paymentMode === 'full' ? 'Upfront' : 'Monthly'
       })
       const reservationId = reservation.reservationId
       const bookingData = {
@@ -1104,7 +1106,7 @@ function BookingPage({ facility, unit }) {
         monthlyPrice: reservation.monthlyPrice,
         totalRent: reservation.rentalAmount,
         paymentMode,
-        paymentCycle: paymentMode === 'cycle' ? Number(paymentCycle) : totalMonths,
+        paymentCycle: paymentMode === 'cycle' ? 1 : totalMonths,
         depositPercent: availability.depositPercent,
         deposit: reservation.depositAmount,
         depositExpiresAt: reservation.depositExpiresAt,
@@ -1409,8 +1411,8 @@ function BookingPage({ facility, unit }) {
                       onClick={() => setPaymentMode('cycle')}
                     >
                       <span className="payment-mode-icon">↻</span>
-                      <strong>Thanh toán theo chu kỳ</strong>
-                      <small>Thanh toán tiền thuê theo từng chu kỳ sau khi ký hợp đồng.</small>
+                      <strong>Trả theo tháng</strong>
+                      <small>Ngày nhận kho đóng tiền tháng đầu, các tháng sau đóng trước ngày đầu mỗi kỳ.</small>
                     </button>
 
                     <button
@@ -1419,27 +1421,11 @@ function BookingPage({ facility, unit }) {
                       onClick={() => setPaymentMode('full')}
                     >
                       <span className="payment-mode-icon">✓</span>
-                      <strong>Thanh toán toàn bộ</strong>
-                      <small>Thanh toán toàn bộ tiền thuê một lần sau khi ký hợp đồng.</small>
+                      <strong>Trả 1 lần</strong>
+                      <small>Ngày nhận kho đóng toàn bộ tiền thuê của cả kỳ thuê.</small>
                     </button>
                   </div>
                 </div>
-
-                {paymentMode === 'cycle' && (
-                  <div className="cycle-select-box">
-                    <label>Chu kỳ thanh toán</label>
-                    <select
-                      value={paymentCycle}
-                      onChange={e => setPaymentCycle(Number(e.target.value))}
-                    >
-                      {paymentCycleOptions.map(value => (
-                        <option key={value} value={value}>
-                          Mỗi {value} tháng
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
 
                 <div className="booking-price-breakdown">
                   <div>
@@ -1455,9 +1441,7 @@ function BookingPage({ facility, unit }) {
                   <div>
                     <span>Hình thức thanh toán</span>
                     <strong>
-                      {paymentMode === 'cycle'
-                        ? `Theo chu kỳ ${paymentCycle} tháng`
-                        : 'Thanh toán toàn bộ'}
+                      {paymentMode === 'cycle' ? 'Trả theo tháng' : 'Trả 1 lần'}
                     </strong>
                   </div>
 
@@ -1630,9 +1614,7 @@ function BookingPage({ facility, unit }) {
                     <div>
                       <span>Phương thức thuê</span>
                       <strong>
-                        {booking.paymentMode === 'cycle'
-                          ? `Chu kỳ ${booking.paymentCycle} tháng`
-                          : 'Thanh toán toàn bộ'}
+                        {booking.paymentMode === 'cycle' ? 'Trả theo tháng' : 'Trả 1 lần'}
                       </strong>
                     </div>
                   </div>
@@ -2491,6 +2473,8 @@ function mapCustomerReservation(reservation) {
         ? 'Đang thuê · Chờ ký phụ lục gia hạn'
         : status === 'Confirmed' && reservation.contractStatus === 'Pending Signature'
       ? 'Đã cọc · Chờ ký hợp đồng'
+      : status === 'Confirmed' && reservation.contractStatus === 'Signed' && reservation.startRentPaid === false
+        ? 'Đã ký hợp đồng · Đóng tiền thuê ngày nhận kho'
       : status === 'Confirmed' && reservation.contractStatus === 'Signed'
         ? 'Đã ký hợp đồng · Chờ nhận kho'
         : statusLabels[status] || status

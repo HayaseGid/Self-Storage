@@ -82,6 +82,11 @@ public sealed class CustomerReservationsController(
                 r.DepositMonths,
                 r.Status,
                 r.HoldExpiresAt,
+                r.PaymentPlan,
+                RentRows = r.Charges
+                    .Where(c => c.ChargeType == "Rent")
+                    .Select(c => new { c.Status, c.Amount, c.DueDate, c.PeriodStart })
+                    .ToList(),
                 Items = r.ReservationItems
                     .OrderBy(i => i.ReservationItemID)
                     .Select(i => new
@@ -116,11 +121,10 @@ public sealed class CustomerReservationsController(
                 RenewedFromNumber = r.Contract != null && r.Contract.RenewedFromContract != null ? r.Contract.RenewedFromContract.ContractNumber : null,
                 RenewedFromStart = r.Contract != null && r.Contract.RenewedFromContract != null ? (DateTime?)r.Contract.RenewedFromContract.StartDate : null,
                 RenewedFromEnd = r.Contract != null && r.Contract.RenewedFromContract != null ? (DateTime?)r.Contract.RenewedFromContract.EndDate : null,
-                // Đơn gia hạn chờ thanh toán: số tiền phải trả ngay (tiền thuê tháng đầu + cọc bổ sung), xem ContractRenewalFinalizer.
+                // Đơn gia hạn chờ thanh toán: cọc bổ sung phải trả ngay (tiền thuê cộng thêm ở dưới theo RentPaymentRules).
                 PayNow = r.Charges
                     .Where(c => c.Status == "Unpaid" &&
                                 (c.ChargeType == "Renewal" ||
-                                 (c.ChargeType == "Rent" && c.PeriodStart == r.StartDate) ||
                                  (c.ChargeType == "Deposit" && !c.Description!.Contains(ContractRenewalFinalizer.TransferMarker))))
                     .Sum(c => (decimal?)c.Amount) ?? 0m,
                 CancelledAt = r.CancelledAt,
@@ -149,8 +153,13 @@ public sealed class CustomerReservationsController(
             })
             .ToListAsync(ct);
 
+        var today = BusinessClock.Today;
         var data = rows.Select(r =>
         {
+            // Tiền thuê: cùng luật RentPaymentRules với thanh toán và điều kiện bàn giao
+            var rentState = RentPaymentRules.Snapshot(r.Status, r.StartDate, r.EndDate, r.PaymentPlan,
+                r.RentRows.Select(x => (x.Status, x.Amount, x.DueDate, x.PeriodStart)));
+            var rentPayable = RentPaymentRules.PayableNow(rentState, today);
             var monthlyTotal = r.Items.Sum(i =>
                 i.Quantity * (i.EffectiveMonthlyPrice ?? decimal.Round(i.MonthlyPrice * (100m - i.DiscountPercent) / 100m, 0)));
             var unitNumbers = r.Units.Select(u => u.UnitNumber).ToList();
@@ -190,13 +199,23 @@ public sealed class CustomerReservationsController(
                 contractNumber = r.ContractNumber,
                 contractStatus = r.ContractId is null ? null : (r.IsSigned ? "Signed" : "Pending Signature"),
                 isRenewal,
-                amountDueNow = isRenewal && r.Status == ReservationStatus.PendingPayment ? r.PayNow : (decimal?)null,
+                // Đơn gia hạn chờ thanh toán: cọc bổ sung + tiền thuê phải trả ngay theo hình thức trả (RentPaymentRules)
+                amountDueNow = isRenewal && r.Status == ReservationStatus.PendingPayment
+                    ? r.PayNow + RentPaymentRules.DueAtStart(rentState).Where(c => c.Status == "Unpaid").Sum(c => c.Amount)
+                    : (decimal?)null,
                 renewedFrom = r.RenewedFromNumber == null ? null : new
                 {
                     contractNumber = r.RenewedFromNumber,
                     startDate = r.RenewedFromStart,
                     endDate = r.RenewedFromEnd
                 },
+                paymentPlan = r.PaymentPlan,
+                paymentPlanLabel = PaymentPlan.Label(r.PaymentPlan),
+                rentDueAtStart = RentPaymentRules.DueAtStart(rentState).Sum(c => c.Amount),
+                startRentPaid = RentPaymentRules.IsStartRentPaid(rentState),
+                rentPayableNow = rentPayable.Sum(c => c.Amount),
+                rentOverdue = RentPaymentRules.Overdue(rentState, today).Sum(c => c.Amount),
+                rentNote = RentPaymentRules.WhyNotPayable(rentState, today),
                 cancelledAt = r.CancelledAt,
                 cancelReason = r.CancelReason,
                 refundAmount = r.RefundTotal > 0 ? r.RefundTotal : (decimal?)null,

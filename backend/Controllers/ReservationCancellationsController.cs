@@ -373,7 +373,7 @@ public sealed class ReservationCancellationsController(
     private sealed record DepositShare(Charge Charge, decimal Share);
     private sealed record CancelQuote(
         bool Eligible, string? Reason, int DaysBefore, decimal RefundPercent, decimal DepositPaid, decimal RefundAmount,
-        List<(int Days, decimal Percent)> Tiers, List<DepositShare> Deposits, bool PaidByVnPay);
+        List<(int Days, decimal Percent)> Tiers, List<DepositShare> Deposits, bool PaidByVnPay, decimal RentPaid);
 
     private async Task<CancelQuote> BuildQuoteAsync(Reservation r, CancellationToken ct)
     {
@@ -388,8 +388,15 @@ public sealed class ReservationCancellationsController(
         var depositPaid = deposits.Sum(c => c.Amount);
         var percent = tiers.Where(t => daysBefore >= t.Days).Select(t => (decimal?)t.Percent).FirstOrDefault() ?? 0m;
         var shares = deposits.Select(c => new DepositShare(c, decimal.Round(c.Amount * percent / 100m, 0, MidpointRounding.AwayFromZero))).ToList();
+        // Tiền thuê đã đóng trước khi nhận kho (RentPaymentRules: đóng từ ngày bắt đầu thuê) chưa được dùng
+        // -> hoàn 100%, không áp % theo mốc hủy (mốc hủy chỉ áp cho tiền cọc).
+        var rentPaid = r.Charges
+            .Where(c => c.ChargeType == "Rent" && c.Status == "Paid" && c.RefundedAmount == 0 && c.PaymentID != null)
+            .OrderBy(c => c.ChargeID)
+            .ToList();
+        shares.AddRange(rentPaid.Select(c => new DepositShare(c, c.Amount)));
         var refundAmount = shares.Sum(s => s.Share);
-        var paidByVnPay = deposits.Any(c => r.Payments.Any(p => p.PaymentID == c.PaymentID && p.Provider == VnPayProvider));
+        var paidByVnPay = deposits.Concat(rentPaid).Any(c => r.Payments.Any(p => p.PaymentID == c.PaymentID && p.Provider == VnPayProvider));
 
         string? reason = null;
         if (ContractRenewalFinalizer.IsRenewal(r))
@@ -406,7 +413,8 @@ public sealed class ReservationCancellationsController(
         else if (r.ReservationUnits.Any(ru => ru.Status == "Active"))
             reason = "Đơn đã có kho được bàn giao nên không thể hủy online. Vui lòng liên hệ cơ sở.";
 
-        return new CancelQuote(reason is null, reason, daysBefore, percent, depositPaid, refundAmount, tiers, shares, paidByVnPay);
+        return new CancelQuote(reason is null, reason, daysBefore, percent, depositPaid, refundAmount, tiers, shares, paidByVnPay,
+            rentPaid.Sum(c => c.Amount));
     }
 
     private object ToDto(Reservation r, CancelQuote q) => new
@@ -420,6 +428,7 @@ public sealed class ReservationCancellationsController(
         reason = q.Reason,
         daysBefore = q.DaysBefore,
         depositPaid = q.DepositPaid,
+        rentPaid = q.RentPaid, // hoàn đủ 100% (chưa nhận kho)
         refundPercent = q.RefundPercent,
         refundAmount = q.RefundAmount,
         refundMethod = q.RefundAmount <= 0 ? null : q.PaidByVnPay ? "VNPay" : "Simulator",

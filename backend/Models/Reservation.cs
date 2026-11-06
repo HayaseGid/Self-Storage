@@ -14,6 +14,8 @@ public class Reservation
     public int RentalPeriod { get; set; }
     public DateTime EndDate { get; set; }
     public byte DepositMonths { get; set; } = 2;
+    /// <summary>Hình thức trả tiền thuê: "Monthly" (theo tháng) hoặc "Upfront" (1 lần) — xem Constants/PaymentPlan.</summary>
+    public string PaymentPlan { get; set; } = SelfStorageAPI.Constants.PaymentPlan.Monthly;
     public DateTime HoldExpiresAt { get; set; }
     public DateTime? AppointmentDate { get; set; }
     public TimeSpan? AppointmentTime { get; set; }

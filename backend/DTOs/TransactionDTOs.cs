@@ -17,6 +17,8 @@ namespace SelfStorageAPI.DTOs
         public DateTime StartDate { get; set; }
         [Required]
         public int Months { get; set; }
+        /// <summary>Hình thức trả tiền thuê: "Monthly" hoặc "Upfront" (bắt buộc).</summary>
+        public string? PaymentPlan { get; set; }
     }
 
     public class CreatePaymentDTO
