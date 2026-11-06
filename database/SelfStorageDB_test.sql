@@ -521,23 +521,20 @@ GO
 -- 6. DAT KHO: Reservation -> ReservationItem -> ReservationUnit
 -- =============================================
 
--- =============================================
--- 6. DAT KHO: Reservation -> ReservationItem -> ReservationUnit
--- =============================================
-
 CREATE TABLE Reservation (
     ReservationID INT IDENTITY(1,1) NOT NULL,
-    ReservationCode NVARCHAR(20) NOT NULL,
+    ReservationCode NVARCHAR(20) NOT NULL,   -- ma hien thi, vd RS-2026-00001
+    -- Ma QR gui cho khach, nhan vien quet khi khach den nhan kho
     CheckInToken UNIQUEIDENTIFIER NOT NULL CONSTRAINT DF_Reservation_CheckInToken DEFAULT NEWID(),
     CustomerID INT NOT NULL,
     FacilityID INT NOT NULL,
     StartDate DATE NOT NULL,
-    RentalPeriod INT NOT NULL,
-    EndDate DATE NOT NULL,
-    DepositMonths TINYINT NOT NULL,
+    RentalPeriod INT NOT NULL,               -- so thang: 1, 3, 6, 12 (FK -> ContractType)
+    EndDate DATE NOT NULL,                   -- ngay cuoi cung duoc dung kho (tinh ca ngay nay)
+    DepositMonths TINYINT NOT NULL,          -- snapshot chinh sach coc luc dat
     PaymentPlan NVARCHAR(30) NOT NULL CONSTRAINT DF_Reservation_PaymentPlan DEFAULT N'Monthly', -- NEW: Cột hình thức trả
-    HoldExpiresAt DATETIME2 NOT NULL,
-    AppointmentDate DATE NULL,
+    HoldExpiresAt DATETIME2 NOT NULL,        -- het han giu kho neu chua thanh toan
+    AppointmentDate DATE NULL,               -- lich hen nhan kho
     AppointmentTime TIME(0) NULL,
     Status NVARCHAR(30) NOT NULL CONSTRAINT DF_Reservation_Status DEFAULT N'Pending Payment',
     CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Reservation_CreatedAt DEFAULT SYSUTCDATETIME(),
@@ -559,6 +556,7 @@ CREATE TABLE Reservation (
     CONSTRAINT FK_Reservation_ConfirmedBy FOREIGN KEY (ConfirmedByUserID) REFERENCES Users(UserID),
     CONSTRAINT FK_Reservation_CancelledBy FOREIGN KEY (CancelledByUserID) REFERENCES Users(UserID),
     CONSTRAINT CK_Reservation_RentalPeriod CHECK (RentalPeriod IN (1, 3, 6, 12)),
+    -- EndDate tinh dung theo so thang: 01/09 + 3 thang -> 30/11
     CONSTRAINT CK_Reservation_EndDate
         CHECK (EndDate = DATEADD(DAY, -1, DATEADD(MONTH, RentalPeriod, StartDate))),
     CONSTRAINT CK_Reservation_DepositMonths CHECK (DepositMonths BETWEEN 1 AND 2),
@@ -2223,16 +2221,10 @@ INSERT INTO FacilityUnitType (FacilityID, UnitTypeID)
 SELECT f.FacilityID, t.UnitTypeID FROM Facility AS f CROSS JOIN UnitType AS t;
 
 INSERT INTO FacilityUnitSize (FacilityID, UnitSizeID)
-SELECT f.FacilityID, s.UnitSizeID FROM Facility AS f CROSS JOIN UnitSize AS s
-WHERE s.UnitSizeID <= 9;
-
--- S4 dung chung o 2 co so: Quan 1 (tao ra) va Thu Duc
-INSERT INTO FacilityUnitSize (FacilityID, UnitSizeID, AddedByUserID) VALUES
-(1, 10, 1),
-(3, 10, 1);
+SELECT f.FacilityID, s.UnitSizeID FROM Facility AS f CROSS JOIN UnitSize AS s;
 GO
 
--- 10. Bang gia + kho. Gia chi nam o RentalRate.
+-- 10. Bang gia + kho (150 kho: 5 co so x 10 size x 3 kho/size). Gia chi nam o RentalRate.
 CREATE TABLE #SeedUnit (
     UnitID INT, FacilityID INT, UnitTypeID INT, UnitSizeID INT,
     UnitNumber NVARCHAR(50), MonthlyPrice DECIMAL(12,2), Status NVARCHAR(30));
@@ -2288,8 +2280,106 @@ INSERT INTO #SeedUnit VALUES
 (48, 5, 2, 9, N'Q3-U08', 2700000, N'Available'),
 (49, 5, 1, 3, N'Q3-U09', 800000, N'Available'),
 (50, 5, 4, 6, N'Q3-U10', 1300000, N'Available'),
-(51, 1, 1, 10, N'Q1-U11', 900000, N'Available'),   -- size S4 tai Quan 1
-(52, 3, 3, 10, N'TD-U11', 650000, N'Available');   -- cung size S4 tai Thu Duc
+(51, 1, 1, 10, N'Q1-U11', 900000, N'Available'),
+(52, 3, 3, 10, N'TD-U11', 650000, N'Available'),
+(53, 1, 1, 1, N'Q1-U12', 400000, N'Available'),
+(54, 1, 1, 1, N'Q1-U13', 400000, N'Available'),
+(55, 1, 1, 2, N'Q1-U14', 500000, N'Available'),
+(56, 1, 3, 3, N'Q1-U15', 600000, N'Available'),
+(57, 1, 4, 4, N'Q1-U16', 800000, N'Available'),
+(58, 1, 4, 4, N'Q1-U17', 800000, N'Available'),
+(59, 1, 4, 5, N'Q1-U18', 1000000, N'Available'),
+(60, 1, 4, 5, N'Q1-U19', 1000000, N'Available'),
+(61, 1, 4, 6, N'Q1-U20', 1200000, N'Available'),
+(62, 1, 4, 6, N'Q1-U21', 1200000, N'Available'),
+(63, 1, 4, 7, N'Q1-U22', 1500000, N'Available'),
+(64, 1, 4, 7, N'Q1-U23', 1500000, N'Available'),
+(65, 1, 4, 7, N'Q1-U24', 1500000, N'Available'),
+(66, 1, 2, 8, N'Q1-U25', 2000000, N'Available'),
+(67, 1, 2, 8, N'Q1-U26', 2000000, N'Available'),
+(68, 1, 2, 9, N'Q1-U27', 2500000, N'Available'),
+(69, 1, 2, 9, N'Q1-U28', 2500000, N'Available'),
+(70, 1, 1, 10, N'Q1-U29', 900000, N'Available'),
+(71, 1, 1, 10, N'Q1-U30', 900000, N'Available'),
+(72, 2, 1, 1, N'TB-U11', 400000, N'Available'),
+(73, 2, 1, 1, N'TB-U12', 400000, N'Available'),
+(74, 2, 1, 2, N'TB-U13', 450000, N'Available'),
+(75, 2, 3, 3, N'TB-U14', 550000, N'Available'),
+(76, 2, 4, 4, N'TB-U15', 800000, N'Available'),
+(77, 2, 4, 4, N'TB-U16', 800000, N'Available'),
+(78, 2, 4, 5, N'TB-U17', 900000, N'Available'),
+(79, 2, 4, 5, N'TB-U18', 900000, N'Available'),
+(80, 2, 4, 6, N'TB-U19', 1100000, N'Available'),
+(81, 2, 4, 6, N'TB-U20', 1100000, N'Available'),
+(82, 2, 4, 7, N'TB-U21', 1400000, N'Available'),
+(83, 2, 4, 7, N'TB-U22', 1400000, N'Available'),
+(84, 2, 4, 7, N'TB-U23', 1400000, N'Available'),
+(85, 2, 2, 8, N'TB-U24', 1800000, N'Available'),
+(86, 2, 2, 8, N'TB-U25', 1800000, N'Available'),
+(87, 2, 2, 9, N'TB-U26', 2200000, N'Available'),
+(88, 2, 2, 9, N'TB-U27', 2200000, N'Available'),
+(89, 2, 1, 10, N'TB-U28', 850000, N'Available'),
+(90, 2, 1, 10, N'TB-U29', 850000, N'Available'),
+(91, 2, 1, 10, N'TB-U30', 850000, N'Available'),
+(92, 3, 1, 1, N'TD-U12', 400000, N'Available'),
+(93, 3, 1, 1, N'TD-U13', 400000, N'Available'),
+(94, 3, 1, 2, N'TD-U14', 500000, N'Available'),
+(95, 3, 3, 3, N'TD-U15', 600000, N'Available'),
+(96, 3, 4, 4, N'TD-U16', 800000, N'Available'),
+(97, 3, 4, 4, N'TD-U17', 800000, N'Available'),
+(98, 3, 4, 5, N'TD-U18', 1000000, N'Available'),
+(99, 3, 4, 5, N'TD-U19', 1000000, N'Available'),
+(100, 3, 4, 6, N'TD-U20', 1200000, N'Available'),
+(101, 3, 4, 6, N'TD-U21', 1200000, N'Available'),
+(102, 3, 4, 7, N'TD-U22', 1500000, N'Available'),
+(103, 3, 4, 7, N'TD-U23', 1500000, N'Available'),
+(104, 3, 4, 7, N'TD-U24', 1500000, N'Available'),
+(105, 3, 2, 8, N'TD-U25', 2000000, N'Available'),
+(106, 3, 2, 8, N'TD-U26', 2000000, N'Available'),
+(107, 3, 2, 9, N'TD-U27', 2500000, N'Available'),
+(108, 3, 2, 9, N'TD-U28', 2500000, N'Available'),
+(109, 3, 1, 10, N'TD-U29', 900000, N'Available'),
+(110, 3, 1, 10, N'TD-U30', 900000, N'Available'),
+(111, 4, 1, 1, N'Q2-U11', 400000, N'Available'),
+(112, 4, 1, 1, N'Q2-U12', 400000, N'Available'),
+(113, 4, 1, 2, N'Q2-U13', 550000, N'Available'),
+(114, 4, 3, 3, N'Q2-U14', 650000, N'Available'),
+(115, 4, 4, 4, N'Q2-U15', 850000, N'Available'),
+(116, 4, 4, 4, N'Q2-U16', 850000, N'Available'),
+(117, 4, 4, 5, N'Q2-U17', 1050000, N'Available'),
+(118, 4, 4, 5, N'Q2-U18', 1050000, N'Available'),
+(119, 4, 4, 6, N'Q2-U19', 1250000, N'Available'),
+(120, 4, 4, 6, N'Q2-U20', 1250000, N'Available'),
+(121, 4, 4, 7, N'Q2-U21', 1600000, N'Available'),
+(122, 4, 4, 7, N'Q2-U22', 1600000, N'Available'),
+(123, 4, 4, 7, N'Q2-U23', 1600000, N'Available'),
+(124, 4, 2, 8, N'Q2-U24', 2100000, N'Available'),
+(125, 4, 2, 8, N'Q2-U25', 2100000, N'Available'),
+(126, 4, 2, 9, N'Q2-U26', 2600000, N'Available'),
+(127, 4, 2, 9, N'Q2-U27', 2600000, N'Available'),
+(128, 4, 1, 10, N'Q2-U28', 900000, N'Available'),
+(129, 4, 1, 10, N'Q2-U29', 900000, N'Available'),
+(130, 4, 1, 10, N'Q2-U30', 900000, N'Available'),
+(131, 5, 1, 1, N'Q3-U11', 400000, N'Available'),
+(132, 5, 1, 1, N'Q3-U12', 400000, N'Available'),
+(133, 5, 1, 2, N'Q3-U13', 600000, N'Available'),
+(134, 5, 3, 3, N'Q3-U14', 700000, N'Available'),
+(135, 5, 4, 4, N'Q3-U15', 900000, N'Available'),
+(136, 5, 4, 4, N'Q3-U16', 900000, N'Available'),
+(137, 5, 4, 5, N'Q3-U17', 1100000, N'Available'),
+(138, 5, 4, 5, N'Q3-U18', 1100000, N'Available'),
+(139, 5, 4, 6, N'Q3-U19', 1300000, N'Available'),
+(140, 5, 4, 6, N'Q3-U20', 1300000, N'Available'),
+(141, 5, 4, 7, N'Q3-U21', 1700000, N'Available'),
+(142, 5, 4, 7, N'Q3-U22', 1700000, N'Available'),
+(143, 5, 4, 7, N'Q3-U23', 1700000, N'Available'),
+(144, 5, 2, 8, N'Q3-U24', 2200000, N'Available'),
+(145, 5, 2, 8, N'Q3-U25', 2200000, N'Available'),
+(146, 5, 2, 9, N'Q3-U26', 2700000, N'Available'),
+(147, 5, 2, 9, N'Q3-U27', 2700000, N'Available'),
+(148, 5, 1, 10, N'Q3-U28', 950000, N'Available'),
+(149, 5, 1, 10, N'Q3-U29', 950000, N'Available'),
+(150, 5, 1, 10, N'Q3-U30', 950000, N'Available');
 
 INSERT INTO RentalRate (FacilityID, UnitTypeID, UnitSizeID, MonthlyPrice)
 SELECT FacilityID, UnitTypeID, UnitSizeID, MAX(MonthlyPrice)
@@ -2313,14 +2403,13 @@ DROP TABLE #SeedUnit;
 GO
 
 -- 11. Reservation
--- #1: 1 kho Q1-U04 (Indoor M2), 3 tháng, 1.000.000/tháng, không giảm
---     -> thuê 3.000.000, cọc 2 tháng = 2.000.000. Đã bàn giao. (PaymentPlan: Monthly)
--- #2: 1 kho TB-U03 (Basic M1), 12 tháng, 750.000 giảm 10% = 675.000/tháng
---     -> thuê 8.100.000, cọc 2 tháng = 1.350.000. Đã bàn giao. (PaymentPlan: Upfront)
--- #3: 2 kho Q1-U02 (Climate S2) + Q1-U05 (Basic S2), 6 tháng, giảm 5%
---     -> 475.000 + 380.000 = 855.000/tháng, thuê 5.130.000, cọc 1.710.000.
---     Đã thanh toán cọc + tháng đầu, đã phân kho, chờ bàn giao 15/11. (PaymentPlan: Monthly)
-
+-- #1: 1 kho Q1-U04 (Indoor M2), 3 thang, 1.000.000/thang, khong giam
+--     -> thue 3.000.000, coc 2 thang = 2.000.000. Da ban giao. (PaymentPlan: Monthly)
+-- #2: 1 kho TB-U03 (Basic M1), 12 thang, 750.000 giam 10% = 675.000/thang
+--     -> thue 8.100.000, coc 2 thang = 1.350.000. Da ban giao. (PaymentPlan: Upfront)
+-- #3: 2 kho Q1-U02 (Climate S2) + Q1-U05 (Basic S2), 6 thang, giam 5%
+--     -> 475.000 + 380.000 = 855.000/thang, thue 5.130.000, coc 1.710.000.
+--     Da thanh toan coc + thang dau, da phan kho, cho ban giao 15/11. (PaymentPlan: Monthly)
 SET IDENTITY_INSERT Reservation ON;
 INSERT INTO Reservation (ReservationID, ReservationCode, CustomerID, FacilityID, StartDate, RentalPeriod, EndDate,
                          DepositMonths, PaymentPlan, HoldExpiresAt, AppointmentDate, AppointmentTime, Status,
