@@ -521,19 +521,23 @@ GO
 -- 6. DAT KHO: Reservation -> ReservationItem -> ReservationUnit
 -- =============================================
 
+-- =============================================
+-- 6. DAT KHO: Reservation -> ReservationItem -> ReservationUnit
+-- =============================================
+
 CREATE TABLE Reservation (
     ReservationID INT IDENTITY(1,1) NOT NULL,
-    ReservationCode NVARCHAR(20) NOT NULL,   -- ma hien thi, vd RS-2026-00001
-    -- Ma QR gui cho khach, nhan vien quet khi khach den nhan kho
+    ReservationCode NVARCHAR(20) NOT NULL,
     CheckInToken UNIQUEIDENTIFIER NOT NULL CONSTRAINT DF_Reservation_CheckInToken DEFAULT NEWID(),
     CustomerID INT NOT NULL,
     FacilityID INT NOT NULL,
     StartDate DATE NOT NULL,
-    RentalPeriod INT NOT NULL,               -- so thang: 1, 3, 6, 12 (FK -> ContractType)
-    EndDate DATE NOT NULL,                   -- ngay cuoi cung duoc dung kho (tinh ca ngay nay)
-    DepositMonths TINYINT NOT NULL,          -- snapshot chinh sach coc luc dat
-    HoldExpiresAt DATETIME2 NOT NULL,        -- het han giu kho neu chua thanh toan
-    AppointmentDate DATE NULL,               -- lich hen nhan kho
+    RentalPeriod INT NOT NULL,
+    EndDate DATE NOT NULL,
+    DepositMonths TINYINT NOT NULL,
+    PaymentPlan NVARCHAR(30) NOT NULL CONSTRAINT DF_Reservation_PaymentPlan DEFAULT N'Monthly', -- NEW: Cột hình thức trả
+    HoldExpiresAt DATETIME2 NOT NULL,
+    AppointmentDate DATE NULL,
     AppointmentTime TIME(0) NULL,
     Status NVARCHAR(30) NOT NULL CONSTRAINT DF_Reservation_Status DEFAULT N'Pending Payment',
     CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Reservation_CreatedAt DEFAULT SYSUTCDATETIME(),
@@ -555,10 +559,10 @@ CREATE TABLE Reservation (
     CONSTRAINT FK_Reservation_ConfirmedBy FOREIGN KEY (ConfirmedByUserID) REFERENCES Users(UserID),
     CONSTRAINT FK_Reservation_CancelledBy FOREIGN KEY (CancelledByUserID) REFERENCES Users(UserID),
     CONSTRAINT CK_Reservation_RentalPeriod CHECK (RentalPeriod IN (1, 3, 6, 12)),
-    -- EndDate tinh dung theo so thang: 01/09 + 3 thang -> 30/11
     CONSTRAINT CK_Reservation_EndDate
         CHECK (EndDate = DATEADD(DAY, -1, DATEADD(MONTH, RentalPeriod, StartDate))),
     CONSTRAINT CK_Reservation_DepositMonths CHECK (DepositMonths BETWEEN 1 AND 2),
+    CONSTRAINT CK_Reservation_PaymentPlan CHECK (PaymentPlan IN (N'Monthly', N'Upfront')), -- NEW: Ràng buộc hình thức trả
     CONSTRAINT CK_Reservation_Hold CHECK (HoldExpiresAt > CreatedAt),
     CONSTRAINT CK_Reservation_Appointment
         CHECK (AppointmentDate IS NULL OR AppointmentDate BETWEEN StartDate AND EndDate),
@@ -2309,22 +2313,23 @@ DROP TABLE #SeedUnit;
 GO
 
 -- 11. Reservation
--- #1: 1 kho Q1-U04 (Indoor M2), 3 thang, 1.000.000/thang, khong giam
---     -> thue 3.000.000, coc 2 thang = 2.000.000. Da ban giao.
--- #2: 1 kho TB-U03 (Basic M1), 12 thang, 750.000 giam 10% = 675.000/thang
---     -> thue 8.100.000, coc 2 thang = 1.350.000. Da ban giao.
--- #3: 2 kho Q1-U02 (Climate S2) + Q1-U05 (Basic S2), 6 thang, giam 5%
---     -> 475.000 + 380.000 = 855.000/thang, thue 5.130.000, coc 1.710.000.
---     Da thanh toan coc + thang dau, da phan kho, cho ban giao 15/11.
+-- #1: 1 kho Q1-U04 (Indoor M2), 3 tháng, 1.000.000/tháng, không giảm
+--     -> thuê 3.000.000, cọc 2 tháng = 2.000.000. Đã bàn giao. (PaymentPlan: Monthly)
+-- #2: 1 kho TB-U03 (Basic M1), 12 tháng, 750.000 giảm 10% = 675.000/tháng
+--     -> thuê 8.100.000, cọc 2 tháng = 1.350.000. Đã bàn giao. (PaymentPlan: Upfront)
+-- #3: 2 kho Q1-U02 (Climate S2) + Q1-U05 (Basic S2), 6 tháng, giảm 5%
+--     -> 475.000 + 380.000 = 855.000/tháng, thuê 5.130.000, cọc 1.710.000.
+--     Đã thanh toán cọc + tháng đầu, đã phân kho, chờ bàn giao 15/11. (PaymentPlan: Monthly)
+
 SET IDENTITY_INSERT Reservation ON;
 INSERT INTO Reservation (ReservationID, ReservationCode, CustomerID, FacilityID, StartDate, RentalPeriod, EndDate,
-                         DepositMonths, HoldExpiresAt, AppointmentDate, AppointmentTime, Status,
+                         DepositMonths, PaymentPlan, HoldExpiresAt, AppointmentDate, AppointmentTime, Status,
                          CreatedAt, PaidAt, ConfirmedAt, ConfirmedByUserID) VALUES
-(1, N'RS-2026-00001', 6, 1, '2026-09-01', 3,  '2026-11-30', 2, '2026-08-29 02:15', '2026-09-01', '09:00', N'Handed Over',
+(1, N'RS-2026-00001', 6, 1, '2026-09-01', 3,  '2026-11-30', 2, N'Monthly', '2026-08-29 02:15', '2026-09-01', '09:00', N'Handed Over',
     '2026-08-29 02:00', '2026-08-29 02:06', '2026-08-29 03:00', 1),
-(2, N'RS-2026-00002', 7, 2, '2026-09-10', 12, '2027-09-09', 2, '2026-09-05 07:15', '2026-09-10', '14:00', N'Handed Over',
+(2, N'RS-2026-00002', 7, 2, '2026-09-10', 12, '2027-09-09', 2, N'Upfront', '2026-09-05 07:15', '2026-09-10', '14:00', N'Handed Over',
     '2026-09-05 07:00', '2026-09-05 07:06', '2026-09-05 08:00', 2),
-(3, N'RS-2026-00003', 8, 1, '2026-11-15', 6,  '2027-05-14', 2, '2026-10-20 03:15', '2026-11-15', '10:00', N'Confirmed',
+(3, N'RS-2026-00003', 8, 1, '2026-11-15', 6,  '2027-05-14', 2, N'Monthly', '2026-10-20 03:15', '2026-11-15', '10:00', N'Confirmed',
     '2026-10-20 03:00', '2026-10-20 03:05', '2026-10-20 04:00', 1);
 SET IDENTITY_INSERT Reservation OFF;
 GO
