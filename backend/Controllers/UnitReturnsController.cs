@@ -27,6 +27,8 @@ namespace SelfStorageAPI.Controllers;
  * Dữ liệu dùng bảng sẵn có: HandoverTask (TaskType = 'Move Out', mỗi kho 1 việc), ReservationUnit Active -> Returned,
  * StorageUnit 'Pending Inspection', Charge 'ExtraFee' (SettledFromDeposit = 1 khi trừ vào cọc), Payment Refund 'DepositReturn'.
  * Việc kiểm kho giao cho ĐÚNG Staff đã bàn giao kho (việc 'Move In'); Staff đó nghỉ thì giao Staff khác của cơ sở.
+ * Chỉ Staff được giao mới "Nhận lại kho" / "Hoàn tất kiểm tra" (không tự đổi người); nhận lại kho từ ngày khách hẹn trả.
+ * Đổi người phụ trách: Facility Manager (PUT /api/manager-tools/reservations/{id}/owner).
  * Quyết toán: phí phát sinh trừ vào cọc trước, thiếu thì khách đóng thêm; cọc còn dư hoàn sau N ngày
  * (chính sách "Gia hạn & trả kho" -> depositRefundWorkingDays, mặc định 7). Ngày hoàn dự kiến lưu ở Payment.ExpiresAt;
  * tới ngày, khoản hoàn được ghi nhận "đã chuyển" (mô phỏng chuyển khoản) mỗi khi khách / Staff mở trang.
@@ -298,7 +300,7 @@ public sealed class UnitReturnsController(
                 customerPhone = r.Customer.PhoneNumber,
                 startDate = r.StartDate.Date,
                 endDate = r.EndDate.Date,
-                assignedToMe = tasks.Any(t => t.AssignedStaffID == staffId.Value),
+                assignedToMe = tasks.Where(t => t.Status != "Completed").All(t => t.AssignedStaffID == staffId.Value),
                 units = tasks.Select(t =>
                 {
                     var ru = r.ReservationUnits.FirstOrDefault(x => x.ReservationUnitID == t.ReservationUnitID);
@@ -338,15 +340,24 @@ public sealed class UnitReturnsController(
         var tasks = r.HandoverTasks.Where(t => t.TaskType == MoveOut && t.Status == "Scheduled").ToList();
         if (tasks.Count == 0) return Conflict(new { message = "Yêu cầu trả kho này đã được nhận trước đó." });
 
+        // Chỉ người được phân công mới nhận lại kho (giống luật bàn giao). Muốn đổi người: Manager đổi người phụ trách.
+        var notMine = NotAssignedMessage(tasks, staffId.Value);
+        if (notMine is not null) return StatusCode(403, new { message = notMine });
+
         var now = DateTime.UtcNow;
         var today = Today();
+
+        // Không nhận lại kho trước ngày khách đã hẹn trả (đảm bảo luật báo trước N ngày của chính sách trả kho).
+        var scheduled = tasks.Min(t => t.ScheduledDate)?.Date;
+        if (scheduled is not null && today < scheduled.Value)
+            return Conflict(new { message = $"Khách hẹn trả kho ngày {scheduled.Value:dd/MM/yyyy}. Chưa tới ngày hẹn nên chưa nhận lại kho được." });
+
         try
         {
             await using var transaction = await context.Database.BeginTransactionAsync(ct);
             foreach (var t in tasks)
             {
                 t.Status = "In Progress";
-                t.AssignedStaffID = staffId.Value;
                 var ru = r.ReservationUnits.First(x => x.ReservationUnitID == t.ReservationUnitID);
                 if (ru.Status == "Active") { ru.Status = "Returned"; ru.ReturnedOn = today; }
                 foreach (var a in r.UnitAccesses.Where(a => a.UnitID == ru.UnitID && a.Status == "Active")) { a.Status = "Returned"; a.ClosedAt = now; }
@@ -388,6 +399,9 @@ public sealed class UnitReturnsController(
             return Conflict(new { message = r.HandoverTasks.Any(t => t.TaskType == MoveOut && t.Status == "Scheduled")
                 ? "Bấm \"Nhận lại kho\" trước khi hoàn tất kiểm tra."
                 : "Yêu cầu trả kho này đã kiểm tra xong." });
+
+        var notAssigned = NotAssignedMessage(tasks, staffId.Value);
+        if (notAssigned is not null) return StatusCode(403, new { message = notAssigned });
 
         var rules = await ReadRulesAsync(ct);
         var now = DateTime.UtcNow;
@@ -557,6 +571,18 @@ public sealed class UnitReturnsController(
         };
     }
 
+    /* Mọi việc trả kho đang xử lý phải giao cho chính nhân viên này; null = hợp lệ. */
+    private static string? NotAssignedMessage(List<HandoverTask> tasks, int staffId)
+    {
+        var others = tasks.Where(t => t.AssignedStaffID != staffId)
+            .Select(t => t.AssignedStaff?.FullName ?? "nhân viên khác")
+            .Distinct()
+            .ToList();
+        return others.Count == 0
+            ? null
+            : $"Yêu cầu trả kho này được phân công cho {string.Join(", ", others)}. Bạn không được làm thay; nếu cần đổi người, báo Facility Manager.";
+    }
+
     /* Tổng tiền cọc khách đã đóng cho đơn (kể cả phần đang / đã hoàn). */
     private static decimal DepositPaid(Reservation r) =>
         r.Charges.Where(c => c.ChargeType == "Deposit" && c.Status == "Paid").Sum(c => c.Amount);
@@ -603,7 +629,7 @@ public sealed class UnitReturnsController(
         return await context.Reservations
             .Include(r => r.Contract)
             .Include(r => r.Charges)
-            .Include(r => r.HandoverTasks)
+            .Include(r => r.HandoverTasks).ThenInclude(t => t.AssignedStaff)
             .Include(r => r.UnitAccesses)
             .Include(r => r.ReservationUnits).ThenInclude(ru => ru.Unit)
             .AsSplitQuery()
@@ -677,7 +703,7 @@ public sealed class UnitReturnsController(
     private static string Vnd(decimal value) => value.ToString("N0", CultureInfo.GetCultureInfo("vi-VN"));
     private static string Trim255(string s) => s.Length > 255 ? s[..255] : s;
     private static string Trim1000(string s) => s.Length > 1000 ? s[..1000] : s;
-    private static DateTime Today() => DateTime.UtcNow.AddHours(7).Date;
+    private static DateTime Today() => BusinessClock.Today;
 
     private static string CleanDbMessage(DbUpdateException exception, string fallback)
     {

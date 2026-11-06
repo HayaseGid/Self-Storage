@@ -1036,3 +1036,95 @@
 @media (max-width: 720px) {
   .fmc-ops { grid-template-columns: 1fr; }
 }
+
+
+/* ======
+   [FM11]
+   ====== */
+
+/* Vị trí kho trong form Tạo / Sửa kho */
+.fm-location-note { display: grid; gap: 6px; font-size: 13px; font-weight: 700; color: #23475e; }
+.fm-location-note small { font-weight: 500; }
+.fm-location-row input,
+.fm-location-note input {
+  min-height: 42px; padding: 0 12px; border: 1px solid #dce8ef; border-radius: 10px;
+  font: 500 14px 'DM Sans', 'Be Vietnam Pro', sans-serif; color: #23475e; background: #fff;
+}
+.fm-location-row input:focus,
+.fm-location-note input:focus { outline: none; border-color: #1684db; box-shadow: 0 0 0 3px rgba(22, 132, 219, .12); }
+
+/* Thanh trạng thái kho: thêm Bảo trì / Ngừng sử dụng */
+.fm-bar-maintenance { background: #f08c3a; }
+.fm-progress-legend i.maintenance { background: #f08c3a; }
+.fm-progress-legend i.inactive { background: #a3b4c3; }
+.fm-progress-legend { flex-wrap: wrap; }
+
+/* Ô số liệu hợp đồng cần chú ý */
+.fm-report-mini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0 6px; }
+.fm-report-box { padding: 14px 16px; border-radius: 14px; background: #f5f9fc; border: 1px solid #e1edf4; display: grid; gap: 4px; }
+.fm-report-box small { color: #60798d; font-size: 12px; font-weight: 700; }
+.fm-report-box strong { color: #073d70; font: 800 24px 'Be Vietnam Pro', sans-serif; }
+.fm-report-box.warn { background: #fff8eb; border-color: #f6dfb0; }
+.fm-report-box.warn strong { color: #a86b00; }
+.fm-report-box.bad { background: #fff1f0; border-color: #f4c7c3; }
+.fm-report-box.bad strong { color: #b42318; }
+@media (max-width: 720px) { .fm-report-mini { grid-template-columns: 1fr; } }
+
+/* Tab Bảng giá tại cơ sở (ManagerPriceTable dùng class fm-card) */
+.mpt-root.fm-card {
+  padding: 28px; background: #fff; border: 1px solid #e1edf4; border-radius: 22px;
+  box-shadow: 0 10px 30px rgba(15, 69, 111, 0.06);
+}
+.mpt-root h3 { color: #073d70; font: 800 22px 'Be Vietnam Pro', sans-serif; }
+.mpt-root .admin-table-wrap { overflow-x: auto; }
+.mpt-root .dashboard-primary-btn.sm { min-height: 34px; padding: 0 14px; font-size: 12px; border-radius: 9px; }
+
+/* ===============
+   [MANAGER-TOOLS]
+   =============== */
+.fs-head-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.fs-card-actions { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.fs-link-btn.fs-danger { color: #b42318; }
+
+/* Biểu đồ cột thực thu theo tháng */
+.fm-revenue-bars { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; align-items: end; margin: 16px 0 8px; }
+.fm-revenue-bar { display: grid; gap: 6px; justify-items: center; text-align: center; }
+.fm-revenue-value { font-size: 11px; font-weight: 700; color: #073d70; white-space: nowrap; }
+.fm-revenue-track { width: 100%; max-width: 56px; height: 140px; display: flex; align-items: flex-end; background: #f1f6fa; border-radius: 10px; overflow: hidden; }
+.fm-revenue-fill { width: 100%; background: #1684db; border-radius: 10px 10px 0 0; min-height: 2px; }
+.fm-revenue-bar small { color: #60798d; font-size: 12px; font-weight: 700; }
+@media (max-width: 720px) {
+  .fm-revenue-bars { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fs-head-actions { justify-content: flex-start; }
+}
+
+/* ======================================================
+   [AUTO-ASSIGN]
+   Tự phân công · Đổi người phụ trách · Báo cáo sự cố kho
+   ====================================================== */
+.fs-unassigned { display: block; margin-bottom: 4px; color: #b42318; font-weight: 800; font-size: 12px; }
+.fm-unassigned-panel { border: 1px solid #f4c7c3; background: #fffafa; }
+
+/* Modal đổi người phụ trách */
+.fm-owner-list { display: grid; gap: 8px; max-height: 360px; overflow-y: auto; padding-right: 2px; }
+.fm-owner-option {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 10px;
+  padding: 12px 14px; border: 1px solid #dce8ef; border-radius: 12px; cursor: pointer; background: #fff;
+}
+.fm-owner-option input { margin-top: 3px; }
+.fm-owner-option.selected { border-color: #1684db; box-shadow: 0 0 0 3px rgba(22, 132, 219, .12); }
+.fm-owner-option.conflict { background: #fffaf2; }
+.fm-owner-main { display: grid; gap: 3px; min-width: 0; }
+.fm-owner-main strong { color: #073d70; font-size: 14px; }
+.fm-owner-main small { color: #60798d; font-size: 12px; }
+.fm-owner-times { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.fm-owner-times em { font-style: normal; font-size: 11px; color: #4f6880; background: #f1f6fa; border-radius: 6px; padding: 2px 6px; }
+.fm-owner-option .fm-badge { white-space: nowrap; }
+
+/* Tab báo cáo sự cố kho */
+.fm-report-notes { max-width: 280px; white-space: pre-wrap; color: #23475e; font-size: 13px; }
+.fm-report-thumbs { display: flex; gap: 6px; }
+.fm-report-thumbs button { padding: 0; border: 1px solid #dce8ef; border-radius: 8px; overflow: hidden; cursor: zoom-in; background: #fff; }
+.fm-report-thumbs img { width: 44px; height: 44px; object-fit: cover; display: block; }
+.fm-image-preview { display: grid; gap: 12px; justify-items: center; max-width: min(900px, 92vw); padding: 16px; border-radius: 16px; background: #fff; }
+.fm-image-preview img { max-width: 100%; max-height: 75vh; border-radius: 10px; }
