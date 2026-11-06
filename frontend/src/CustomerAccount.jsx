@@ -27,7 +27,7 @@ import CustomerNotificationsPage, { NotificationsPreview } from './CustomerNotif
 import CancelReservationModal, { retryRefund } from './CancelReservation'
 import ContractCard from './ContractCard'
 import { ReturnRequestModal, ReturnSection, useUnitReturns } from './UnitReturn'
-import { startVnPayPayment } from './vnpay'
+import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
 
 /* Chuyển 'dd/mm/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày. */
 const dateSortValue = value => {
@@ -586,6 +586,39 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const customer = getCurrentUser()
   const customerName = customer?.name
 
+  /* Đóng tiền thuê: ngày nhận kho (toàn bộ hoặc tháng đầu) / từng kỳ khi đang thuê.
+     Backend quyết định đóng được bao nhiêu (GET/POST /api/rent-payments, POST /api/vnpay/create). */
+  const [payingRent, setPayingRent] = useState(null)
+  const payRent = async rental => {
+    const amount = Number(rental.rentPayableNow || 0)
+    if (!amount) return
+    const ok = await dialog.confirm({
+      tone: 'info',
+      title: `Đóng ${new Intl.NumberFormat('vi-VN').format(amount)}đ tiền thuê?`,
+      message: `Hợp đồng ${rental.contractNumber || rental.reservationCode} · ${rental.paymentPlan === 'Upfront' ? 'trả 1 lần (toàn bộ kỳ thuê)' : 'trả theo tháng'}.`,
+      confirmLabel: 'Đóng tiền thuê'
+    })
+    if (!ok) return
+    setPayingRent(rental.reservationId)
+    try {
+      const demo = SIMULATED_PAYMENT_ENABLED && await dialog.confirm({
+        tone: 'info', title: 'Chọn cách thanh toán', message: 'Đang bật chế độ demo. Thanh toán mô phỏng (không qua VNPay)?',
+        confirmLabel: 'Mô phỏng', cancelLabel: 'Qua VNPay'
+      })
+      if (!demo) {
+        await startVnPayPayment([rental.reservationId], { amount, count: 1, label: rental.contractNumber, kind: 'rent' })
+        return
+      }
+      const result = await apiPost(`/api/rent-payments/${rental.reservationId}/pay-demo`, {})
+      onRentalsChanged?.()
+      await dialog.alert({ tone: 'success', title: 'Đã đóng tiền thuê', message: result.message })
+    } catch (error) {
+      await dialog.alert({ tone: 'danger', title: 'Chưa đóng được tiền thuê', message: error.message })
+    } finally {
+      setPayingRent(null)
+    }
+  }
+
   /*
    * Hợp đồng ký online NGAY SAU KHI khách đặt cọc (không còn bước Facility Manager duyệt).
    * Backend: MỘT đơn đặt chỗ (có thể nhiều kho, đặt từ giỏ hàng) = MỘT hợp đồng (ContractNumber),
@@ -993,6 +1026,8 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
             onDetail={() => setDetail({ group: buildGroups([rental])[0], signature: signature || undefined })}
             onRenew={renewal?.eligible ? () => setRenewItem(renewal) : undefined}
             returnInfo={returns.byReservation(rental.reservationId)}
+            onPayRent={() => payRent(rental)}
+            payingRent={payingRent === rental.reservationId}
             onReturn={rental.status === 'Handed Over' ? () => {
               const info = returns.byReservation(rental.reservationId)
               if (info?.eligible) setReturnItem(info)

@@ -1,3 +1,4 @@
+using System.Data;
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -15,8 +16,9 @@ namespace SelfStorageAPI.Controllers;
  *
  * KHÁCH
  *   GET  /api/unit-returns/mine                         -> hợp đồng trả được + yêu cầu trả kho / kết quả kiểm kho / hoàn cọc
- *   POST /api/unit-returns                              -> { reservationId, returnDate, note } báo trả kho (đặt lịch)
- *   POST /api/unit-returns/{reservationId}/cancel       -> hủy lịch trả kho (khi Staff chưa bắt đầu kiểm)
+ *   GET  /api/unit-returns/{reservationId}/slots?date=  -> khung giờ trả kho còn nhân viên rảnh trong ngày
+ *   POST /api/unit-returns                              -> { reservationId, returnDate, returnTime: "HH:mm", note } báo trả kho (đặt lịch)
+ *   POST /api/unit-returns/{reservationId}/cancel       -> hủy lịch trả kho (khi Staff chưa bắt đầu kiểm; hợp đồng đã quá hạn thì không hủy được)
  *   POST /api/unit-returns/{reservationId}/pay-demo     -> đóng phí còn thiếu (mô phỏng); thật thì POST /api/vnpay/create
  * STAFF
  *   GET  /api/unit-returns/staff                        -> lịch trả kho tại các cơ sở của Staff + danh mục phí
@@ -26,7 +28,11 @@ namespace SelfStorageAPI.Controllers;
  *
  * Dữ liệu dùng bảng sẵn có: HandoverTask (TaskType = 'Move Out', mỗi kho 1 việc), ReservationUnit Active -> Returned,
  * StorageUnit 'Pending Inspection', Charge 'ExtraFee' (SettledFromDeposit = 1 khi trừ vào cọc), Payment Refund 'DepositReturn'.
- * Việc kiểm kho giao cho ĐÚNG Staff đã bàn giao kho (việc 'Move In'); Staff đó nghỉ thì giao Staff khác của cơ sở.
+ * Chọn người kiểm kho: StaffAssignmentPolicy (luật dùng chung với nhận kho) — ưu tiên Staff đã bàn giao kho nếu
+ * người đó không trùng giờ và không quá tải; nếu không, chọn người rảnh nhất không trùng giờ. Không còn ai rảnh
+ * ở khung giờ khách chọn -> từ chối và gợi ý các khung giờ còn trống.
+ * Hợp đồng quá hạn mà khách không báo trả: hệ thống tự tạo việc trả kho (ManagerToolsService.AutoAssignAsync).
+ * Kiểm xong chuyển kho sang Bảo trì -> tự ghi báo cáo sự cố cho Manager (kèm cảnh báo nếu kho đã có đơn khác giữ).
  * Chỉ Staff được giao mới "Nhận lại kho" / "Hoàn tất kiểm tra" (không tự đổi người); nhận lại kho từ ngày khách hẹn trả.
  * Đổi người phụ trách: Facility Manager (PUT /api/manager-tools/reservations/{id}/owner).
  * Quyết toán: phí phát sinh trừ vào cọc trước, thiếu thì khách đóng thêm; cọc còn dư hoàn sau N ngày
@@ -38,12 +44,13 @@ namespace SelfStorageAPI.Controllers;
 public sealed class UnitReturnsController(
     SelfStorageDbContext context,
     IFacilityManagementService facilityManagementService,
+    IManagerToolsRepository assignmentData, // danh sách nhân viên + lịch việc, dùng chung với tự phân công
     ILogger<UnitReturnsController> logger) : ControllerBase
 {
     private const string MoveOut = "Move Out";
     private const string ManualProvider = "Manual";
 
-    public sealed record ReturnRequest(int ReservationId, DateTime ReturnDate, string? Note);
+    public sealed record ReturnRequest(int ReservationId, DateTime ReturnDate, string? ReturnTime, string? Note);
     public sealed record FeeLine(string? FeeCode, string? Description, decimal Amount);
     public sealed record CompleteRequest(string? Condition, string? Notes, string? UnitStatus, List<FeeLine>? Fees);
     private sealed record ReturnRules(int NoticeDays, int RefundDays);
@@ -143,14 +150,40 @@ public sealed class UnitReturnsController(
         if (date < minDate || date > maxDate)
             return BadRequest(new { message = $"Ngày trả kho phải từ {minDate:dd/MM/yyyy} đến {maxDate:dd/MM/yyyy} (báo trước ít nhất {rules.NoticeDays} ngày theo chính sách)." });
 
-        var activeUnits = r.ReservationUnits.Where(ru => ru.Status == "Active").ToList();
-        var staffId = await PickStaffAsync(r, activeUnits.Select(u => u.UnitID).ToList(), ct);
-        if (staffId is null) return Conflict(new { message = "Cơ sở chưa có nhân viên đang làm việc để nhận lại kho. Vui lòng liên hệ cơ sở." });
+        if (!TryParseReturnTime(request.ReturnTime, out var time))
+            return BadRequest(new { message = $"Vui lòng chọn giờ trả kho trong các khung: {SlotList(StaffAssignmentPolicy.ReturnSlots)}." });
+        if (date == Today() && time <= NowVn().TimeOfDay)
+            return BadRequest(new { message = "Khung giờ này đã qua. Vui lòng chọn giờ khác." });
 
+        var activeUnits = r.ReservationUnits.Where(ru => ru.Status == "Active").ToList();
         var note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
         if (note?.Length > 500) note = note[..500];
+
+        string? staffName;
         try
         {
+            // Serializable: đọc lịch nhân viên + ghi việc trong cùng transaction, 2 khách đặt cùng giờ không bị giao chồng
+            await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+
+            var (staff, slots) = await LoadScheduleAsync(r.FacilityID, date, ct);
+            if (staff.Count == 0)
+                return Conflict(new { message = "Cơ sở chưa có nhân viên đang làm việc để nhận lại kho. Vui lòng liên hệ cơ sở." });
+
+            var preferred = await FindHandoverStaffAsync(r, activeUnits.Select(u => u.UnitID).ToList(), ct);
+            var pick = StaffAssignmentPolicy.Pick(staff, slots, date, time, preferred);
+            if (pick is null)
+            {
+                var free = FreeSlots(staff, slots, date);
+                return Conflict(new
+                {
+                    message = free.Count == 0
+                        ? $"Ngày {date:dd/MM/yyyy} đã kín lịch nhân viên. Vui lòng chọn ngày khác."
+                        : $"Khung {time:hh\\:mm} ngày {date:dd/MM/yyyy} đã kín lịch. Các khung còn trống: {SlotList(free)}.",
+                    freeSlots = free.Select(t => t.ToString(@"hh\:mm"))
+                });
+            }
+            staffName = pick.FullName;
+
             foreach (var ru in activeUnits)
             {
                 context.HandoverTasks.Add(new HandoverTask
@@ -160,24 +193,51 @@ public sealed class UnitReturnsController(
                     UnitID = ru.UnitID,
                     ReservationUnitID = ru.ReservationUnitID,
                     ReservationID = r.ReservationID,
-                    AssignedStaffID = staffId.Value,
+                    AssignedStaffID = pick.UserId,
                     ScheduledDate = date,
-                    ScheduledTime = new TimeSpan(9, 0, 0),
+                    ScheduledTime = time,
                     UnitConditionNotes = note is null ? null : $"Khách ghi chú: {note}",
                     Status = "Scheduled",
                     CreatedAt = DateTime.UtcNow
                 });
             }
             await context.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
         catch (DbUpdateException exception)
         {
+            context.ChangeTracker.Clear();
             logger.LogWarning(exception, "Tạo yêu cầu trả kho thất bại ({ReservationId})", r.ReservationID);
             return Conflict(new { message = CleanDbMessage(exception, "Chưa tạo được yêu cầu trả kho, vui lòng thử lại.") });
         }
 
-        var staffName = await context.Users.Where(u => u.UserID == staffId.Value).Select(u => u.FullName).FirstOrDefaultAsync(ct);
-        return Ok(new { message = $"Đã đặt lịch trả kho ngày {date:dd/MM/yyyy}. Nhân viên {staffName} sẽ nhận lại và kiểm tra kho.", returnDate = date, staffName });
+        return Ok(new
+        {
+            message = $"Đã đặt lịch trả kho {time:hh\\:mm} ngày {date:dd/MM/yyyy}. Nhân viên {staffName} sẽ nhận lại và kiểm tra kho.",
+            returnDate = date,
+            returnTime = time.ToString(@"hh\:mm"),
+            staffName
+        });
+    }
+
+    /* Khung giờ trả kho còn nhân viên rảnh (để khách chỉ chọn được giờ hợp lệ). */
+    [HttpGet("{reservationId:int}/slots")]
+    public async Task<IActionResult> Slots(int reservationId, [FromQuery] DateTime date, CancellationToken ct)
+    {
+        var customerId = await GetUserIdAsync(1, ct);
+        if (customerId is null) return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
+
+        var facilityId = await context.Reservations
+            .Where(x => x.ReservationID == reservationId && x.CustomerID == customerId.Value)
+            .Select(x => (int?)x.FacilityID)
+            .FirstOrDefaultAsync(ct);
+        if (facilityId is null) return NotFound(new { message = "Không tìm thấy hợp đồng thuộc tài khoản này." });
+
+        var day = date.Date;
+        if (day < Today()) return Ok(new { date = day.ToString("yyyy-MM-dd"), slots = Array.Empty<string>() });
+        var (staff, slots) = await LoadScheduleAsync(facilityId.Value, day, ct);
+        var free = FreeSlots(staff, slots, day);
+        return Ok(new { date = day.ToString("yyyy-MM-dd"), slots = free.Select(t => t.ToString(@"hh\:mm")) });
     }
 
     [HttpPost("{reservationId:int}/cancel")]
@@ -193,6 +253,10 @@ public sealed class UnitReturnsController(
         if (tasks.Count == 0) return NotFound(new { message = "Không có yêu cầu trả kho để hủy." });
         if (tasks.Any(t => t.Status != "Scheduled"))
             return Conflict(new { message = "Nhân viên đã bắt đầu nhận lại kho nên không thể hủy yêu cầu." });
+        // Hợp đồng đã hết hạn: khách bắt buộc phải trả kho, hủy lịch nghĩa là tiếp tục dùng kho khi không còn hợp đồng
+        var endDate = await context.Reservations.Where(x => x.ReservationID == reservationId).Select(x => x.EndDate).FirstAsync(ct);
+        if (endDate.Date < Today())
+            return Conflict(new { message = $"Hợp đồng đã hết hạn ngày {endDate:dd/MM/yyyy} nên không hủy được lịch trả kho. Muốn đổi ngày giờ, vui lòng liên hệ cơ sở." });
         foreach (var t in tasks) t.Status = "Cancelled";
         await context.SaveChangesAsync(ct);
         return Ok(new { message = "Đã hủy lịch trả kho. Bạn tiếp tục sử dụng kho như bình thường." });
@@ -282,6 +346,11 @@ public sealed class UnitReturnsController(
                                                   (t.Status == "Completed" && t.ActualAt >= since))))
             .ToListAsync(ct);
 
+        var upcoming = new Dictionary<int, (string Code, DateTime StartDate)>();
+        foreach (var r in reservations.Where(x => x.HandoverTasks.Any(t => t.TaskType == MoveOut && t.Status is "Scheduled" or "In Progress")))
+            foreach (var kv in await UpcomingBookingsAsync(r.ReservationID, r.ReservationUnits.Select(ru => ru.UnitID).ToList(), ct))
+                upcoming[kv.Key] = kv.Value;
+
         var items = reservations.Select(r =>
         {
             var tasks = r.HandoverTasks.Where(t => t.TaskType == MoveOut && t.Status != "Cancelled").ToList();
@@ -291,6 +360,7 @@ public sealed class UnitReturnsController(
             {
                 requestStatus,
                 scheduledDate = tasks.Min(t => t.ScheduledDate),
+                scheduledTime = tasks.Where(t => t.ScheduledTime != null).Select(t => t.ScheduledTime!.Value.ToString(@"hh\:mm")).FirstOrDefault(),
                 reservationId = r.ReservationID,
                 reservationCode = r.ReservationCode,
                 contractNumber = r.Contract?.ContractNumber,
@@ -310,7 +380,11 @@ public sealed class UnitReturnsController(
                         type = ru?.Unit.UnitType?.TypeName,
                         size = ru?.Unit.UnitSize == null ? null : $"{ru.Unit.UnitSize.SizeCode}: {ru.Unit.UnitSize.DisplayName}",
                         unitStatus = ru?.Unit.Status,
-                        access = r.UnitAccesses.Where(a => a.UnitID == ru!.UnitID && a.Status == "Active").Select(a => $"{a.AccessType}: {a.AccessValue}").FirstOrDefault()
+                        access = r.UnitAccesses.Where(a => a.UnitID == ru!.UnitID && a.Status == "Active").Select(a => $"{a.AccessType}: {a.AccessValue}").FirstOrDefault(),
+                        // Kho đã có khách khác đặt cho kỳ sau: chọn "Bảo trì" sẽ ảnh hưởng tới khách đó
+                        nextBooking = ru != null && upcoming.TryGetValue(ru.UnitID, out var nb)
+                            ? new { reservationCode = nb.Code, startDate = nb.StartDate.Date }
+                            : null
                     };
                 }).ToList(),
                 depositPaid = deposit,
@@ -500,6 +574,38 @@ public sealed class UnitReturnsController(
             }
             await context.SaveChangesAsync(ct);
 
+            // 3b) Kho chuyển Bảo trì -> ghi báo cáo sự cố (Inspection) để hiện ở mục "Báo cáo sự cố kho" của Manager,
+            //     cùng cơ chế với báo cáo Staff tự gửi. Kho đã có đơn khác giữ cho kỳ sau thì cảnh báo để Manager đổi kho
+            //     (bàn giao cho đơn đó sẽ bị chặn vì kho đang Bảo trì - HandoverService).
+            var warnings = new List<string>();
+            if (unitStatus == UnitStatus.Maintenance)
+            {
+                var returnedUnits = tasks.Select(t => r.ReservationUnits.First(x => x.ReservationUnitID == t.ReservationUnitID).Unit).ToList();
+                var bookings = await UpcomingBookingsAsync(r.ReservationID, returnedUnits.Select(u => u.UnitID).ToList(), ct);
+                foreach (var unit in returnedUnits)
+                {
+                    var booked = bookings.TryGetValue(unit.UnitID, out var b);
+                    if (booked) warnings.Add($"Kho {unit.UnitNumber} đã có đơn {b.Code} giữ từ {b.StartDate:dd/MM/yyyy}");
+                    context.HandoverTasks.Add(new HandoverTask
+                    {
+                        TaskType = "Inspection",
+                        FacilityID = r.FacilityID,
+                        UnitID = unit.UnitID,
+                        AssignedStaffID = staffId.Value,
+                        AssignedByID = staffId.Value,
+                        ScheduledDate = today,
+                        ActualAt = now,
+                        ConditionResult = "Damaged",
+                        UnitConditionNotes = Trim1000(
+                            $"Chuyển Bảo trì sau khi khách trả kho (hợp đồng {r.Contract?.ContractNumber}). {notes}" +
+                            (booked ? $" CẦN XỬ LÝ: đơn {b.Code} đang giữ kho này từ {b.StartDate:dd/MM/yyyy}, cần đổi kho cho khách." : "")),
+                        Status = "Completed",
+                        CreatedAt = now
+                    });
+                }
+                await context.SaveChangesAsync(ct);
+            }
+
             if (r.Status == ReservationStatus.HandedOver && r.ReservationUnits.All(ru => ru.Status is not ("Held" or "Active")))
             {
                 r.Status = ReservationStatus.Completed;
@@ -514,13 +620,19 @@ public sealed class UnitReturnsController(
             }
 
             await transaction.CommitAsync(ct);
+            var summary = owed > 0
+                ? $"Đã hoàn tất kiểm tra. Tiền cọc không đủ bù phí: khách cần đóng thêm {Vnd(owed)}đ."
+                : remaining > 0
+                    ? $"Đã hoàn tất kiểm tra. Khách được hoàn {Vnd(remaining)}đ tiền cọc sau {rules.RefundDays} ngày."
+                    : "Đã hoàn tất kiểm tra. Tiền cọc đã dùng hết để bù phí phát sinh.";
+            if (unitStatus == UnitStatus.Maintenance)
+                summary += " Kho chuyển Bảo trì, đã ghi báo cáo cho Facility Manager.";
+            if (warnings.Count > 0)
+                summary += $" Lưu ý: {string.Join("; ", warnings)} - Facility Manager cần đổi kho cho khách.";
             return Ok(new
             {
-                message = owed > 0
-                    ? $"Đã hoàn tất kiểm tra. Tiền cọc không đủ bù phí: khách cần đóng thêm {Vnd(owed)}đ."
-                    : remaining > 0
-                        ? $"Đã hoàn tất kiểm tra. Khách được hoàn {Vnd(remaining)}đ tiền cọc sau {rules.RefundDays} ngày."
-                        : "Đã hoàn tất kiểm tra. Tiền cọc đã dùng hết để bù phí phát sinh.",
+                message = summary,
+                warnings,
                 fromDeposit,
                 owed,
                 refundAmount = remaining,
@@ -549,6 +661,10 @@ public sealed class UnitReturnsController(
         {
             status,
             scheduledDate = first.ScheduledDate?.Date,
+            scheduledTime = first.ScheduledTime?.ToString(@"hh\:mm"),
+            // Hợp đồng đã hết hạn thì khách không tự hủy lịch trả kho được (khớp CancelRequest)
+            canCancel = status == "Scheduled" && r.EndDate.Date >= Today(),
+            overdue = r.EndDate.Date < Today() && status != "Completed",
             staffName = first.AssignedStaff?.FullName,
             inspectedAt = done?.ActualAt,
             conditionResult = done?.ConditionResult,
@@ -606,20 +722,64 @@ public sealed class UnitReturnsController(
         return (min, end);
     }
 
-    /* Staff kiểm kho = Staff đã bàn giao kho (việc Move In của đơn này hoặc các đơn trước của cùng kho, cùng khách). */
-    private async Task<int?> PickStaffAsync(Reservation r, List<int> unitIds, CancellationToken ct)
+    /* Người đã bàn giao kho cho khách (việc Move In hoàn thành của đơn này hoặc đơn trước của cùng kho, cùng khách).
+       Chỉ là NGƯỜI ĐƯỢC ƯU TIÊN; có được chọn hay không do StaffAssignmentPolicy quyết định. */
+    private async Task<int?> FindHandoverStaffAsync(Reservation r, List<int> unitIds, CancellationToken ct)
     {
-        var activeStaff = await context.FacilityStaffs.Where(fs => fs.FacilityID == r.FacilityID && fs.Status == "Active")
-            .OrderBy(fs => fs.AssignmentID).Select(fs => fs.UserID).ToListAsync(ct);
-        if (activeStaff.Count == 0) return null;
         var moveIn = await context.HandoverTasks.AsNoTracking()
             .Where(t => t.TaskType == "Move In" && t.Status == "Completed" && t.FacilityID == r.FacilityID &&
                         unitIds.Contains(t.UnitID) && t.Reservation!.CustomerID == r.CustomerID)
             .OrderByDescending(t => t.ReservationID == r.ReservationID).ThenByDescending(t => t.ActualAt)
-            .Select(t => t.AssignedStaffID)
+            .Select(t => (int?)t.AssignedStaffID)
+            .FirstOrDefaultAsync(ct);
+        return moveIn;
+    }
+
+    /* Nhân viên Active của cơ sở + lịch việc trong tuần của ngày cần xét (cùng nguồn dữ liệu với tự phân công). */
+    private async Task<(List<StaffAssignmentPolicy.Candidate> Staff, List<StaffAssignmentPolicy.Slot> Slots)> LoadScheduleAsync(
+        int facilityId, DateTime date, CancellationToken ct)
+    {
+        var staff = (await assignmentData.GetActiveStaffAsync(facilityId, ct))
+            .Select(u => new StaffAssignmentPolicy.Candidate(u.UserID, u.FullName))
+            .ToList();
+        if (staff.Count == 0) return (staff, new List<StaffAssignmentPolicy.Slot>());
+        var weekStart = StaffAssignmentPolicy.WeekStart(date);
+        var tasks = await assignmentData.GetStaffTasksInRangeAsync(staff.Select(s => s.UserId).ToList(), weekStart, weekStart.AddDays(6), ct);
+        return (staff, StaffAssignmentPolicy.ToSlots(tasks));
+    }
+
+    /* Khung giờ còn người rảnh; hôm nay thì bỏ các khung đã qua. */
+    private static List<TimeSpan> FreeSlots(List<StaffAssignmentPolicy.Candidate> staff, List<StaffAssignmentPolicy.Slot> slots, DateTime date)
+    {
+        var free = StaffAssignmentPolicy.FreeReturnSlots(staff, slots, date);
+        return date.Date == Today() ? free.Where(t => t > NowVn().TimeOfDay).ToList() : free;
+    }
+
+    private static bool TryParseReturnTime(string? value, out TimeSpan time)
+    {
+        time = default;
+        if (string.IsNullOrWhiteSpace(value) || !TimeSpan.TryParse(value.Trim(), CultureInfo.InvariantCulture, out var parsed))
+            return false;
+        if (!StaffAssignmentPolicy.ReturnSlots.Contains(parsed)) return false;
+        time = parsed;
+        return true;
+    }
+
+    private static string SlotList(IEnumerable<TimeSpan> slots) => string.Join(", ", slots.Select(t => t.ToString(@"hh\:mm")));
+
+    /* Đơn khác đang giữ kho này cho kỳ sau (đã cọc / đã xác nhận / đang chờ cọc còn hạn giữ). */
+    private async Task<Dictionary<int, (string Code, DateTime StartDate)>> UpcomingBookingsAsync(int reservationId, List<int> unitIds, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var rows = await context.ReservationUnits.AsNoTracking()
+            .Where(ru => unitIds.Contains(ru.UnitID) && ru.ReservationID != reservationId && ru.Status == "Held" &&
+                         (ru.Reservation.Status == ReservationStatus.Paid ||
+                          ru.Reservation.Status == ReservationStatus.Confirmed ||
+                          (ru.Reservation.Status == ReservationStatus.PendingPayment && ru.Reservation.HoldExpiresAt > now)))
+            .Select(ru => new { ru.UnitID, ru.Reservation.ReservationCode, ru.Reservation.StartDate })
             .ToListAsync(ct);
-        var picked = moveIn.FirstOrDefault(id => activeStaff.Contains(id));
-        return picked != 0 ? picked : activeStaff[0];
+        return rows.GroupBy(x => x.UnitID)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.StartDate).Select(x => (x.ReservationCode, x.StartDate)).First());
     }
 
     private async Task<Reservation?> LoadForStaffAsync(int reservationId, int staffId, CancellationToken ct)
@@ -704,6 +864,7 @@ public sealed class UnitReturnsController(
     private static string Trim255(string s) => s.Length > 255 ? s[..255] : s;
     private static string Trim1000(string s) => s.Length > 1000 ? s[..1000] : s;
     private static DateTime Today() => BusinessClock.Today;
+    private static DateTime NowVn() => DateTime.UtcNow.AddHours(7);
 
     private static string CleanDbMessage(DbUpdateException exception, string fallback)
     {

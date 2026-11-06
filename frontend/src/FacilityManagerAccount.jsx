@@ -2691,13 +2691,13 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                 <div className="overview-panel-heading">
                   <div>
                     <span className="customer-eyebrow">CẦN XỬ LÝ</span>
-                    <h2>{assignInfo.unassigned.length} đơn chưa có người nhận kho</h2>
+                    <h2>{assignInfo.unassigned.length} đơn chưa có người phụ trách</h2>
                   </div>
                   <button type="button" className="overview-text-button" onClick={() => setActiveTab('staff')}>Giao người ở Nhân sự →</button>
                 </div>
                 <div className="fm-pending-mini-list">
                   {assignInfo.unassigned.map(u => (
-                    <div key={u.reservationId} className="fm-pending-mini-item">
+                    <div key={`${u.taskType || 'Move In'}-${u.reservationId}`} className="fm-pending-mini-item">
                       <div>
                         <strong>{u.reservationCode || formatReservationCode(u.reservationId)}</strong>
                         <small>Hẹn {fmtDate(u.scheduledDate)} · {u.reason}</small>

@@ -15,8 +15,9 @@ namespace SelfStorageAPI.Services;
  *   - Deposit  (mỗi kho 1 dòng): phần cọc CHUYỂN TỪ kỳ cũ (mô tả có TransferMarker) -> không thu tiền khách;
  *              kho không còn cọc cũ thì dòng cọc phải thu (không có marker).
  *   - Renewal  : tiền cọc bổ sung khi giá thuê tăng (cọc mới > cọc cũ).
- *   - Rent     : tiền thuê từng tháng; THÁNG ĐẦU thu ngay khi gia hạn, các tháng sau trả hằng tháng.
- * Khách thanh toán (VNPay / mô phỏng) = tiền thuê tháng đầu + cọc bổ sung (+ cọc của kho không còn cọc cũ).
+ *   - Rent     : tiền thuê từng tháng. Thu ngay khi gia hạn theo hình thức trả khách chọn (RentPaymentRules):
+ *                trả 1 lần -> toàn bộ kỳ mới; trả theo tháng -> tháng đầu, các tháng sau trả hằng tháng.
+ * Khách thanh toán (VNPay / mô phỏng) = tiền thuê phải trả ngay + cọc bổ sung (+ cọc của kho không còn cọc cũ).
  * Sau khi thanh toán: chuyển cọc (Payment nội bộ) -> hoàn cọc kỳ cũ -> Paid -> Confirmed -> hợp đồng
  * (phụ lục gia hạn, RenewedFromContractID) -> kho Active -> Handed Over (khách đang giữ kho, không bàn giao lại).
  * Khách ký phụ lục gia hạn online ngay sau đó.
@@ -34,7 +35,8 @@ public static class ContractRenewalFinalizer
     public static bool IsPayableNow(Charge charge, Reservation reservation) =>
         charge.Status == "Unpaid" && (
             charge.ChargeType == "Renewal" ||
-            (charge.ChargeType == "Rent" && charge.PeriodStart?.Date == reservation.StartDate.Date) ||
+            (charge.ChargeType == "Rent" &&
+             (reservation.PaymentPlan == PaymentPlan.Upfront || charge.PeriodStart?.Date == reservation.StartDate.Date)) ||
             (charge.ChargeType == "Deposit" && !(charge.Description ?? "").Contains(TransferMarker, StringComparison.OrdinalIgnoreCase)));
 
     /* Đơn cũ (đang thuê) mà đơn gia hạn nối tiếp. */

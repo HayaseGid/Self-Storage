@@ -3,7 +3,7 @@
 Tất cả các tài khoản mặc định dùng chung mật khẩu: 123456
 
 1. Khách Hàng (Storage Customer)
-- Username: customer1 (Tên: Đinh Khách Hàng, Email: cust1@test.com)
+- Username: customer1 (Tên: Đinh Khách Hàng, Email: )
 - Username: customer2 (Tên: Vũ Khách Hàng, Email: cust2@test.com)
 - Username: customer3 (Tên: Bùi Khách Hàng, Email: cust3@test.com)
 - Username: customer4 (Tên: Đỗ Khách Hàng, Email: cust4@test.com)

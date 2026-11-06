@@ -148,6 +148,26 @@ public class ManagerToolsRepository : IManagerToolsRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<Reservation>> GetOverdueReservationsWithoutMoveOutAsync(int facilityId, DateTime today, CancellationToken cancellationToken)
+    {
+        var day = today.Date;
+        return await _context.Reservations
+            .Include(r => r.ReservationUnits)
+            .Include(r => r.HandoverTasks)
+            .Include(r => r.Contract)
+            .AsSplitQuery()
+            .Where(r => r.FacilityID == facilityId &&
+                        r.Status == ReservationStatus.HandedOver &&
+                        r.EndDate < day &&
+                        r.Contract != null &&
+                        !r.Contract.RenewedContracts.Any(c => c.Reservation.Status != ReservationStatus.Cancelled) &&
+                        r.ReservationUnits.Any(ru => ru.Status == "Active" &&
+                            !r.HandoverTasks.Any(t => t.ReservationUnitID == ru.ReservationUnitID &&
+                                                      t.TaskType == "Move Out" &&
+                                                      t.Status != "Cancelled")))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<List<HandoverTask>> GetUnitReportsAsync(int facilityId, CancellationToken cancellationToken)
     {
         return await _context.HandoverTasks

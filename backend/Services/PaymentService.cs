@@ -41,31 +41,19 @@ public class PaymentService : IPaymentService
             if (reservation.Status != ReservationStatus.PendingPayment)
                 return new PaymentServiceResponse(false, "Đặt chỗ không ở trạng thái chờ thanh toán hoặc đã được thanh toán.", 409, null);
 
-            var unpaidDeposits = reservation.Charges
+            if (ContractRenewalFinalizer.IsRenewal(reservation))
+                return new PaymentServiceResponse(false, "Đơn gia hạn thanh toán ở mục Gia hạn hợp đồng.", 409, null);
+
+            // Lúc đặt kho CHỈ thu tiền cọc. Tiền thuê đóng vào ngày nhận kho theo hình thức trả (RentPaymentRules).
+            var chargesToSettle = reservation.Charges
                 .Where(c => c.ChargeType == "Deposit" && c.Status == "Unpaid")
                 .ToList();
-
-            var firstMonthRents = reservation.Charges
-                .Where(c => c.ChargeType == "Rent" && c.Status == "Unpaid" && c.PeriodStart == reservation.StartDate.Date)
-                .ToList();
-
-            var depositSum = unpaidDeposits.Sum(c => c.Amount);
-            var depositAndFirstRentSum = depositSum + firstMonthRents.Sum(c => c.Amount);
-
-            List<Charge> chargesToSettle;
-            if (request.Amount == depositSum && depositSum > 0)
-            {
-                chargesToSettle = unpaidDeposits;
-            }
-            else if (request.Amount == depositAndFirstRentSum && depositAndFirstRentSum > 0)
-            {
-                chargesToSettle = unpaidDeposits.Concat(firstMonthRents).ToList();
-            }
-            else
+            var depositSum = chargesToSettle.Sum(c => c.Amount);
+            if (depositSum <= 0 || request.Amount != depositSum)
             {
                 return new PaymentServiceResponse(
                     false,
-                    $"Số tiền thanh toán phải đúng bằng tiền cọc ({depositSum:N0}) hoặc tiền cọc + tháng đầu ({depositAndFirstRentSum:N0}).",
+                    $"Số tiền thanh toán phải đúng bằng tiền cọc ({depositSum:N0}đ). Tiền thuê đóng vào ngày nhận kho.",
                     400,
                     null);
             }

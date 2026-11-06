@@ -14,7 +14,7 @@ namespace SelfStorageAPI.Controllers;
  * GIA HẠN HỢP ĐỒNG CỦA KHÁCH HÀNG (file THÊM MỚI, không sửa code cũ, không cần sửa Program.cs).
  *
  *   GET  /api/contract-renewals/mine           -> các hợp đồng của khách + điều kiện & báo giá gia hạn
- *   POST /api/contract-renewals                -> { reservationId, months, expectedAmount } tạo đơn gia hạn CHỜ THANH TOÁN
+ *   POST /api/contract-renewals                -> { reservationId, months, paymentPlan: "Monthly"|"Upfront", expectedAmount } tạo đơn gia hạn CHỜ THANH TOÁN
  *   POST /api/contract-renewals/{id}/pay-demo  -> thanh toán mô phỏng (khi chưa dùng VNPay) rồi hoàn tất gia hạn
  *   POST /api/contract-renewals/{id}/finalize  -> thử hoàn tất lại (đã thanh toán nhưng lỗi giữa chừng)
  *   POST /api/contract-renewals/{id}/cancel    -> hủy đơn gia hạn đang chờ thanh toán
@@ -25,8 +25,10 @@ namespace SelfStorageAPI.Controllers;
  *     Reservation MỚI cho đúng các kho đang thuê, bắt đầu từ ngày hôm sau ngày hết hạn cũ,
  *     cùng Contract MỚI có RenewedFromContractID = hợp đồng cũ.
  *   - Giá gia hạn: bảng giá (RentalRate) hiện hành + % giảm của gói (ContractType), giống lúc đặt mới.
- *   - Khi gia hạn khách trả ngay: tiền thuê THÁNG ĐẦU của kỳ mới + phần cọc bổ sung nếu giá tăng.
- *     Tiền cọc kỳ cũ được chuyển sang kỳ mới (không phải trả lại cọc); các tháng sau trả hằng tháng.
+ *   - Khách CHỌN LẠI hình thức trả khi gia hạn (mặc định giữ hình thức cũ). Trả ngay khi gia hạn:
+ *     trả 1 lần -> toàn bộ tiền thuê kỳ mới; trả theo tháng -> tháng đầu kỳ mới (các tháng sau trả hằng tháng);
+ *     cộng phần cọc bổ sung nếu giá tăng. Tiền cọc kỳ cũ được chuyển sang kỳ mới (RentPaymentRules / ContractRenewalFinalizer).
+ *   - Không gia hạn khi còn nợ tiền thuê / phí quá hạn (chính sách requireNoOverdue).
  *   - Thanh toán xong (ContractRenewalFinalizer): đơn được xác nhận + tạo hợp đồng (phụ lục gia hạn) + bàn giao ngay
  *     (khách đang giữ kho, không cần Staff bàn giao lại). Khách ký phụ lục gia hạn online ngay sau đó.
  *   - Khi kỳ cũ kết thúc: kỳ cũ được đóng (Completed), hợp đồng cũ chuyển "Renewed",
@@ -47,7 +49,7 @@ public sealed class ContractRenewalsController(
     // Thời gian giữ yêu cầu gia hạn chờ thanh toán (giống giữ kho khi đặt cọc).
     private const int PaymentHoldMinutes = 15;
 
-    public sealed record RenewContractRequest(int ReservationId, int Months, decimal? ExpectedAmount);
+    public sealed record RenewContractRequest(int ReservationId, int Months, string? PaymentPlan, decimal? ExpectedAmount);
 
     private sealed record RenewalRules(int NoticeDays, int MinMonths, int MaxMonths, bool RequireNoOverdue);
 
@@ -67,7 +69,11 @@ public sealed class ContractRenewalsController(
         int Months, decimal DiscountPercent, DateTime StartDate, DateTime EndDate,
         decimal MonthlyBase, decimal Monthly, decimal Rent, decimal NewDeposit, decimal OldDeposit,
         decimal FirstMonth, decimal DepositTransfer, decimal DepositTopUp,
-        decimal AmountDue, decimal RefundAmount, List<UnitQuote> Units);
+        decimal AmountDue, decimal RefundAmount, List<UnitQuote> Units)
+    {
+        /* Trả ngay khi gia hạn theo hình thức trả: 1 lần = toàn bộ tiền thuê kỳ mới, theo tháng = tháng đầu; + cọc bổ sung. */
+        public decimal AmountDueFor(string plan) => (plan == PaymentPlan.Upfront ? Rent : FirstMonth) + DepositTopUp;
+    }
 
     // ------------------------------------------------------------------ GET
 
@@ -141,6 +147,7 @@ public sealed class ContractRenewalsController(
                 startDate = r.StartDate.Date,
                 endDate = r.EndDate.Date,
                 months = r.RentalPeriod,
+                paymentPlan = r.PaymentPlan, // hình thức trả hiện tại -> chọn sẵn khi gia hạn
                 daysLeft = (r.EndDate.Date - today).Days,
                 renewDeadline = deadline,
                 eligible,
@@ -161,6 +168,7 @@ public sealed class ContractRenewalsController(
                     reservationId = pending.ReservationID,
                     reservationCode = pending.ReservationCode,
                     months = pending.RentalPeriod,
+                    paymentPlan = pending.PaymentPlan,
                     startDate = pending.StartDate.Date,
                     endDate = pending.EndDate.Date,
                     amountDue = pending.Charges.Where(c => ContractRenewalFinalizer.IsPayableNow(c, pending)).Sum(c => c.Amount),
@@ -206,6 +214,11 @@ public sealed class ContractRenewalsController(
         if (!AllowedMonths.Contains(request.Months))
             return BadRequest(new { message = "Kỳ gia hạn chỉ được chọn 1, 3, 6 hoặc 12 tháng." });
 
+        // Không gửi = giữ hình thức trả của hợp đồng hiện tại; gửi sai = báo lỗi
+        var requestedPlan = request.PaymentPlan is null ? null : PaymentPlan.Normalize(request.PaymentPlan);
+        if (request.PaymentPlan is not null && requestedPlan is null)
+            return BadRequest(new { message = "Hình thức trả chỉ được là trả theo tháng hoặc trả 1 lần." });
+
         await TrySettleEndedTermsAsync(customerId.Value, cancellationToken);
 
         var rules = await ReadRulesAsync(cancellationToken);
@@ -230,13 +243,15 @@ public sealed class ContractRenewalsController(
             if (!eligible)
                 return Conflict(new { message = reason });
 
+            var paymentPlan = requestedPlan ?? old.PaymentPlan;
             var quote = BuildQuote(old, plan.Months, plan.DiscountRate);
+            var amountDue = quote.AmountDueFor(paymentPlan);
             if (quote.Units.Count == 0)
                 return Conflict(new { message = "Hợp đồng không còn kho đang thuê để gia hạn." });
             if (quote.Units.Any(u => u.ListPrice <= 0))
                 return Conflict(new { message = "Có kho chưa được cấu hình giá thuê hiện hành, vui lòng liên hệ cơ sở." });
 
-            if (request.ExpectedAmount is not null && request.ExpectedAmount.Value != quote.AmountDue)
+            if (request.ExpectedAmount is not null && request.ExpectedAmount.Value != amountDue)
                 return Conflict(new
                 {
                     message = "Giá gia hạn vừa thay đổi theo bảng giá mới. Vui lòng xem lại số tiền và xác nhận lại.",
@@ -248,23 +263,25 @@ public sealed class ContractRenewalsController(
             // Đã có đơn gia hạn đang chờ thanh toán: cùng kỳ + cùng số tiền thì dùng lại, khác thì hủy để tạo đơn mới.
             var pending = await FindPendingRenewalsAsync(old, now, cancellationToken);
             var reusable = pending.FirstOrDefault(p => p.RentalPeriod == quote.Months &&
-                                                       p.Charges.Where(c => ContractRenewalFinalizer.IsPayableNow(c, p)).Sum(c => c.Amount) == quote.AmountDue);
+                                                       p.PaymentPlan == paymentPlan &&
+                                                       p.Charges.Where(c => ContractRenewalFinalizer.IsPayableNow(c, p)).Sum(c => c.Amount) == amountDue);
             foreach (var stale in pending.Where(p => p != reusable))
                 await CancelPendingAsync(stale, customerId.Value, "Khách chọn lại kỳ gia hạn", now, cancellationToken);
 
-            var renewal = reusable ?? await CreatePendingRenewalAsync(old, quote, customerId.Value, now, cancellationToken);
+            var renewal = reusable ?? await CreatePendingRenewalAsync(old, quote, paymentPlan, customerId.Value, now, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
             return StatusCode(reusable is null ? 201 : 200, new
             {
-                message = $"Đã tạo yêu cầu gia hạn hợp đồng {old.Contract.ContractNumber} thêm {quote.Months} tháng. Vui lòng thanh toán để hoàn tất.",
+                message = $"Đã tạo yêu cầu gia hạn hợp đồng {old.Contract.ContractNumber} thêm {quote.Months} tháng ({PaymentPlan.Label(paymentPlan).ToLowerInvariant()}). Vui lòng thanh toán để hoàn tất.",
                 reservationId = renewal.ReservationID,
                 reservationCode = renewal.ReservationCode,
                 renewedFromContractNumber = old.Contract.ContractNumber,
                 startDate = quote.StartDate,
                 endDate = quote.EndDate,
                 months = quote.Months,
-                amountDue = quote.AmountDue,
+                paymentPlan,
+                amountDue,
                 holdExpiresAt = renewal.HoldExpiresAt,
                 quote = ToQuoteDto(quote)
             });
@@ -477,7 +494,7 @@ public sealed class ContractRenewalsController(
     }
 
     /* Tạo đơn gia hạn (chờ thanh toán) + dòng yêu cầu + kho + các khoản phí, giống ReservationService. */
-    private async Task<Reservation> CreatePendingRenewalAsync(Reservation old, PlanQuote quote, int customerId, DateTime now, CancellationToken ct)
+    private async Task<Reservation> CreatePendingRenewalAsync(Reservation old, PlanQuote quote, string paymentPlan, int customerId, DateTime now, CancellationToken ct)
     {
         var reservation = new Reservation
         {
@@ -489,6 +506,7 @@ public sealed class ContractRenewalsController(
             RentalPeriod = quote.Months,
             EndDate = quote.EndDate,
             DepositMonths = old.DepositMonths,
+            PaymentPlan = paymentPlan,
             HoldExpiresAt = now.AddMinutes(PaymentHoldMinutes),
             AppointmentDate = quote.StartDate,
             AppointmentTime = new TimeSpan(9, 0, 0),
@@ -572,8 +590,8 @@ public sealed class ContractRenewalsController(
                         PeriodStart = periodStart,
                         PeriodEnd = quote.StartDate.AddMonths(m + 1).AddDays(-1),
                         Amount = unit.MonthlyPrice,
-                        // Tháng đầu trả ngay khi gia hạn, các tháng sau đến hạn vào đầu mỗi kỳ.
-                        DueDate = m == 0 ? now.Date : periodStart,
+                        // Hạn theo RentPaymentRules (phần phải trả ngay được thu lúc gia hạn - ContractRenewalFinalizer.IsPayableNow)
+                        DueDate = RentPaymentRules.DueDateFor(paymentPlan, quote.StartDate, periodStart),
                         Status = "Unpaid",
                         CreatedAt = now,
                         CreatedByUserID = customerId
@@ -712,6 +730,8 @@ public sealed class ContractRenewalsController(
                 (c.ChargeType == "LateFee" || c.ChargeType == "ExtraFee") &&
                 c.Status == "Unpaid" && c.DueDate.Date < today))
             return (false, "Bạn còn khoản phí quá hạn chưa thanh toán. Vui lòng thanh toán trước khi gia hạn.");
+        if (rules.RequireNoOverdue && RentPaymentRules.Overdue(r, today).Count > 0)
+            return (false, "Bạn còn tiền thuê quá hạn chưa đóng. Vui lòng đóng tiền thuê trước khi gia hạn.");
         if (!r.ReservationUnits.Any(ru => ru.Status == "Active"))
             return (false, "Hợp đồng không còn kho đang thuê để gia hạn.");
         if (r.Facility.Status != "Active")
@@ -773,7 +793,9 @@ public sealed class ContractRenewalsController(
         depositTransfer = q.DepositTransfer,
         depositTopUp = q.DepositTopUp,
         laterMonths = Math.Max(0, q.Months - 1),
-        amountDue = q.AmountDue,
+        amountDue = q.AmountDue, // = trả theo tháng (giữ cho client cũ)
+        amountDueMonthly = q.AmountDueFor(PaymentPlan.Monthly),
+        amountDueUpfront = q.AmountDueFor(PaymentPlan.Upfront),
         refundAmount = q.RefundAmount,
         units = q.Units.Select(u => new
         {

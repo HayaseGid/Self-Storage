@@ -331,7 +331,7 @@ public class StaffToolsService : IStaffToolsService
                     UnitID = unit.UnitID,
                     AssignedStaffID = user.UserID,
                     AssignedByID = user.UserID, // nhân viên tự phát hiện và báo cáo
-                    ScheduledDate = DateTime.Today,
+                    ScheduledDate = BusinessClock.Today,
                     ActualAt = now,
                     UnitConditionNotes = notes,
                     ConditionResult = result,

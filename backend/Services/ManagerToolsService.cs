@@ -222,7 +222,7 @@ public class ManagerToolsService : IManagerToolsService
             requestedTime = parsed;
         }
 
-        var today = DateTime.Today;
+        var today = BusinessClock.Today;
         if (request.ScheduledDate.HasValue && request.ScheduledDate.Value.Date < today)
             return Fail(400, "Ngày hẹn không được ở quá khứ.");
 
@@ -379,60 +379,58 @@ public class ManagerToolsService : IManagerToolsService
     }
 
     /* =====================================================================
-       4. TỰ PHÂN CÔNG VIỆC NHẬN KHO
-       Đơn Paid / Confirmed còn kho "Held" chưa có việc Move In -> giao cho 1 nhân viên:
-         (1) Active tại cơ sở, (2) không có việc trùng giờ hẹn (±60 phút),
-         (3) ít việc nhất trong ngày hẹn, (4) hòa thì ít việc nhất trong tuần, rồi theo tên.
-       Cả đơn giao cho MỘT người (đơn nhiều kho không chia nhiều người).
-       Người được giao = NGƯỜI PHỤ TRÁCH đơn. AssignedByID = null nghĩa là "hệ thống giao".
-       Được gọi mỗi khi trang Manager / Staff tải dữ liệu. Hai trang gọi cùng lúc cũng không
-       giao trùng vì DB có UX_HandoverTask_ReservationUnit_Type (mỗi kho 1 việc nhận kho).
+       4. TỰ PHÂN CÔNG (gọi mỗi khi trang Manager / Staff tải dữ liệu)
+       a) NHẬN KHO: đơn Paid / Confirmed còn kho "Held" chưa có việc Move In
+          -> ngày hẹn = ngày hẹn của đơn (đã qua thì hôm nay), giờ = giờ hẹn của đơn.
+       b) TRẢ KHO QUÁ HẠN: hợp đồng đã hết hạn, KHÔNG gia hạn, khách chưa báo trả
+          -> tự tạo việc Move Out ngày hôm nay (không giờ cố định: nhân viên liên hệ khách),
+             ưu tiên nhân viên đã bàn giao kho.
+       Chọn người: StaffAssignmentPolicy (luật dùng chung với trả kho do khách đặt lịch).
+       Cả đơn giao cho MỘT người. AssignedByID = null nghĩa là "hệ thống giao".
+       Hai trang gọi cùng lúc cũng không tạo trùng vì DB có UX_HandoverTask_ReservationUnit_Type
+       (mỗi kho chỉ 1 việc nhận kho và 1 việc trả kho chưa hủy).
        ===================================================================== */
-    private static readonly TimeSpan ConflictWindow = TimeSpan.FromMinutes(60);
-
-    // Một "lịch hẹn" của nhân viên: nhiều task cùng đơn chỉ tính là 1 lần hẹn
-    private sealed record Slot(int StaffId, DateTime Date, TimeSpan? Time, string Key);
-
-    private static DateTime WeekStart(DateTime date)
-    {
-        var diff = ((int)date.DayOfWeek + 6) % 7; // Thứ 2 là đầu tuần
-        return date.Date.AddDays(-diff);
-    }
-
-    private static string SlotKey(HandoverTask t) => t.ReservationID.HasValue ? $"R{t.ReservationID}" : $"T{t.TaskID}";
-
-    private static bool HasConflict(IEnumerable<Slot> slots, int staffId, DateTime date, TimeSpan? time)
-    {
-        if (time is null) return false;
-        return slots.Any(s => s.StaffId == staffId && s.Date == date && s.Time.HasValue &&
-                              (s.Time.Value - time.Value).Duration() < ConflictWindow);
-    }
-
-    private static int DayLoad(IEnumerable<Slot> slots, int staffId, DateTime date)
-        => slots.Where(s => s.StaffId == staffId && s.Date == date).Select(s => s.Key).Distinct().Count();
-
-    private static int WeekLoad(IEnumerable<Slot> slots, int staffId, DateTime date)
-    {
-        var week = WeekStart(date);
-        return slots.Where(s => s.StaffId == staffId && WeekStart(s.Date) == week).Select(s => s.Key).Distinct().Count();
-    }
+    private sealed record AssignPlan(Reservation Reservation, string TaskType, DateTime Date, TimeSpan? Time, int? PreferredStaffId, List<ReservationUnit> Units);
 
     public async Task<ManagerToolsResponse> AutoAssignAsync(int facilityId, string? userEmail, CancellationToken cancellationToken)
     {
         var (user, fail) = await AuthorizeMemberAsync(userEmail, facilityId, cancellationToken);
         if (fail is not null) return fail;
 
-        var reservations = await _repo.GetReservationsNeedingMoveInAsync(facilityId, cancellationToken);
-        if (reservations.Count == 0)
+        var today = BusinessClock.Today;
+        var plans = new List<AssignPlan>();
+
+        foreach (var r in await _repo.GetReservationsNeedingMoveInAsync(facilityId, cancellationToken))
+        {
+            var units = r.ReservationUnits
+                .Where(ru => ru.Status == "Held" && !r.HandoverTasks.Any(t =>
+                    t.ReservationUnitID == ru.ReservationUnitID && t.TaskType == MoveIn && t.Status != "Cancelled"))
+                .ToList();
+            if (units.Count == 0) continue;
+            var date = (r.AppointmentDate ?? r.StartDate).Date;
+            plans.Add(new AssignPlan(r, MoveIn, date < today ? today : date, r.AppointmentTime, null, units));
+        }
+
+        foreach (var r in await _repo.GetOverdueReservationsWithoutMoveOutAsync(facilityId, today, cancellationToken))
+        {
+            var units = r.ReservationUnits
+                .Where(ru => ru.Status == "Active" && !r.HandoverTasks.Any(t =>
+                    t.ReservationUnitID == ru.ReservationUnitID && t.TaskType == MoveOut && t.Status != "Cancelled"))
+                .ToList();
+            if (units.Count == 0) continue;
+            // Ưu tiên người đã bàn giao kho (biết tình trạng kho lúc giao)
+            var handedOverBy = r.HandoverTasks
+                .Where(t => t.TaskType == MoveIn && t.Status == "Completed")
+                .OrderByDescending(t => t.ActualAt)
+                .Select(t => (int?)t.AssignedStaffID)
+                .FirstOrDefault();
+            plans.Add(new AssignPlan(r, MoveOut, today, null, handedOverBy, units));
+        }
+
+        if (plans.Count == 0)
             return Ok(new { assigned = Array.Empty<object>(), unassigned = Array.Empty<object>(), message = "Không có đơn nào cần phân công." });
 
-        var today = DateTime.Today;
-        var plans = reservations
-            .Select(r =>
-            {
-                var date = (r.AppointmentDate ?? r.StartDate).Date;
-                return new { Reservation = r, Date = date < today ? today : date, Time = r.AppointmentTime };
-            })
+        plans = plans
             .OrderBy(p => p.Date)
             .ThenBy(p => p.Time ?? TimeSpan.MaxValue)
             .ThenBy(p => p.Reservation.ReservationID)
@@ -444,92 +442,71 @@ public class ManagerToolsService : IManagerToolsService
             return Ok(new
             {
                 assigned = Array.Empty<object>(),
-                unassigned = plans.Select(p => new
-                {
-                    reservationId = p.Reservation.ReservationID,
-                    reservationCode = p.Reservation.ReservationCode,
-                    scheduledDate = p.Date.ToString("yyyy-MM-dd"),
-                    reason = "Cơ sở chưa có nhân viên đang làm việc."
-                }).ToArray(),
+                unassigned = plans.Select(p => DescribeUnassigned(p, "Cơ sở chưa có nhân viên đang làm việc.")).ToArray(),
                 message = "Cơ sở chưa có nhân viên để phân công."
             });
         }
 
-        var staffIds = staff.Select(s => s.UserID).ToList();
-        var from = WeekStart(plans.Min(p => p.Date));
-        var to = WeekStart(plans.Max(p => p.Date)).AddDays(6);
-        var existing = await _repo.GetStaffTasksInRangeAsync(staffIds, from, to, cancellationToken);
-        var slots = existing
-            .Select(t => new Slot(t.AssignedStaffID, t.ScheduledDate!.Value.Date, t.ScheduledTime, SlotKey(t)))
-            .ToList();
+        var candidates = staff.Select(s => new StaffAssignmentPolicy.Candidate(s.UserID, s.FullName)).ToList();
+        var from = StaffAssignmentPolicy.WeekStart(plans.Min(p => p.Date));
+        var to = StaffAssignmentPolicy.WeekStart(plans.Max(p => p.Date)).AddDays(6);
+        var existing = await _repo.GetStaffTasksInRangeAsync(candidates.Select(c => c.UserId).ToList(), from, to, cancellationToken);
+        var slots = StaffAssignmentPolicy.ToSlots(existing);
 
         var now = DateTime.UtcNow;
         var assigned = new List<object>();
         var unassigned = new List<object>();
-        var newTasks = new List<HandoverTask>();
+        var newTasks = 0;
 
         foreach (var plan in plans)
         {
             var r = plan.Reservation;
-            var candidates = staff.Where(s => !HasConflict(slots, s.UserID, plan.Date, plan.Time)).ToList();
-            if (candidates.Count == 0)
+            var pick = StaffAssignmentPolicy.Pick(candidates, slots, plan.Date, plan.Time, plan.PreferredStaffId);
+            if (pick is null)
             {
-                unassigned.Add(new
-                {
-                    reservationId = r.ReservationID,
-                    reservationCode = r.ReservationCode,
-                    scheduledDate = plan.Date.ToString("yyyy-MM-dd"),
-                    reason = "Tất cả nhân viên đều có việc trùng giờ hẹn."
-                });
+                unassigned.Add(DescribeUnassigned(plan, "Tất cả nhân viên đều có việc trùng giờ hẹn."));
                 continue;
             }
 
-            var pick = candidates
-                .OrderBy(s => DayLoad(slots, s.UserID, plan.Date))
-                .ThenBy(s => WeekLoad(slots, s.UserID, plan.Date))
-                .ThenBy(s => s.FullName)
-                .ThenBy(s => s.UserID)
-                .First();
+            var note = plan.TaskType == MoveOut
+                ? $"Hệ thống tạo: hợp đồng hết hạn ngày {r.EndDate:dd/MM/yyyy} nhưng khách chưa trả kho. Liên hệ khách để hẹn thu hồi kho."
+                : null;
 
-            var units = r.ReservationUnits
-                .Where(ru => ru.Status == "Held" && !r.HandoverTasks.Any(t =>
-                    t.ReservationUnitID == ru.ReservationUnitID && t.TaskType == MoveIn && t.Status != "Cancelled"))
-                .ToList();
-
-            foreach (var ru in units)
+            foreach (var ru in plan.Units)
             {
-                var task = new HandoverTask
+                _repo.AddTask(new HandoverTask
                 {
-                    TaskType = MoveIn,
+                    TaskType = plan.TaskType,
                     FacilityID = r.FacilityID,
                     UnitID = ru.UnitID,
                     ReservationUnitID = ru.ReservationUnitID,
                     ReservationID = r.ReservationID,
-                    AssignedStaffID = pick.UserID,
+                    AssignedStaffID = pick.UserId,
                     AssignedByID = null, // hệ thống tự giao
                     ScheduledDate = plan.Date,
                     ScheduledTime = plan.Time,
+                    UnitConditionNotes = note,
                     Status = "Scheduled",
                     CreatedAt = now
-                };
-                _repo.AddTask(task);
-                newTasks.Add(task);
+                });
+                newTasks++;
             }
 
-            slots.Add(new Slot(pick.UserID, plan.Date, plan.Time, $"R{r.ReservationID}"));
+            slots.Add(new StaffAssignmentPolicy.Slot(pick.UserId, plan.Date, plan.Time, $"R{r.ReservationID}"));
             assigned.Add(new
             {
                 reservationId = r.ReservationID,
                 reservationCode = r.ReservationCode,
-                staffUserId = pick.UserID,
+                taskType = plan.TaskType,
+                staffUserId = pick.UserId,
                 staffName = pick.FullName,
                 scheduledDate = plan.Date.ToString("yyyy-MM-dd"),
                 scheduledTime = plan.Time?.ToString(@"hh\:mm"),
-                units = units.Count
+                units = plan.Units.Count
             });
         }
 
-        if (newTasks.Count == 0)
+        if (newTasks == 0)
             return Ok(new { assigned, unassigned, message = "Không phân công thêm được đơn nào." });
 
         try
@@ -543,10 +520,19 @@ public class ManagerToolsService : IManagerToolsService
         }
         catch (DbUpdateException ex)
         {
-            // Thường do trang khác vừa phân công cùng đơn (ràng buộc mỗi kho 1 việc nhận kho)
+            // Thường do trang khác vừa phân công cùng đơn (ràng buộc mỗi kho 1 việc nhận / trả kho)
             return Fail(409, ReadDatabaseMessage(ex, "Đơn vừa được phân công ở phiên khác. Vui lòng tải lại trang."));
         }
     }
+
+    private static object DescribeUnassigned(AssignPlan plan, string reason) => new
+    {
+        reservationId = plan.Reservation.ReservationID,
+        reservationCode = plan.Reservation.ReservationCode,
+        taskType = plan.TaskType,
+        scheduledDate = plan.Date.ToString("yyyy-MM-dd"),
+        reason = plan.TaskType == MoveOut ? $"Quá hạn chưa trả kho · {reason}" : reason
+    };
 
     /* =====================================================================
        5a. KHỐI LƯỢNG VIỆC TỪNG NHÂN VIÊN TRONG NGÀY (để Manager chọn khi đổi người)
@@ -556,19 +542,20 @@ public class ManagerToolsService : IManagerToolsService
         var (_, fail) = await AuthorizeAsync(userEmail, facilityId, cancellationToken);
         if (fail is not null) return fail;
 
-        var day = (date ?? DateTime.Today).Date;
+        var day = (date ?? BusinessClock.Today).Date;
         var staff = await _repo.GetActiveStaffAsync(facilityId, cancellationToken);
         var staffIds = staff.Select(s => s.UserID).ToList();
-        var tasks = await _repo.GetStaffTasksInRangeAsync(staffIds, WeekStart(day), WeekStart(day).AddDays(6), cancellationToken);
-        var slots = tasks.Select(t => new Slot(t.AssignedStaffID, t.ScheduledDate!.Value.Date, t.ScheduledTime, SlotKey(t))).ToList();
+        var weekStart = StaffAssignmentPolicy.WeekStart(day);
+        var tasks = await _repo.GetStaffTasksInRangeAsync(staffIds, weekStart, weekStart.AddDays(6), cancellationToken);
+        var slots = StaffAssignmentPolicy.ToSlots(tasks);
 
         var data = staff.Select(s => new
         {
             userId = s.UserID,
             fullName = s.FullName,
             email = s.Email,
-            dayCount = DayLoad(slots, s.UserID, day),
-            weekCount = WeekLoad(slots, s.UserID, day),
+            dayCount = StaffAssignmentPolicy.DayLoad(slots, s.UserID, day),
+            weekCount = StaffAssignmentPolicy.WeekLoad(slots, s.UserID, day),
             tasks = tasks
                 .Where(t => t.AssignedStaffID == s.UserID && t.ScheduledDate!.Value.Date == day)
                 .OrderBy(t => t.ScheduledTime)
@@ -614,7 +601,7 @@ public class ManagerToolsService : IManagerToolsService
                 return Fail(400, "Giờ hẹn không hợp lệ (định dạng HH:mm).");
             newTime = parsed;
         }
-        var today = DateTime.Today;
+        var today = BusinessClock.Today;
         if (request.ScheduledDate.HasValue && request.ScheduledDate.Value.Date < today)
             return Fail(400, "Ngày hẹn không được ở quá khứ.");
 
