@@ -107,6 +107,12 @@ function InspectForm({ item, catalog, refundDays, onDone, onCancel }) {
           <option value="Maintenance">Cần bảo trì / sửa chữa</option>
         </select>
       </label>
+      {unitStatus === 'Maintenance' && (
+        <div className="st-alert st-warn">
+          Hệ thống sẽ ghi báo cáo sự cố gửi Facility Manager.
+          {item.units.filter(u => u.nextBooking).map(u => ` Kho ${u.unitNumber} đã có đơn ${u.nextBooking.reservationCode} giữ từ ${fmtDay(u.nextBooking.startDate)} - khách này sẽ không nhận được kho cho tới khi Manager đổi kho hoặc kho sửa xong.`).join('')}
+        </div>
+      )}
 
       <div className="sr-summary">
         <div><span>Tiền cọc khách đã đóng</span><b>{money(deposit)}</b></div>
@@ -188,12 +194,13 @@ export default function StaffReturns({ staff }) {
                   {item.customerName}
                   {item.assignedToMe ? <span className="sr-mine">Giao cho bạn</span> : <span className="sr-other">NV {req.staffName}</span>}
                 </h3>
-                <p>{item.contractNumber} · {item.customerPhone || item.customerEmail} · hẹn trả {fmtDay(item.scheduledDate)} · hết hạn {fmtDay(item.endDate)}</p>
+                <p>{item.contractNumber} · {item.customerPhone || item.customerEmail} · hẹn trả {item.scheduledTime ? `${item.scheduledTime} ` : ''}{fmtDay(item.scheduledDate)} · hết hạn {fmtDay(item.endDate)}</p>
+                {req.overdue && <span className="sr-other">Quá hạn · hệ thống tự lên lịch, liên hệ khách</span>}
               </div>
               <div><small>Tiền cọc đang giữ</small><br /><strong>{money(item.depositPaid)}</strong></div>
             </div>
             <div className="sr-units">
-              {item.units.map(u => <span key={u.unitNumber}><b>{u.unitNumber}</b> · {u.type} · {u.size}{u.access ? ` · ${u.access}` : ''}</span>)}
+              {item.units.map(u => <span key={u.unitNumber}><b>{u.unitNumber}</b> · {u.type} · {u.size}{u.access ? ` · ${u.access}` : ''}{u.nextBooking ? ` · đã có đơn ${u.nextBooking.reservationCode} từ ${fmtDay(u.nextBooking.startDate)}` : ''}</span>)}
             </div>
             {req.notes && <p className="ur-help" style={{ whiteSpace: 'pre-line' }}>{req.notes}</p>}
 

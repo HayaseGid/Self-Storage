@@ -69,7 +69,7 @@ function ReturnProgress({ item, onChanged }) {
   const req = item.request
   const stage = returnStage(req)
   const steps = [
-    ['Báo trả kho', `Hẹn ngày ${fmtDay(req.scheduledDate)}${req.staffName ? ` · NV ${req.staffName}` : ''}`],
+    ['Báo trả kho', `Hẹn ${req.scheduledTime ? `${req.scheduledTime} ` : ''}ngày ${fmtDay(req.scheduledDate)}${req.staffName ? ` · NV ${req.staffName}` : ''}`],
     ['Nhận lại & kiểm tra kho', stage === 'scheduled' ? 'Chờ đến ngày hẹn' : stage === 'inspecting' ? 'Nhân viên đang kiểm tra' : (req.conditionResult === 'Damaged' ? 'Có vấn đề' : 'Không có vấn đề')],
     ['Quyết toán tiền cọc', stage === 'owed' ? `Cần đóng thêm ${money(req.amountOwed)}` : ['scheduled', 'inspecting'].includes(stage) ? 'Sau khi kiểm tra' : Number(req.refundAmount) > 0 ? `Hoàn ${money(req.refundAmount)}` : 'Cọc đã bù hết phí'],
     ['Hoàn cọc', Number(req.refundAmount) > 0
@@ -135,12 +135,15 @@ function ReturnProgress({ item, onChanged }) {
           </table>
         </div>
       )}
+      {stage === 'scheduled' && req.overdue && (
+        <div className="auth-message error" role="alert">Hợp đồng đã hết hạn ngày {fmtDay(item.endDate)}. Cơ sở đã lên lịch thu hồi kho, nhân viên sẽ liên hệ bạn. Muốn đổi ngày giờ, vui lòng liên hệ cơ sở.</div>
+      )}
       {stage === 'scheduled' && (
-        <p className="ur-help">Vui lòng dọn hết đồ, vệ sinh kho và mang theo khóa / thẻ ra vào khi đến trả kho ngày <strong>{fmtDay(req.scheduledDate)}</strong>.</p>
+        <p className="ur-help">Vui lòng dọn hết đồ, vệ sinh kho và mang theo khóa / thẻ ra vào khi đến trả kho {req.scheduledTime ? <>lúc <strong>{req.scheduledTime}</strong> </> : ''}ngày <strong>{fmtDay(req.scheduledDate)}</strong>.</p>
       )}
 
       <div className="ur-actions">
-        {stage === 'scheduled' && <button type="button" className="dashboard-secondary-btn" disabled={busy} onClick={cancel}>Hủy lịch trả kho</button>}
+        {stage === 'scheduled' && req.canCancel && <button type="button" className="dashboard-secondary-btn" disabled={busy} onClick={cancel}>Hủy lịch trả kho</button>}
         {stage === 'owed' && <button type="button" className="dashboard-primary-btn" disabled={busy} onClick={pay}>{busy ? 'Đang xử lý...' : `Đóng ${money(req.amountOwed)}`}</button>}
       </div>
     </article>
@@ -167,6 +170,8 @@ export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
   const policies = usePolicies()
   const rr = policies.values?.renewal_return || {}
   const [date, setDate] = useState(toInput(item.minReturnDate))
+  const [time, setTime] = useState('')
+  const [slots, setSlots] = useState({ loading: false, list: [], error: '' })
   const [note, setNote] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -178,11 +183,27 @@ export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, busy])
 
+  // Chỉ hiện khung giờ còn nhân viên rảnh (backend tính bằng luật phân công chung)
+  useEffect(() => {
+    if (!date) { setSlots({ loading: false, list: [], error: '' }); setTime(''); return }
+    let cancelled = false
+    setSlots(current => ({ ...current, loading: true, error: '' }))
+    apiGet(`/api/unit-returns/${item.reservationId}/slots?date=${date}`)
+      .then(data => {
+        if (cancelled) return
+        const list = Array.isArray(data?.slots) ? data.slots : []
+        setSlots({ loading: false, list, error: '' })
+        setTime(current => (list.includes(current) ? current : list[0] || ''))
+      })
+      .catch(err => { if (!cancelled) { setSlots({ loading: false, list: [], error: err.message }); setTime('') } })
+    return () => { cancelled = true }
+  }, [date, item.reservationId])
+
   const early = date && toInput(item.endDate) > date
   const submit = async () => {
     setBusy(true); setError('')
     try {
-      const result = await apiPost('/api/unit-returns', { reservationId: item.reservationId, returnDate: date, note })
+      const result = await apiPost('/api/unit-returns', { reservationId: item.reservationId, returnDate: date, returnTime: time, note })
       onDone?.(result)
       onClose()
       await dialog.alert({ tone: 'success', title: 'Đã đặt lịch trả kho', message: result.message })
@@ -216,10 +237,20 @@ export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
             {early && ' Trả kho trước ngày hết hạn không được hoàn tiền thuê của những ngày còn lại.'}
           </p>
 
+          <label className="csf-label" htmlFor="ur-time">Giờ trả kho</label>
+          {slots.loading ? <p className="csf-hint">Đang tải khung giờ còn trống...</p>
+            : slots.error ? <p className="csf-hint" role="alert">{slots.error}</p>
+            : slots.list.length === 0 ? <p className="csf-hint" role="alert">Ngày này đã kín lịch nhân viên. Vui lòng chọn ngày khác.</p>
+            : (
+              <select id="ur-time" className="csf-input" value={time} onChange={e => setTime(e.target.value)}>
+                {slots.list.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
+
           <div className="ur-policy">
             <h4>Quy trình trả kho</h4>
             <ol>
-              <li>Đến cơ sở đúng ngày hẹn, nhân viên đã bàn giao kho cho bạn sẽ nhận lại và kiểm tra kho.</li>
+              <li>Đến cơ sở đúng ngày giờ hẹn, nhân viên được phân công (ưu tiên người đã bàn giao kho cho bạn) sẽ nhận lại và kiểm tra kho.</li>
               <li>{rr.returnRequirements || 'Lấy hết tài sản, vệ sinh kho, trả khóa / thẻ truy cập.'}</li>
               <li>Không có vấn đề: tiền cọc được hoàn sau <strong>{rules?.depositRefundDays ?? 7} ngày</strong>.</li>
               <li>Có hư hỏng / phát sinh: phí được trừ vào tiền cọc trước; nếu tiền cọc không đủ, bạn đóng thêm phần còn thiếu.</li>
@@ -228,7 +259,7 @@ export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
           </div>
 
           <label className="csf-label" htmlFor="ur-note">Ghi chú cho nhân viên (không bắt buộc)</label>
-          <textarea id="ur-note" className="csf-input ur-note" rows={2} maxLength={300} value={note} onChange={e => setNote(e.target.value)} placeholder="Ví dụ: tôi đến khoảng 15h, cần xe đẩy..." />
+          <textarea id="ur-note" className="csf-input ur-note" rows={2} maxLength={300} value={note} onChange={e => setNote(e.target.value)} placeholder="Ví dụ: cần xe đẩy, có 2 người phụ chuyển đồ..." />
 
           <label className={`csf-term ur-agree${agreed ? ' checked' : ''}`}>
             <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} />
@@ -241,7 +272,7 @@ export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
         <div className="csf-actions">
           <span className="csf-spacer" />
           <button type="button" className="dashboard-secondary-btn" onClick={onClose} disabled={busy}>Để sau</button>
-          <button type="button" className="dashboard-primary-btn" disabled={!agreed || !date || busy} onClick={submit}>{busy ? 'Đang gửi...' : `Đặt lịch trả kho ${date ? fmtDay(date) : ''}`}</button>
+          <button type="button" className="dashboard-primary-btn" disabled={!agreed || !date || !time || busy} onClick={submit}>{busy ? 'Đang gửi...' : `Đặt lịch trả kho ${time ? `${time} ` : ''}${date ? fmtDay(date) : ''}`}</button>
         </div>
       </div>
     </div>

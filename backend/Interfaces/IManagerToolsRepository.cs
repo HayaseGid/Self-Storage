@@ -44,6 +44,12 @@ public interface IManagerToolsRepository
     /// <summary>Đơn Paid / Confirmed tại cơ sở còn kho "Held" chưa có việc nhận kho (kèm ReservationUnits, HandoverTasks).</summary>
     Task<List<Reservation>> GetReservationsNeedingMoveInAsync(int facilityId, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Đơn đang thuê đã QUÁ HẠN hợp đồng (EndDate &lt; hôm nay), còn kho Active chưa có việc trả kho,
+    /// và hợp đồng KHÔNG được gia hạn (kỳ gia hạn tiếp nối thì không phải quá hạn).
+    /// </summary>
+    Task<List<Reservation>> GetOverdueReservationsWithoutMoveOutAsync(int facilityId, DateTime today, CancellationToken cancellationToken);
+
     /// <summary>Báo cáo kiểm tra kho (Inspection đã hoàn thành, có kết quả) tại cơ sở, mới nhất trước.</summary>
     Task<List<HandoverTask>> GetUnitReportsAsync(int facilityId, CancellationToken cancellationToken);
 
