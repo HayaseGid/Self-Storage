@@ -149,7 +149,7 @@ export default function ContractCard({
             ? <p><strong>Tiền thuê quá hạn: {money(rental.rentOverdue)}.</strong> Vui lòng đóng sớm để tránh phí trễ hạn.</p>
             : rental.startRentPaid
               ? <p>✓ Đã đóng tiền thuê {rental.paymentPlan === 'Upfront' ? 'toàn bộ kỳ thuê' : 'tháng đầu'} ({money(rental.rentDueAtStart)}).</p>
-              : <p>Ngày nhận kho cần đóng <strong>{money(rental.rentDueAtStart)}</strong> tiền thuê ({rental.paymentPlan === 'Upfront' ? 'toàn bộ kỳ thuê' : 'tháng đầu'}). Chưa đóng thì nhân viên chưa bàn giao kho.</p>}
+              : <p>{rental.status === 'Handed Over' ? 'Bạn đã nhận kho, vui lòng đóng' : 'Sau khi nhận kho, bạn đóng'} <strong>{money(rental.rentDueAtStart)}</strong> tiền thuê ({rental.paymentPlan === 'Upfront' ? 'toàn bộ kỳ thuê' : 'tháng đầu'}), hạn là ngày bắt đầu thuê.</p>}
           {Number(rental.rentPayableNow) > 0 && onPayRent
             ? <button type="button" className="dashboard-primary-btn" disabled={payingRent} onClick={onPayRent}>{payingRent ? 'Đang xử lý...' : `Đóng ${money(rental.rentPayableNow)} tiền thuê`}</button>
             : rental.rentNote && <p className="cc-sub">{rental.rentNote}</p>}

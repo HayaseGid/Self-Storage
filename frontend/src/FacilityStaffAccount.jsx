@@ -142,9 +142,6 @@ function checkHandover(res, staff, db) {
     { key: "payment", label: "Hệ thống đã xác nhận tiền cọc (không dựa vào thông báo từ trình duyệt)", ok: res.paymentStatus === "PAID" },
     { key: "signed", label: "Khách đã ký hợp đồng online", ok: res.contractStatus === "Signed" },
     { key: "date", label: `Đang trong kỳ thuê (từ ${fmtDate(res.startDate)} đến ${fmtDate(endOf(res))})`, ok: !!res.startDate && res.startDate <= today && today <= endOf(res) },
-    { key: "rent", label: res.startRentPaid
-        ? `Khách đã đóng tiền thuê ${res.paymentPlan === "Upfront" ? "toàn bộ kỳ thuê (trả 1 lần)" : "tháng đầu (trả theo tháng)"}`
-        : `Khách đã đóng tiền thuê ${res.paymentPlan === "Upfront" ? "toàn bộ kỳ thuê" : "tháng đầu"} (còn ${fmtMoney(res.startRentUnpaid)}, khách đóng online)`, ok: res.startRentPaid },
     { key: "assigned", label: "Bạn là người phụ trách đơn này (được hệ thống / Manager phân công)", ok: isAssignedToMe(db, res) },
     { key: "unit", label: notReadyUnits.length ? `Kho sẵn sàng bàn giao (chưa sẵn sàng: ${notReadyUnits.join(", ")})` : `Kho sẵn sàng bàn giao (${units.length} kho)`, ok: units.length > 0 && notReadyUnits.length === 0 },
     { key: "clash", label: "Kho không trùng kỳ thuê với đặt chỗ khác", ok: findClashes(db, res).length === 0 },
@@ -328,7 +325,7 @@ function ReservationDetail({ res, staff, db, actions }) {
         <Info k="Lịch hẹn">{fmtDate(res.appointmentDate)} · {res.appointmentTime}</Info>
         <Info k="Tiền cọc">{fmtMoney(res.deposit)} <Badge map={PAY_STATUS} value={res.paymentStatus} /></Info>
         <Info k="Tổng tiền thuê">{fmtMoney(res.rentalFee)}</Info>
-        <Info k="Hình thức trả">{res.paymentPlan === "Upfront" ? "Trả 1 lần" : "Trả theo tháng"} · {res.startRentPaid ? "đã đóng tiền thuê nhận kho" : `nhận kho cần ${fmtMoney(res.startRentUnpaid)}`}</Info>
+        <Info k="Hình thức trả">{res.paymentPlan === "Upfront" ? "Trả 1 lần" : "Trả theo tháng"} · {res.startRentPaid ? "đã đóng tiền thuê đầu kỳ" : `sau khi nhận kho khách đóng online ${fmtMoney(res.startRentUnpaid)} (${res.paymentPlan === "Upfront" ? "toàn bộ kỳ thuê" : "tháng đầu"})`}</Info>
         {res.paymentTxn && <Info k="Mã giao dịch">{res.paymentTxn}</Info>}
       </div>
 

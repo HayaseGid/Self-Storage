@@ -29,6 +29,8 @@ namespace SelfStorageAPI.Controllers;
  *     trả 1 lần -> toàn bộ tiền thuê kỳ mới; trả theo tháng -> tháng đầu kỳ mới (các tháng sau trả hằng tháng);
  *     cộng phần cọc bổ sung nếu giá tăng. Tiền cọc kỳ cũ được chuyển sang kỳ mới (RentPaymentRules / ContractRenewalFinalizer).
  *   - Không gia hạn khi còn nợ tiền thuê / phí quá hạn (chính sách requireNoOverdue).
+ *   - Chỉ gia hạn trong cửa sổ: từ (hạn chót - 30 ngày) tới hạn chót; phải đóng đủ tiền thuê đã đến hạn;
+ *     hợp đồng đã báo trả kho thì không gia hạn (muốn thuê tiếp thì hủy lịch trả kho trước).
  *   - Thanh toán xong (ContractRenewalFinalizer): đơn được xác nhận + tạo hợp đồng (phụ lục gia hạn) + bàn giao ngay
  *     (khách đang giữ kho, không cần Staff bàn giao lại). Khách ký phụ lục gia hạn online ngay sau đó.
  *   - Khi kỳ cũ kết thúc: kỳ cũ được đóng (Completed), hợp đồng cũ chuyển "Renewed",
@@ -48,6 +50,10 @@ public sealed class ContractRenewalsController(
     private static readonly string[] RenewableContractStatuses = ["Active", "Expiring Soon"];
     // Thời gian giữ yêu cầu gia hạn chờ thanh toán (giống giữ kho khi đặt cọc).
     private const int PaymentHoldMinutes = 15;
+    // Cửa sổ gia hạn: mở từ (hạn chót - RenewalWindowDays) tới hạn chót (= ngày hết hạn - renewalNoticeDays).
+    // Khớp mục "Gia hạn hợp đồng" trên trang khách (chỉ hiện hợp đồng còn <= renewalNoticeDays + 30 ngày).
+    // Không cho gia hạn ngay sau khi vừa nhận kho.
+    private const int RenewalWindowDays = 30;
 
     public sealed record RenewContractRequest(int ReservationId, int Months, string? PaymentPlan, decimal? ExpectedAmount);
 
@@ -132,6 +138,7 @@ public sealed class ContractRenewalsController(
                 : parents.FirstOrDefault(c => c.ContractID == contract.RenewedFromContractID);
             var (eligible, reason) = CheckEligibility(r, renewedBy != null, rules, today);
             var deadline = r.EndDate.Date.AddDays(-rules.NoticeDays);
+            var opensOn = deadline.AddDays(-RenewalWindowDays);
             var pending = renewedBy != null ? null : pendingRenewals.FirstOrDefault(p =>
                 p.FacilityID == r.FacilityID && p.StartDate.Date == r.EndDate.Date.AddDays(1));
 
@@ -150,6 +157,7 @@ public sealed class ContractRenewalsController(
                 paymentPlan = r.PaymentPlan, // hình thức trả hiện tại -> chọn sẵn khi gia hạn
                 daysLeft = (r.EndDate.Date - today).Days,
                 renewDeadline = deadline,
+                renewOpensOn = opensOn,
                 eligible,
                 reason,
                 renewedBy = renewedBy == null ? null : new
@@ -726,6 +734,13 @@ public sealed class ContractRenewalsController(
         var deadline = r.EndDate.Date.AddDays(-rules.NoticeDays);
         if (today > deadline)
             return (false, $"Theo chính sách, cần gia hạn trước ngày hết hạn ít nhất {rules.NoticeDays} ngày (hạn chót {deadline:dd/MM/yyyy}). Vui lòng liên hệ cơ sở.");
+        var opensOn = deadline.AddDays(-RenewalWindowDays);
+        if (today < opensOn)
+            return (false, $"Chưa tới thời gian gia hạn. Hợp đồng này gia hạn được từ {opensOn:dd/MM/yyyy} đến {deadline:dd/MM/yyyy}.");
+        if (r.HandoverTasks.Any(t => t.TaskType == "Move Out" && t.Status != "Cancelled"))
+            return (false, "Bạn đã báo trả kho cho hợp đồng này nên không gia hạn được. Muốn thuê tiếp, hãy hủy lịch trả kho trước.");
+        if (r.Charges.Any(c => RentPaymentRules.IsRent(c) && c.Status == "Unpaid" && c.DueDate.Date <= today))
+            return (false, "Bạn còn tiền thuê đã đến hạn chưa đóng. Vui lòng đóng tiền thuê trước khi gia hạn.");
         if (rules.RequireNoOverdue && r.Charges.Any(c =>
                 (c.ChargeType == "LateFee" || c.ChargeType == "ExtraFee") &&
                 c.Status == "Unpaid" && c.DueDate.Date < today))
@@ -814,6 +829,7 @@ public sealed class ContractRenewalsController(
             .Include(r => r.Facility)
             .Include(r => r.Contract)
             .Include(r => r.Charges)
+            .Include(r => r.HandoverTasks)
             .Include(r => r.ReservationUnits).ThenInclude(ru => ru.Unit).ThenInclude(u => u.RentalRate)
             .Include(r => r.ReservationUnits).ThenInclude(ru => ru.Unit).ThenInclude(u => u.UnitType)
             .Include(r => r.ReservationUnits).ThenInclude(ru => ru.Unit).ThenInclude(u => u.UnitSize)

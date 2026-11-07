@@ -16,11 +16,11 @@ namespace SelfStorageAPI.Services;
 ///   3. Hệ thống đã ghi nhận thanh toán: có Payment thu tiền Completed và mọi khoản cọc đã Paid.
 ///   4. Đã có hợp đồng và khách đã ký hợp đồng online.
 ///   5. Hôm nay (giờ VN) nằm trong kỳ thuê: không bàn giao trước ngày bắt đầu, không bàn giao khi kỳ thuê đã hết.
-///   6. Đã đóng tiền thuê phải trả lúc nhận kho (RentPaymentRules): trả 1 lần = toàn bộ, trả theo tháng = tháng đầu.
-///   7. Người thao tác là NGƯỜI ĐƯỢC PHÂN CÔNG: mọi kho Held của đơn có việc "Move In" đang mở giao cho chính người này.
+///   6. Người thao tác là NGƯỜI ĐƯỢC PHÂN CÔNG: mọi kho Held của đơn có việc "Move In" đang mở giao cho chính người này.
 ///      Muốn đổi người thì Facility Manager đổi người phụ trách (PUT /api/manager-tools/reservations/{id}/owner).
-///   8. Kho sẵn sàng: không bị đơn khác đang dùng, không ở trạng thái Đang thuê / Chờ kiểm tra / Bảo trì / Ngừng hoạt động.
-///   9. Thông tin truy cập hợp lệ (loại khóa đúng danh mục, mã không rỗng).
+///   7. Kho sẵn sàng: không bị đơn khác đang dùng, không ở trạng thái Đang thuê / Chờ kiểm tra / Bảo trì / Ngừng hoạt động.
+///   8. Thông tin truy cập hợp lệ (loại khóa đúng danh mục, mã không rỗng).
+/// Tiền thuê KHÔNG phải điều kiện bàn giao: khách đóng tiền thuê SAU khi nhận kho (RentPaymentRules).
 /// Bàn giao xong: việc Move In chuyển Completed (GIỮ NGUYÊN người được giao), kho In Use, đơn Handed Over, cấp quyền truy cập.
 /// </summary>
 public class HandoverService : IHandoverService
@@ -45,7 +45,7 @@ public class HandoverService : IHandoverService
         if (string.IsNullOrWhiteSpace(staffEmail))
             return Fail(401, "Phiên đăng nhập đã hết. Vui lòng đăng nhập lại.");
 
-        // 9. Thông tin truy cập: kiểm tra trước, không cần chạm DB
+        // 8. Thông tin truy cập: kiểm tra trước, không cần chạm DB
         var accessType = ValidAccessTypes.FirstOrDefault(t => string.Equals(t, request.AccessType?.Trim(), StringComparison.OrdinalIgnoreCase));
         if (accessType is null)
             return Fail(400, "Loại quyền truy cập không hợp lệ (chỉ Smart Lock, PIN Code, Key, Access Card, QR).");
@@ -102,16 +102,7 @@ public class HandoverService : IHandoverService
             if (today > reservation.EndDate.Date)
                 return Fail(409, $"Kỳ thuê đã kết thúc ngày {reservation.EndDate:dd/MM/yyyy}. Không thể bàn giao, báo Facility Manager xử lý.");
 
-            // 6. Đã đóng tiền thuê phải trả lúc nhận kho
-            if (!RentPaymentRules.IsStartRentPaid(reservation))
-            {
-                var due = RentPaymentRules.DueAtStart(reservation).Where(c => c.Status == "Unpaid").Sum(c => c.Amount);
-                return Fail(409, reservation.PaymentPlan == PaymentPlan.Upfront
-                    ? $"Khách chọn trả 1 lần nhưng chưa đóng toàn bộ tiền thuê (còn {due:N0}đ). Khách đóng online xong mới bàn giao."
-                    : $"Khách chưa đóng tiền thuê tháng đầu ({due:N0}đ). Khách đóng online xong mới bàn giao.");
-            }
-
-            // 7. Đúng người được phân công
+            // 6. Đúng người được phân công
             var openMoveIns = reservation.HandoverTasks
                 .Where(t => t.TaskType == MoveIn && (t.Status == "Scheduled" || t.Status == "In Progress"))
                 .ToList();
@@ -129,7 +120,7 @@ public class HandoverService : IHandoverService
             if (others.Count > 0)
                 return Fail(403, $"Đơn này được phân công cho {string.Join(", ", others)}. Bạn không được bàn giao thay; nếu cần đổi người, báo Facility Manager.");
 
-            // 8. Kho sẵn sàng
+            // 7. Kho sẵn sàng
             var notReady = heldUnits
                 .Where(ru => !HandoverReadyUnitStatuses.Contains(ru.Unit.Status))
                 .Select(ru => $"{ru.Unit.UnitNumber} ({DescribeUnitStatus(ru.Unit.Status)})")

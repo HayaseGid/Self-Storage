@@ -152,7 +152,7 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
         <h2>Gia hạn hợp đồng</h2>
         {rules && (
           <p>
-            Gia hạn trước ngày hết hạn ít nhất <strong>{rules.renewalNoticeDays} ngày</strong> · kỳ gia hạn {rules.minRenewalMonths}–{rules.maxRenewalMonths} tháng
+            Gia hạn trong khoảng <strong>{Number(rules.renewalNoticeDays) + 30} đến {rules.renewalNoticeDays} ngày</strong> trước ngày hết hạn · kỳ gia hạn {rules.minRenewalMonths}–{rules.maxRenewalMonths} tháng
             {rules.requireNoOverdue ? ' · không còn khoản phí quá hạn' : ''}. Khi gia hạn bạn trả trước tiền thuê tháng đầu của kỳ mới, tiền cọc được chuyển sang kỳ mới.
           </p>
         )}
@@ -188,7 +188,7 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
               <h3>Hợp đồng {item.contractNumber}</h3>
               <p>
                 {item.facility} · hết hạn <strong>{fmtIsoDate(item.endDate)}</strong>
-                {item.eligible ? <> · gia hạn trước <strong>{fmtIsoDate(item.renewDeadline)}</strong></> : null}
+                {item.eligible ? <> · gia hạn từ {item.renewOpensOn ? fmtIsoDate(item.renewOpensOn) : 'nay'} đến <strong>{fmtIsoDate(item.renewDeadline)}</strong></> : null}
               </p>
               {!item.eligible && item.reason && <p className="rn-reason">{item.reason}</p>}
               <span className="go-contract">Xem hợp đồng ↓</span>

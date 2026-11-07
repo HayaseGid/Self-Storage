@@ -586,7 +586,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const customer = getCurrentUser()
   const customerName = customer?.name
 
-  /* Đóng tiền thuê: ngày nhận kho (toàn bộ hoặc tháng đầu) / từng kỳ khi đang thuê.
+  /* Đóng tiền thuê: sau khi nhận kho (toàn bộ hoặc tháng đầu) / từng kỳ khi đang thuê.
      Backend quyết định đóng được bao nhiêu (GET/POST /api/rent-payments, POST /api/vnpay/create). */
   const [payingRent, setPayingRent] = useState(null)
   const payRent = async rental => {
@@ -968,6 +968,9 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
                 <span className="sign-badge done">Đã ký · Chờ nhận kho</span>
                 <h3>{group.title}</h3>
                 <p>Đến cơ sở vào ngày {group.rentals[0].startDate} để nhận kho, mang theo CCCD.</p>
+                {group.rentals[0].paymentPlan && Number(group.rentals[0].rentDueAtStart) > 0 && (
+                  <p>Sau khi nhận kho, bạn đóng {new Intl.NumberFormat('vi-VN').format(Number(group.rentals[0].rentDueAtStart))}đ tiền thuê ({group.rentals[0].paymentPlan === 'Upfront' ? 'trả 1 lần, toàn bộ kỳ thuê' : 'trả theo tháng, tháng đầu'}) ngay tại thẻ hợp đồng.</p>
+                )}
                 <div className="sign-units">{group.rentals.flatMap(r => r.units || []).map(u => <span key={u.number}>{u.number}</span>)}</div>
               </div>
               <div className="sign-actions">
