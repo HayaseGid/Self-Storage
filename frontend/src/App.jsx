@@ -2504,7 +2504,10 @@ function CustomerPage() {
         if (!Array.isArray(data)) {
           throw new Error('Backend trả về danh sách đặt chỗ không hợp lệ.')
         }
-        setReservations(data.map(mapCustomerReservation))
+        // Ẩn đơn bỏ dở ở bước đặt cọc: hết hạn giữ kho, hoặc đã hủy khi chưa cọc (không hợp đồng, không hoàn tiền)
+        const abandoned = r => r.status === 'Expired' ||
+          (r.status === 'Cancelled' && !r.contractId && !(Number(r.refundAmount) > 0))
+        setReservations(data.filter(r => !abandoned(r)).map(mapCustomerReservation))
       })
       .catch(loadError => {
         if (silent) return // tải lại ngầm (vd sau khi gia hạn) lỗi thì giữ dữ liệu cũ

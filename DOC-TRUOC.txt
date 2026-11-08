@@ -1,5 +1,16 @@
-KHÓA CHẶT KHUNG GIÁ / NHÓM SIZE (Business Operations) – chép đè vào project.
-  backend/Controllers/PriceBandRulesController.cs   (MỚI, chỉ thêm – kiểm tra rồi mới gọi lại service cũ)
-  frontend/src/priceBandRules.js                    (MỚI – cùng quy tắc, báo lỗi ngay khi nhập)
-  frontend/src/BusinessPriceBands.jsx / .css         (SỬA)
-Sau khi chép: dừng backend rồi dotnet run lại. Không cần chạy SQL.
+HỦY ĐẶT KHO Ở BƯỚC THANH TOÁN CỌC (làm trên bản main-11-Payment đã dán các gói trước)
+Chỉ sửa frontend, KHÔNG sửa backend/database (dùng API hủy đơn có sẵn: POST /api/reservation-cancellations/{id}).
+
+1. Trang "Thanh toán tiền cọc" có nút "Hủy đặt, quay lại giỏ hàng": hủy đơn giữ kho, trả kho về giỏ.
+2. Rời trang thanh toán cọc bằng menu / nút quay lại mà chưa trả: tự hủy đơn giữ kho, trả kho về giỏ.
+3. Bấm "Hủy giao dịch" trên VNPay (mã 24): trang kết quả tự hủy đơn giữ kho, trả kho về giỏ.
+   Thanh toán lỗi vì lý do khác (thẻ lỗi...): vẫn giữ kho để "Thanh toán lại", có thêm nút "Hủy đặt kho".
+4. Trang khách KHÔNG hiện các đơn bỏ dở: hết hạn giữ kho, hoặc đã hủy khi chưa cọc.
+   (Đóng hẳn tab giữa chừng thì đơn tự hết hạn sau thời gian giữ kho rồi cũng bị ẩn.)
+
+CÁCH DÁN: chép đè 4 file vào frontend/src, tải lại trang (không cần chạy lại backend).
+frontend/src/cart.js              - thêm hàm trả kho về giỏ + hủy đơn giữ kho (chỉ THÊM, không sửa hàm cũ)
+frontend/src/CartPage.jsx         - nút hủy + tự hủy khi rời trang
+frontend/src/PaymentResultPage.jsx - xử lý khách hủy trên VNPay
+frontend/src/App.jsx              - ẩn đơn bỏ dở trong trang khách
+(4 file đều là file của nhóm -> báo bạn làm trang khách)
