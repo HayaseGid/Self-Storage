@@ -684,6 +684,10 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
   const l = Number(length)
   const area = w > 0 && l > 0 ? w * l : 0
   const areaOk = area > 0 && area * h >= cat.minVolume && area * h <= cat.maxVolume
+  // Diện tích lớn nhất của các nhóm size chuẩn: lớn hơn -> không tạo size chuẩn, nhận theo đơn đặt riêng (order)
+  const maxStdArea = Math.max(...categories.map(c => c.maxVolume / (c.heightM || 2.5)))
+  const oversize = area > maxStdArea
+  const lengthShort = w > 0 && l > 0 && l < w
 
   const suggested = useMemo(() => {
     const max = sizes
@@ -705,6 +709,11 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
     }
     if (!dimsLocked) {
       if (!(w >= 0.5 && w <= 50) || !(l >= 0.5 && l <= 50)) return setError('Chiều rộng và chiều dài phải từ 0,5 đến 50 m.')
+      if (lengthShort) return setError(`Chiều dài (${fpFmt(l)} m) phải lớn hơn hoặc bằng chiều rộng (${fpFmt(w)} m). Hãy đổi chỗ hai số.`)
+      if (oversize) {
+        return setError(`Diện tích ${fpFmt(area)} m² lớn hơn mọi nhóm size chuẩn (tối đa ${fpFmt(maxStdArea)} m²). ` +
+          'Kho cỡ này không tạo thành size chuẩn mà nhận theo đơn đặt riêng (order): khách liên hệ cơ sở để báo giá.')
+      }
       if (!areaOk) {
         return setError(`Diện tích ${fpFmt(area)} m² không thuộc nhóm ${cat.name}. ` +
           `Diện tích phải từ ${fpFmt(minArea)} đến ${fpFmt(maxArea)} m².`)
@@ -775,20 +784,22 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
 
           <div className="fm-form-row">
             <label>
-              Rộng (m)
-              <input type="number" min="0.5" max="50" step="0.01" value={width} readOnly={dimsLocked}
-                onChange={(e) => setWidth(e.target.value)} required />
-            </label>
-            <label>
               Dài (m)
               <input type="number" min="0.5" max="50" step="0.01" value={length} readOnly={dimsLocked}
                 onChange={(e) => setLength(e.target.value)} required />
             </label>
+            <label>
+              Rộng (m)
+              <input type="number" min="0.5" max="50" step="0.01" value={width} readOnly={dimsLocked}
+                onChange={(e) => setWidth(e.target.value)} required />
+            </label>
           </div>
 
-          <div className={`fp-calc ${area > 0 && !areaOk && !dimsLocked ? 'bad' : ''}`}>
+          <div className={`fp-calc ${area > 0 && (!areaOk || lengthShort) && !dimsLocked ? 'bad' : ''}`}>
             <span>Diện tích <strong>{fpFmt(area)} m²</strong></span>
-            <small>Nhóm {cat.name}: diện tích từ {fpFmt(minArea)} đến {fpFmt(maxArea)} m².</small>
+            <small>Nhóm {cat.name}: diện tích từ {fpFmt(minArea)} đến {fpFmt(maxArea)} m². Chiều dài phải ≥ chiều rộng.</small>
+            {!dimsLocked && lengthShort && <small>⚠ Chiều dài đang nhỏ hơn chiều rộng, hãy đổi chỗ hai số.</small>}
+            {!dimsLocked && oversize && <small>⚠ Lớn hơn mọi nhóm size chuẩn (tối đa {fpFmt(maxStdArea)} m²): nhận theo đơn đặt riêng, không tạo size.</small>}
           </div>
 
           <label>

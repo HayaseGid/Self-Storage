@@ -475,6 +475,12 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                       </button>
                     ))}
                   </div>
+                  {selected.length >= 2 && (
+                    <p className="cart-note" role="note" style={{ background: '#fff7e0', border: '1px solid #f2d27a', borderRadius: 10, padding: '10px 12px' }}>
+                      ⓘ Bạn đang đặt <strong>{selected.length} kho</strong> cùng lúc: tất cả các kho trong lần đặt này dùng <strong>chung một hình thức trả tiền thuê ({planLabel})</strong>.
+                      Muốn kho trả theo tháng, kho trả 1 lần thì hãy đặt riêng từng lần.
+                    </p>
+                  )}
                   <p className="cart-note small">Đặt kho chỉ đóng tiền cọc. Tiền thuê đóng online sau khi nhân viên bàn giao kho.</p>
                 </section>
               )}
@@ -485,13 +491,16 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
               <p className="cart-summary-facility">{activeGroup ? activeGroup.name : 'Chưa chọn cơ sở'}</p>
               <dl>
                 <div><dt>Số kho</dt><dd>{selected.length}{selected.length > CHECKOUT_LIMIT ? ` (tối đa ${CHECKOUT_LIMIT})` : ''}</dd></div>
-                <div><dt>Tiền thuê / tháng{cartQuote.discountPercent ? ` (đã giảm ${cartQuote.discountPercent}%)` : ''}</dt><dd>{money(monthlyTotal)}</dd></div>
                 <div><dt>Thời hạn</dt><dd>{months} tháng</dd></div>
-                <div><dt>Tổng tiền thuê</dt><dd>{money(rentTotal)}</dd></div>
-                {cartQuote.saving > 0 && <div className="cart-sum-saving"><dt>Tiết kiệm nhờ gói {months} tháng</dt><dd>−{money(cartQuote.saving)}</dd></div>}
-                <div className="cart-sum-deposit"><dt>Tiền cọc ({depositMonths} tháng / kho)</dt><dd>{money(depositTotal)}</dd></div>
                 <div><dt>Hình thức trả</dt><dd>{planLabel}</dd></div>
+                <div><dt>Giá thuê / tháng{selected.length > 1 ? ' (tất cả kho)' : ''}</dt><dd>{money(cartQuote.monthlyBase ?? monthlyTotal)}</dd></div>
+                {cartQuote.saving > 0 && <div className="cart-sum-saving"><dt>Tiết kiệm nhờ gói {months} tháng</dt><dd>−{money(cartQuote.saving)}</dd></div>}
+                <div><dt>Tổng tiền thuê ({money(monthlyTotal)} × {months} tháng)</dt><dd>{money(rentTotal)}</dd></div>
                 <div><dt>Đóng sau khi nhận kho</dt><dd>{money(rentAtHandover)}</dd></div>
+                <div className="cart-sum-deposit"><dt>Tiền cọc ({depositMonths} tháng / kho)</dt><dd>{money(depositTotal)}</dd></div>
+                <div style={{ borderTop: '1px solid rgba(0,0,0,.12)', paddingTop: 10, marginTop: 4, fontWeight: 800, fontSize: '1.05em' }}>
+                  <dt>Cần thanh toán khi đặt kho</dt><dd>{money(depositTotal)}</dd>
+                </div>
               </dl>
               <p className="cart-note">Thanh toán ngay: <strong>tiền cọc</strong>. Tiền thuê đóng sau khi nhận kho ({planLabel.toLowerCase()}).</p>
               <button type="button" className="dashboard-primary-btn full" disabled={submitting || !selected.length} onClick={checkout}>

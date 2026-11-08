@@ -713,6 +713,12 @@ function FacilityDetailPage({ facility }) {
             onOpenDetail={unit => navigate(getUnitPath(facility, unit))}
             onBook={unit => navigate(getBookingPath(facility, unit))}
           />
+          <div className="cart-note" role="note" style={{ margin: '18px 0', padding: '14px 16px', borderRadius: 12, background: '#eef5ff', border: '1px solid #c9dcf7' }}>
+            <strong>Cần kho lớn hơn các kho đang có, hoặc kích thước đặc biệt?</strong>{' '}
+            Kho quá lớn không bán sẵn mà nhận theo đơn đặt riêng: liên hệ cơ sở để được báo giá
+            {facilityPoint?.phone ? <> qua số <a href={`tel:${String(facilityPoint.phone).replace(/\s/g, '')}`}>{facilityPoint.phone}</a> hoặc</> : ''}{' '}
+            qua email <a href={`mailto:support@storespace.vn?subject=${encodeURIComponent(`Đặt kho theo yêu cầu - ${facility.name}`)}`}>support@storespace.vn</a>.
+          </div>
           <div className="units-heading">
             <div><div className="eyebrow">AVAILABLE UNITS</div><h2>Các kho tại {facility.name}</h2></div>
             <span>{filteredUnits.length} / {units.length} kho phù hợp</span>
@@ -1412,7 +1418,7 @@ function BookingPage({ facility, unit }) {
                     >
                       <span className="payment-mode-icon">↻</span>
                       <strong>Trả theo tháng</strong>
-                      <small>Ngày nhận kho đóng tiền tháng đầu, các tháng sau đóng trước ngày đầu mỗi kỳ.</small>
+                      <small>Sau khi nhận kho đóng tiền tháng đầu, các tháng sau đóng trước ngày đầu mỗi kỳ.</small>
                     </button>
 
                     <button
@@ -1448,8 +1454,8 @@ function BookingPage({ facility, unit }) {
                   <div className="price-divider" />
 
                   <div>
-                    <span>Tổng tiền thuê</span>
-                    <strong className="main-price">{formatPrice(totalRent)}</strong>
+                    <span>Tổng tiền thuê ({formatPrice(monthlyPrice)} × {totalMonths} tháng)</span>
+                    <strong>{formatPrice(totalRent)}</strong>
                   </div>
                   {priceQuote.discountPercent > 0 && (
                     <div className="discount-row">
@@ -1457,13 +1463,19 @@ function BookingPage({ facility, unit }) {
                       <strong>−{formatPrice(priceQuote.saving)}</strong>
                     </div>
                   )}
+                  <div>
+                    <span>Đóng sau khi nhận kho</span>
+                    <strong>{formatPrice(paymentMode === 'full' ? totalRent : (priceQuote.monthly ?? monthlyPrice))}{paymentMode === 'full' ? ' (cả kỳ)' : ' (tháng đầu)'}</strong>
+                  </div>
+
+                  <div className="price-divider" />
 
                   <div className="deposit-row">
                     <div>
-                      <span>Tiền cọc bắt buộc</span>
+                      <span>Cần thanh toán khi đặt kho: tiền cọc</span>
                       <small>{depositMonths} tháng tiền thuê · hoàn lại khi trả kho</small>
                     </div>
-                    <strong className="deposit-price">{formatPrice(deposit)}</strong>
+                    <strong className="deposit-price main-price">{formatPrice(deposit)}</strong>
                   </div>
                 </div>
 
@@ -1539,7 +1551,7 @@ function BookingPage({ facility, unit }) {
                       ]}
                       lines={[
                         ['Giá thuê / tháng', Number(booking.monthlyPrice || 0)],
-                        ['Tổng tiền thuê (trả theo hợp đồng)', Number(booking.totalRent || 0)],
+                        [`Tổng tiền thuê (${booking.durationMonths} tháng, đóng sau khi nhận kho)`, Number(booking.totalRent || 0)],
                         [`Tiền cọc (${depositMonths} tháng tiền thuê)`, Number(booking.deposit || 0)]
                       ]}
                       amount={booking.deposit}
