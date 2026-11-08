@@ -1087,7 +1087,7 @@ function BookingPage({ facility, unit }) {
         unitNumber: availableUnit.unitNumber,
         startDate: startDateValue,
         months: totalMonths,
-        // Khớp CK_Reservation_PaymentPlan: trả theo tháng / trả 1 lần (tiền thuê đóng ngày nhận kho)
+        // Khớp CK_Reservation_PaymentPlan: trả theo tháng / trả 1 lần (tiền thuê đóng sau khi nhận kho)
         paymentPlan: paymentMode === 'full' ? 'Upfront' : 'Monthly'
       })
       const reservationId = reservation.reservationId
@@ -1422,7 +1422,7 @@ function BookingPage({ facility, unit }) {
                     >
                       <span className="payment-mode-icon">✓</span>
                       <strong>Trả 1 lần</strong>
-                      <small>Ngày nhận kho đóng toàn bộ tiền thuê của cả kỳ thuê.</small>
+                      <small>Sau khi nhận kho đóng toàn bộ tiền thuê của cả kỳ thuê.</small>
                     </button>
                   </div>
                 </div>
@@ -2471,10 +2471,10 @@ function mapCustomerReservation(reservation) {
       ? 'Gia hạn · Chờ thanh toán'
       : renewalToSign
         ? 'Đang thuê · Chờ ký phụ lục gia hạn'
+        : status === 'Handed Over' && reservation.startRentPaid === false
+          ? 'Đang thuê · Cần đóng tiền thuê'
         : status === 'Confirmed' && reservation.contractStatus === 'Pending Signature'
       ? 'Đã cọc · Chờ ký hợp đồng'
-      : status === 'Confirmed' && reservation.contractStatus === 'Signed' && reservation.startRentPaid === false
-        ? 'Đã ký hợp đồng · Đóng tiền thuê ngày nhận kho'
       : status === 'Confirmed' && reservation.contractStatus === 'Signed'
         ? 'Đã ký hợp đồng · Chờ nhận kho'
         : statusLabels[status] || status

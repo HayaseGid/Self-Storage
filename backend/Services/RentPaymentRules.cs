@@ -8,10 +8,10 @@ namespace SelfStorageAPI.Services;
 /// điều kiện bàn giao, hủy đơn và hiển thị cho khách / nhân viên.
 ///
 ///   Đặt kho:     chỉ đóng TIỀN CỌC.
-///   Nhận kho:    Trả 1 lần (Upfront)  -> đóng TOÀN BỘ tiền thuê.
-///                Trả theo tháng       -> đóng tiền thuê THÁNG ĐẦU.
-///                Chỉ đóng được từ ngày bắt đầu thuê (ngày được bàn giao), đơn đã xác nhận.
-///                Chưa đóng đủ -> không bàn giao được (HandoverService).
+///   Nhận kho:    Staff bàn giao kho KHÔNG cần khách đóng tiền thuê trước (chỉ cần cọc + ký hợp đồng).
+///   Sau khi nhận kho (đơn Handed Over) mới đóng tiền thuê:
+///                Trả 1 lần (Upfront)  -> đóng TOÀN BỘ tiền thuê, hạn là ngày bắt đầu thuê.
+///                Trả theo tháng       -> đóng tiền thuê THÁNG ĐẦU, hạn là ngày bắt đầu thuê.
 ///   Đang thuê:   Trả theo tháng -> đóng từng kỳ, hạn là ngày đầu kỳ; được đóng trước tối đa 7 ngày.
 ///   Gia hạn:     khách chọn lại hình thức trả; đóng ngay lúc gia hạn: toàn bộ kỳ mới hoặc tháng đầu kỳ mới.
 /// Mỗi tháng của mỗi kho là một dòng Charge "Rent" (PeriodStart / PeriodEnd), đúng như lúc tạo đơn.
@@ -52,13 +52,6 @@ public static class RentPaymentRules
     {
         var unpaid = r.Charges.Where(c => IsRent(c) && c.Status == "Unpaid").ToList();
         if (unpaid.Count == 0) return unpaid;
-
-        if (r.Status == ReservationStatus.Confirmed)
-        {
-            // Ngày nhận kho: chỉ khi đã tới kỳ thuê
-            if (today.Date < r.StartDate.Date || today.Date > r.EndDate.Date) return new List<Charge>();
-            return DueAtStart(r).Where(c => c.Status == "Unpaid").ToList();
-        }
 
         if (r.Status == ReservationStatus.HandedOver)
         {
@@ -102,9 +95,8 @@ public static class RentPaymentRules
         if (PayableNow(r, today).Count > 0) return null;
         return r.Status switch
         {
-            ReservationStatus.PendingPayment or ReservationStatus.Paid => "Đặt cọc xong, tiền thuê đóng vào ngày nhận kho.",
-            ReservationStatus.Confirmed when today.Date < r.StartDate.Date => $"Tiền thuê đóng từ ngày nhận kho ({r.StartDate:dd/MM/yyyy}).",
-            ReservationStatus.Confirmed => "Kỳ thuê đã kết thúc, vui lòng liên hệ cơ sở.",
+            ReservationStatus.PendingPayment or ReservationStatus.Paid or ReservationStatus.Confirmed
+                => $"Tiền thuê đóng sau khi nhân viên bàn giao kho (từ ngày {r.StartDate:dd/MM/yyyy}).",
             ReservationStatus.HandedOver => $"Kỳ tiếp theo được đóng trước tối đa {PayAheadDays} ngày so với hạn.",
             _ => "Đơn không còn khoản tiền thuê cần đóng."
         };
