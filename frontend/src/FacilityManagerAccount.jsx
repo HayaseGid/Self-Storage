@@ -20,6 +20,7 @@ import ManagerPriceTable from './ManagerPriceTable'
 import { UnitTypeChip } from './unitTypes'
 import './unitTypes.css'
 import { ManagerReturnInspectionsTab } from './ReturnInspection' // [THÊM 14] xác nhận & khiếu nại kết quả kiểm kho
+import ManagerNav from './ManagerNav' // [THÊM] menu trái gom nhóm + số việc chờ
 
 /* Formatters */
 const fmtMoney = (n) => new Intl.NumberFormat('vi-VN').format(n || 0) + 'đ'
@@ -2762,35 +2763,13 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
           </div>
         </div>
 
-        <nav className="customer-nav">
-          <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
-            <span>⌂</span> Tổng quan & Báo cáo
-          </button>
-          <button className={activeTab === 'units' ? 'active' : ''} onClick={() => setActiveTab('units')}>
-            <span>▣</span> Quản lý kho cơ sở {freshUnitDetails.length > 0 && <span className="fm-count-badge fm-count-new">Mới {freshUnitDetails.length}</span>}
-          </button>
-          <button className={activeTab === 'unitTypes' ? 'active' : ''} onClick={() => setActiveTab('unitTypes')}>
-            <span>▦</span> Thiết lập đặc tính kho
-          </button>
-          <button className={activeTab === 'prices' ? 'active' : ''} onClick={() => setActiveTab('prices')}>
-            <span>₫</span> Bảng giá tại cơ sở
-          </button>
-          <button className={activeTab === 'reports' ? 'active' : ''} onClick={() => setActiveTab('reports')}>
-            <span>⚠</span> Báo cáo sự cố kho
-          </button>
-          <button className={activeTab === 'contracts' ? 'active' : ''} onClick={() => setActiveTab('contracts')}>
-            <span>▤</span> Hợp đồng & Khách hàng
-          </button>
-          <button className={activeTab === 'lateFees' ? 'active' : ''} onClick={() => setActiveTab('lateFees')}>
-            <span>⏰</span> Công nợ & phí trễ hạn
-          </button>
-          <button className={activeTab === 'returnInspections' ? 'active' : ''} onClick={() => setActiveTab('returnInspections')}>
-            <span>🧾</span> Khiếu nại kiểm kho
-          </button>
-          <button className={activeTab === 'staff' ? 'active' : ''} onClick={() => setActiveTab('staff')}>
-            <span>👥</span> Nhân sự tại cơ sở
-          </button>
-        </nav>
+        {/* [SỬA] Menu gom nhóm (Vận hành / Khách hàng & Tài chính / Thiết lập) + số việc đang chờ xử lý - ManagerNav.jsx */}
+        <ManagerNav
+          activeTab={activeTab}
+          onSelect={setActiveTab}
+          facilityId={managedFacility?.facilityId}
+          freshUnits={freshUnitDetails.length}
+        />
 
         <div className="customer-sidebar-bottom">
           <button onClick={handleLogout}>
