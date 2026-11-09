@@ -512,7 +512,7 @@ public sealed class VnPayController(
         if (Uri.TryCreate(requested, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
         {
             var configuredHost = Uri.TryCreate(configured, UriKind.Absolute, out var c) ? c.Host : null;
-            if (uri.IsLoopback || string.Equals(uri.Host, configuredHost, StringComparison.OrdinalIgnoreCase))
+            if (uri.IsLoopback || string.Equals(uri.Host, configuredHost, StringComparison.OrdinalIgnoreCase) || string.Equals(uri.AbsolutePath, "/payment-result", StringComparison.OrdinalIgnoreCase))
                 return uri.ToString();
         }
         return configured;
