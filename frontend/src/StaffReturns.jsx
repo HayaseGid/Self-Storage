@@ -36,12 +36,22 @@ function InspectForm({ item, catalog, refundDays, onDone, onCancel }) {
   const [unitStatus, setUnitStatus] = useState('Available')
   const [fees, setFees] = useState([])
   const [busy, setBusy] = useState(false)
+  // [7b] Công nợ còn lại của hợp đồng (tiền thuê chưa đóng, phí trễ hạn...) - backend trừ vào cọc TRƯỚC phí kiểm kho
+  const [debt, setDebt] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    apiGet(`/api/late-fees/returns/${item.reservationId}/preview`)
+      .then(data => { if (!cancelled) setDebt(data) })
+      .catch(() => { if (!cancelled) setDebt(null) })
+    return () => { cancelled = true }
+  }, [item.reservationId])
+  const debtTotal = Number(debt?.debtTotal || 0)
 
   const total = fees.reduce((n, f) => n + (Number(f.amount) || 0), 0)
   const deposit = Number(item.depositPaid || 0)
-  const fromDeposit = Math.min(total, deposit)
-  const owed = Math.max(0, total - deposit)
-  const refund = Math.max(0, deposit - total)
+  const fromDeposit = Math.min(debtTotal + total, deposit)
+  const owed = Math.max(0, debtTotal + total - deposit)
+  const refund = Math.max(0, deposit - debtTotal - total)
 
   const addFee = key => {
     const f = catalog.find(c => c.key === key)
@@ -57,7 +67,7 @@ function InspectForm({ item, catalog, refundDays, onDone, onCancel }) {
     const ok = await dialog.confirm({
       tone: 'warning',
       title: 'Hoàn tất kiểm tra?',
-      message: `${condition === 'Good' ? 'Kho không có vấn đề.' : 'Kho có vấn đề.'} Phí phát sinh: ${money(total)}.\n${owed > 0 ? `Khách cần đóng thêm ${money(owed)}.` : `Hoàn cọc cho khách: ${money(refund)} sau ${refundDays} ngày.`}\nKết quả sẽ gửi cho khách và không sửa lại được.`,
+      message: `${condition === 'Good' ? 'Kho không có vấn đề.' : 'Kho có vấn đề.'}${debtTotal > 0 ? ` Công nợ hợp đồng: ${money(debtTotal)}.` : ''} Phí phát sinh: ${money(total)}.\n${owed > 0 ? `Khách cần đóng thêm ${money(owed)}.` : `Hoàn cọc cho khách: ${money(refund)} sau ${refundDays} ngày.`}\nKết quả sẽ gửi cho khách và không sửa lại được.`,
       confirmLabel: 'Hoàn tất', cancelLabel: 'Xem lại'
     })
     if (!ok) return
@@ -114,8 +124,24 @@ function InspectForm({ item, catalog, refundDays, onDone, onCancel }) {
         </div>
       )}
 
+      {debt && (debtTotal > 0 || debt.futureRents?.length > 0) && (
+        <div className="st-alert st-warn">
+          <strong>Công nợ của hợp đồng sẽ trừ vào cọc trước phí kiểm kho:</strong>
+          {(debt.rentDebts || []).map((d, i) => (
+            <div key={`r${i}`}>• Tiền thuê kỳ {fmtDay(d.periodStart)}–{fmtDay(d.periodEnd)}{d.unitNumber ? ` (kho ${d.unitNumber})` : ''} chưa đóng: <b>{money(d.amount)}</b></div>
+          ))}
+          {(debt.fees || []).map((f, i) => (
+            <div key={`f${i}`}>• {f.description}: <b>{money(f.amount)}</b></div>
+          ))}
+          {debt.futureRents?.length > 0 && (
+            <div>• {debt.futureRents.length} kỳ tiền thuê chưa tới (khách trả trước hạn) sẽ được hủy, không thu.</div>
+          )}
+        </div>
+      )}
+
       <div className="sr-summary">
         <div><span>Tiền cọc khách đã đóng</span><b>{money(deposit)}</b></div>
+        {debtTotal > 0 && <div><span>Công nợ hợp đồng (tiền thuê, phí trễ hạn)</span><b>{money(debtTotal)}</b></div>}
         <div><span>Tổng phí phát sinh</span><b>{money(total)}</b></div>
         <div><span>Trừ vào cọc</span><b>{money(fromDeposit)}</b></div>
         {owed > 0

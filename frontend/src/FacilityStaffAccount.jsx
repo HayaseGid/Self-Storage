@@ -847,6 +847,8 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
         .filter((f) => myFacilityNames.includes(f.id) && f.facilityId != null)
         .map((f) => f.facilityId);
       await Promise.all(facilityIds.map((id) => apiPost(`/api/manager-tools/facilities/${id}/auto-assign`, {}).catch(() => null)));
+      // [7a] Cập nhật phí trễ hạn tiền thuê của cơ sở tới hôm nay (lỗi không chặn trang)
+      await Promise.all(facilityIds.map((id) => apiPost(`/api/late-fees/facilities/${id}/sync`, {}).catch(() => null)));
       // [STAFF-TOOLS] Việc Manager giao cho mình: dùng để kiểm tra quyền bàn giao và hiện mục "Việc được giao"
       let staffTasks = [];
       let staffTasksError = "";

@@ -61,6 +61,11 @@ builder.Services.AddScoped<IManagerToolsRepository, ManagerToolsRepository>();
 builder.Services.AddScoped<IManagerToolsService, ManagerToolsService>();
 //Đã sửa: 05/11/2026
 
+//Đã cập nhật các repository và service cho LateFee
+builder.Services.AddScoped<ILateFeeRepository, LateFeeRepository>();
+builder.Services.AddScoped<ILateFeeService, LateFeeService>();
+//Đã sửa: 09/11/2026
+
 
 // JWT authentication
 var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);

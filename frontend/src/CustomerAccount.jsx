@@ -28,6 +28,7 @@ import CancelReservationModal, { retryRefund } from './CancelReservation'
 import ContractCard from './ContractCard'
 import { ReturnRequestModal, ReturnSection, useUnitReturns } from './UnitReturn'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
+import { payLateFeesDemo, useLateFees } from './lateFees'
 
 /* Chuyển 'dd/mm/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày. */
 const dateSortValue = value => {
@@ -579,6 +580,14 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const [renewItem, setRenewItem] = useState(null)
   const [cancelRental, setCancelRental] = useState(null)
   const returns = useUnitReturns()
+  const lateFees = useLateFees() // [7a] phí trễ hạn tiền thuê
+  const lateFeeOf = rental => {
+    const item = lateFees.byReservation(rental.reservationId)
+    return item ? { ...item, policy: lateFees.policy } : null
+  }
+  const lateUnpaidOf = rental => (lateFeeOf(rental)?.lateFees || [])
+    .filter(f => f.status === 'Unpaid' && !f.pendingPayment)
+    .reduce((n, f) => n + Number(f.amount || 0), 0)
   const [returnItem, setReturnItem] = useState(null)
   const [creatingContracts, setCreatingContracts] = useState(false)
   const policies = usePolicies()
@@ -590,13 +599,18 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
      Backend quyết định đóng được bao nhiêu (GET/POST /api/rent-payments, POST /api/vnpay/create). */
   const [payingRent, setPayingRent] = useState(null)
   const payRent = async rental => {
-    const amount = Number(rental.rentPayableNow || 0)
+    // [7a] tiền thuê đóng được ngay + phí trễ hạn chưa đóng (VNPay thu chung 1 giao dịch)
+    const rentAmount = Number(rental.rentPayableNow || 0)
+    const lateAmount = lateUnpaidOf(rental)
+    const amount = rentAmount + lateAmount
     if (!amount) return
+    const vnd = n => new Intl.NumberFormat('vi-VN').format(n)
     const ok = await dialog.confirm({
       tone: 'info',
-      title: `Đóng ${new Intl.NumberFormat('vi-VN').format(amount)}đ tiền thuê?`,
-      message: `Hợp đồng ${rental.contractNumber || rental.reservationCode} · ${rental.paymentPlan === 'Upfront' ? 'trả 1 lần (toàn bộ kỳ thuê)' : 'trả theo tháng'}.`,
-      confirmLabel: 'Đóng tiền thuê'
+      title: `Đóng ${vnd(amount)}đ${lateAmount > 0 ? (rentAmount > 0 ? ' (tiền thuê + phí trễ hạn)' : ' phí trễ hạn') : ' tiền thuê'}?`,
+      message: `Hợp đồng ${rental.contractNumber || rental.reservationCode} · ${rental.paymentPlan === 'Upfront' ? 'trả 1 lần (toàn bộ kỳ thuê)' : 'trả theo tháng'}.` +
+        (lateAmount > 0 ? `\nGồm ${rentAmount > 0 ? `${vnd(rentAmount)}đ tiền thuê và ` : ''}${vnd(lateAmount)}đ phí trễ hạn.` : ''),
+      confirmLabel: 'Đóng tiền'
     })
     if (!ok) return
     setPayingRent(rental.reservationId)
@@ -609,9 +623,12 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         await startVnPayPayment([rental.reservationId], { amount, count: 1, label: rental.contractNumber, kind: 'rent' })
         return
       }
-      const result = await apiPost(`/api/rent-payments/${rental.reservationId}/pay-demo`, {})
+      const messages = []
+      if (rentAmount > 0) messages.push((await apiPost(`/api/rent-payments/${rental.reservationId}/pay-demo`, {})).message)
+      if (lateAmount > 0) messages.push((await payLateFeesDemo(rental.reservationId)).message)
       onRentalsChanged?.()
-      await dialog.alert({ tone: 'success', title: 'Đã đóng tiền thuê', message: result.message })
+      lateFees.reload()
+      await dialog.alert({ tone: 'success', title: 'Đã thanh toán', message: messages.join(' ') })
     } catch (error) {
       await dialog.alert({ tone: 'danger', title: 'Chưa đóng được tiền thuê', message: error.message })
     } finally {
@@ -1031,6 +1048,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
             returnInfo={returns.byReservation(rental.reservationId)}
             onPayRent={() => payRent(rental)}
             payingRent={payingRent === rental.reservationId}
+            lateFee={lateFeeOf(rental)}
             onReturn={rental.status === 'Handed Over' ? () => {
               const info = returns.byReservation(rental.reservationId)
               if (info?.eligible) setReturnItem(info)

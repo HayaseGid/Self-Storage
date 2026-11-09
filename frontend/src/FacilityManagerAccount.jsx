@@ -1386,6 +1386,195 @@ const DB_UNIT_STATUS_LABEL = {
   Available: 'Còn trống', 'In Use': 'Đang thuê', 'Pending Inspection': 'Chờ kiểm tra', Maintenance: 'Bảo trì', Inactive: 'Ngừng sử dụng'
 }
 
+/* =====================================================================
+   [7a] CÔNG NỢ & PHÍ TRỄ HẠN TIỀN THUÊ
+   GET /api/late-fees/facilities/{id}: backend tự cập nhật phí trễ hạn tới hôm nay rồi trả danh sách
+   PUT /api/late-fees/charges/{chargeId}/waive { reason }: Manager miễn phí trễ hạn (bắt buộc lý do)
+   Mức phí theo chính sách "Phí quá hạn & phụ phí" của Business Operations (in trong hợp đồng).
+   ===================================================================== */
+const LATE_FEE_STATUS = {
+  Unpaid: { label: 'Chưa đóng', className: 'fm-badge fm-warn' },
+  Paid: { label: 'Đã đóng', className: 'fm-badge fm-ok' },
+  Waived: { label: 'Đã miễn', className: 'fm-badge fm-info' }
+}
+
+function LateFeesTab({ facilityId, showToast = () => {} }) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const [filter, setFilter] = useState('open')
+  const [busy, setBusy] = useState(null)
+  const [waiving, setWaiving] = useState(null) // { it, fee, reason, error }
+
+  const load = async () => {
+    if (facilityId == null) return
+    try {
+      setError('')
+      setData(await apiGet(`/api/late-fees/facilities/${facilityId}`))
+    } catch (err) {
+      setData({ items: [], summary: null, policy: null })
+      setError(err.status === 404 ? 'Backend chưa có LateFeesController (chép file rồi chạy lại backend).' : err.message)
+    }
+  }
+  useEffect(() => { load() }, [facilityId])
+
+  const items = data?.items || []
+  const isOpen = it => it.overdueRent?.length > 0 || Number(it.lateFeeUnpaid) > 0 || Number(it.otherUnpaid) > 0
+  const visible = items.filter(it => filter === 'all' || isOpen(it))
+  const s = data?.summary
+
+  const submitWaive = async (e) => {
+    e.preventDefault()
+    const reason = (waiving?.reason || '').trim()
+    if (!reason) {
+      setWaiving(w => ({ ...w, error: 'Vui lòng ghi lý do miễn phí trễ hạn.' }))
+      return
+    }
+    setBusy(waiving.fee.chargeId)
+    try {
+      const result = await apiPut(`/api/late-fees/charges/${waiving.fee.chargeId}/waive`, { reason })
+      setWaiving(null)
+      showToast(result.message)
+      await load()
+    } catch (err) {
+      setWaiving(w => ({ ...w, error: err.message }))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="fm-section-card">
+      <div className="fm-card-header-flex">
+        <div>
+          <h2>Công nợ & phí trễ hạn tiền thuê</h2>
+          <p>{data?.policy?.summary || 'Phí trễ hạn tính theo chính sách "Phí quá hạn & phụ phí".'} Phí cập nhật tới hôm nay mỗi khi tải trang; khách đóng tiền thuê thì phí chốt theo ngày đóng.</p>
+        </div>
+        <button type="button" className="dashboard-secondary-btn" onClick={load}>Tải lại</button>
+      </div>
+
+      {s && (
+        <section className="customer-stats" style={{ marginBottom: 16 }}>
+          <div className="customer-stat-card">
+            <span className="stat-icon yellow">⏰</span>
+            <small>Tiền thuê quá hạn</small>
+            <strong>{fmtMoney(s.overdueRentAmount)}</strong>
+            <span className="stat-note warning">{s.overdueRentCount} kỳ · {s.customersOverdue} hợp đồng</span>
+          </div>
+          <div className="customer-stat-card">
+            <span className="stat-icon">₫</span>
+            <small>Phí trễ hạn chưa đóng</small>
+            <strong>{fmtMoney(s.lateFeeUnpaid)}</strong>
+            <span className="stat-note">Đã thu {fmtMoney(s.lateFeePaid)} · đã miễn {fmtMoney(s.lateFeeWaived)}</span>
+          </div>
+          <div className="customer-stat-card">
+            <span className="stat-icon blue">⇦</span>
+            <small>Còn nợ sau trả kho</small>
+            <strong>{fmtMoney(s.owedAfterReturn)}</strong>
+            <span className="stat-note">Cọc không đủ bù công nợ / phí</span>
+          </div>
+        </section>
+      )}
+
+      <div className="fp-toolbar">
+        <div className="fp-chips">
+          {[['open', `Đang nợ ${items.filter(isOpen).length}`], ['all', `Tất cả ${items.length}`]].map(([v, t]) => (
+            <button key={v} type="button" className={filter === v ? 'active' : ''} onClick={() => setFilter(v)}>{t}</button>
+          ))}
+        </div>
+      </div>
+      {error && <div className="auth-message error" role="alert">{error}</div>}
+
+      {data === null ? <p className="fm-muted">Đang tải công nợ...</p> : visible.length === 0 ? (
+        <div className="empty-state">Không có hợp đồng nào đang nợ tiền thuê hoặc phí trễ hạn.</div>
+      ) : (
+        <div className="fm-table-wrap">
+          <table className="fm-table">
+            <thead>
+              <tr>
+                <th>Khách hàng</th>
+                <th>Hợp đồng</th>
+                <th>Tiền thuê quá hạn</th>
+                <th>Phí trễ hạn</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(it => (
+                <tr key={it.reservationId}>
+                  <td>
+                    <strong>{it.customerName}</strong>
+                    <div className="fm-muted">{it.customerPhone || it.customerEmail}</div>
+                  </td>
+                  <td>
+                    {it.contractNumber || it.reservationCode}
+                    {it.status === 'Completed' && <div><span className="fm-badge fm-info">Đã trả kho</span></div>}
+                  </td>
+                  <td>
+                    {it.overdueRent?.length ? it.overdueRent.map(o => (
+                      <div key={o.chargeId}>
+                        Kỳ {fmtDate(o.periodStart)}–{fmtDate(o.periodEnd)}{o.unitNumber ? ` · ${o.unitNumber}` : ''}: <strong>{fmtMoney(o.amount)}</strong>
+                        <div className="fm-muted">Trễ {o.daysLate} ngày{o.graceDaysLeft > 0 ? ` · còn ${o.graceDaysLeft} ngày ân hạn` : ''}</div>
+                      </div>
+                    )) : <span className="fm-muted">—</span>}
+                    {Number(it.otherUnpaid) > 0 && <div className="fm-muted">Phí khác chưa đóng: {fmtMoney(it.otherUnpaid)}</div>}
+                  </td>
+                  <td>
+                    {it.lateFees?.length ? it.lateFees.map(f => {
+                      const st = LATE_FEE_STATUS[f.status] || { label: f.status, className: 'fm-badge' }
+                      return (
+                        <div key={f.chargeId} style={{ marginBottom: 6 }}>
+                          <strong>{fmtMoney(f.amount)}</strong> <span className={st.className}>{st.label}{f.settledFromDeposit ? ' · trừ cọc' : ''}</span>
+                          <div className="fm-muted">{f.description}{f.waiveReason ? ` · Lý do miễn: ${f.waiveReason}` : ''}{f.pendingPayment ? ' · đang chờ VNPay' : ''}</div>
+                        </div>
+                      )
+                    }) : <span className="fm-muted">Chưa phát sinh</span>}
+                  </td>
+                  <td>
+                    {(it.lateFees || []).filter(f => f.status === 'Unpaid' && !f.pendingPayment).map(f => (
+                      <button key={f.chargeId} type="button" className="fp-btn" disabled={busy === f.chargeId} onClick={() => setWaiving({ it, fee: f, reason: '', error: '' })} style={{ display: 'block', marginBottom: 6 }}>
+                        {busy === f.chargeId ? 'Đang xử lý...' : `Miễn ${fmtMoney(f.amount)}`}
+                      </button>
+                    ))}
+                    {!(it.lateFees || []).some(f => f.status === 'Unpaid' && !f.pendingPayment) && <span className="fm-muted">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {waiving && (
+        <div className="fm-modal-overlay">
+          <div className="fm-modal-card">
+            <div className="fm-modal-header">
+              <h2>Miễn {fmtMoney(waiving.fee.amount)} phí trễ hạn</h2>
+              <button type="button" className="fm-modal-close" onClick={() => setWaiving(null)} aria-label="Đóng">×</button>
+            </div>
+            <form onSubmit={submitWaive} className="fm-modal-form">
+              {waiving.error && <div className="auth-message error" role="alert">{waiving.error}</div>}
+              <p>{waiving.it.customerName} · {waiving.it.contractNumber || waiving.it.reservationCode}</p>
+              <p className="fm-muted">{waiving.fee.description}. Sau khi miễn, kỳ thuê này không tính thêm phí trễ hạn.</p>
+              <label>
+                Lý do miễn (bắt buộc, lưu lại để đối soát)
+                <textarea rows={3} maxLength={255} value={waiving.reason} autoFocus
+                  onChange={(e) => setWaiving(w => ({ ...w, reason: e.target.value, error: '' }))}
+                  placeholder="Ví dụ: khách đã chuyển khoản đúng hạn nhưng ngân hàng xử lý chậm" />
+              </label>
+              <div className="fm-modal-actions">
+                <button type="button" className="dashboard-secondary-btn" onClick={() => setWaiving(null)}>Hủy</button>
+                <button type="submit" className="dashboard-primary-btn" disabled={busy === waiving.fee.chargeId}>
+                  {busy === waiving.fee.chargeId ? 'Đang lưu...' : 'Xác nhận miễn phí'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async () => {} }) {
   const dialog = useDialog()
   const [reports, setReports] = useState(null)
@@ -2591,6 +2780,9 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
           <button className={activeTab === 'contracts' ? 'active' : ''} onClick={() => setActiveTab('contracts')}>
             <span>▤</span> Hợp đồng & Khách hàng
           </button>
+          <button className={activeTab === 'lateFees' ? 'active' : ''} onClick={() => setActiveTab('lateFees')}>
+            <span>⏰</span> Công nợ & phí trễ hạn
+          </button>
           <button className={activeTab === 'staff' ? 'active' : ''} onClick={() => setActiveTab('staff')}>
             <span>👥</span> Nhân sự tại cơ sở
           </button>
@@ -2618,6 +2810,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
               {activeTab === 'prices' && 'Bảng giá tại cơ sở'}
               {activeTab === 'reports' && 'Báo cáo sự cố kho'}
               {activeTab === 'contracts' && 'Giám sát hợp đồng thuê'}
+              {activeTab === 'lateFees' && 'Công nợ & phí trễ hạn'}
               {activeTab === 'staff' && 'Phân công nhân viên cơ sở'}
             </h1>
             <p>Quản lý vận hành kho, theo dõi đơn thuê và doanh thu cơ sở {facilityName}.</p>
@@ -2978,6 +3171,11 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
             showToast={showToast}
             onChanged={() => Promise.all([reloadFacilityCatalog(), loadState({ silent: true })])}
           />
+        )}
+
+        {/* [7a] TAB CÔNG NỢ & PHÍ TRỄ HẠN */}
+        {activeTab === 'lateFees' && (
+          <LateFeesTab facilityId={managedFacility?.facilityId} showToast={showToast} />
         )}
 
         {/* [AUTO-ASSIGN] TAB BÁO CÁO SỰ CỐ KHO */}

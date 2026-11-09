@@ -490,6 +490,13 @@ public sealed class UnitReturnsController(
             var deposits = r.Charges.Where(c => c.ChargeType == "Deposit" && c.Status == "Paid" && c.RefundedAmount == 0).OrderBy(c => c.ChargeID).ToList();
             var remaining = deposits.Sum(c => c.Amount);
             decimal fromDeposit = 0, owed = 0;
+
+            // [THÊM 7b] Công nợ còn lại của hợp đồng trừ vào cọc TRƯỚC phí kiểm kho: tiền thuê đã tới kỳ chưa đóng,
+            // phí trễ hạn (chốt tới hôm nay), phí cũ chưa đóng; kỳ thuê chưa tới (trả trước hạn) được hủy.
+            // Chi tiết: Services/LateFeeService.cs -> SettleOnReturnAsync (chạy trong transaction này).
+            var debt = await HttpContext.RequestServices.GetRequiredService<ILateFeeService>()
+                .SettleOnReturnAsync(r, remaining, today, now, staffId.Value, ct);
+            remaining = debt.RemainingDeposit; fromDeposit += debt.FromDeposit; owed += debt.Owed;
             Charge NewFee(FeeLine f, decimal amount, bool settled, string suffix) => new()
             {
                 ReservationID = r.ReservationID,
@@ -625,6 +632,7 @@ public sealed class UnitReturnsController(
                 : remaining > 0
                     ? $"Đã hoàn tất kiểm tra. Khách được hoàn {Vnd(remaining)}đ tiền cọc sau {rules.RefundDays} ngày."
                     : "Đã hoàn tất kiểm tra. Tiền cọc đã dùng hết để bù phí phát sinh.";
+            if (debt.Message is not null) summary = $"{debt.Message} {summary}"; // [THÊM 7b]
             if (unitStatus == UnitStatus.Maintenance)
                 summary += " Kho chuyển Bảo trì, đã ghi báo cáo cho Facility Manager.";
             if (warnings.Count > 0)

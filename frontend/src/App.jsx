@@ -713,11 +713,24 @@ function FacilityDetailPage({ facility }) {
             onOpenDetail={unit => navigate(getUnitPath(facility, unit))}
             onBook={unit => navigate(getBookingPath(facility, unit))}
           />
-          <div className="cart-note" role="note" style={{ margin: '18px 0', padding: '14px 16px', borderRadius: 12, background: '#eef5ff', border: '1px solid #c9dcf7' }}>
-            <strong>Cần kho lớn hơn các kho đang có, hoặc kích thước đặc biệt?</strong>{' '}
-            Kho quá lớn không bán sẵn mà nhận theo đơn đặt riêng: liên hệ cơ sở để được báo giá
-            {facilityPoint?.phone ? <> qua số <a href={`tel:${String(facilityPoint.phone).replace(/\s/g, '')}`}>{facilityPoint.phone}</a> hoặc</> : ''}{' '}
-            qua email <a href={`mailto:support@storespace.vn?subject=${encodeURIComponent(`Đặt kho theo yêu cầu - ${facility.name}`)}`}>support@storespace.vn</a>.
+          {/* Kho quá lớn -> order kho kích thước riêng (style inline, không cần sửa CSS) */}
+          <div role="note" style={{ margin: '24px 0', padding: '18px 22px', borderRadius: 16, background: '#eef5ff', border: '1px solid #c9dcf7', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 380px', minWidth: 0 }}>
+              <strong style={{ display: 'block', fontSize: 16, color: '#0b3a6e', marginBottom: 4 }}>Cần kho lớn hơn các kho đang có, hoặc kích thước đặc biệt?</strong>
+              <span style={{ fontSize: 14, color: '#4a5d75', lineHeight: 1.5 }}>Kho quá lớn không bán sẵn mà nhận theo đơn đặt riêng (order). Gửi yêu cầu để cơ sở liên hệ báo giá.</span>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: '0 1 auto', maxWidth: '100%' }}>
+              <a href={`mailto:support@storespace.vn?subject=${encodeURIComponent(`Order kho kích thước riêng - ${facility.name}`)}&body=${encodeURIComponent('Kích thước cần (dài x rộng, m):\nThời gian thuê dự kiến:\nĐồ cần lưu:\nSố điện thoại liên hệ:')}`}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 44, padding: '0 20px', borderRadius: 12, background: '#ffd21f', color: '#0b3a6e', fontWeight: 700, fontSize: 14, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                Liên hệ order kho kích thước riêng
+              </a>
+              {facilityPoint?.phone && (
+                <a href={`tel:${String(facilityPoint.phone).replace(/\s/g, '')}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 44, padding: '0 20px', borderRadius: 12, background: '#fff', border: '1px solid #c9dcf7', color: '#0b5cad', fontWeight: 700, fontSize: 14, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                  Gọi cơ sở: {facilityPoint.phone}
+                </a>
+              )}
+            </div>
           </div>
           <div className="units-heading">
             <div><div className="eyebrow">AVAILABLE UNITS</div><h2>Các kho tại {facility.name}</h2></div>
@@ -1454,8 +1467,8 @@ function BookingPage({ facility, unit }) {
                   <div className="price-divider" />
 
                   <div>
-                    <span>Tổng tiền thuê ({formatPrice(monthlyPrice)} × {totalMonths} tháng)</span>
-                    <strong>{formatPrice(totalRent)}</strong>
+                    <span>Giá gốc ({formatPrice(monthlyPrice)} × {totalMonths} tháng)</span>
+                    <strong>{formatPrice(monthlyPrice * totalMonths)}</strong>
                   </div>
                   {priceQuote.discountPercent > 0 && (
                     <div className="discount-row">
@@ -1463,6 +1476,10 @@ function BookingPage({ facility, unit }) {
                       <strong>−{formatPrice(priceQuote.saving)}</strong>
                     </div>
                   )}
+                  <div>
+                    <span>{priceQuote.discountPercent > 0 ? 'Tổng tiền thuê sau giảm' : 'Tổng tiền thuê'}</span>
+                    <strong>{formatPrice(totalRent)}</strong>
+                  </div>
                   <div>
                     <span>Đóng sau khi nhận kho</span>
                     <strong>{formatPrice(paymentMode === 'full' ? totalRent : (priceQuote.monthly ?? monthlyPrice))}{paymentMode === 'full' ? ' (cả kỳ)' : ' (tháng đầu)'}</strong>
@@ -1472,7 +1489,7 @@ function BookingPage({ facility, unit }) {
 
                   <div className="deposit-row">
                     <div>
-                      <span>Cần thanh toán khi đặt kho: tiền cọc</span>
+                      <span>Thanh toán đợt 1 khi đặt kho: tiền cọc</span>
                       <small>{depositMonths} tháng tiền thuê · hoàn lại khi trả kho</small>
                     </div>
                     <strong className="deposit-price main-price">{formatPrice(deposit)}</strong>
