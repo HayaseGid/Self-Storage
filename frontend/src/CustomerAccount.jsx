@@ -29,6 +29,8 @@ import ContractCard from './ContractCard'
 import { ReturnRequestModal, ReturnSection, useUnitReturns } from './UnitReturn'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
 import { payLateFeesDemo, useLateFees } from './lateFees'
+import { CustomerPaymentCenter, PendingDepositBar, pendingDepositsOf } from './PendingPayments' // [THÊM] trang Thanh toán mới + nhắc đơn chưa đặt cọc
+import { useMyInspections } from './ReturnInspection' // [THÊM 14] thông báo kết quả kiểm kho chờ xác nhận
 
 /* Chuyển 'dd/mm/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày. */
 const dateSortValue = value => {
@@ -1129,114 +1131,7 @@ function RefundTimeline({ item, formatMoney }) {
   )
 }
 
-function CustomerPaymentPage({ reservations, onChanged }) {
-  const dialog = useDialog()
-  const [paying, setPaying] = useState(null)
-  const [cancelRental, setCancelRental] = useState(null)
-  const [retrying, setRetrying] = useState(null)
-  const payWithVnPay = async items => {
-    setPaying(items.map(i => i.reservationId).join(','))
-    try {
-      await startVnPayPayment(items.map(i => i.reservationId), {
-        amount: items.reduce((n, i) => n + Number(i.depositAmount || 0), 0),
-        count: items.length,
-        kind: items.every(i => i.isRenewal) ? 'renewal' : 'deposit'
-      })
-    } catch (error) {
-      setPaying(null)
-      await dialog.alert({ tone: 'danger', title: 'Chưa mở được trang thanh toán VNPay', message: error.message })
-    }
-  }
-  const pending = reservations.filter(item =>
-    item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed'
-  )
-  const paid = reservations.filter(item => item.paymentStatus === 'Completed')
-  const retry = async item => {
-    setRetrying(item.reservationId)
-    await retryRefund(dialog, item.reservationId)
-    setRetrying(null)
-    onChanged?.()
-  }
-  const pendingAmount = pending.reduce(
-    (total, item) => total + Number(item.depositAmount || 0),
-    0
-  )
-  const formatMoney = amount => `${new Intl.NumberFormat('vi-VN').format(amount || 0)}đ`
-
-  return (
-    <div className="customer-content-page">
-      <div className="customer-page-heading">
-        <div>
-          <span className="customer-eyebrow">PAYMENT CENTER</span>
-          <h1>Thanh toán</h1>
-          <p>Trạng thái và giao dịch tiền cọc đã lưu trong database.</p>
-        </div>
-      </div>
-      <section className="customer-stats">
-        <div className="customer-stat-card">
-          <small>Tiền cọc đang chờ</small>
-          <strong>{formatMoney(pendingAmount)}</strong>
-          <span className="stat-note">{pending.length} đặt chỗ</span>
-          {pending.length > 1 && (
-            <button type="button" className="dashboard-primary-btn" disabled={Boolean(paying)} onClick={() => payWithVnPay(pending)}>
-              {paying ? 'Đang chuyển...' : `Thanh toán tất cả qua VNPay`}
-            </button>
-          )}
-        </div>
-        <div className="customer-stat-card">
-          <small>Giao dịch đã ghi nhận</small>
-          <strong>{paid.length}</strong>
-          <span className="stat-note">Theo dữ liệu backend</span>
-        </div>
-      </section>
-      {reservations.length === 0 && <div className="empty-state">Chưa có giao dịch hoặc đặt chỗ.</div>}
-      {reservations.map(item => (
-        <section className="customer-section" key={item.reservationId}>
-          <div className="overview-panel">
-            <div className="overview-panel-heading">
-              <div>
-                <h2>{item.facility}</h2>
-                <p>{item.unitId || 'Chưa phân kho'} · Mã đơn {formatReservationCode(item.reservationId)}</p>
-              </div>
-              <span className="rental-status">
-                {item.paymentStatus === 'Completed' ? '● Đã thanh toán' : '● Chưa thanh toán'}
-              </span>
-            </div>
-            <div className="contract-summary">
-              <div><span>{item.isRenewal ? 'Gia hạn · trả ngay' : 'Tiền cọc yêu cầu'}</span><strong>{formatMoney(item.depositAmount)}</strong></div>
-              <div><span>Đã thanh toán</span><strong>{item.paymentAmount == null ? '—' : formatMoney(item.paymentAmount)}</strong></div>
-              <div><span>Trạng thái đặt chỗ</span><strong>{item.statusLabel}</strong></div>
-              <div><span>Mã giao dịch</span><strong>{item.paymentReference || '—'}</strong></div>
-              <div><span>Ngày giao dịch</span><strong>{item.paymentDate ? item.paymentDate.slice(0, 10) : '—'}</strong></div>
-            </div>
-            {item.refundAmount > 0 && <RefundTimeline item={item} formatMoney={formatMoney} />}
-            {item.refundStatus === 'Pending' && (
-              <div className="contract-actions">
-                <button type="button" className="dashboard-secondary-btn" disabled={retrying === item.reservationId} onClick={() => retry(item)}>
-                  {retrying === item.reservationId ? 'Đang gửi...' : 'Gửi lại yêu cầu hoàn tiền'}
-                </button>
-              </div>
-            )}
-            {item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed' && (
-              <div className="contract-actions">
-                {!item.isRenewal && <button type="button" className="cr-link-btn" onClick={() => setCancelRental(item)}>Hủy đặt chỗ</button>}
-                <button type="button" className="dashboard-primary-btn" disabled={Boolean(paying)} onClick={() => payWithVnPay([item])}>
-                  {paying === String(item.reservationId) ? 'Đang chuyển sang VNPay...' : `Thanh toán ${formatMoney(item.depositAmount)} qua VNPay`}
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
-      ))}
-      {cancelRental && (
-        <CancelReservationModal rental={cancelRental} onClose={() => setCancelRental(null)} onDone={() => onChanged?.()} />
-      )}
-      <div className="payment-warning">
-        Tiền cọc được thanh toán qua cổng VNPay (môi trường thử nghiệm). Giao dịch chỉ được ghi nhận khi VNPay xác nhận và hệ thống kiểm tra đúng chữ ký, số tiền.
-      </div>
-    </div>
-  )
-}
+/* [SỬA] Trang Thanh toán cũ (CustomerPaymentPage) đã thay bằng CustomerPaymentCenter trong PendingPayments.jsx */
 
 /* Hồ sơ tài khoản (chỉ xem). Backend hiện chưa có API sửa hồ sơ / đổi mật khẩu. */
 function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
@@ -1310,12 +1205,14 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
   const renewalsForNotices = useContractRenewals()
   const policiesForNotices = usePolicies()
   const returnsForNotices = useUnitReturns()
+  const inspectionsForNotices = useMyInspections() // [THÊM 14]
   const notices = useCustomerNotifications({
     email: user?.email,
     rentals,
     renewals: renewalsForNotices.data,
     policies: policiesForNotices,
-    returns: returnsForNotices.data
+    returns: returnsForNotices.data,
+    inspections: inspectionsForNotices.data // [THÊM 14]
   })
   const noticeIdsKey = notices.notifications.map(n => n.id).join('|')
   useEffect(() => {
@@ -1324,7 +1221,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
   // Dữ liệu đặt chỗ thay đổi (gia hạn, ký, thanh toán) -> tải lại thông tin gia hạn cho thông báo.
   const rentalsKey = rentals.map(r => `${r.reservationId}:${r.status}:${r.contractStatus}`).join(',')
   const firstRentalsKey = React.useRef(rentalsKey)
-  useEffect(() => { if (rentalsKey !== firstRentalsKey.current) { renewalsForNotices.reload(); returnsForNotices.reload() } }, [rentalsKey])
+  useEffect(() => { if (rentalsKey !== firstRentalsKey.current) { renewalsForNotices.reload(); returnsForNotices.reload(); inspectionsForNotices.reload() } }, [rentalsKey])
   const openNotice = item => {
     const action = item.action || {}
     if (action.signContractId) requestContractSign(action.signContractId)
@@ -1332,8 +1229,14 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
     if (action.section) setActiveSection(action.section)
     if (action.focusReservationId && !action.renewReservationId && !action.signContractId) focusContract(action.focusReservationId)
   }
+  // [THÊM] Đơn chưa đặt cọc là việc phải làm: mục Thanh toán vẫn hiện số cho tới khi trả xong / hết giờ giữ kho
+  // (gộp với thông báo "deposit:<id>" để không đếm 2 lần)
+  const paymentBadgeIds = new Set([
+    ...notices.notifications.filter(n => n.section === 'payment' && !notices.isSeen(n.id)).map(n => n.id),
+    ...pendingDepositsOf(rentals).filter(r => !r.isRenewal).map(r => `deposit:${r.reservationId}`)
+  ])
   const navBadge = section => {
-    const count = section === 'notifications' ? notices.unseenCount : notices.countBySection[section] || 0
+    const count = section === 'notifications' ? notices.unseenCount : section === 'payment' ? paymentBadgeIds.size : notices.countBySection[section] || 0
     return count > 0 && activeSection !== section
       ? <span className="cnav-badge" aria-label={`${count} thông báo mới`}>{count > 9 ? '9+' : count}</span>
       : null
@@ -1514,6 +1417,11 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             </button>
           </div>
         </div>
+
+        {/* [THÊM] Đơn chưa đặt cọc: nhắc ở đầu mọi mục (trừ mục Thanh toán vì ở đó đã có khối "Cần thanh toán") */}
+        {activeSection !== 'payment' && (
+          <PendingDepositBar rentals={rentals} variant="inline" onPay={() => setActiveSection('payment')} actionLabel="Thanh toán ngay" />
+        )}
 
         {activeSection === 'overview' && (
           <div className="overview-page">
@@ -1998,7 +1906,11 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
 
         {activeSection === 'payment' && (
-          <CustomerPaymentPage reservations={rentals} onChanged={onReloadRentals} />
+          <CustomerPaymentCenter
+            reservations={rentals}
+            onChanged={onReloadRentals}
+            renderRefund={item => <RefundTimeline item={item} formatMoney={n => `${new Intl.NumberFormat('vi-VN').format(n || 0)}đ`} />}
+          />
         )}
 
         {activeSection === 'notifications' && (

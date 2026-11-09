@@ -28,6 +28,7 @@ import FacilityFloorPlan from './FacilityFloorPlan'
 import Unit3DViewer from './Unit3DViewer'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
 import { CART_LIMIT, addToCart, isInCart, useCart } from './cart'
+import HeaderNotificationBell, { HeaderPendingDepositBar } from './HeaderNotificationBell' // [THÊM] chuông thông báo + nhắc đơn chưa đặt cọc
 import {
   clearBookingDraft,
   draftMatchesUnit,
@@ -307,6 +308,23 @@ function HomeIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 10 8-7 8 7" /><path d="M6 9v11h12V9" /><path d="M10 20v-6h4v6" /></svg>
 }
 
+/* [THÊM] Danh sách đơn của khách cho chuông thông báo trên header: cùng API + cùng cách lọc / đổi dữ liệu với trang khách (CustomerPage). */
+function fetchCustomerRentals() {
+  const user = getCurrentUser()
+  if (!user?.email) return Promise.resolve([])
+  return apiGet('/api/customer-reservations/mine')
+    .catch(fastError => {
+      if (fastError?.status !== 404) throw fastError
+      return apiGet(`/api/reservation/customer/${encodeURIComponent(user.email)}`)
+    })
+    .then(data => {
+      if (!Array.isArray(data)) return []
+      const abandoned = r => r.status === 'Expired' ||
+        (r.status === 'Cancelled' && !r.contractId && !(Number(r.refundAmount) > 0))
+      return data.filter(r => !abandoned(r)).map(mapCustomerReservation)
+    })
+}
+
 function SiteHeader() {
   const [storageOpen, setStorageOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -355,6 +373,7 @@ function SiteHeader() {
           )}
         </nav>
         <div className="header-actions">
+          {currentUser?.role === 'customer' && <HeaderNotificationBell user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />}
           {showCart && (
             <button className="header-cart" type="button" onClick={() => go('/cart')} aria-label={`Giỏ hàng (${cartItems.length} kho)`} title="Giỏ hàng">
               <CartIcon />
@@ -373,6 +392,10 @@ function SiteHeader() {
           <button className="menu-button" type="button" onClick={() => setMenuOpen(v => !v)} aria-label="Mở menu"><MenuIcon /></button>
         </div>
       </header>
+      {/* [THÊM] Nhắc đơn chưa đặt cọc (khách thoát VNPay giữa chừng) - ẩn ở giỏ hàng / trang đặt kho / kết quả thanh toán vì ở đó đã có đồng hồ riêng */}
+      {currentUser?.role === 'customer' && !['/cart', '/payment-result'].includes(window.location.pathname) && !window.location.pathname.includes('/unit/') && (
+        <HeaderPendingDepositBar user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />
+      )}
       {menuOpen && (
         <>
           <div className="mobile-menu-overlay" onClick={() => setMenuOpen(false)} />
@@ -385,6 +408,7 @@ function SiteHeader() {
               <div className="mobile-menu-section">
                 <div className="mobile-menu-title">KHÁM PHÁ</div>
                 {currentUser && <button className="mobile-menu-item" type="button" onClick={() => go(roleHome(currentUser.role))}>⌂ <span>{currentUser.role && currentUser.role !== 'customer' ? 'Trang làm việc' : 'Hồ sơ của tôi'}</span></button>}
+                {currentUser?.role === 'customer' && <HeaderNotificationBell variant="menu" user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />}
                 <button className="mobile-menu-item" type="button" onClick={() => go('/')}>⌂ <span>Trang chủ</span></button>
                 <button className="mobile-menu-item" type="button" onClick={() => go('/search')}>⌕ <span>Tìm kho</span></button>
                 <button className="mobile-menu-item mobile-menu-button" type="button" onClick={() => setMobileStorageOpen(v => !v)}>▣ <span>Loại kho</span><span>›</span></button>
@@ -713,24 +737,11 @@ function FacilityDetailPage({ facility }) {
             onOpenDetail={unit => navigate(getUnitPath(facility, unit))}
             onBook={unit => navigate(getBookingPath(facility, unit))}
           />
-          {/* Kho quá lớn -> order kho kích thước riêng (style inline, không cần sửa CSS) */}
-          <div role="note" style={{ margin: '24px 0', padding: '18px 22px', borderRadius: 16, background: '#eef5ff', border: '1px solid #c9dcf7', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 380px', minWidth: 0 }}>
-              <strong style={{ display: 'block', fontSize: 16, color: '#0b3a6e', marginBottom: 4 }}>Cần kho lớn hơn các kho đang có, hoặc kích thước đặc biệt?</strong>
-              <span style={{ fontSize: 14, color: '#4a5d75', lineHeight: 1.5 }}>Kho quá lớn không bán sẵn mà nhận theo đơn đặt riêng (order). Gửi yêu cầu để cơ sở liên hệ báo giá.</span>
-            </div>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: '0 1 auto', maxWidth: '100%' }}>
-              <a href={`mailto:support@storespace.vn?subject=${encodeURIComponent(`Order kho kích thước riêng - ${facility.name}`)}&body=${encodeURIComponent('Kích thước cần (dài x rộng, m):\nThời gian thuê dự kiến:\nĐồ cần lưu:\nSố điện thoại liên hệ:')}`}
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 44, padding: '0 20px', borderRadius: 12, background: '#ffd21f', color: '#0b3a6e', fontWeight: 700, fontSize: 14, textDecoration: 'none', whiteSpace: 'nowrap' }}>
-                Liên hệ order kho kích thước riêng
-              </a>
-              {facilityPoint?.phone && (
-                <a href={`tel:${String(facilityPoint.phone).replace(/\s/g, '')}`}
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 44, padding: '0 20px', borderRadius: 12, background: '#fff', border: '1px solid #c9dcf7', color: '#0b5cad', fontWeight: 700, fontSize: 14, textDecoration: 'none', whiteSpace: 'nowrap' }}>
-                  Gọi cơ sở: {facilityPoint.phone}
-                </a>
-              )}
-            </div>
+          <div className="cart-note" role="note" style={{ margin: '18px 0', padding: '14px 16px', borderRadius: 12, background: '#eef5ff', border: '1px solid #c9dcf7' }}>
+            <strong>Cần kho lớn hơn các kho đang có, hoặc kích thước đặc biệt?</strong>{' '}
+            Kho quá lớn không bán sẵn mà nhận theo đơn đặt riêng: liên hệ cơ sở để được báo giá
+            {facilityPoint?.phone ? <> qua số <a href={`tel:${String(facilityPoint.phone).replace(/\s/g, '')}`}>{facilityPoint.phone}</a> hoặc</> : ''}{' '}
+            qua email <a href={`mailto:support@storespace.vn?subject=${encodeURIComponent(`Đặt kho theo yêu cầu - ${facility.name}`)}`}>support@storespace.vn</a>.
           </div>
           <div className="units-heading">
             <div><div className="eyebrow">AVAILABLE UNITS</div><h2>Các kho tại {facility.name}</h2></div>
@@ -1467,8 +1478,8 @@ function BookingPage({ facility, unit }) {
                   <div className="price-divider" />
 
                   <div>
-                    <span>Giá gốc ({formatPrice(monthlyPrice)} × {totalMonths} tháng)</span>
-                    <strong>{formatPrice(monthlyPrice * totalMonths)}</strong>
+                    <span>Tổng tiền thuê ({formatPrice(monthlyPrice)} × {totalMonths} tháng)</span>
+                    <strong>{formatPrice(totalRent)}</strong>
                   </div>
                   {priceQuote.discountPercent > 0 && (
                     <div className="discount-row">
@@ -1476,10 +1487,6 @@ function BookingPage({ facility, unit }) {
                       <strong>−{formatPrice(priceQuote.saving)}</strong>
                     </div>
                   )}
-                  <div>
-                    <span>{priceQuote.discountPercent > 0 ? 'Tổng tiền thuê sau giảm' : 'Tổng tiền thuê'}</span>
-                    <strong>{formatPrice(totalRent)}</strong>
-                  </div>
                   <div>
                     <span>Đóng sau khi nhận kho</span>
                     <strong>{formatPrice(paymentMode === 'full' ? totalRent : (priceQuote.monthly ?? monthlyPrice))}{paymentMode === 'full' ? ' (cả kỳ)' : ' (tháng đầu)'}</strong>
@@ -1489,7 +1496,7 @@ function BookingPage({ facility, unit }) {
 
                   <div className="deposit-row">
                     <div>
-                      <span>Thanh toán đợt 1 khi đặt kho: tiền cọc</span>
+                      <span>Cần thanh toán khi đặt kho: tiền cọc</span>
                       <small>{depositMonths} tháng tiền thuê · hoàn lại khi trả kho</small>
                     </div>
                     <strong className="deposit-price main-price">{formatPrice(deposit)}</strong>
