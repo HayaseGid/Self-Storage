@@ -105,3 +105,51 @@
 .cart-sum-saving dt, .cart-sum-saving dd { color: #2b8b55; font-weight: 700; }
 .cart-table tfoot td { font-weight: 800; color: #073d70; background: #fbfdff; }
 .cart-paid-tag { color: #2b8b55; font-weight: 700; font-size: 12px; }
+
+/* Banner thông báo hình thức thanh toán chung cho đơn thuê gộp */
+.cart-bundle-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 13px 15px;
+  border-radius: 14px;
+  background: #edf6ff;
+  border: 1.5px solid #b8daf8;
+  color: #0b3967;
+}
+.cart-bundle-icon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #075a9f;
+  color: #fff;
+  font: 800 13px 'Be Vietnam Pro', sans-serif;
+  margin-top: 1px;
+}
+.cart-bundle-body {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cart-bundle-body strong {
+  color: #073d70;
+  font-weight: 800;
+}
+.cart-bundle-body p {
+  margin: 0;
+  color: #2f5270;
+}
+.cart-summary-bundle-note {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #edf6ff;
+  border: 1px solid #c5e0f9;
+  color: #0b3967;
+  font-size: 12.5px;
+  line-height: 1.45;
+}

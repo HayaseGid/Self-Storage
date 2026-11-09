@@ -143,6 +143,9 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
           <p>Kho: <strong>{selected.map(i => i.unitId).join(', ')}</strong></p>
           <p>Tổng tiền cọc cần thanh toán: <strong>{money(depositTotal)}</strong> ({depositMonths} tháng tiền thuê mỗi kho).</p>
           <p>Hình thức trả tiền thuê: <strong>{planLabel}</strong> — sau khi nhận kho đóng <strong>{money(rentAtHandover)}</strong>{paymentPlan === 'Upfront' ? ' (toàn bộ kỳ thuê)' : ' (tháng đầu), các tháng sau đóng trước ngày đầu mỗi kỳ'}.</p>
+          {selected.length > 1 && (
+            <p><strong>Lưu ý đơn gộp:</strong> Tất cả {selected.length} kho trong đợt đặt này áp dụng chung hình thức <strong>{planLabel}</strong>.</p>
+          )}
           <p>Mỗi kho được làm <strong>một hợp đồng riêng</strong>{selected.length > 1 ? ` (${selected.length} hợp đồng, ký lần lượt)` : ''}. Các kho được giữ cho bạn {holdMinutes} phút để thanh toán cọc.</p>
         </>
       ),
@@ -299,6 +302,17 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
           <div className="cart-layout">
             <section className="cart-card">
               <h2>Kho đã được giữ cho bạn · {order.entries.length} hợp đồng (mỗi kho một hợp đồng)</h2>
+              {order.entries.length > 1 && (
+                <div className="cart-bundle-banner" role="note">
+                  <span className="cart-bundle-icon" aria-hidden="true">ℹ</span>
+                  <div className="cart-bundle-body">
+                    <strong>Đơn thuê gộp {order.entries.length} kho · Chung hình thức thanh toán ({order.paymentPlan === 'Upfront' ? 'Trả 1 lần' : 'Trả theo tháng'})</strong>
+                    <p>
+                      Mỗi kho được tách thành <strong>một hợp đồng độc lập</strong> để xử lý sự cố riêng, nhưng tất cả các kho trong đơn gộp này đều áp dụng chung kỳ hạn {order.months} tháng và chung hình thức thanh toán tiền thuê <strong>{order.paymentPlan === 'Upfront' ? 'Trả 1 lần hết chu kỳ' : 'Trả theo tháng'}</strong>.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="admin-table-wrap"><table className="cart-table"><thead><tr><th>Kho</th><th>Mã đơn · Hợp đồng</th><th>Loại · Kích thước</th><th>Giá / tháng</th><th>Tiền cọc</th></tr></thead><tbody>
                 {order.entries.map(({ item, reservation, paid }) => (
                   <tr key={item.key}>
@@ -424,6 +438,15 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
               {activeGroup && (
                 <section className="cart-card">
                   <h2>Hình thức trả tiền thuê</h2>
+                  <div className="cart-bundle-banner" role="note">
+                    <span className="cart-bundle-icon" aria-hidden="true">ℹ</span>
+                    <div className="cart-bundle-body">
+                      <strong>Quy định thanh toán cho đơn thuê gộp{selected.length > 1 ? ` (${selected.length} kho đang chọn)` : ''}</strong>
+                      <p>
+                        Để đồng bộ chu kỳ đối soát hóa đơn hàng tháng, các kho đặt chung trong cùng một đơn gộp bắt buộc phải áp dụng <strong>cùng một hình thức thanh toán</strong> (hoặc tất cả <strong>Trả theo tháng</strong>, hoặc tất cả <strong>Trả 1 lần hết chu kỳ</strong>). Nếu quý khách muốn chọn hình thức thanh toán khác nhau cho từng kho (ví dụ: 1 kho trả hết chu kỳ, 1 kho trả theo tháng), vui lòng bỏ tích chọn bớt và tách thành các lần đặt riêng biệt.
+                      </p>
+                    </div>
+                  </div>
                   <div className="cart-terms" role="radiogroup" aria-label="Hình thức trả tiền thuê">
                     {[
                       ['Monthly', 'Trả theo tháng', `Sau khi nhận kho đóng ${money(monthlyTotal)} (tháng đầu), các tháng sau đóng trước ngày đầu mỗi kỳ.`],
@@ -452,6 +475,11 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                 <div><dt>Hình thức trả</dt><dd>{planLabel}</dd></div>
                 <div><dt>Đóng sau khi nhận kho</dt><dd>{money(rentAtHandover)}</dd></div>
               </dl>
+              {selected.length > 1 && (
+                <div className="cart-summary-bundle-note" role="note">
+                  <strong>Đơn gộp {selected.length} kho:</strong> áp dụng chung hình thức <strong>{planLabel}</strong> cho tất cả các kho trong đợt đặt này.
+                </div>
+              )}
               <p className="cart-note">Thanh toán ngay: <strong>tiền cọc</strong>. Tiền thuê đóng sau khi nhận kho ({planLabel.toLowerCase()}).</p>
               <button type="button" className="dashboard-primary-btn full" disabled={submitting || !selected.length} onClick={checkout}>
                 {submitting ? 'Đang giữ kho...' : selected.length ? `Đặt cọc ${selected.length} kho` : 'Chọn kho để đặt'}
