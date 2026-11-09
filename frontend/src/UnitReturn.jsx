@@ -7,11 +7,13 @@ import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
 import { focusContract } from './afterDeposit'
 import './ContractSignFlow.css'
 import './UnitReturn.css'
+import { CustomerInspectionBox, INSPECTION, useMyInspections } from './ReturnInspection' // [THÊM 14]
 
 /*
  * TRẢ KHO (khách hàng) - UnitReturnsController.
  *   Khách báo trả kho (chọn ngày) -> Staff đã bàn giao kho nhận lại + kiểm tra (kho "Đang kiểm tra")
  *   -> kết quả: không vấn đề -> hoàn cọc sau N ngày; có phí -> trừ vào cọc, thiếu thì khách đóng thêm.
+ *   [14] Có phí kiểm kho: khách xem ảnh, Đồng ý hoặc Khiếu nại trong N ngày trước khi trừ cọc (ReturnInspection.jsx).
  */
 
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
@@ -43,10 +45,12 @@ export function useUnitReturns() {
 }
 
 /* Các bước của một yêu cầu trả kho, dùng chung cho khách và thông báo. */
-export function returnStage(req) {
+export function returnStage(req, inspection) {
   if (!req) return null
   if (req.status === 'Scheduled') return 'scheduled'
   if (req.status === 'In Progress') return 'inspecting'
+  if (inspection?.status === INSPECTION.AWAITING) return 'confirm' // [THÊM 14] chờ khách xác nhận phí kiểm kho
+  if (inspection?.status === INSPECTION.DISPUTED) return 'disputed' // [THÊM 14] đang giải quyết khiếu nại
   if (Number(req.amountOwed) > 0) return 'owed'
   if (Number(req.refundAmount) > 0 && req.refundStatus !== 'Completed') return 'refunding'
   return 'done'
@@ -63,20 +67,21 @@ export async function payReturnFees(dialog, item) {
   return { redirected: true }
 }
 
-function ReturnProgress({ item, onChanged }) {
+function ReturnProgress({ item, inspection, onChanged }) {
   const dialog = useDialog()
   const [busy, setBusy] = useState(false)
   const req = item.request
-  const stage = returnStage(req)
+  const stage = returnStage(req, inspection)
+  const held = stage === 'confirm' || stage === 'disputed' // [THÊM 14] phí kiểm kho chưa quyết toán
   const steps = [
     ['Báo trả kho', `Hẹn ${req.scheduledTime ? `${req.scheduledTime} ` : ''}ngày ${fmtDay(req.scheduledDate)}${req.staffName ? ` · NV ${req.staffName}` : ''}`],
     ['Nhận lại & kiểm tra kho', stage === 'scheduled' ? 'Chờ đến ngày hẹn' : stage === 'inspecting' ? 'Nhân viên đang kiểm tra' : (req.conditionResult === 'Damaged' ? 'Có vấn đề' : 'Không có vấn đề')],
-    ['Quyết toán tiền cọc', stage === 'owed' ? `Cần đóng thêm ${money(req.amountOwed)}` : ['scheduled', 'inspecting'].includes(stage) ? 'Sau khi kiểm tra' : Number(req.refundAmount) > 0 ? `Hoàn ${money(req.refundAmount)}` : 'Cọc đã bù hết phí'],
-    ['Hoàn cọc', Number(req.refundAmount) > 0
+    ['Quyết toán tiền cọc', stage === 'confirm' ? `Chờ bạn xác nhận phí ${money(inspection.proposedTotal)}` : stage === 'disputed' ? 'Đang giải quyết khiếu nại' : stage === 'owed' ? `Cần đóng thêm ${money(req.amountOwed)}` : ['scheduled', 'inspecting'].includes(stage) ? 'Sau khi kiểm tra' : Number(req.refundAmount) > 0 ? `Hoàn ${money(req.refundAmount)}` : 'Cọc đã bù hết phí'],
+    ['Hoàn cọc', held ? 'Sau khi quyết toán' : Number(req.refundAmount) > 0
       ? req.refundStatus === 'Completed' ? `Đã chuyển ${fmtDay(req.refundedAt)}` : req.refundDueDate ? `Dự kiến ${fmtDay(req.refundDueDate)}` : 'Sau khi kiểm tra'
       : ['scheduled', 'inspecting'].includes(stage) ? `Sau kiểm tra ${req.refundDays} ngày` : 'Không có']
   ]
-  const current = { scheduled: 0, inspecting: 1, owed: 2, refunding: 3, done: 4 }[stage]
+  const current = { scheduled: 0, inspecting: 1, confirm: 2, disputed: 2, owed: 2, refunding: 3, done: 4 }[stage]
 
   const cancel = async () => {
     const ok = await dialog.confirm({ tone: 'warning', title: 'Hủy lịch trả kho?', message: 'Bạn tiếp tục thuê kho như bình thường đến hết hợp đồng.', confirmLabel: 'Hủy lịch', cancelLabel: 'Không' })
@@ -107,7 +112,7 @@ function ReturnProgress({ item, onChanged }) {
           <p>{item.facility}</p>
         </div>
         <span className={`ur-badge ${stage}`}>
-          {{ scheduled: 'Đã hẹn trả kho', inspecting: 'Đang kiểm tra kho', owed: 'Cần đóng thêm phí', refunding: 'Chờ hoàn cọc', done: 'Hoàn tất' }[stage]}
+          {{ scheduled: 'Đã hẹn trả kho', inspecting: 'Đang kiểm tra kho', confirm: 'Chờ bạn xác nhận', disputed: 'Đang xử lý khiếu nại', owed: 'Cần đóng thêm phí', refunding: 'Chờ hoàn cọc', done: 'Hoàn tất' }[stage]}
         </span>
       </div>
 
@@ -117,7 +122,9 @@ function ReturnProgress({ item, onChanged }) {
         ))}
       </ol>
 
-      {req.inspectedAt && (
+      {/* [THÊM 14] Phí kiểm kho chờ xác nhận / khiếu nại: hộp xác nhận thay cho bảng quyết toán (chưa có số hoàn) */}
+      {held && <CustomerInspectionBox inspection={inspection} depositTotal={req.depositTotal} debtDeducted={req.deductedFromDeposit} onChanged={onChanged} />}
+      {req.inspectedAt && !held && (
         <div className={`ur-result ${req.conditionResult === 'Damaged' ? 'bad' : 'ok'}`}>
           <strong>{req.conditionResult === 'Damaged' ? 'Kết quả kiểm tra: có vấn đề' : 'Kết quả kiểm tra: kho không có vấn đề'}</strong>
           {req.notes && <p>{req.notes}</p>}
@@ -135,6 +142,7 @@ function ReturnProgress({ item, onChanged }) {
           </table>
         </div>
       )}
+      {!held && inspection && <CustomerInspectionBox inspection={inspection} onChanged={onChanged} />}
       {stage === 'scheduled' && req.overdue && (
         <div className="auth-message error" role="alert">Hợp đồng đã hết hạn ngày {fmtDay(item.endDate)}. Cơ sở đã lên lịch thu hồi kho, nhân viên sẽ liên hệ bạn. Muốn đổi ngày giờ, vui lòng liên hệ cơ sở.</div>
       )}
@@ -152,14 +160,22 @@ function ReturnProgress({ item, onChanged }) {
 
 /* Khối "Trả kho" ở đầu trang Hợp đồng: các yêu cầu trả kho đang xử lý / vừa xong. */
 export function ReturnSection({ returns, onChanged }) {
+  // [THÊM 14] Kết quả kiểm kho (ảnh, xác nhận / khiếu nại). Lần tải này cũng tự xác nhận các kết quả quá hạn -> tải lại trả kho.
+  const inspections = useMyInspections()
+  const { reload: reloadReturns } = returns
+  useEffect(() => { if (inspections.autoSettled > 0) reloadReturns() }, [inspections.data, inspections.autoSettled, reloadReturns])
+
   if (returns.loading && !returns.data) return null
   if (returns.error) return <div className="rn-error" role="alert">Không tải được thông tin trả kho: {returns.error} <button type="button" onClick={returns.reload}>Thử lại</button></div>
-  const active = returns.items.filter(i => i.request && (returnStage(i.request) !== 'done' || (i.request.inspectedAt && Date.now() - Date.parse(i.request.inspectedAt) < 30 * 86400000)))
+  const active = returns.items.filter(i => i.request && (returnStage(i.request, inspections.byReservation(i.reservationId)) !== 'done' || (i.request.inspectedAt && Date.now() - Date.parse(i.request.inspectedAt) < 30 * 86400000)))
   if (!active.length) return null
   return (
     <section className="ur-section" aria-label="Trả kho">
       <h2>Trả kho</h2>
-      {active.map(item => <ReturnProgress key={item.reservationId} item={item} onChanged={() => { returns.reload(); onChanged?.() }} />)}
+      {active.map(item => (
+        <ReturnProgress key={item.reservationId} item={item} inspection={inspections.byReservation(item.reservationId)}
+          onChanged={() => { returns.reload(); inspections.reload(); onChanged?.() }} />
+      ))}
     </section>
   )
 }
@@ -253,7 +269,7 @@ export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
               <li>Đến cơ sở đúng ngày giờ hẹn, nhân viên được phân công (ưu tiên người đã bàn giao kho cho bạn) sẽ nhận lại và kiểm tra kho.</li>
               <li>{rr.returnRequirements || 'Lấy hết tài sản, vệ sinh kho, trả khóa / thẻ truy cập.'}</li>
               <li>Không có vấn đề: tiền cọc được hoàn sau <strong>{rules?.depositRefundDays ?? 7} ngày</strong>.</li>
-              <li>Có hư hỏng / phát sinh: phí được trừ vào tiền cọc trước; nếu tiền cọc không đủ, bạn đóng thêm phần còn thiếu.</li>
+              <li>Có hư hỏng / phát sinh: nhân viên chụp ảnh và gửi bạn các khoản phí. Bạn có thời hạn để <strong>đồng ý hoặc khiếu nại</strong> trước khi trừ vào tiền cọc (quá hạn hệ thống tự xác nhận); nếu tiền cọc không đủ, bạn đóng thêm phần còn thiếu.</li>
             </ol>
             {feeList.length > 0 && <><h4>Các khoản phí có thể phát sinh</h4><ul>{feeList.map(f => <li key={f}>{f}</li>)}</ul></>}
           </div>

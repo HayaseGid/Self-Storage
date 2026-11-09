@@ -19,6 +19,7 @@ import ContractDocument from './ContractDocument'
 import ManagerPriceTable from './ManagerPriceTable'
 import { UnitTypeChip } from './unitTypes'
 import './unitTypes.css'
+import { ManagerReturnInspectionsTab } from './ReturnInspection' // [THÊM 14] xác nhận & khiếu nại kết quả kiểm kho
 
 /* Formatters */
 const fmtMoney = (n) => new Intl.NumberFormat('vi-VN').format(n || 0) + 'đ'
@@ -2783,6 +2784,9 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
           <button className={activeTab === 'lateFees' ? 'active' : ''} onClick={() => setActiveTab('lateFees')}>
             <span>⏰</span> Công nợ & phí trễ hạn
           </button>
+          <button className={activeTab === 'returnInspections' ? 'active' : ''} onClick={() => setActiveTab('returnInspections')}>
+            <span>🧾</span> Khiếu nại kiểm kho
+          </button>
           <button className={activeTab === 'staff' ? 'active' : ''} onClick={() => setActiveTab('staff')}>
             <span>👥</span> Nhân sự tại cơ sở
           </button>
@@ -2811,6 +2815,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
               {activeTab === 'reports' && 'Báo cáo sự cố kho'}
               {activeTab === 'contracts' && 'Giám sát hợp đồng thuê'}
               {activeTab === 'lateFees' && 'Công nợ & phí trễ hạn'}
+              {activeTab === 'returnInspections' && 'Xác nhận & khiếu nại kiểm kho'}
               {activeTab === 'staff' && 'Phân công nhân viên cơ sở'}
             </h1>
             <p>Quản lý vận hành kho, theo dõi đơn thuê và doanh thu cơ sở {facilityName}.</p>
@@ -3171,6 +3176,11 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
             showToast={showToast}
             onChanged={() => Promise.all([reloadFacilityCatalog(), loadState({ silent: true })])}
           />
+        )}
+
+        {/* [14] TAB XÁC NHẬN & KHIẾU NẠI KIỂM KHO */}
+        {activeTab === 'returnInspections' && (
+          <ManagerReturnInspectionsTab facilityId={managedFacility?.facilityId} showToast={showToast} />
         )}
 
         {/* [7a] TAB CÔNG NỢ & PHÍ TRỄ HẠN */}
