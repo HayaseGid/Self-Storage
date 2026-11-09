@@ -95,8 +95,8 @@ public static class DatabaseSeeder
         {
             new ContractType { ContractTypeID = 1, TypeName = "1 tháng", RentalMonths = 1, DiscountRate = 0m },
             new ContractType { ContractTypeID = 2, TypeName = "3 tháng", RentalMonths = 3, DiscountRate = 0m },
-            new ContractType { ContractTypeID = 3, TypeName = "6 tháng", RentalMonths = 6, DiscountRate = 5m },
-            new ContractType { ContractTypeID = 4, TypeName = "12 tháng", RentalMonths = 12, DiscountRate = 10m }
+            new ContractType { ContractTypeID = 3, TypeName = "6 tháng", RentalMonths = 6, DiscountRate = 0m },
+            new ContractType { ContractTypeID = 4, TypeName = "12 tháng", RentalMonths = 12, DiscountRate = 0m }
         };
         context.ContractTypes.AddRange(contractTypes);
         context.SaveChanges();

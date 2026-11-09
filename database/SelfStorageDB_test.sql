@@ -2127,8 +2127,8 @@ SET IDENTITY_INSERT ContractType ON;
 INSERT INTO ContractType (ContractTypeID, TypeName, RentalMonths, DiscountRate) VALUES
 (1, N'1 tháng', 1, 0),
 (2, N'3 tháng', 3, 0),
-(3, N'6 tháng', 6, 5),
-(4, N'12 tháng', 12, 10);
+(3, N'6 tháng', 6, 0),
+(4, N'12 tháng', 12, 0);
 SET IDENTITY_INSERT ContractType OFF;
 GO
 

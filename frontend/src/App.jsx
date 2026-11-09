@@ -1371,9 +1371,6 @@ function BookingPage({ facility, unit }) {
                         >
                           <span className="duration-package-months"><strong>{months}</strong> tháng</span>
                           <span className="duration-package-total">{formatPrice(quote(monthlyPrice, months, facility.facilityId).rent)}</span>
-                          {quote(monthlyPrice, months, facility.facilityId).discountPercent > 0 && (
-                            <span className="duration-package-saving">Giảm {quote(monthlyPrice, months, facility.facilityId).discountPercent}% · {formatPrice(effectiveMonthly(monthlyPrice, months))}/tháng</span>
-                          )}
                           <span className="duration-package-end">{packageEnd ? `Đến ${formatDate(packageEnd)}` : DURATION_PACKAGE_NOTES[months]}</span>
                         </button>
                       )
@@ -1448,15 +1445,9 @@ function BookingPage({ facility, unit }) {
                   <div className="price-divider" />
 
                   <div>
-                    <span>Tổng tiền thuê</span>
+                    <span>Tổng tiền thuê ({duration} tháng)</span>
                     <strong className="main-price">{formatPrice(totalRent)}</strong>
                   </div>
-                  {priceQuote.discountPercent > 0 && (
-                    <div className="discount-row">
-                      <span>Giảm giá gói {totalMonths} tháng ({priceQuote.discountPercent}%)</span>
-                      <strong>−{formatPrice(priceQuote.saving)}</strong>
-                    </div>
-                  )}
 
                   <div className="deposit-row">
                     <div>

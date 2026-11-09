@@ -115,7 +115,7 @@ public class ReservationService : IReservationService
             {
                 var firstUnitInGroup = group.First();
                 var monthlyPrice = firstUnitInGroup.RentalRate!.MonthlyPrice;
-                var effectiveMonthlyPrice = decimal.Round(monthlyPrice * (100m - discountRate) / 100m, 0, MidpointRounding.AwayFromZero);
+                var effectiveMonthlyPrice = monthlyPrice;
 
                 var reservationItem = new ReservationItem
                 {
@@ -125,7 +125,7 @@ public class ReservationService : IReservationService
                     UnitSizeID = group.Key.UnitSizeID,
                     Quantity = (byte)group.Count(),
                     MonthlyPrice = monthlyPrice,
-                    DiscountPercent = discountRate,
+                    DiscountPercent = 0m,
                     CreatedAt = now
                 };
                 reservation.ReservationItems.Add(reservationItem);

@@ -395,7 +395,6 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                             </div>
                             <div className="cart-item-price">
                               <strong>{money(item.price)}</strong><small>/tháng</small>
-                              {effectiveMonthly(item.price, months) < item.price && <span className="cart-item-discount">Gói {months} tháng: {money(effectiveMonthly(item.price, months))}/tháng</span>}
                             </div>
                             <button type="button" className="cart-remove" onClick={() => removeItem(item)} aria-label={`Bỏ kho ${item.unitId} khỏi giỏ`}>×</button>
                           </li>
@@ -414,7 +413,6 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                       <button key={term} type="button" role="radio" aria-checked={months === term} className={`duration-package${months === term ? ' active' : ''}`} onClick={() => setMonths(term)}>
                         <span className="duration-package-months"><strong>{term}</strong> tháng</span>
                         <span className="duration-package-total">{money(quote(selected.map(item => item.price), term, activeGroup?.facilityId).rent)}</span>
-                        {quote([1000000], term, activeGroup?.facilityId).discountPercent > 0 && <span className="duration-package-saving">Giảm {quote([1000000], term, activeGroup?.facilityId).discountPercent}%</span>}
                         <span className="duration-package-end">{startDate ? `Đến ${fmtDate(endDateFor(startDate, term))}` : term === 6 ? 'Nửa năm' : 'Một năm'}</span>
                       </button>
                     ))}
@@ -447,10 +445,9 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
               <p className="cart-summary-facility">{activeGroup ? activeGroup.name : 'Chưa chọn cơ sở'}</p>
               <dl>
                 <div><dt>Số kho</dt><dd>{selected.length}{selected.length > CHECKOUT_LIMIT ? ` (tối đa ${CHECKOUT_LIMIT})` : ''}</dd></div>
-                <div><dt>Tiền thuê / tháng{cartQuote.discountPercent ? ` (đã giảm ${cartQuote.discountPercent}%)` : ''}</dt><dd>{money(monthlyTotal)}</dd></div>
+                <div><dt>Tiền thuê / tháng</dt><dd>{money(monthlyTotal)}</dd></div>
                 <div><dt>Thời hạn</dt><dd>{months} tháng</dd></div>
                 <div><dt>Tổng tiền thuê</dt><dd>{money(rentTotal)}</dd></div>
-                {cartQuote.saving > 0 && <div className="cart-sum-saving"><dt>Tiết kiệm nhờ gói {months} tháng</dt><dd>−{money(cartQuote.saving)}</dd></div>}
                 <div className="cart-sum-deposit"><dt>Tiền cọc ({depositMonths} tháng / kho)</dt><dd>{money(depositTotal)}</dd></div>
                 <div><dt>Hình thức trả</dt><dd>{planLabel}</dd></div>
                 <div><dt>Đóng sau khi nhận kho</dt><dd>{money(rentAtHandover)}</dd></div>

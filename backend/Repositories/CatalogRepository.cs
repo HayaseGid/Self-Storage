@@ -168,12 +168,7 @@ public class CatalogRepository : ICatalogRepository
 
     public async Task<decimal> GetContractDiscountRateAsync(int months, CancellationToken cancellationToken)
     {
-        var discount = await _context.ContractTypes
-            .Where(ct => ct.RentalMonths == months && ct.IsActive)
-            .Select(ct => (decimal?)ct.DiscountRate)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return discount ?? (months switch { 6 => 5m, 12 => 10m, _ => 0m });
+        return 0m;
     }
 
     public async Task<IReadOnlyList<AvailableUnitData>> GetAvailableUnitsAsync(int facilityId, int unitTypeId, DateTime startDate, DateTime endDate, DateTime now, CancellationToken cancellationToken)

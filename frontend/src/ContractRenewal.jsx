@@ -308,7 +308,6 @@ export function RenewalModal({ item, onClose, onDone }) {
                     onClick={() => { setMonths(q.months); setError(''); setAgreed(false) }}
                   >
                     <strong>{q.months} tháng</strong>
-                    {Number(q.discountPercent) > 0 && <span className="rn-plan-off">-{Number(q.discountPercent)}%</span>}
                     <span>{money(q.monthly)}/tháng</span>
                     <small>đến {fmtIsoDate(q.endDate)}</small>
                   </button>
