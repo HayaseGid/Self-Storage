@@ -64,6 +64,8 @@ builder.Services.AddScoped<IManagerToolsService, ManagerToolsService>();
 //Đã cập nhật các repository và service cho LateFee
 builder.Services.AddScoped<ILateFeeRepository, LateFeeRepository>();
 builder.Services.AddScoped<ILateFeeService, LateFeeService>();
+builder.Services.AddScoped<IReturnInspectionRepository, ReturnInspectionRepository>();   // [THÊM 14]
+builder.Services.AddScoped<IReturnInspectionService, ReturnInspectionService>();         // [THÊM 14]
 //Đã sửa: 09/11/2026
 
 
