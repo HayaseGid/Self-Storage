@@ -80,10 +80,10 @@ public static class DatabaseSeeder
             new User { UserID = 3, RoleID = 2, Username = "staff1", PasswordHash = "$2a$11$5vUNIDk.1IszB6hVO8b5/.1WdOb8kB20RNqXjwwcd8gD89rjFr1I6", FullName = "Lê Nhân Viên Một", Email = "staff1@test.com", EmailVerified = true, PhoneNumber = "0902000001", Status = "Active", CreatedAt = DateTime.UtcNow },
             new User { UserID = 4, RoleID = 2, Username = "staff2", PasswordHash = "$2a$11$xIPRi/Har6SQwCAtelRbKuc786AWbZUt5HrqWD9Rrl9yIriBeta7O", FullName = "Phạm Nhân Viên Hai", Email = "staff2@test.com", EmailVerified = true, PhoneNumber = "0902000002", Status = "Active", CreatedAt = DateTime.UtcNow },
             new User { UserID = 5, RoleID = 2, Username = "staff3", PasswordHash = "$2a$11$OD99/.KgkGK3VkbT/ELXieAHJ2TqTJyaxFwmb71u6YDzjftC3GRUi", FullName = "Hoàng Nhân Viên Ba", Email = "staff3@test.com", EmailVerified = true, PhoneNumber = "0902000003", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 6, RoleID = 1, Username = "customer1", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Đinh Khách Hàng", Email = "cust1@test.com", EmailVerified = true, PhoneNumber = "0903000001", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 7, RoleID = 1, Username = "customer2", PasswordHash = "$2a$11$27bbRuD2nAlQcY.squQKcuN44mEpDndqJsq9EXHIIEP7mJPAjQsge", FullName = "Vũ Khách Hàng", Email = "cust2@test.com", EmailVerified = true, PhoneNumber = "0903000002", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 8, RoleID = 1, Username = "customer3", PasswordHash = "$2a$11$cr7/qLThxQP3MBNSbJ/bX.b27wOPowqPiqN.vHn5MS/sAZtkj4182", FullName = "Bùi Khách Hàng", Email = "cust3@test.com", EmailVerified = true, PhoneNumber = "0903000003", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 9, RoleID = 1, Username = "customer4", PasswordHash = "$2a$11$l5dxnygwHvNHkrE7u5ml0.E1MSLImWL/OPDjzKqhpqqSyiuJlF5Gi", FullName = "Đỗ Khách Hàng", Email = "cust4@test.com", EmailVerified = true, PhoneNumber = "0903000004", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 6, RoleID = 1, Username = "customer1", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Đinh Khách Hàng", Email = "cust1@test.com", EmailVerified = true, PhoneNumber = "0903000001", Status = "Active", AccessCode = "612345", AccessCodeStatus = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 7, RoleID = 1, Username = "customer2", PasswordHash = "$2a$11$27bbRuD2nAlQcY.squQKcuN44mEpDndqJsq9EXHIIEP7mJPAjQsge", FullName = "Vũ Khách Hàng", Email = "cust2@test.com", EmailVerified = true, PhoneNumber = "0903000002", Status = "Active", AccessCode = "623456", AccessCodeStatus = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 8, RoleID = 1, Username = "customer3", PasswordHash = "$2a$11$cr7/qLThxQP3MBNSbJ/bX.b27wOPowqPiqN.vHn5MS/sAZtkj4182", FullName = "Bùi Khách Hàng", Email = "cust3@test.com", EmailVerified = true, PhoneNumber = "0903000003", Status = "Active", AccessCode = "634567", AccessCodeStatus = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 9, RoleID = 1, Username = "customer4", PasswordHash = "$2a$11$l5dxnygwHvNHkrE7u5ml0.E1MSLImWL/OPDjzKqhpqqSyiuJlF5Gi", FullName = "Đỗ Khách Hàng", Email = "cust4@test.com", EmailVerified = true, PhoneNumber = "0903000004", Status = "Active", AccessCode = "645678", AccessCodeStatus = "Active", CreatedAt = DateTime.UtcNow },
             new User { UserID = 10, RoleID = 4, Username = "biz_ops_mgr", PasswordHash = "$2a$11$N2/L1iRkRbIAwLhubV71meEVZ9g.IZY5nD0HsjSekbaPtfvcI.W42", FullName = "Lý Vận Hành Tổng", Email = "ops@test.com", EmailVerified = true, PhoneNumber = "0904000001", Status = "Active", CreatedAt = DateTime.UtcNow },
             new User { UserID = 11, RoleID = 5, Username = "sys_admin", PasswordHash = "$2a$11$HDFjRM5RTirvAJ2/vEzwhuv5OQOjpw7wT/3ElFEbwmIUwI2pWmepS", FullName = "Quản Trị Viên", Email = "admin@test.com", EmailVerified = true, PhoneNumber = "0905000001", Status = "Active", CreatedAt = DateTime.UtcNow }
         };
@@ -388,10 +388,12 @@ public static class DatabaseSeeder
         context.Contracts.AddRange(contract1, contract2);
         context.SaveChanges();
 
-        // 19. UnitAccess
+        // 19. UnitAccess (chuẩn hóa: chìa khóa vật lý KEY-{UnitNumber} + mã mở cổng Access Code 6 số)
         context.UnitAccesses.AddRange(
-            new UnitAccess { AccessID = 1, ReservationUnitID = 1, ReservationID = 1, UnitID = 4, UserID = 6, AccessType = "Smart Lock", AccessValue = "123456", IssuedAt = ru1.HandedOverAt!.Value, IssuedByUserID = 3, Status = "Active" },
-            new UnitAccess { AccessID = 2, ReservationUnitID = 2, ReservationID = 2, UnitID = 13, UserID = 7, AccessType = "Smart Lock", AccessValue = "654321", IssuedAt = ru2.HandedOverAt!.Value, IssuedByUserID = 5, Status = "Active" }
+            new UnitAccess { AccessID = 1, ReservationUnitID = 1, ReservationID = 1, UnitID = 4, UserID = 6, AccessType = "Key", AccessValue = "KEY-Q1-U04", IssuedAt = ru1.HandedOverAt!.Value, IssuedByUserID = 3, Status = "Active" },
+            new UnitAccess { AccessID = 2, ReservationUnitID = 2, ReservationID = 2, UnitID = 13, UserID = 7, AccessType = "Key", AccessValue = "KEY-TB-U03", IssuedAt = ru2.HandedOverAt!.Value, IssuedByUserID = 5, Status = "Active" },
+            new UnitAccess { AccessID = 3, ReservationUnitID = 1, ReservationID = 1, UnitID = 4, UserID = 6, AccessType = "Access Code", AccessValue = "612345", IssuedAt = ru1.HandedOverAt!.Value, IssuedByUserID = 3, Status = "Active" },
+            new UnitAccess { AccessID = 4, ReservationUnitID = 2, ReservationID = 2, UnitID = 13, UserID = 7, AccessType = "Access Code", AccessValue = "623456", IssuedAt = ru2.HandedOverAt!.Value, IssuedByUserID = 5, Status = "Active" }
         );
         context.SaveChanges();
 
