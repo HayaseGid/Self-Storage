@@ -34,64 +34,6 @@ import { useMyInspections } from './ReturnInspection' // [THÊM 14] thông báo 
 import { Code, FilterChips, Pager, UnitCodes, newestFirst, useClientPaging } from './listKit' // [THÊM] phân trang + mã nổi bật + mới nhất lên đầu
 import './CustomerAccount.css'
 
-/* Cấu hình định danh rõ vai trò từng tab cho Khách hàng thuê kho */
-const CUSTOMER_TABS = {
-  overview: {
-    id: 'overview',
-    badge: 'Bảng điều khiển',
-    title: 'Tổng quan',
-    subtitle: 'Tóm tắt trạng thái & việc cần xử lý',
-    purposeTitle: 'Tổng quan tài khoản & Nhắc việc quan trọng',
-    purposeDesc: 'Nắm bắt nhanh các khoản cần thanh toán, hợp đồng chờ ký, thời hạn kho đang thuê và chuyển nhanh đến đúng tác vụ bạn cần.',
-    pills: ['Nhắc việc ưu tiên', 'Thống kê nhanh', 'Lối tắt tác vụ']
-  },
-  storage: {
-    id: 'storage',
-    badge: 'Vận hành & Ra vào kho',
-    title: 'Kho của tôi',
-    subtitle: 'Mã PIN ra vào, vị trí & tác vụ theo kho',
-    purposeTitle: 'Quản lý kho lưu trữ, Thẻ ra vào & Tác vụ theo từng ô kho',
-    purposeDesc: 'Tra cứu mã PIN ra vào cổng, vị trí tầng/khu, diện tích ô kho và thực hiện ngay các tác vụ của từng kho: đóng cọc, ký hợp đồng, đóng tiền thuê, gia hạn hoặc báo trả kho.',
-    pills: ['Mã PIN ra vào kho', 'Sơ đồ & Địa chỉ cơ sở', 'Tác vụ nhanh trên từng kho']
-  },
-  contract: {
-    id: 'contract',
-    badge: 'Pháp lý & Thủ tục',
-    title: 'Hợp đồng & Pháp lý',
-    subtitle: 'Ký điện tử, văn bản HĐ, gia hạn & trả kho',
-    purposeTitle: 'Quản lý hồ sơ pháp lý: Ký hợp đồng, Gia hạn & Thủ tục trả kho',
-    purposeDesc: 'Ký hợp đồng/phụ lục trực tuyến, tải văn bản hợp đồng pháp lý, đăng ký gia hạn thêm kỳ mới hoặc đặt lịch hẹn nhân viên kiểm tra trả kho.',
-    pills: ['Ký điện tử (E-Sign)', 'Phụ lục gia hạn', 'Đăng ký & Biên bản trả kho']
-  },
-  payment: {
-    id: 'payment',
-    badge: 'Tài chính & Hóa đơn',
-    title: 'Thanh toán & Hóa đơn',
-    subtitle: 'Đóng cọc, tiền thuê định kỳ, phí trễ & hoàn tiền',
-    purposeTitle: 'Trung tâm Thanh toán: Tiền cọc, Hóa đơn thuê kho, Phí phát sinh & Hoàn tiền',
-    purposeDesc: 'Thanh toán tập trung mọi khoản phí hiện tại (tiền cọc giữ kho, hóa đơn tiền thuê định kỳ hằng tháng, phí trễ hạn), tra cứu lịch sử biên lai và theo dõi tiến trình hoàn tiền cọc.',
-    pills: ['Đóng tiền cọc & tiền thuê', 'Phí trễ hạn & phát sinh', 'Lịch sử & Tiến trình hoàn cọc']
-  },
-  notifications: {
-    id: 'notifications',
-    badge: 'Cảnh báo hệ thống',
-    title: 'Thông báo',
-    subtitle: 'Nhắc hạn thuê, lịch bàn giao & biên bản',
-    purposeTitle: 'Hộp thư thông báo & Xác nhận biên bản kiểm kho',
-    purposeDesc: 'Nhận thông báo tự động khi hợp đồng sẵn sàng ký, kho sắp hết hạn, nhắc lịch đóng tiền thuê hoặc xác nhận biên bản kiểm tra kho khi trả.',
-    pills: ['Nhắc lịch tự động', 'Xác nhận biên bản kiểm kho']
-  },
-  profile: {
-    id: 'profile',
-    badge: 'Định danh khách hàng',
-    title: 'Hồ sơ cá nhân',
-    subtitle: 'Thông tin chủ hợp đồng & bảo mật',
-    purposeTitle: 'Hồ sơ chủ hợp đồng & Thông tin liên hệ',
-    purposeDesc: 'Thông tin cá nhân được sử dụng để lập hợp đồng thuê kho điện tử, đối chiếu CCCD khi bàn giao kho tại cơ sở và gửi hóa đơn qua email.',
-    pills: ['Thông tin định danh', 'Email nhận hợp đồng']
-  }
-}
-
 function NavIcon({ name }) {
   switch (name) {
     case 'overview':
@@ -322,17 +264,13 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
 
       <div className="customer-page-heading">
         <div>
-          <span className="customer-eyebrow">
-            VẬN HÀNH & THẺ RA VÀO KHO
-          </span>
-
+          <span className="customer-eyebrow">KHO LƯU TRỮ CỦA BẠN</span>
           <h1>Kho của tôi</h1>
-
-          <p>Tra cứu mã PIN ra vào cổng, vị trí ô kho và thao tác nhanh (đóng phí, ký hợp đồng, gia hạn, trả kho) cho từng kho.</p>
+          <p>Mã PIN ra vào cổng, vị trí ô kho và thao tác nhanh theo từng kho.</p>
         </div>
 
         <span className="page-count">
-          {activeRentals.length} kho đang sử dụng · {rentals.length} tổng đơn
+          {activeRentals.length} đang thuê · {rentals.length} đơn
         </span>
       </div>
 
@@ -1192,15 +1130,9 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
 
       <div className="customer-page-heading">
         <div>
-          <span className="customer-eyebrow">
-            PHÁP LÝ & VĂN BẢN THUÊ KHO
-          </span>
-
-          <h1>Hợp đồng & Thủ tục pháp lý</h1>
-
-          <p>
-            Ký hợp đồng/phụ lục trực tuyến, xem văn bản hợp đồng, đăng ký gia hạn và đặt lịch hẹn trả kho.
-          </p>
+          <span className="customer-eyebrow">HỢP ĐỒNG & THỦ TỤC</span>
+          <h1>Hợp đồng thuê kho</h1>
+          <p>Ký hợp đồng trực tuyến, gia hạn kỳ mới và đăng ký trả kho.</p>
         </div>
 
         {(pendingCount > 0 || toSign.length > 0) && (
@@ -1208,38 +1140,6 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
             {toSign.length || pendingCount} hợp đồng chờ ký
           </span>
         )}
-      </div>
-
-      {/* QUY TRÌNH 4 BƯỚC PHÁP LÝ RÕ RÀNG */}
-      <div className="cportal-lifecycle" aria-label="Quy trình hợp đồng thuê kho">
-        <div className="cportal-lifecycle-step">
-          <span className="cportal-lifecycle-num">1</span>
-          <div>
-            <strong>Đặt cọc giữ kho</strong>
-            <small>Hệ thống lập hợp đồng tự động</small>
-          </div>
-        </div>
-        <div className="cportal-lifecycle-step">
-          <span className="cportal-lifecycle-num">2</span>
-          <div>
-            <strong>Ký hợp đồng điện tử</strong>
-            <small>Xác nhận điều khoản trực tuyến</small>
-          </div>
-        </div>
-        <div className="cportal-lifecycle-step">
-          <span className="cportal-lifecycle-num">3</span>
-          <div>
-            <strong>Nhận bàn giao & Sử dụng</strong>
-            <small>Nhận mã PIN ra vào kho 24/7</small>
-          </div>
-        </div>
-        <div className="cportal-lifecycle-step">
-          <span className="cportal-lifecycle-num">4</span>
-          <div>
-            <strong>Gia hạn hoặc Trả kho</strong>
-            <small>Kiểm tra kho & hoàn trả tiền cọc</small>
-          </div>
-        </div>
       </div>
 
       <FilterChips
@@ -1589,7 +1489,6 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
   )
   const expiringRentals = activeRentals.filter(item => item.remainingDays <= 30)
   const [activeSection, setActiveSection] = useState(() => takeCustomerSection('overview'))
-  const currentTabMeta = CUSTOMER_TABS[activeSection] || CUSTOMER_TABS.overview
 
   // Thông báo: tính từ đơn thuê + gia hạn + chính sách; mở mục nào thì thông báo của mục đó được tính là đã xem.
   const renewalsForNotices = useContractRenewals()
@@ -1696,10 +1595,9 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
         <div className="customer-brand" role="button" tabIndex={0} onClick={() => navigate('/')} onKeyDown={e => e.key === 'Enter' && navigate('/')}>
           <span className="brand-mark">S</span>
-
           <div>
             <strong>StoreSpace</strong>
-            <small>Cổng khách hàng thuê kho</small>
+            <small>Khách hàng</small>
           </div>
         </div>
 
@@ -1707,7 +1605,6 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
           <div className="customer-avatar">
             {user?.name?.charAt(0)?.toUpperCase() || 'K'}
           </div>
-
           <div>
             <strong>{user?.name || 'Khách hàng'}</strong>
             <small>{activeRentals.length} kho đang thuê</small>
@@ -1715,7 +1612,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
         </div>
 
         <div className="cportal-nav-group">
-          <span className="cportal-nav-group-label">Quản lý thuê kho</span>
+          <span className="cportal-nav-group-label">Quản lý kho</span>
 
           <button
             type="button"
@@ -1723,10 +1620,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             onClick={() => setActiveSection('overview')}
           >
             <span className="cportal-nav-icon"><NavIcon name="overview" /></span>
-            <span className="cportal-nav-text">
-              <strong>Tổng quan</strong>
-              <small>Tóm tắt & việc cần làm</small>
-            </span>
+            <span className="cportal-nav-label">Tổng quan</span>
           </button>
 
           <button
@@ -1735,10 +1629,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             onClick={() => setActiveSection('storage')}
           >
             <span className="cportal-nav-icon"><NavIcon name="storage" /></span>
-            <span className="cportal-nav-text">
-              <strong>Kho của tôi</strong>
-              <small>Mã PIN, vị trí & tác vụ kho</small>
-            </span>
+            <span className="cportal-nav-label">Kho của tôi</span>
             {navBadge('storage')}
           </button>
 
@@ -1748,15 +1639,12 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             onClick={() => navigate('/search')}
           >
             <span className="cportal-nav-icon"><NavIcon name="search" /></span>
-            <span className="cportal-nav-text">
-              <strong>Thuê thêm kho mới ↗</strong>
-              <small>Tìm cơ sở & chọn ô kho</small>
-            </span>
+            <span className="cportal-nav-label">Thuê thêm kho ↗</span>
           </button>
         </div>
 
         <div className="cportal-nav-group">
-          <span className="cportal-nav-group-label">Pháp lý & Tài chính</span>
+          <span className="cportal-nav-group-label">Pháp lý & Phí</span>
 
           <button
             type="button"
@@ -1764,10 +1652,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             onClick={() => setActiveSection('contract')}
           >
             <span className="cportal-nav-icon"><NavIcon name="contract" /></span>
-            <span className="cportal-nav-text">
-              <strong>Hợp đồng & Pháp lý</strong>
-              <small>Ký HĐ, gia hạn, trả kho</small>
-            </span>
+            <span className="cportal-nav-label">Hợp đồng</span>
             {navBadge('contract')}
           </button>
 
@@ -1777,10 +1662,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             onClick={() => setActiveSection('payment')}
           >
             <span className="cportal-nav-icon"><NavIcon name="payment" /></span>
-            <span className="cportal-nav-text">
-              <strong>Thanh toán & Hóa đơn</strong>
-              <small>Đóng cọc, tiền thuê, hoàn tiền</small>
-            </span>
+            <span className="cportal-nav-label">Thanh toán</span>
             {navBadge('payment')}
           </button>
         </div>
@@ -1794,10 +1676,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             onClick={() => setActiveSection('notifications')}
           >
             <span className="cportal-nav-icon"><NavIcon name="notifications" /></span>
-            <span className="cportal-nav-text">
-              <strong>Thông báo</strong>
-              <small>Nhắc lịch & biên bản kho</small>
-            </span>
+            <span className="cportal-nav-label">Thông báo</span>
             {navBadge('notifications')}
           </button>
 
@@ -1807,17 +1686,14 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             onClick={() => setActiveSection('profile')}
           >
             <span className="cportal-nav-icon"><NavIcon name="profile" /></span>
-            <span className="cportal-nav-text">
-              <strong>Hồ sơ cá nhân</strong>
-              <small>Thông tin chủ hợp đồng</small>
-            </span>
+            <span className="cportal-nav-label">Hồ sơ</span>
           </button>
         </div>
 
-        <div className="customer-sidebar-bottom" style={{ marginTop: 'auto' }}>
+        <div className="customer-sidebar-bottom">
           <button type="button" onClick={logout}>
             <span>↪</span>
-            Đăng xuất tài khoản
+            Đăng xuất
           </button>
         </div>
 
@@ -1825,13 +1701,14 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
       <main className="customer-main">
 
-        {/* HEADER CHUNG + NÚT THÔNG BÁO / HỒ SƠ */}
+        {/* HEADER GỌN GÀNG */}
         <div className="cportal-header-bar">
-          <div className="cportal-welcome">
-            <span className="cportal-welcome-kicker">CỔNG QUẢN LÝ KHO TỰ LƯU TRỮ STORESPACE</span>
-            <h1>Xin chào, {user?.name || 'Khách hàng'}!</h1>
-            <p>Mỗi phân mục dưới đây đảm nhận một nghiệp vụ riêng biệt để bạn quản lý kho thuê thuận tiện nhất.</p>
-          </div>
+          {activeSection === 'overview' ? (
+            <div className="cportal-welcome">
+              <h1>Xin chào, {user?.name || 'Khách hàng'}!</h1>
+              <p>Tóm tắt kho đang thuê, hợp đồng và các khoản thanh toán của bạn.</p>
+            </div>
+          ) : <div />}
 
           <div className="customer-topbar-actions">
             <button
@@ -1852,49 +1729,6 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             >
               {user?.name?.charAt(0)?.toUpperCase() || 'K'}
             </button>
-          </div>
-        </div>
-
-        {/* THANH CHUYỂN NHANH 4 NGHIỆP VỤ CHÍNH (RÕ RÀNG VAI TRÒ TỪNG TAB) */}
-        <nav className="cportal-tab-switcher" aria-label="Các phân mục nghiệp vụ chính">
-          {['overview', 'storage', 'contract', 'payment'].map(tabKey => {
-            const tab = CUSTOMER_TABS[tabKey]
-            const isActive = activeSection === tabKey
-            return (
-              <button
-                key={tabKey}
-                type="button"
-                className={`cportal-tab-card ${isActive ? 'active' : ''}`}
-                onClick={() => setActiveSection(tabKey)}
-              >
-                <span className="cportal-tab-card-icon">
-                  <NavIcon name={tabKey} />
-                </span>
-                <span className="cportal-tab-card-body">
-                  <span className="cportal-tab-card-title">
-                    {tab.title}
-                    {navBadge(tabKey)}
-                  </span>
-                  <span className="cportal-tab-card-desc">{tab.subtitle}</span>
-                </span>
-              </button>
-            )
-          })}
-        </nav>
-
-        {/* BANNER GIẢI THÍCH Ý NGHĨA & CHỨC NĂNG CỦA TAB ĐANG MỞ */}
-        <div className="cportal-purpose-banner" role="region" aria-label="Chức năng của trang hiện tại">
-          <div className="cportal-purpose-banner-main">
-            <span className="cportal-purpose-badge">{currentTabMeta.badge}</span>
-            <div className="cportal-purpose-text">
-              <h2>{currentTabMeta.purposeTitle}</h2>
-              <p>{currentTabMeta.purposeDesc}</p>
-            </div>
-          </div>
-          <div className="cportal-purpose-pills">
-            {currentTabMeta.pills.map(pill => (
-              <span key={pill} className="cportal-purpose-pill">✓ {pill}</span>
-            ))}
           </div>
         </div>
 
