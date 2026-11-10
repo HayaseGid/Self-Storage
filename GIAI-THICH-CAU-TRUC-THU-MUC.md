@@ -86,3 +86,4 @@ Nếu bạn muốn thư mục gốc nhìn gọn gàng, chuyên nghiệp như cá
    - Gom `API_DOCUMENTATION.md`, `HUONG-DAN-VNPAY.md`, `luong_du_lieu.md`, `GIA-HAN-HOP-DONG.md`, `TRA-KHO.md`, `PHAN-TRANG-VA-UI.md` vào thư mục `thong_tin/` hoặc tạo thư mục `docs/`.
 3. **Giữ nguyên ở root**:
    - `backend/`, `frontend/`, `database/`, `.gitignore`, `package.json`, `package-lock.json`, `Dockerfile`, `README.md`.
+
