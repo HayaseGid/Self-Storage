@@ -470,6 +470,8 @@ public static class DatabaseSeeder
                         ALTER TABLE dbo.ReturnInspection DROP CONSTRAINT CK_ReturnInspection_Status;
                     IF OBJECT_ID(N'dbo.TR_ReturnInspection_Validate', N'TR') IS NOT NULL
                         DISABLE TRIGGER dbo.TR_ReturnInspection_Validate ON dbo.ReturnInspection;
+                    IF OBJECT_ID(N'dbo.TR_ReturnInspectionFee_Validate', N'TR') IS NOT NULL
+                        DISABLE TRIGGER dbo.TR_ReturnInspectionFee_Validate ON dbo.ReturnInspectionFee;
                 ");
             }
             catch (Exception ex)

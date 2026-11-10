@@ -770,6 +770,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const [renewItem, setRenewItem] = useState(null)
   const [cancelRental, setCancelRental] = useState(null)
   const returns = useUnitReturns()
+  const inspections = useMyInspections() // [14] kết quả kiểm kho
   const lateFees = useLateFees() // [7a] phí trễ hạn tiền thuê
   const lateFeeOf = rental => {
     const item = lateFees.byReservation(rental.reservationId)
@@ -866,8 +867,14 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const activeRentals = rentals.filter(r => r.status === 'Handed Over')
   const endedRentals = rentals.filter(r => r.status !== 'Handed Over')
   const pendingCountAll = toSign.length + preparing.length + waitingApproval.length + signedBeforeHandover.length
-  const returnsInProgress = returns.items.filter(i => i.request && (i.request.status !== 'Completed' ||
-    Number(i.request.amountOwed) > 0 || (Number(i.request.refundAmount) > 0 && i.request.refundStatus !== 'Completed'))).length
+  const returnsInProgress = returns.items.filter(i => {
+    if (!i.request) return false
+    const insp = inspections.byReservation(i.reservationId)
+    if (insp && insp.status !== 'Settled') return true
+    return i.request.status !== 'Completed' ||
+      Number(i.request.amountOwed) > 0 ||
+      (Number(i.request.refundAmount) > 0 && i.request.refundStatus !== 'Completed')
+  }).length
   const [contractTab, setContractTab] = useState(() => (pendingCountAll > 0 ? 'pending' : 'active'))
   const tabOfReservation = id => {
     const r = allRentals.find(x => String(x.reservationId) === String(id))
@@ -1314,6 +1321,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
             onDetail={() => setDetail({ group: buildGroups([rental])[0], signature: signature || undefined })}
             onRenew={renewal?.eligible ? () => setRenewItem(renewal) : undefined}
             returnInfo={returns.byReservation(rental.reservationId)}
+            inspection={inspections.byReservation(rental.reservationId)}
             onPayRent={() => payRent(rental)}
             onOpenPayment={onOpenPayment}
             payingRent={payingRent === rental.reservationId}
