@@ -98,6 +98,9 @@ public class StaffToolsRepository : IStaffToolsRepository
 
     public async Task SetAuditContextAsync(int userId, string source, CancellationToken cancellationToken)
     {
+        if (_context.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) != true)
+            return;
+
         // Chạy trong transaction nên cùng một kết nối: trigger sau đó đọc được SESSION_CONTEXT.
         await _context.Database.ExecuteSqlInterpolatedAsync(
             $"EXEC sp_set_session_context @key = N'UserID', @value = {userId}; EXEC sp_set_session_context @key = N'Source', @value = {source};",
