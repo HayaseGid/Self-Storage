@@ -145,7 +145,8 @@ const TASK_TYPE_FILTERS = [
   ["", "Tất cả loại việc"],
   ["Move In", "Nhận kho"],
   ["Move Out", "Trả kho"],
-  ["Inspection", "Kiểm tra"],
+  ["Inspection", "Kiểm tra kho"],
+  ["Support", "Hỗ trợ khách"],
 ];
 
 // Trạng thái kho KHÔNG được bàn giao (khớp HandoverService.HandoverReadyUnitStatuses ở backend)
@@ -863,6 +864,24 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   );
   const tasksError = db.staffTasksError || "";
 
+  const taskStatusCounts = useMemo(() => {
+    const counts = {};
+    for (const t of rawTasks) {
+      const st = t.status || "";
+      if (st) counts[st] = (counts[st] || 0) + 1;
+    }
+    return counts;
+  }, [rawTasks]);
+
+  const taskTypeCounts = useMemo(() => {
+    const counts = {};
+    for (const t of rawTasks) {
+      const tp = t.taskType || "";
+      if (tp) counts[tp] = (counts[tp] || 0) + 1;
+    }
+    return counts;
+  }, [rawTasks]);
+
   const filteredTasks = useMemo(() => {
     let list = rawTasks;
     if (taskQuery.trim()) {
@@ -1131,12 +1150,16 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
                 options={TASK_STATUS_FILTERS}
                 value={taskStatusFilter}
                 onChange={setTaskStatusFilter}
+                counts={taskStatusCounts}
+                total={rawTasks.length}
                 className="st-chips-row"
               />
               <FilterChips
                 options={TASK_TYPE_FILTERS}
                 value={taskTypeFilter}
                 onChange={setTaskTypeFilter}
+                counts={taskTypeCounts}
+                total={rawTasks.length}
                 className="st-chips-row"
               />
             </div>

@@ -377,7 +377,9 @@ export function FilterChips({ options = [], value, onChange, counts, total, clas
         const key = Array.isArray(opt) ? opt[0] : (opt?.value ?? opt?.key ?? '')
         const label = Array.isArray(opt) ? opt[1] : (opt?.label ?? opt?.text ?? String(opt))
         const keys = String(key).split(',').filter(Boolean)
-        const n = key === '' || key === 'all' ? total : keys.reduce((sum, k) => sum + (counts?.[k] || 0), 0)
+        const n = key === '' || key === 'all'
+          ? (total != null ? total : (counts ? Object.values(counts).reduce((a, b) => a + Number(b || 0), 0) : null))
+          : (counts ? keys.reduce((sum, k) => sum + (counts?.[k] || 0), 0) : null)
         return (
           <button key={key || 'all'} type="button" role="tab" aria-selected={value === key}
             className={value === key ? 'active' : ''} onClick={() => onChange(key)}>
