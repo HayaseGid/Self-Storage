@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { apiGet, apiPost } from './api'
 import { useDialog } from './Dialog'
 import { formatVnd } from './storageRules'
@@ -119,7 +120,7 @@ export function PhotoGallery({ images = [], emptyText = 'Không có ảnh.' }) {
           </button>
         ))}
       </div>
-      {open !== null && (
+      {open !== null && createPortal(
         <div className="ri-lightbox" role="dialog" aria-modal="true" aria-label="Xem ảnh" onClick={() => setOpen(null)}>
           <img src={images[open]} alt={`Ảnh ${open + 1}`} onClick={e => e.stopPropagation()} />
           <div className="ri-lightbox-bar" onClick={e => e.stopPropagation()}>
@@ -128,7 +129,8 @@ export function PhotoGallery({ images = [], emptyText = 'Không có ảnh.' }) {
             {images.length > 1 && <button type="button" onClick={() => setOpen((open + 1) % images.length)}>Sau ›</button>}
             <button type="button" onClick={() => setOpen(null)}>Đóng</button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )
@@ -240,7 +242,10 @@ function DisputeModal({ inspection, onClose, onDone }) {
       setError(err.message); setBusy(false)
     }
   }
-  return (
+  // [SỬA] Vẽ popup thẳng vào <body> (portal). Trước đây popup nằm TRONG thẻ "Trả kho" (.ur-card.clickable),
+  // thẻ đó có transform khi hover -> position: fixed bị tính theo thẻ thay vì màn hình: popup không nổi lên
+  // mà nằm đè/đẩy nội dung, và rê chuột ra vào thẻ làm popup nhảy qua lại (nhấp nháy).
+  return createPortal(
     <div className="ri-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose() }}>
       <form className="ri-modal" role="dialog" aria-modal="true" aria-labelledby="ri-dispute-title" onSubmit={submit}>
         <div className="ri-modal-head">
@@ -265,7 +270,8 @@ function DisputeModal({ inspection, onClose, onDone }) {
           <button type="submit" className="dashboard-primary-btn" disabled={busy || reason.trim().length < 10}>{busy ? 'Đang gửi...' : 'Gửi khiếu nại'}</button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body
   )
 }
 
