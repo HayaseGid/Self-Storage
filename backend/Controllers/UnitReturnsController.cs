@@ -829,18 +829,26 @@ public sealed class UnitReturnsController(
     {
         try
         {
+            // [THỜI GIAN THỰC]:
+            // var now = DateTime.UtcNow;
+            // var due = await context.Payments
+            //     .Where(p => ids.Contains(p.ReservationID) && p.Direction == "Refund" && p.RefundReason == "DepositReturn" &&
+            //                 p.Provider == ManualProvider && p.Status == "Pending" && p.ExpiresAt != null && p.ExpiresAt <= now)
+            //     .ToListAsync(ct);
+            // [DEMO CLOCK]: Đồng bộ theo Demo Clock (BusinessClock.Today) để kiểm thử chuyển ngày
+            var today = BusinessClock.Today;
             var now = DateTime.UtcNow;
             var ids = await context.Reservations.Where(scope).Select(r => r.ReservationID).ToListAsync(ct);
             var due = await context.Payments
                 .Where(p => ids.Contains(p.ReservationID) && p.Direction == "Refund" && p.RefundReason == "DepositReturn" &&
-                            p.Provider == ManualProvider && p.Status == "Pending" && p.ExpiresAt != null && p.ExpiresAt <= now)
+                            p.Provider == ManualProvider && p.Status == "Pending" && p.ExpiresAt != null && p.ExpiresAt.Value.Date <= today)
                 .ToListAsync(ct);
             foreach (var p in due)
             {
                 p.Status = "Completed";
                 p.ProviderTransactionId = $"MANUAL-RFD-{p.PaymentID}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
                 p.ReceivedAmount = p.Amount;
-                p.ConfirmedAt = now;
+                p.ConfirmedAt = today;
             }
             if (due.Count > 0) await context.SaveChangesAsync(ct);
         }

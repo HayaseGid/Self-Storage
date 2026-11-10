@@ -455,8 +455,8 @@ public class ReturnInspectionService : IReturnInspectionService
         var r = await _repo.GetReservationForSettlementAsync(row.ReservationID, cancellationToken)
                 ?? throw new InvalidOperationException("Không tìm thấy đơn của kết quả kiểm kho.");
 
-        // 1) Chốt số tiền từng khoản (khách đồng ý / tự xác nhận: đúng số đề xuất; Manager: số đã duyệt)
-        var lines = row.Fees.Select(f => (Fee: f, Final: finals is not null && finals.TryGetValue(f.FeeID, out var v) ? v : f.ProposedAmount)).ToList();
+        // 1) Chốt số tiền từng khoản (khách đồng ý / tự xác nhận: số tiền Manager đã duyệt hoặc đề xuất ban đầu; Manager giải quyết khiếu nại: số đã duyệt)
+        var lines = row.Fees.Select(f => (Fee: f, Final: finals is not null && finals.TryGetValue(f.FeeID, out var v) ? v : (f.FinalAmount ?? f.ProposedAmount))).ToList();
         foreach (var (fee, final) in lines) await _repo.SetFinalAmountAsync(fee.FeeID, final, cancellationToken);
 
         // 2) Trừ vào phần cọc còn lại sau công nợ hợp đồng (đã chốt lúc kiểm kho)

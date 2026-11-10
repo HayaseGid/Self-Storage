@@ -44,7 +44,7 @@ const STATUS_TONE = {
 export default function ContractCard({
   rental, facility, customerName, signature, signatureLoaded, signatureError, renewal,
   onReloadSignature, onSign, onDetail, onRenew, onReturn, returnInfo, onPayRent, onOpenPayment, payingRent,
-  lateFee // [7a] phí trễ hạn của đơn (GET /api/late-fees/mine) + policy
+  lateFee, inspection // [14] kết quả kiểm kho
 }) {
   const isSigned = Boolean(signature)
   // [7a] Phí trễ hạn: khoản chưa đóng (trừ khoản đang chờ VNPay) + các kỳ tiền thuê đang trễ
@@ -62,6 +62,12 @@ export default function ContractCard({
   const notStarted = startsIn != null && startsIn > 0
   const ended = ['Completed', 'Cancelled', 'Expired'].includes(rental.status)
 
+  const inspectionHeld = inspection && inspection.status !== 'Settled'
+  const chipLabel = inspectionHeld
+    ? (inspection.status === 'Pending Manager' ? 'Chờ Quản lý duyệt' : inspection.status === 'Awaiting Customer' ? 'Chờ xác nhận phí' : 'Đang khiếu nại')
+    : (rental.statusLabel || rental.status)
+  const chipTone = inspectionHeld ? 'warn' : (STATUS_TONE[rental.status] || 'info')
+
   return (
     <article id={`contract-${rental.reservationId}`} className={`cc-card${ended ? ' ended' : ''}`}>
       {/* ---- Đầu thẻ ---- */}
@@ -70,7 +76,7 @@ export default function ContractCard({
           <span className="cc-eyebrow">{isRenewal ? 'PHỤ LỤC GIA HẠN' : 'HỢP ĐỒNG THUÊ KHO'}</span>
           <h2>{rental.contractNumber || `Hợp đồng #${rental.contractId}`}</h2>
           <div className="cc-chips">
-            <span className={`cc-chip ${STATUS_TONE[rental.status] || 'info'}`}>{rental.statusLabel || rental.status}</span>
+            <span className={`cc-chip ${chipTone}`}>{chipLabel}</span>
             {rental.reservationCode && <span className="cc-chip plain">Mã đơn <Code kind="order">{rental.reservationCode}</Code></span>}
             {rental.unitNumbers?.length > 0 && <UnitCodes units={rental.unitNumbers} max={6} />}
             <NewBadge createdAt={rental.createdAt} />
@@ -101,13 +107,25 @@ export default function ContractCard({
       )}
       {returnInfo?.request && (
         <p className="cc-return">
-          ⇦ {{
-            Scheduled: `Đã hẹn trả kho ngày ${fmtIsoDate(returnInfo.request.scheduledDate)}${returnInfo.request.staffName ? ` · nhân viên ${returnInfo.request.staffName}` : ''}.`,
-            'In Progress': 'Nhân viên đang kiểm tra kho bạn trả.',
-            Completed: Number(returnInfo.request.amountOwed) > 0
-              ? `Đã kiểm tra kho · cần đóng thêm ${money(returnInfo.request.amountOwed)} phí phát sinh.`
-              : `Đã trả kho · hoàn cọc ${money(returnInfo.request.refundAmount)}${returnInfo.request.refundStatus === 'Completed' ? ' (đã chuyển)' : returnInfo.request.refundDueDate ? ` dự kiến ${fmtIsoDate(returnInfo.request.refundDueDate)}` : ''}.`
-          }[returnInfo.request.status]} Xem chi tiết ở mục "Trả kho" phía trên.
+          ⇦ {(() => {
+            if (inspection && inspection.status !== 'Settled') {
+              if (inspection.status === 'Pending Manager') return 'Đã kiểm tra kho · Đang chờ Quản lý cơ sở phê duyệt kết quả.'
+              if (inspection.status === 'Awaiting Customer') return `Đã kiểm tra kho · Chờ bạn xác nhận phí kiểm kho (${money(inspection.proposedTotal)}).`
+              if (inspection.status === 'Disputed') return 'Đang giải quyết khiếu nại kiểm kho với Quản lý cơ sở.'
+            }
+            if (returnInfo.request.status === 'Scheduled') {
+              return `Đã hẹn trả kho ngày ${fmtIsoDate(returnInfo.request.scheduledDate)}${returnInfo.request.staffName ? ` · nhân viên ${returnInfo.request.staffName}` : ''}.`
+            }
+            if (returnInfo.request.status === 'In Progress') {
+              return 'Nhân viên đang kiểm tra kho bạn trả.'
+            }
+            if (returnInfo.request.status === 'Completed') {
+              return Number(returnInfo.request.amountOwed) > 0
+                ? `Đã kiểm tra kho · cần đóng thêm ${money(returnInfo.request.amountOwed)} phí phát sinh.`
+                : `Đã trả kho · hoàn cọc ${money(returnInfo.request.refundAmount)}${returnInfo.request.refundStatus === 'Completed' ? ' (đã chuyển)' : returnInfo.request.refundDueDate ? ` dự kiến ${fmtIsoDate(returnInfo.request.refundDueDate)}` : ''}.`
+            }
+            return 'Đang xử lý trả kho.'
+          })()} Xem chi tiết ở mục "Trả kho" phía trên.
         </p>
       )}
       {signatureError && (
