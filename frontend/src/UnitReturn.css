@@ -37,8 +37,36 @@
 .ur-next-label { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #8a6200; }
 .ur-result { padding: 12px 14px; border-radius: 12px; border: 1px solid #bfe5cf; background: #f3fbf6; }
 .ur-result.bad { border-color: #f0c2c2; background: #fff7f7; }
-.ur-result strong { color: #073d70; }
+.ur-result-header strong { color: #073d70; font-size: 14px; }
+.ur-note-line { margin: 6px 0; color: #35536e; font-size: 13px; }
 .ur-result p { margin: 6px 0 8px; color: #4f6880; font-size: 13px; white-space: pre-line; }
+
+.sr-cust-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f4f8fc;
+  border: 1px solid #dbe6f0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #1a4267;
+}
+.sr-cust-note-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e1eefc;
+  color: #074e8f;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.sr-cust-note-text {
+  font-style: italic;
+}
 .ur-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .ur-table td { padding: 6px 0; border-bottom: 1px dashed #dbe5ee; color: #23475e; }
 .ur-table td:last-child { text-align: right; white-space: nowrap; font-weight: 700; }

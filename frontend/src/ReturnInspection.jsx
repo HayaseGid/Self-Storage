@@ -34,6 +34,42 @@ const missingTableMessage = error => (error?.status === 404
   ? 'Backend chưa có ReturnInspectionsController (chép file rồi chạy lại backend).'
   : error?.message || 'Không tải được kết quả kiểm kho.')
 
+/**
+ * Tách và làm sạch ghi chú trả kho:
+ * - customerNote: ghi chú của khách khi hẹn trả kho
+ * - staffNote: ghi chú quan sát hiện trạng của nhân viên khi kiểm kho
+ * - feeText: thông tin phí đề xuất
+ */
+export function parseReturnNotes(notes) {
+  if (!notes || typeof notes !== 'string') return { customerNote: '', staffNote: '', feeText: '' }
+  const raw = notes.trim()
+  let customerNote = ''
+  let staffNote = ''
+  let feeText = ''
+
+  const custMatch = raw.match(/Khách ghi chú:\s*([^\n]+)/i)
+  if (custMatch) {
+    customerNote = custMatch[1].trim()
+  }
+
+  if (raw.includes('Kết quả kiểm tra:')) {
+    const feeMatch = raw.match(/(Phí đề xuất[^.\n]*\.|Phí:[^.\n]*\.|Không phát sinh phí\.)/i)
+    if (feeMatch) {
+      feeText = feeMatch[1].trim()
+    }
+
+    const staffMatch = raw.match(/Kết quả kiểm tra:\s*(?:Có vấn đề|Không có vấn đề)\.?\s*(.*?)(?:Phí đề xuất|Phí:|Không phát sinh phí|$)/is)
+    if (staffMatch && staffMatch[1]) {
+      const candidate = staffMatch[1].replace(/Ghi chú hiện trạng:\s*/i, '').trim().replace(/\.+$/, '')
+      if (candidate) staffNote = candidate
+    }
+  } else if (!custMatch) {
+    customerNote = raw
+  }
+
+  return { customerNote, staffNote, feeText }
+}
+
 /* ------------------------------------------------------------------ Ảnh */
 
 /* Nén ảnh trước khi gửi: cạnh dài tối đa 1280px, JPEG 0.7 (giống báo cáo sự cố kho của Staff) */
@@ -318,6 +354,8 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
       : null
   }
 
+  const isDamaged = i.conditionResult === 'Damaged'
+
   return (
     <div className={`ri-box ${i.status === INSPECTION.AWAITING ? 'warn' : i.status === INSPECTION.DISPUTED ? 'info' : 'ok'}`}
       onClick={e => e.stopPropagation()}>{/* chỉ chặn click (thẻ trả kho bấm vào là mở hợp đồng); không chặn phím để Esc / mũi tên vẫn chạy */}
@@ -328,14 +366,29 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
             {i.status === INSPECTION.DISPUTED && 'Bạn đã gửi khiếu nại · Facility Manager đang xem xét'}
             {settled && (i.settledBy === 'Manager' ? 'Manager đã giải quyết khiếu nại' : i.settledBy === 'Auto' ? 'Hệ thống đã tự xác nhận (quá hạn)' : 'Bạn đã đồng ý kết quả kiểm kho')}
           </strong>
-          <small>Kiểm tra bởi NV {i.inspectedBy} lúc {fmtDateTime(i.inspectedAt)} · {i.conditionResult === 'Damaged' ? 'kho có vấn đề' : 'kho không có vấn đề'}</small>
+          <div className="ri-subhead">
+            <small>Kiểm tra bởi NV {i.inspectedBy} lúc {fmtDateTime(i.inspectedAt)}</small>
+            <span className={`ri-condition-chip ${isDamaged ? 'bad' : 'ok'}`}>
+              {isDamaged ? '⚠️ Kho có vấn đề' : '✓ Kho tốt / Không có vấn đề'}
+            </span>
+          </div>
         </div>
         {i.status === INSPECTION.AWAITING && <span className="ri-deadline">Hạn {fmtDateTime(i.confirmDeadline)} · {timeLeft(i.confirmDeadline)}</span>}
       </div>
 
-      {i.staffNotes && <p className="ri-notes">“{i.staffNotes}”</p>}
+      {i.staffNotes && (
+        <div className="ri-staff-notes-box">
+          <span className="ri-notes-label">Ghi chú hiện trạng của nhân viên:</span>
+          <p className="ri-notes-text">“{i.staffNotes}”</p>
+        </div>
+      )}
       <InspectionPhotos inspection={i} />
-      <FeeTable inspection={i} showFinal={i.settledBy === 'Manager'} />
+      {i.fees && i.fees.length > 0 && (
+        <div className="ri-fees-section">
+          <div className="ri-section-title">Chi tiết các khoản phí kiểm kho:</div>
+          <FeeTable inspection={i} showFinal={i.settledBy === 'Manager'} />
+        </div>
+      )}
 
       {/* Đã quyết toán: bảng quyết toán thật nằm ngay trên (khối Trả kho), ở đây chỉ còn ảnh + quyết định */}
       {!settled && <table className="ri-table ri-sum">
@@ -410,25 +463,74 @@ export function useStaffInspections() {
 }
 
 /* Trạng thái xác nhận ở thẻ "Đã xong" của Staff. */
-export function StaffInspectionStatus({ inspection }) {
+export function StaffInspectionStatus({ inspection, fallbackNote }) {
   const i = inspection
-  if (!i) return null
+  if (!i) {
+    if (!fallbackNote) return null
+    return (
+      <div className="ri-staff ok">
+        <div className="ri-staff-head">
+          <span className="ri-pill ok">Đã hoàn tất kiểm tra</span>
+        </div>
+        <div className="ri-staff-notes-box">
+          <span className="ri-notes-label">Ghi chú hiện trạng:</span>
+          <p className="ri-notes-text">“{fallbackNote}”</p>
+        </div>
+      </div>
+    )
+  }
   const tone = i.status === INSPECTION.DISPUTED ? 'bad' : i.status === INSPECTION.AWAITING ? 'warn' : 'ok'
+  const isDamaged = i.conditionResult === 'Damaged'
+
   return (
     <div className={`ri-staff ${tone}`}>
       <div className="ri-staff-head">
-        <span className={`ri-pill ${tone}`}>{i.statusLabel}</span>
-        {i.status === INSPECTION.AWAITING && <small>Hạn khách xác nhận {fmtDateTime(i.confirmDeadline)} · {timeLeft(i.confirmDeadline)}</small>}
-        {i.status === INSPECTION.SETTLED && i.settledAt && i.settledBy !== 'NoFee' && <small>Quyết toán {fmtDateTime(i.settledAt)}</small>}
+        <div className="ri-staff-head-left">
+          <span className={`ri-pill ${tone}`}>{i.statusLabel}</span>
+          <span className={`ri-condition-chip ${isDamaged ? 'bad' : 'ok'}`}>
+            {isDamaged ? '⚠️ Có vấn đề' : '✓ Kho bình thường'}
+          </span>
+        </div>
+        {i.status === INSPECTION.AWAITING && (
+          <span className="ri-deadline">
+            Hạn khách xác nhận {fmtDateTime(i.confirmDeadline)} · {timeLeft(i.confirmDeadline)}
+          </span>
+        )}
+        {i.status === INSPECTION.SETTLED && i.settledAt && i.settledBy !== 'NoFee' && (
+          <small className="ri-staff-settled-time">Quyết toán {fmtDateTime(i.settledAt)}</small>
+        )}
       </div>
-      {i.fees.length > 0 && (
-        <p className="ri-hint">
-          Phí kiểm kho {i.settledBy === 'Manager' ? <>đề xuất {money(i.proposedTotal)} → chốt <b>{money(i.finalTotal)}</b></> : <b>{money(i.proposedTotal)}</b>}
-          : {i.fees.map(f => f.description).join(', ')}.
-        </p>
+
+      {/* Ghi chú hiện trạng của nhân viên */}
+      {i.staffNotes && (
+        <div className="ri-staff-notes-box">
+          <span className="ri-notes-label">Ghi chú hiện trạng của nhân viên:</span>
+          <p className="ri-notes-text">“{i.staffNotes}”</p>
+        </div>
       )}
-      {i.disputeReason && <p className="ri-quote"><b>Khách khiếu nại:</b> {i.disputeReason}</p>}
-      {i.resolutionNotes && <p className="ri-quote decision"><b>Quyết định của Manager:</b> {i.resolutionNotes}</p>}
+
+      {/* Chi tiết phí kiểm kho */}
+      {i.fees && i.fees.length > 0 && (
+        <div className="ri-fees-section">
+          <div className="ri-section-title">
+            Chi tiết phí kiểm kho ({i.status === INSPECTION.AWAITING ? 'Chờ khách xác nhận' : 'Đã chốt'}):
+          </div>
+          <FeeTable inspection={i} showFinal={i.settledBy === 'Manager'} />
+        </div>
+      )}
+
+      {i.disputeReason && (
+        <div className="ri-quote">
+          <b>Khách khiếu nại{i.respondedAt ? ` (${fmtDateTime(i.respondedAt)})` : ''}:</b>
+          <p style={{ margin: '4px 0 0' }}>{i.disputeReason}</p>
+        </div>
+      )}
+      {i.resolutionNotes && (
+        <div className="ri-quote decision">
+          <b>Quyết định của {i.resolvedBy || 'Facility Manager'}{i.resolvedAt ? ` (${fmtDateTime(i.resolvedAt)})` : ''}:</b>
+          <p style={{ margin: '4px 0 0' }}>{i.resolutionNotes}</p>
+        </div>
+      )}
       <InspectionPhotos inspection={i} />
     </div>
   )

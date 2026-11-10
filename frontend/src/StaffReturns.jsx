@@ -6,7 +6,7 @@ import { formatVnd } from './storageRules'
 import { usePolicies } from './policies'
 import { fmtDay } from './UnitReturn'
 import { getTodayISO } from './demoClock/demoClock'
-import { INSPECTION, MAX_STAFF_PHOTOS, PhotoPicker, StaffInspectionStatus, useStaffInspections } from './ReturnInspection' // [THÊM 14]
+import { INSPECTION, MAX_STAFF_PHOTOS, PhotoPicker, StaffInspectionStatus, useStaffInspections, parseReturnNotes } from './ReturnInspection' // [THÊM 14]
 import './UnitReturn.css'
 
 /*
@@ -265,7 +265,16 @@ export default function StaffReturns({ staff }) {
             <div className="sr-units">
               {item.units.map(u => <span key={u.unitNumber}><b>{u.unitNumber}</b> · {u.type} · {u.size}{u.access ? ` · ${u.access}` : ''}{u.nextBooking ? ` · đã có đơn ${u.nextBooking.reservationCode} từ ${fmtDay(u.nextBooking.startDate)}` : ''}</span>)}
             </div>
-            {req.notes && <p className="ur-help" style={{ whiteSpace: 'pre-line' }}>{req.notes}</p>}
+            {(() => {
+              const { customerNote } = parseReturnNotes(req.notes)
+              if (!customerNote) return null
+              return (
+                <div className="sr-cust-note">
+                  <span className="sr-cust-note-tag">Khách ghi chú</span>
+                  <span className="sr-cust-note-text">{customerNote}</span>
+                </div>
+              )
+            })()}
 
             {/* Chỉ người được phân công mới thao tác (backend cũng chặn). Muốn đổi người: báo Facility Manager. */}
             {item.requestStatus !== 'Completed' && !item.assignedToMe && (
@@ -287,17 +296,23 @@ export default function StaffReturns({ staff }) {
               // [SỬA 14] Phí kiểm kho đang chờ khách xác nhận / khiếu nại thì chưa có số hoàn cọc
               const insp = inspections.byReservation(item.reservationId)
               const pending = insp && insp.status !== INSPECTION.SETTLED
+              const { staffNote } = parseReturnNotes(req.notes)
               return (
                 <>
                   <div className="sr-summary">
-                    <div><span>Kết quả</span><b>{req.conditionResult === 'Damaged' ? 'Có vấn đề' : 'Không có vấn đề'}</b></div>
+                    <div>
+                      <span>Hiện trạng kho</span>
+                      <b className={req.conditionResult === 'Damaged' ? 'bad' : 'ok'}>
+                        {req.conditionResult === 'Damaged' ? '⚠️ Có vấn đề' : '✓ Kho bình thường'}
+                      </b>
+                    </div>
                     <div><span>Trừ vào cọc{pending ? ' (công nợ hợp đồng)' : ''}</span><b>{money(req.deductedFromDeposit)}</b></div>
                     {Number(req.amountOwed) > 0 && <div className="bad"><span>Khách còn nợ</span><b>{money(req.amountOwed)}</b></div>}
                     {pending
-                      ? <div><span>Phí kiểm kho chờ quyết toán</span><b>{money(insp.proposedTotal)}</b></div>
+                      ? <div><span>Phí kiểm kho chờ quyết toán</span><b>{money(insp?.proposedTotal ?? 0)}</b></div>
                       : <div className="ok"><span>Hoàn cọc</span><b>{money(req.refundAmount)}{Number(req.refundAmount) > 0 ? (req.refundStatus === 'Completed' ? ' · đã chuyển' : ` · ${fmtDay(req.refundDueDate)}`) : ''}</b></div>}
                   </div>
-                  <StaffInspectionStatus inspection={insp} />
+                  <StaffInspectionStatus inspection={insp} fallbackNote={staffNote} />
                 </>
               )
             })()}

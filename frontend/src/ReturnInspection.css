@@ -142,8 +142,72 @@
 .ri-count { justify-self: end; color: var(--muted, #6d849b); margin-top: -6px; }
 
 /* Staff */
-.ri-staff-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ri-staff-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .ri-staff-head small { color: var(--muted, #6d849b); }
+.ri-staff-head-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ri-subhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.ri-condition-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: .82rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.ri-condition-chip.bad {
+  background: #fde8e8;
+  color: #9b1c1c;
+  border: 1px solid #f8b4b4;
+}
+.ri-condition-chip.ok {
+  background: #def7ec;
+  color: #03543f;
+  border: 1px solid #bcf0da;
+}
+
+.ri-staff-notes-box {
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 10px;
+  border: 1px solid rgba(22, 132, 219, 0.2);
+  border-left: 4px solid var(--blue-600, #1684db);
+  display: grid;
+  gap: 4px;
+}
+.ri-notes-label {
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--blue-950, #073d70);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.ri-notes-text {
+  margin: 0;
+  font-size: .92rem;
+  font-style: italic;
+  color: var(--ink, #0b3967);
+  white-space: pre-line;
+}
+
+.ri-fees-section {
+  display: grid;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.75);
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line, #e4edf4);
+}
+.ri-section-title {
+  font-size: .84rem;
+  font-weight: 700;
+  color: var(--blue-950, #073d70);
+}
+.ri-staff-settled-time {
+  color: var(--muted, #6d849b);
+  font-size: .85rem;
+}
 .ri-pill { padding: 3px 10px; border-radius: 999px; font-size: .82rem; font-weight: 700; }
 .ri-pill.warn { background: #fff1c2; color: #8a5a00; }
 .ri-pill.bad { background: #fde3df; color: #b42318; }

@@ -580,11 +580,18 @@ public sealed class UnitReturnsController(
             var unitStatus = string.Equals(request.UnitStatus, "Maintenance", StringComparison.OrdinalIgnoreCase) ? UnitStatus.Maintenance : UnitStatus.Available;
             foreach (var t in tasks)
             {
-                var customerNote = t.UnitConditionNotes?.StartsWith("Khách ghi chú:") == true ? t.UnitConditionNotes + "\n" : "";
+                var customerNote = t.UnitConditionNotes?.StartsWith("Khách ghi chú:") == true ? t.UnitConditionNotes.Split('\n')[0].Trim() : "";
                 t.Status = "Completed";
                 t.ActualAt = now;
                 t.ConditionResult = condition;
-                t.UnitConditionNotes = Trim1000($"{customerNote}Kết quả kiểm tra: {(condition == "Good" ? "Không có vấn đề" : "Có vấn đề")}. {notes} {feeText}".Trim());
+
+                var noteParts = new List<string>();
+                if (!string.IsNullOrWhiteSpace(customerNote)) noteParts.Add(customerNote);
+                noteParts.Add($"Kết quả kiểm tra: {(condition == "Good" ? "Không có vấn đề" : "Có vấn đề")}.");
+                if (!string.IsNullOrWhiteSpace(notes)) noteParts.Add($"Ghi chú hiện trạng: {notes}.");
+                if (!string.IsNullOrWhiteSpace(feeText)) noteParts.Add(feeText);
+
+                t.UnitConditionNotes = Trim1000(string.Join("\n", noteParts));
                 var ru = r.ReservationUnits.First(x => x.ReservationUnitID == t.ReservationUnitID);
                 ru.Unit.Status = unitStatus;
                 ru.Unit.UpdatedAt = now;

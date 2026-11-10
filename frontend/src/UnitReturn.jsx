@@ -7,7 +7,7 @@ import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
 import { focusContract } from './afterDeposit'
 import './ContractSignFlow.css'
 import './UnitReturn.css'
-import { CustomerInspectionBox, INSPECTION, useMyInspections } from './ReturnInspection' // [THÊM 14]
+import { CustomerInspectionBox, INSPECTION, useMyInspections, parseReturnNotes } from './ReturnInspection' // [THÊM 14]
 
 /*
  * TRẢ KHO (khách hàng) - UnitReturnsController.
@@ -138,8 +138,18 @@ function ReturnProgress({ item, inspection, onChanged }) {
       {held && <CustomerInspectionBox inspection={inspection} depositTotal={req.depositTotal} debtDeducted={req.deductedFromDeposit} onChanged={onChanged} />}
       {req.inspectedAt && !held && (
         <div className={`ur-result ${req.conditionResult === 'Damaged' ? 'bad' : 'ok'}`}>
-          <strong>{req.conditionResult === 'Damaged' ? 'Kết quả kiểm tra: có vấn đề' : 'Kết quả kiểm tra: kho không có vấn đề'}</strong>
-          {req.notes && <p>{req.notes}</p>}
+          <div className="ur-result-header">
+            <strong>{req.conditionResult === 'Damaged' ? '⚠️ Kết quả kiểm tra: Có vấn đề' : '✓ Kết quả kiểm tra: Kho bình thường'}</strong>
+          </div>
+          {(() => {
+            const { customerNote, staffNote } = parseReturnNotes(req.notes)
+            return (
+              <>
+                {customerNote && <p className="ur-note-line"><b>Ghi chú khi hẹn:</b> {customerNote}</p>}
+                {!inspection && staffNote && <p className="ur-note-line"><b>Ghi chú hiện trạng:</b> “{staffNote}”</p>}
+              </>
+            )
+          })()}
           <table className="ur-table">
             <tbody>
               <tr><td>Tiền cọc đã đóng</td><td>{money(req.depositTotal)}</td></tr>
