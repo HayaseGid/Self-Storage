@@ -369,13 +369,15 @@ export function useServerList({ path, q = '', status = '', sort = 'newest', extr
 
 /* ---------- Nút lọc có số đếm ---------- */
 
-/* options: [[value, label]] ; counts: { VALUE: n } ; value '' = Tất cả */
-export function FilterChips({ options, value, onChange, counts, total, className = '' }) {
+/* options: [[value, label]] hoặc [{ value, label }] ; counts: { VALUE: n } ; value '' = Tất cả */
+export function FilterChips({ options = [], value, onChange, counts, total, className = '' }) {
   return (
     <div className={`ss-chips ${className}`.trim()} role="tablist">
-      {options.map(([key, label]) => {
+      {options.map((opt) => {
+        const key = Array.isArray(opt) ? opt[0] : (opt?.value ?? opt?.key ?? '')
+        const label = Array.isArray(opt) ? opt[1] : (opt?.label ?? opt?.text ?? String(opt))
         const keys = String(key).split(',').filter(Boolean)
-        const n = key === '' ? total : keys.reduce((sum, k) => sum + (counts?.[k] || 0), 0)
+        const n = key === '' || key === 'all' ? total : keys.reduce((sum, k) => sum + (counts?.[k] || 0), 0)
         return (
           <button key={key || 'all'} type="button" role="tab" aria-selected={value === key}
             className={value === key ? 'active' : ''} onClick={() => onChange(key)}>
@@ -387,12 +389,16 @@ export function FilterChips({ options, value, onChange, counts, total, className
   )
 }
 
-export function SortSelect({ value, onChange, options, label = 'Sắp xếp' }) {
+export function SortSelect({ value, onChange, options = [], label = 'Sắp xếp' }) {
   return (
     <label className="ss-sort">
       <span>{label}</span>
       <select value={value} onChange={e => onChange(e.target.value)}>
-        {options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
+        {options.map((opt) => {
+          const key = Array.isArray(opt) ? opt[0] : (opt?.value ?? opt?.key ?? '')
+          const text = Array.isArray(opt) ? opt[1] : (opt?.label ?? opt?.text ?? String(opt))
+          return <option key={key} value={key}>{text}</option>
+        })}
       </select>
     </label>
   )
