@@ -203,6 +203,7 @@ using (var scope = app.Services.CreateScope())
     {
         dbContext.Database.EnsureCreated();
         DatabaseSeeder.SeedIfEmpty(dbContext);
+        DatabaseSeeder.EnsureReturnInspectionTables(dbContext);
     }
 }
 

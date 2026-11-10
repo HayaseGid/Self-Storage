@@ -456,4 +456,83 @@ public static class DatabaseSeeder
             catch { }
         }
     }
+
+    public static void EnsureReturnInspectionTables(SelfStorageDbContext context)
+    {
+        bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+        if (!isNpgsql) return;
+
+        try
+        {
+            context.Database.ExecuteSqlRaw(@"
+                CREATE SCHEMA IF NOT EXISTS dbo;
+
+                CREATE TABLE IF NOT EXISTS dbo.""ReturnInspection"" (
+                    ""InspectionID"" SERIAL PRIMARY KEY,
+                    ""ReservationID"" INT NOT NULL,
+                    ""ConditionResult"" VARCHAR(20) NOT NULL,
+                    ""StaffNotes"" VARCHAR(1000) NULL,
+                    ""StaffImages"" TEXT NULL,
+                    ""InspectedByUserID"" INT NOT NULL,
+                    ""InspectedAt"" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    ""ConfirmDeadline"" TIMESTAMPTZ NOT NULL,
+                    ""DepositRemaining"" NUMERIC(12,2) NOT NULL,
+                    ""Status"" VARCHAR(30) NOT NULL,
+                    ""RespondedAt"" TIMESTAMPTZ NULL,
+                    ""DisputeReason"" VARCHAR(1000) NULL,
+                    ""CustomerImages"" TEXT NULL,
+                    ""ResolvedByUserID"" INT NULL,
+                    ""ResolvedAt"" TIMESTAMPTZ NULL,
+                    ""ResolutionNotes"" VARCHAR(1000) NULL,
+                    ""SettledAt"" TIMESTAMPTZ NULL,
+                    ""SettledBy"" VARCHAR(20) NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS dbo.""ReturnInspectionFee"" (
+                    ""FeeID"" SERIAL PRIMARY KEY,
+                    ""InspectionID"" INT NOT NULL,
+                    ""FeeCode"" VARCHAR(50) NULL,
+                    ""FeePolicyID"" INT NULL,
+                    ""Description"" VARCHAR(255) NOT NULL,
+                    ""ProposedAmount"" NUMERIC(12,2) NOT NULL,
+                    ""FinalAmount"" NUMERIC(12,2) NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS public.""ReturnInspection"" (
+                    ""InspectionID"" SERIAL PRIMARY KEY,
+                    ""ReservationID"" INT NOT NULL,
+                    ""ConditionResult"" VARCHAR(20) NOT NULL,
+                    ""StaffNotes"" VARCHAR(1000) NULL,
+                    ""StaffImages"" TEXT NULL,
+                    ""InspectedByUserID"" INT NOT NULL,
+                    ""InspectedAt"" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    ""ConfirmDeadline"" TIMESTAMPTZ NOT NULL,
+                    ""DepositRemaining"" NUMERIC(12,2) NOT NULL,
+                    ""Status"" VARCHAR(30) NOT NULL,
+                    ""RespondedAt"" TIMESTAMPTZ NULL,
+                    ""DisputeReason"" VARCHAR(1000) NULL,
+                    ""CustomerImages"" TEXT NULL,
+                    ""ResolvedByUserID"" INT NULL,
+                    ""ResolvedAt"" TIMESTAMPTZ NULL,
+                    ""ResolutionNotes"" VARCHAR(1000) NULL,
+                    ""SettledAt"" TIMESTAMPTZ NULL,
+                    ""SettledBy"" VARCHAR(20) NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS public.""ReturnInspectionFee"" (
+                    ""FeeID"" SERIAL PRIMARY KEY,
+                    ""InspectionID"" INT NOT NULL,
+                    ""FeeCode"" VARCHAR(50) NULL,
+                    ""FeePolicyID"" INT NULL,
+                    ""Description"" VARCHAR(255) NOT NULL,
+                    ""ProposedAmount"" NUMERIC(12,2) NOT NULL,
+                    ""FinalAmount"" NUMERIC(12,2) NULL
+                );
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[EnsureReturnInspectionTables] Error: {ex.Message}");
+        }
+    }
 }
