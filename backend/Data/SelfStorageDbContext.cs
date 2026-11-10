@@ -466,6 +466,7 @@ public class SelfStorageDbContext : DbContext
             entity.Property(r => r.EndDate).HasColumnType("date");
             entity.Property(r => r.AppointmentDate).HasColumnType("date");
             entity.Property(r => r.AppointmentTime).HasColumnType("time(0)");
+            entity.Property(r => r.HandoverMethod).HasMaxLength(20);
             entity.Property(r => r.Status).HasMaxLength(30);
             entity.Property(r => r.CancelReason).HasMaxLength(500);
 

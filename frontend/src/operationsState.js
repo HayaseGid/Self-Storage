@@ -134,7 +134,8 @@ export const mapReservation = r => ({
     months: Number(r.months || 1),
     depositMonths: Number(r.depositMonths || DEPOSIT_MONTHS),
     appointmentDate: cleanDate(r.appointmentDate || r.startDate),
-    appointmentTime: r.appointmentTime || 'Cả ngày',
+    appointmentTime: r.appointmentTime || 'Cả ngày', // khung "08:00–10:00" hoặc "Bàn giao online"
+    handoverMethod: r.handoverMethod || 'InPerson',
     deposit: Number(r.deposit || 0),
     rentalFee: Number(r.rentalFee || 0),
     // Tiền thuê phải đóng lúc nhận kho (backend: RentPaymentRules)

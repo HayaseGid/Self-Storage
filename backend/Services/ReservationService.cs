@@ -34,6 +34,24 @@ public class ReservationService : IReservationService
         if (startDate < BusinessClock.Today)
             return new ReservationServiceResponse(false, "Ngày bắt đầu thuê không được ở trong quá khứ.", 400, null);
 
+        // Cách nhận kho + khung giờ (4.1): nhận trực tiếp phải chọn 1 trong 4 khung 2 tiếng; online không hẹn giờ.
+        var handoverMethod = HandoverMethod.Normalize(request.HandoverMethod);
+        if (handoverMethod is null)
+            return new ReservationServiceResponse(false, "Cách nhận kho chỉ được chọn: nhận trực tiếp hoặc bàn giao online.", 400, null);
+
+        TimeSpan? appointmentTime = null;
+        if (handoverMethod == HandoverMethod.InPerson)
+        {
+            appointmentTime = StaffAssignmentPolicy.ParseMoveInSlot(request.AppointmentSlot);
+            if (appointmentTime is null)
+                return new ReservationServiceResponse(false, "Vui lòng chọn khung giờ nhận kho: 08:00–10:00, 10:00–12:00, 12:00–14:00 hoặc 14:00–16:00.", 400, null);
+
+            // Nhận ngay hôm nay: khung giờ phải còn chưa kết thúc (giờ VN)
+            var vnNow = DateTime.UtcNow.AddHours(7);
+            if (startDate == vnNow.Date && appointmentTime.Value.Add(StaffAssignmentPolicy.MoveInSlotLength) <= vnNow.TimeOfDay)
+                return new ReservationServiceResponse(false, "Khung giờ này hôm nay đã qua. Vui lòng chọn khung giờ khác hoặc ngày bắt đầu khác.", 400, null);
+        }
+
         var requestedItems = request.Units is { Count: > 0 }
             ? request.Units
                 .Where(u => u.UnitID > 0 && !string.IsNullOrWhiteSpace(u.UnitNumber))
@@ -101,7 +119,8 @@ public class ReservationService : IReservationService
                 PaymentPlan = paymentPlan,
                 HoldExpiresAt = now.AddMinutes(holdMinutes),
                 AppointmentDate = startDate,
-                AppointmentTime = new TimeSpan(9, 0, 0),
+                AppointmentTime = appointmentTime, // khung giờ khách chọn; online = null (không hẹn giờ)
+                HandoverMethod = handoverMethod,
                 Status = ReservationStatus.PendingPayment,
                 CreatedAt = now
             };
@@ -196,6 +215,8 @@ public class ReservationService : IReservationService
                 message = "Đặt kho thành công, đang chờ thanh toán tiền cọc.",
                 reservationId = reservation.ReservationID,
                 paymentPlan = reservation.PaymentPlan,
+                handoverMethod = reservation.HandoverMethod,
+                appointmentSlot = StaffAssignmentPolicy.SlotLabel(reservation.AppointmentTime),
                 // Số tiền thuê phải đóng ngày nhận kho: trả 1 lần = toàn bộ, theo tháng = tháng đầu
                 rentDueAtHandover = paymentPlan == PaymentPlan.Upfront ? totalRent : totalMonthlyPrice,
                 reservationCode = reservation.ReservationCode,

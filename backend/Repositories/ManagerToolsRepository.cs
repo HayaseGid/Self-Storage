@@ -137,8 +137,10 @@ public class ManagerToolsRepository : IManagerToolsRepository
     public async Task<List<Reservation>> GetReservationsNeedingMoveInAsync(int facilityId, CancellationToken cancellationToken)
     {
         return await _context.Reservations
-            .Include(r => r.ReservationUnits)
+            .Include(r => r.ReservationUnits).ThenInclude(ru => ru.Unit)
             .Include(r => r.HandoverTasks)
+            .Include(r => r.Customer)   // liên hệ khách: gửi kèm email báo nhân viên được giao (4.1)
+            .Include(r => r.Facility)
             .Where(r => r.FacilityID == facilityId &&
                         (r.Status == ReservationStatus.Paid || r.Status == ReservationStatus.Confirmed) &&
                         r.ReservationUnits.Any(ru => ru.Status == "Held" &&

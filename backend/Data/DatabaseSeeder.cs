@@ -457,6 +457,27 @@ public static class DatabaseSeeder
         }
     }
 
+    /// <summary>
+    /// Postgres (Neon): EnsureCreated chỉ tạo bảng khi DB còn trống, nên DB đã có từ trước sẽ thiếu cột mới.
+    /// Thêm cột Reservation.HandoverMethod (cách nhận kho) nếu chưa có. SQL Server: chạy database/Migrations/20261110_KhungGioVaCachNhanKho.sql.
+    /// </summary>
+    public static void EnsureHandoverMethodColumn(SelfStorageDbContext context)
+    {
+        bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+        if (!isNpgsql) return;
+
+        try
+        {
+            context.Database.ExecuteSqlRaw(@"
+                ALTER TABLE ""Reservation"" ADD COLUMN IF NOT EXISTS ""HandoverMethod"" VARCHAR(20) NOT NULL DEFAULT 'InPerson';
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[EnsureHandoverMethodColumn] Error: {ex.Message}");
+        }
+    }
+
     public static void EnsureReturnInspectionTables(SelfStorageDbContext context)
     {
         bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;

@@ -19,6 +19,8 @@ public class Reservation
     public DateTime HoldExpiresAt { get; set; }
     public DateTime? AppointmentDate { get; set; }
     public TimeSpan? AppointmentTime { get; set; }
+    /// <summary>Cách nhận kho: "InPerson" (đến trong khung giờ đã chọn) hoặc "Online" (mã trên tài khoản, chìa ở lễ tân) — xem Constants/HandoverMethod.</summary>
+    public string HandoverMethod { get; set; } = SelfStorageAPI.Constants.HandoverMethod.InPerson;
     public string Status { get; set; } = "Pending Payment";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? PaidAt { get; set; }

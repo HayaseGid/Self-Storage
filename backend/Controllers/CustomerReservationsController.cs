@@ -103,6 +103,9 @@ public sealed class CustomerReservationsController(
                 r.Status,
                 r.HoldExpiresAt,
                 r.PaymentPlan,
+                r.HandoverMethod,
+                r.AppointmentDate,
+                r.AppointmentTime,
                 RentRows = r.Charges
                     .Where(c => c.ChargeType == "Rent")
                     .Select(c => new { c.Status, c.Amount, c.DueDate, c.PeriodStart })
@@ -232,6 +235,11 @@ public sealed class CustomerReservationsController(
                 },
                 paymentPlan = r.PaymentPlan,
                 paymentPlanLabel = PaymentPlan.Label(r.PaymentPlan),
+                // Cách nhận kho + lịch hẹn (4.1): trực tiếp theo khung giờ / online (mã trên tài khoản, chìa ở lễ tân)
+                handoverMethod = r.HandoverMethod,
+                handoverMethodLabel = HandoverMethod.Label(r.HandoverMethod),
+                appointmentDate = r.AppointmentDate ?? r.StartDate,
+                appointmentSlot = StaffAssignmentPolicy.SlotLabel(r.AppointmentTime),
                 rentDueAtStart = RentPaymentRules.DueAtStart(rentState).Sum(c => c.Amount),
                 startRentPaid = RentPaymentRules.IsStartRentPaid(rentState),
                 rentPayableNow = rentPayable.Sum(c => c.Amount),

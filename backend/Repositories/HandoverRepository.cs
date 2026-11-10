@@ -22,6 +22,7 @@ public class HandoverRepository : IHandoverRepository
             .Include(r => r.ReservationUnits)
                 .ThenInclude(ru => ru.Unit)
             .Include(r => r.Customer)
+            .Include(r => r.Facility)
             .Include(r => r.Payments)
             .Include(r => r.Charges)
             .Include(r => r.Contract)

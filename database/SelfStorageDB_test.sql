@@ -539,6 +539,7 @@ CREATE TABLE Reservation (
     HoldExpiresAt DATETIME2 NOT NULL,
     AppointmentDate DATE NULL,
     AppointmentTime TIME(0) NULL,
+    HandoverMethod NVARCHAR(20) NOT NULL CONSTRAINT DF_Reservation_HandoverMethod DEFAULT N'InPerson', -- cách nhận kho: trực tiếp / online
     Status NVARCHAR(30) NOT NULL CONSTRAINT DF_Reservation_Status DEFAULT N'Pending Payment',
     CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_Reservation_CreatedAt DEFAULT SYSUTCDATETIME(),
     PaidAt DATETIME2 NULL,
@@ -563,6 +564,7 @@ CREATE TABLE Reservation (
         CHECK (EndDate = DATEADD(DAY, -1, DATEADD(MONTH, RentalPeriod, StartDate))),
     CONSTRAINT CK_Reservation_DepositMonths CHECK (DepositMonths BETWEEN 1 AND 2),
     CONSTRAINT CK_Reservation_PaymentPlan CHECK (PaymentPlan IN (N'Monthly', N'Upfront')), -- NEW: Ràng buộc hình thức trả
+    CONSTRAINT CK_Reservation_HandoverMethod CHECK (HandoverMethod IN (N'InPerson', N'Online')),
     CONSTRAINT CK_Reservation_Hold CHECK (HoldExpiresAt > CreatedAt),
     CONSTRAINT CK_Reservation_Appointment
         CHECK (AppointmentDate IS NULL OR AppointmentDate BETWEEN StartDate AND EndDate),

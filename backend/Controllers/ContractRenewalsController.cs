@@ -652,71 +652,8 @@ public sealed class ContractRenewalsController(
         }
     }
 
-    private async Task SettleEndedTermsAsync(int customerId, CancellationToken ct)
-    {
-        var today = Today();
-        var renewals = await context.Contracts
-            .Include(c => c.Reservation).ThenInclude(r => r.ReservationUnits)
-            .Include(c => c.RenewedFromContract!).ThenInclude(o => o.Reservation).ThenInclude(r => r.ReservationUnits).ThenInclude(ru => ru.UnitAccesses)
-            .Where(c => c.RenewedFromContractID != null &&
-                        c.Reservation.CustomerID == customerId &&
-                        c.Reservation.Status == ReservationStatus.HandedOver &&
-                        c.RenewedFromContract!.Reservation.Status == ReservationStatus.HandedOver &&
-                        c.RenewedFromContract!.Reservation.EndDate < today)
-            .ToListAsync(ct);
-
-        foreach (var renewal in renewals)
-        {
-            var oldContract = renewal.RenewedFromContract!;
-            var old = oldContract.Reservation;
-            var now = DateTime.UtcNow;
-            await using var transaction = await context.Database.BeginTransactionAsync(ct);
-
-            // Thu quyền truy cập cũ trước (mỗi kho chỉ 1 quyền Active / loại) rồi cấp lại cho kỳ mới.
-            var transfers = new List<UnitAccess>();
-            foreach (var oldUnit in old.ReservationUnits.Where(ru => ru.Status == "Active"))
-            {
-                var newUnit = renewal.Reservation.ReservationUnits.FirstOrDefault(ru => ru.UnitID == oldUnit.UnitID && ru.Status == "Active");
-                foreach (var access in oldUnit.UnitAccesses.Where(a => a.Status == "Active"))
-                {
-                    access.Status = "Returned";
-                    access.ClosedAt = now;
-                    if (newUnit != null)
-                    {
-                        transfers.Add(new UnitAccess
-                        {
-                            ReservationUnitID = newUnit.ReservationUnitID,
-                            ReservationID = renewal.ReservationID,
-                            UnitID = newUnit.UnitID,
-                            UserID = renewal.Reservation.CustomerID,
-                            AccessType = access.AccessType,
-                            AccessValue = access.AccessValue,
-                            IssuedAt = now,
-                            IssuedByUserID = access.IssuedByUserID,
-                            Status = "Active"
-                        });
-                    }
-                }
-                oldUnit.Status = "Returned";
-                oldUnit.ReturnedOn = old.EndDate.Date;
-            }
-            await context.SaveChangesAsync(ct);
-
-            if (transfers.Count > 0)
-            {
-                context.UnitAccesses.AddRange(transfers);
-                await context.SaveChangesAsync(ct);
-            }
-
-            old.Status = ReservationStatus.Completed;
-            old.CompletedAt = now;
-            oldContract.ContractStatus = "Renewed";
-            oldContract.ActualEndDate = old.EndDate.Date;
-            await context.SaveChangesAsync(ct);
-
-            await transaction.CommitAsync(ct);
-        }
-    }
+    private Task SettleEndedTermsAsync(int customerId, CancellationToken ct)
+        => RenewalTermSettler.SettleAsync(context, customerId, Today(), ct); // logic dùng chung với job hằng ngày (RenewalSettleJob)
 
     // ------------------------------------------------------------------ Helpers
 

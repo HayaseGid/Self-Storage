@@ -142,6 +142,8 @@ builder.Services.AddScoped<IReturnInspectionService, ReturnInspectionService>();
 // Cấu hình SMTP Gmail và EmailService
 builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<RegistrationOtpService>(); // OTP đăng ký: tạo + kiểm tra mã ở backend
+builder.Services.AddHostedService<RenewalSettleJob>();     // job hằng ngày: chốt kỳ thuê cũ sau gia hạn (4.2)
 
 
 // JWT authentication
@@ -202,6 +204,7 @@ using (var scope = app.Services.CreateScope())
     if (dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
     {
         dbContext.Database.EnsureCreated();
+        DatabaseSeeder.EnsureHandoverMethodColumn(dbContext); // DB Neon đã có từ trước: thêm cột mới trước khi seed / đọc Reservation
         DatabaseSeeder.SeedIfEmpty(dbContext);
         DatabaseSeeder.EnsureReturnInspectionTables(dbContext);
     }

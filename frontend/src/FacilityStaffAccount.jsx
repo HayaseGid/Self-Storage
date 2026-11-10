@@ -332,6 +332,9 @@ function ReservationDetail({ res, staff, db, actions }) {
 
       <div className="st-grid">
         <Info k="Lịch hẹn nhận kho" strong>{fmtDate(res.appointmentDate)} · {res.appointmentTime}</Info>
+        <Info k="Cách nhận kho">{res.handoverMethod === "Online"
+          ? "Bàn giao online: hoàn tất bàn giao trên hệ thống (mã truy cập hiện trong tài khoản khách), để chìa khóa kèm mã đơn tại quầy lễ tân"
+          : "Khách đến nhận trực tiếp trong khung giờ trên, nên gọi xác nhận trước"}</Info>
         <Info k="Tiền cọc" strong>{fmtMoney(res.deposit)} <Badge map={PAY_STATUS} value={res.paymentStatus} /></Info>
         <Info k="Kỳ thuê">{fmtDate(res.startDate)} → {fmtDate(endOf(res))} ({res.months} tháng)</Info>
         <Info k="Liên hệ">{res.customerPhone || "—"} · {res.customerEmail}</Info>
@@ -864,10 +867,10 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
                   {tasks.length === 0 && <tr><td colSpan="5" className="st-empty">Bạn chưa được giao việc nào tại cơ sở này.</td></tr>}
                   {taskPaging.pageRows.map((t) => (
                     <tr key={t.taskId} className={rowClass(t.createdAt)}>
-                      <td><b>{fmtDate(t.scheduledDate)}</b>{t.scheduledTime ? ` · ${t.scheduledTime}` : ""} <NewBadge createdAt={t.createdAt} label="Mới giao" /></td>
+                      <td><b>{fmtDate(t.scheduledDate)}</b>{t.scheduledSlot || t.scheduledTime ? ` · ${t.scheduledSlot || t.scheduledTime}` : ""} <NewBadge createdAt={t.createdAt} label="Mới giao" />{t.handoverMethod === "Online" && t.taskType === "Move In" ? <span className="st-cell-sub">Bàn giao online · chìa để ở lễ tân</span> : ""}</td>
                       <td>{TASK_TYPE[t.taskType] || t.taskType}</td>
                       <td><Code kind="unit">{t.unitNumber}</Code></td>
-                      <td><Code kind="order">{t.reservationCode || (t.reservationId ? formatReservationCode(t.reservationId) : null)}</Code>{t.customerName ? <span className="st-cell-sub">{t.customerName}</span> : ""}</td>
+                      <td><Code kind="order">{t.reservationCode || (t.reservationId ? formatReservationCode(t.reservationId) : null)}</Code>{t.customerName ? <span className="st-cell-sub">{t.customerName}</span> : ""}{t.customerPhone || t.customerEmail ? <span className="st-cell-sub">{t.customerPhone ? <a href={`tel:${t.customerPhone}`}>{t.customerPhone}</a> : null}{t.customerPhone && t.customerEmail ? " · " : ""}{t.customerEmail ? <a href={`mailto:${t.customerEmail}`}>{t.customerEmail}</a> : null}</span> : ""}</td>
                       <td><Badge map={TASK_STATUS} value={t.status} /></td>
                     </tr>
                   ))}
@@ -1026,4 +1029,4 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
             <NoAccess navigate={navigate} />}
     </div>
   );
-}
+}

@@ -9,6 +9,7 @@ import { effectiveMonthly, holdMinutesFor, quote } from './pricing'
 import { announceDepositSuccess, confirmAfterDeposit, openCustomerSection } from './afterDeposit'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
 import DepositConfirm from './DepositConfirm'
+import HandoverChoice, { HANDOVER_METHODS, ONLINE_HANDOVER_NOTE, handoverChoiceError, slotLabel } from './HandoverChoice'
 import { getTodayDate } from './demoClock/demoClock'
 import './CartPage.css'
 
@@ -43,6 +44,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
   const [startDate, setStartDate] = useState(null)
   const [months, setMonths] = useState(RENTAL_TERMS[0])
   const [paymentPlan, setPaymentPlan] = useState('Monthly') // 'Monthly' | 'Upfront'
+  const [handoverMethod, setHandoverMethod] = useState(HANDOVER_METHODS.InPerson) // 'InPerson' | 'Online'
+  const [appointmentSlot, setAppointmentSlot] = useState('') // '08:00' | '10:00' | '12:00' | '14:00'
   const [submitting, setSubmitting] = useState(false)
   const [order, setOrder] = useState(null)
   const [now, setNow] = useState(Date.now())
@@ -149,6 +152,12 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
       await dialog.alert({ tone: 'warning', title: 'Chưa chọn ngày bắt đầu', message: 'Hãy chọn ngày bắt đầu thuê trên lịch.' })
       return
     }
+    const handoverError = handoverChoiceError(handoverMethod, appointmentSlot, startDate)
+    if (handoverError) {
+      await dialog.alert({ tone: 'warning', title: 'Chưa chọn khung giờ nhận kho', message: handoverError })
+      return
+    }
+    const isOnline = handoverMethod === HANDOVER_METHODS.Online
     const ok = await dialog.confirm({
       tone: 'warning',
       title: `Đặt ${selected.length} kho tại ${activeGroup.name}?`,
@@ -157,6 +166,9 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
           <p>Thuê từ <strong>{fmtDate(startDate)}</strong> đến <strong>{fmtDate(endDate)}</strong> ({months} tháng).</p>
           <p>Kho: <strong>{selected.map(i => i.unitId).join(', ')}</strong></p>
           <p>Tổng tiền cọc cần thanh toán: <strong>{money(depositTotal)}</strong> ({depositMonths} tháng tiền thuê mỗi kho).</p>
+          <p>Nhận kho: {isOnline
+            ? <><strong>Bàn giao online</strong> — {ONLINE_HANDOVER_NOTE}</>
+            : <><strong>Nhận trực tiếp</strong> ngày {fmtDate(startDate)}, khung <strong>{slotLabel(appointmentSlot)}</strong>.</>}</p>
           <p>Hình thức trả tiền thuê: <strong>{planLabel}</strong> — sau khi nhận kho đóng <strong>{money(rentAtHandover)}</strong>{paymentPlan === 'Upfront' ? ' (toàn bộ kỳ thuê)' : ' (tháng đầu), các tháng sau đóng trước ngày đầu mỗi kỳ'}.</p>
           {selected.length > 1 && (
             <p><strong>Lưu ý đơn gộp:</strong> Tất cả {selected.length} kho trong đợt đặt này áp dụng chung hình thức <strong>{planLabel}</strong>.</p>
@@ -179,7 +191,9 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
           units: [{ unitID: item.unit.unitId, unitNumber: item.unitId }],
           startDate: toApiDate(startDate),
           months,
-          paymentPlan
+          paymentPlan,
+          handoverMethod,
+          appointmentSlot: isOnline ? null : appointmentSlot
         })
         created.push({ item, reservation, paid: false })
       } catch (error) {
@@ -209,6 +223,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
       startDate: toApiDate(startDate),
       months,
       paymentPlan,
+      handoverMethod,
+      appointmentSlot: isOnline ? null : appointmentSlot,
       createdAt: new Date().toISOString()
     })
     removeManyFromCart(created.map(entry => entry.item.key))
@@ -221,6 +237,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
       months,
       depositMonths,
       paymentPlan,
+      handoverMethod,
+      appointmentSlot: isOnline ? null : appointmentSlot,
       facilityName: activeGroup.name
     })
     setStep('payment')
@@ -601,6 +619,15 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                 )}
               </div>
 
+              {/* Cách nhận kho + khung giờ (4.1) */}
+              <HandoverChoice
+                method={handoverMethod}
+                onMethodChange={setHandoverMethod}
+                slot={appointmentSlot}
+                onSlotChange={setAppointmentSlot}
+                startDate={startDate}
+              />
+
               {/* Bảng chi tiết giá tiền */}
               <div className="booking-price-breakdown">
                 <div>
@@ -660,7 +687,9 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                   <strong>Quy trình thanh toán</strong>
                   <p>Bước 1: thanh toán tiền cọc {money(depositTotal)} ({selected.length} kho).</p>
                   <p>Bước 2: đặt cọc xong, các kho được giữ và bạn ký hợp đồng online ngay cho từng kho.</p>
-                  <p>Bước 3: cơ sở phân nhân viên bàn giao, bạn đến nhận kho và mã PIN vào ngày bắt đầu.</p>
+                  <p>{handoverMethod === HANDOVER_METHODS.Online
+                    ? 'Bước 3: ngày bắt đầu, nhân viên bàn giao online: mã truy cập hiện trong tài khoản, chìa khóa nhận tại quầy lễ tân.'
+                    : `Bước 3: cơ sở phân nhân viên bàn giao, bạn đến nhận kho ngày bắt đầu${appointmentSlot ? ` (khung ${slotLabel(appointmentSlot)})` : ''}.`}</p>
                   <p>Bước 4: thanh toán tiền thuê theo hình thức đã chọn ({planLabel.toLowerCase()}).</p>
                 </div>
               </div>
@@ -747,6 +776,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                     ['Cơ sở', order.facilityName],
                     ['Danh sách kho', order.entries.map(entry => entry.item.unitId).join(', ')],
                     ['Thời gian thuê', `${fmtDate(order.startDate)} → ${fmtDate(order.endDate)} (${order.months} tháng)`],
+                    ['Nhận kho', order.handoverMethod === HANDOVER_METHODS.Online ? 'Bàn giao online (mã trên tài khoản, chìa ở lễ tân)' : `Trực tiếp ngày ${fmtDate(order.startDate)}, khung ${slotLabel(order.appointmentSlot)}`],
                     ['Hợp đồng', `${order.entries.length} hợp đồng (mỗi kho một hợp đồng riêng)`]
                   ]}
                   lines={[

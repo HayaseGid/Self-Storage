@@ -19,6 +19,10 @@ namespace SelfStorageAPI.DTOs
         public int Months { get; set; }
         /// <summary>Hình thức trả tiền thuê: "Monthly" hoặc "Upfront" (bắt buộc).</summary>
         public string? PaymentPlan { get; set; }
+        /// <summary>Cách nhận kho: "InPerson" (mặc định) hoặc "Online".</summary>
+        public string? HandoverMethod { get; set; }
+        /// <summary>Khung giờ nhận kho khi nhận trực tiếp: "08:00" | "10:00" | "12:00" | "14:00" (khung 2 tiếng).</summary>
+        public string? AppointmentSlot { get; set; }
     }
 
     public class CreatePaymentDTO

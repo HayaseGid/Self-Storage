@@ -8,6 +8,7 @@ import { lateFeePolicyText } from './lateFees'
 import { getTodayDate } from './demoClock/demoClock'
 import './ContractCard.css'
 import './UnitReturn.css'
+import { ONLINE_HANDOVER_NOTE } from './HandoverChoice'
 
 /*
  * Thẻ hợp đồng ở tab "Hợp đồng" của khách: chia rõ từng nhóm
@@ -134,6 +135,15 @@ export default function ContractCard({
           <h3>Thời hạn thuê</h3>
           <p className="cc-dates"><strong>{rental.startDate}</strong><span>→</span><strong>{rental.endDate}</strong></p>
           <p className="cc-sub">{rental.months ? `${rental.months} tháng` : ''}</p>
+          {/* Cách nhận kho (4.1): trực tiếp theo khung giờ / online (mã trên tài khoản, chìa ở lễ tân) */}
+          {rental.handoverMethod && ['Pending Deposit', 'Paid', 'Confirmed'].includes(rental.status) && (
+            rental.handoverMethod === 'Online'
+              ? <p className="cc-sub"><strong>Bàn giao online</strong> · {ONLINE_HANDOVER_NOTE}</p>
+              : <p className="cc-sub"><strong>Nhận trực tiếp</strong> · {fmtIsoDate(rental.appointmentDate)}{rental.appointmentSlot ? `, khung ${rental.appointmentSlot}` : ''}</p>
+          )}
+          {rental.handoverMethod === 'Online' && rental.status === 'Handed Over' && (
+            <p className="cc-sub">Bàn giao online · chìa khóa nhận tại quầy lễ tân của cơ sở (mang theo CCCD, báo mã đơn).</p>
+          )}
           {!ended && (
             <>
               <div className="cc-progress" aria-hidden="true"><div style={{ width: `${notStarted ? 0 : rental.progress || 0}%` }} /></div>
