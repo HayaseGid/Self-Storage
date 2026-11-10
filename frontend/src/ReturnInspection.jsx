@@ -356,6 +356,32 @@ function DisputeModal({ inspection, onClose, onDone }) {
   )
 }
 
+function ManagerApprovalBadge({ resolvedBy, resolvedByEmail, resolvedByPhone, resolvedAt, resolutionNotes }) {
+  if (!resolvedBy && !resolutionNotes) return null
+  return (
+    <div className="ri-quote decision ri-manager-decision-card" style={{ marginTop: '12px', background: '#f8fafc', borderLeft: '4px solid #0877cf', padding: '12px 16px', borderRadius: '6px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px', marginBottom: '6px' }}>
+        <span style={{ fontWeight: 700, color: '#073d70', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>🛡️</span> Quản lý cơ sở phê duyệt: {resolvedBy || 'Facility Manager'}
+        </span>
+        {resolvedAt && <span style={{ fontSize: '12px', color: '#64748b' }}>({fmtDateTime(resolvedAt)})</span>}
+      </div>
+      {(resolvedByEmail || resolvedByPhone) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '13px', color: '#475569', margin: '4px 0 8px 0' }}>
+          {resolvedByEmail && <span>✉️ Email: <strong style={{ color: '#1e293b' }}>{resolvedByEmail}</strong></span>}
+          {resolvedByPhone && <span>📞 SĐT: <strong style={{ color: '#1e293b' }}>{resolvedByPhone}</strong></span>}
+        </div>
+      )}
+      {resolutionNotes && (
+        <div style={{ paddingTop: (resolvedByEmail || resolvedByPhone) ? '8px' : 0, borderTop: (resolvedByEmail || resolvedByPhone) ? '1px dashed #cbd5e1' : 'none' }}>
+          <b style={{ color: '#334155' }}>Nội dung quyết định / Ghi chú:</b>
+          <p style={{ margin: '4px 0 0', color: '#1e293b' }}>{resolutionNotes}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /*
  * Hộp kết quả kiểm kho trong thẻ "Trả kho" của khách.
  *   depositTotal / debtDeducted: lấy từ /api/unit-returns/mine (request.depositTotal, request.deductedFromDeposit).
@@ -460,11 +486,13 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
           <b>Khiếu nại của bạn ({fmtDateTime(i.respondedAt)}):</b> {i.disputeReason}
         </div>
       )}
-      {i.resolutionNotes && (
-        <div className="ri-quote decision">
-          <b>Ý kiến / Quyết định của {i.resolvedBy || 'Facility Manager'} ({fmtDateTime(i.resolvedAt)}):</b> {i.resolutionNotes}
-        </div>
-      )}
+      <ManagerApprovalBadge
+        resolvedBy={i.resolvedBy}
+        resolvedByEmail={i.resolvedByEmail}
+        resolvedByPhone={i.resolvedByPhone}
+        resolvedAt={i.resolvedAt}
+        resolutionNotes={i.resolutionNotes}
+      />
 
       {isAwaiting && (
         <>
@@ -588,12 +616,13 @@ export function StaffInspectionStatus({ inspection, fallbackNote }) {
           <p style={{ margin: '4px 0 0' }}>{i.disputeReason}</p>
         </div>
       )}
-      {i.resolutionNotes && (
-        <div className="ri-quote decision">
-          <b>Quyết định của {i.resolvedBy || 'Facility Manager'}{i.resolvedAt ? ` (${fmtDateTime(i.resolvedAt)})` : ''}:</b>
-          <p style={{ margin: '4px 0 0' }}>{i.resolutionNotes}</p>
-        </div>
-      )}
+      <ManagerApprovalBadge
+        resolvedBy={i.resolvedBy}
+        resolvedByEmail={i.resolvedByEmail}
+        resolvedByPhone={i.resolvedByPhone}
+        resolvedAt={i.resolvedAt}
+        resolutionNotes={i.resolutionNotes}
+      />
       <InspectionPhotos inspection={i} />
     </div>
   )
@@ -752,7 +781,13 @@ function ResolveModal({ inspectionId, onClose, onDone }) {
               </tfoot>
             </table>
 
-            {d.resolutionNotes && <p className="ri-quote decision"><b>Ghi chú duyệt/quyết định ({d.resolvedBy}, {fmtDateTime(d.resolvedAt)}):</b> {d.resolutionNotes}</p>}
+            <ManagerApprovalBadge
+              resolvedBy={d.resolvedBy}
+              resolvedByEmail={d.resolvedByEmail}
+              resolvedByPhone={d.resolvedByPhone}
+              resolvedAt={d.resolvedAt}
+              resolutionNotes={d.resolutionNotes}
+            />
 
             {canAct && (
               <label>

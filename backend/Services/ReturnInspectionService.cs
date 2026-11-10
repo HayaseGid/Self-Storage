@@ -638,6 +638,8 @@ public class ReturnInspectionService : IReturnInspectionService
             disputeReason = r.DisputeReason,
             respondedAt = r.RespondedAt,
             resolvedBy = r.ResolvedByName,
+            resolvedByEmail = r.ResolvedByEmail,
+            resolvedByPhone = r.ResolvedByPhone,
             resolvedAt = r.ResolvedAt,
             resolutionNotes = r.ResolutionNotes,
             settledAt = r.SettledAt,
