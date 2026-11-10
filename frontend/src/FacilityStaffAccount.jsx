@@ -6,11 +6,12 @@ import StaffReturns from "./StaffReturns"; // [MAIN-10] luồng trả kho của 
 import { mapOperationsState } from "./operationsState";
 import { useDialog } from "./Dialog";
 import { formatReservationCode } from "./storageRules";
+import { getTodayISO } from "./demoClock/demoClock";
 
 /* ---------- helpers ---------- */
 const pad = (n) => String(n).padStart(2, "0");
 const fmtISO = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const todayStr = () => fmtISO(new Date());
+const todayStr = () => getTodayISO();
 const addMonths = (s, n) => {
   const [y, m, d] = String(s || "").split("-").map(Number);
   if (!y || !m || !d) return "";

@@ -1,3 +1,5 @@
+import { SIMULATED_DATE_HEADER, getSimulatedDateISO } from './demoClock/demoClock'
+
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5046').replace(/\/+$/, '')
 const CURRENT_USER_KEY = 'storespace_current_user'
 const REQUEST_TIMEOUT_MS = 20000
@@ -115,6 +117,9 @@ export async function apiRequest(path, { method = 'GET', body, headers = {}, tim
   const sentToken = Boolean(currentUser?.token)
   if (sentToken) requestHeaders.set('Authorization', `Bearer ${currentUser.token}`)
   else if (currentUser?.email) requestHeaders.set('X-User-Email', currentUser.email)
+
+  const simulatedDate = getSimulatedDateISO()
+  if (simulatedDate) requestHeaders.set(SIMULATED_DATE_HEADER, simulatedDate)
 
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const timer = controller ? setTimeout(() => controller.abort(), timeout) : null

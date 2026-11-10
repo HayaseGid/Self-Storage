@@ -908,13 +908,8 @@ public sealed class ContractRenewalsController(
         return $"{ContractRenewalFinalizer.CodePrefix}{now:yyyy}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
     }
 
-    /* Ngày hiện tại: lấy ngày muộn hơn giữa giờ máy chủ và UTC (khớp cách trigger DB tính "quá hạn"). */
-    private static DateTime Today()
-    {
-        var local = DateTime.Today;
-        var utc = DateTime.UtcNow.Date;
-        return local > utc ? local : utc;
-    }
+    /* Ngày hiện tại theo đồng hồ nghiệp vụ (hỗ trợ giả lập ngày Demo qua BusinessClock). */
+    private static DateTime Today() => BusinessClock.Today;
 
     private Task<int?> GetCustomerIdAsync(CancellationToken ct)
     {

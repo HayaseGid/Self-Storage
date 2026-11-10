@@ -509,8 +509,8 @@ public sealed class ReservationCancellationsController(
         return colon > 0 && colon < 60 ? text[(colon + 1)..].Trim() : fallback;
     }
 
-    /* Ngày hiện tại theo giờ Việt Nam. */
-    private static DateTime Today() => DateTime.UtcNow.AddHours(7).Date;
+    /* Ngày hiện tại theo giờ Việt Nam (hỗ trợ giả lập ngày Demo qua BusinessClock). */
+    private static DateTime Today() => BusinessClock.Today;
 
     private Task<int?> GetCustomerIdAsync(CancellationToken ct)
     {

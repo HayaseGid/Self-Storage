@@ -27,6 +27,8 @@ import DepositConfirm from './DepositConfirm'
 import FacilityFloorPlan from './FacilityFloorPlan'
 import Unit3DViewer from './Unit3DViewer'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
+import DemoClockWidget from './demoClock/DemoClockWidget'
+import { getTodayDate } from './demoClock/demoClock'
 import { CART_LIMIT, addToCart, isInCart, useCart } from './cart'
 import {
   clearBookingDraft,
@@ -2407,8 +2409,7 @@ function formatDashboardDate(value) {
 function mapCustomerReservation(reservation) {
   const start = new Date(`${String(reservation.startDate).slice(0, 10)}T00:00:00`)
   const end = new Date(`${String(reservation.endDate).slice(0, 10)}T00:00:00`)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const today = getTodayDate()
   const totalDays = Math.max(1, Math.floor((end - start) / 86400000) + 1)
   const elapsedDays = Math.max(0, Math.floor((today - start) / 86400000))
   const statusLabels = {
@@ -2739,7 +2740,7 @@ function ApiStartupError({ error }) {
 
 const root = createRoot(document.getElementById('root'))
 loadDataFromApi()
-  .then(() => root.render(<DialogProvider><Router /></DialogProvider>))
+  .then(() => root.render(<DialogProvider><Router /><DemoClockWidget /></DialogProvider>))
   .catch(error => {
     console.error('Không tải được danh mục từ backend.', error)
     root.render(<ApiStartupError error={error} />)

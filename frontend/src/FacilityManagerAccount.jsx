@@ -18,6 +18,7 @@ import PriceInput from './PriceInput'
 import ContractDocument from './ContractDocument'
 import ManagerPriceTable from './ManagerPriceTable'
 import { UnitTypeChip } from './unitTypes'
+import { getTodayISO } from './demoClock/demoClock'
 import './unitTypes.css'
 
 /* Formatters */
@@ -48,10 +49,7 @@ const compareNatural = (a, b) =>
 // Size so theo diện tích thật, không theo chữ
 const unitSizeValue = (u) => Number(u.areaM2 ?? 0) || Number(u.volumeM3 ?? u.sizeM2 ?? 0)
 
-const todayStr = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
+const todayStr = () => getTodayISO()
 const RES_STATUS_MAP = {
   PENDING_PAYMENT: { label: 'Chờ trả cọc', tone: 'warn' },
   PENDING_CONFIRMATION: { label: 'Chờ xác nhận cọc', tone: 'warn' },

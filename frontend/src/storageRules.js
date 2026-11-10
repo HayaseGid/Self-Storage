@@ -6,6 +6,8 @@
  * - Kiểm tra giá thuê, tiền cọc và kỳ hạn thuê.
  */
 
+import { getTodayISO } from './demoClock/demoClock'
+
 export const DEPOSIT_HOLD_MINUTES = 15
 export const RENTAL_TERMS = [6, 12]
 export const DEPOSIT_MONTHS = 2
@@ -66,8 +68,7 @@ export const RESERVATION_STATUS_LABELS = {
 }
 
 function todayISO() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return getTodayISO()
 }
 
 function isReservationActive(reservation) {
