@@ -17,6 +17,47 @@ export const PAGE_SIZES = [10, 20, 50, 100]
 
 /* ---------- Mới / nổi bật ---------- */
 
+const SEEN_STORAGE_KEY = 'storespace_seen_items_v1'
+
+export function getSeenSet() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SEEN_STORAGE_KEY) || '[]'))
+  } catch {
+    return new Set()
+  }
+}
+
+export function isItemSeen(id) {
+  if (!id) return false
+  return getSeenSet().has(String(id))
+}
+
+export function markItemSeen(id) {
+  if (!id) return
+  try {
+    const s = getSeenSet()
+    const str = String(id)
+    if (s.has(str)) return
+    s.add(str)
+    const arr = Array.from(s)
+    if (arr.length > 2000) arr.splice(0, arr.length - 2000)
+    localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(arr))
+    window.dispatchEvent(new CustomEvent('storespace:seen_updated', { detail: str }))
+  } catch { }
+}
+
+export function markAllItemsSeen(ids) {
+  if (!ids || !ids.length) return
+  try {
+    const s = getSeenSet()
+    ids.forEach(id => { if (id) s.add(String(id)) })
+    const arr = Array.from(s)
+    if (arr.length > 2000) arr.splice(0, arr.length - 2000)
+    localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(arr))
+    window.dispatchEvent(new CustomEvent('storespace:seen_updated', { detail: 'all' }))
+  } catch { }
+}
+
 // Backend trả giờ UTC không kèm "Z" -> tự thêm để không lệch 7 tiếng
 export function parseTime(value) {
   if (!value) return NaN
@@ -26,7 +67,9 @@ export function parseTime(value) {
   return Date.parse(/Z|[+-]\d{2}:?\d{2}$/.test(text) ? text : `${text}Z`)
 }
 
-export function isNewItem(createdAt, hours = NEW_HOURS) {
+export function isNewItem(createdAt, hours = NEW_HOURS, id = null) {
+  const itemId = id || (createdAt ? String(createdAt) : null)
+  if (itemId && isItemSeen(itemId)) return false
   const t = parseTime(createdAt)
   if (Number.isNaN(t)) return false
   const age = Date.now() - t
@@ -50,15 +93,45 @@ export function newestFirst(rows, { date = r => r?.createdAt, id = r => r?.id } 
   })
 }
 
-export function NewBadge({ createdAt, show, label = 'Mới' }) {
-  const visible = show ?? isNewItem(createdAt)
+export function NewBadge({ createdAt, id, show, label = 'Mới', onDismiss }) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const handler = () => setTick(t => t + 1)
+    window.addEventListener('storespace:seen_updated', handler)
+    return () => window.removeEventListener('storespace:seen_updated', handler)
+  }, [])
+
+  const itemId = id || (createdAt ? String(createdAt) : null)
+  if (itemId && isItemSeen(itemId)) return null
+  const visible = show ?? isNewItem(createdAt, NEW_HOURS, itemId)
   if (!visible) return null
-  return <span className="ss-new-badge" title={createdAt ? `Tạo lúc ${fmtDateTimeShort(createdAt)}` : undefined}>{label}</span>
+
+  const handleClick = (e) => {
+    e.stopPropagation()
+    if (itemId) markItemSeen(itemId)
+    onDismiss?.()
+  }
+
+  return (
+    <span
+      className="ss-new-badge"
+      title="Bấm để tắt đánh dấu Mới"
+      onClick={handleClick}
+      role="button"
+      tabIndex={0}
+      style={{ cursor: 'pointer' }}
+    >
+      {label}
+      <span style={{ marginLeft: 4, opacity: 0.8, fontSize: '9px' }}>✕</span>
+    </span>
+  )
 }
 
 /* Thêm vào className của dòng / thẻ: 'ss-row-new' khi bản ghi mới tạo */
-export function rowClass(createdAt, extra = '') {
-  return [extra, isNewItem(createdAt) ? 'ss-row-new' : ''].filter(Boolean).join(' ')
+export function rowClass(createdAt, extra = '', id = null) {
+  const itemId = id || (createdAt ? String(createdAt) : null)
+  if (itemId && isItemSeen(itemId)) return extra
+  return [extra, isNewItem(createdAt, NEW_HOURS, itemId) ? 'ss-row-new' : ''].filter(Boolean).join(' ')
 }
 
 export function fmtDateTimeShort(value) {

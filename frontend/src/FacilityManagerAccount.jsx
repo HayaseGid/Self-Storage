@@ -22,7 +22,7 @@ import { getTodayISO } from './demoClock/demoClock'
 import './unitTypes.css'
 import { ManagerReturnInspectionsTab } from './ReturnInspection' // [THÊM 14] xác nhận & khiếu nại kết quả kiểm kho
 import ManagerNav from './ManagerNav' // [THÊM] menu trái gom nhóm + số việc chờ
-import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, newestFirst, rowClass, timeAgo, useClientPaging } from './listKit' // [THÊM] phân trang + làm nổi mã
+import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, markAllItemsSeen, markItemSeen, newestFirst, rowClass, timeAgo, useClientPaging } from './listKit' // [THÊM] phân trang + làm nổi mã
 import { CONTRACT_SORTS, RESERVATION_SORTS, UNIT_SORTS, useOpsList } from './opsLists' // [THÊM] danh sách phân trang ở backend
 
 /* Formatters */
@@ -1670,8 +1670,8 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
               {paging.pageRows.map(r => {
                 const res = REPORT_RESULT_MAP[r.result] || { label: r.result, className: 'fm-badge' }
                 return (
-                  <tr key={r.taskId} className={rowClass(r.reportedAt)}>
-                    <td><b>{fmtDateTime(r.reportedAt)}</b> <NewBadge createdAt={r.reportedAt} /></td>
+                  <tr key={r.taskId} className={rowClass(r.reportedAt, '', r.taskId)} onClick={() => markItemSeen(r.taskId)} style={{ cursor: 'pointer' }}>
+                    <td><b>{fmtDateTime(r.reportedAt)}</b> <NewBadge createdAt={r.reportedAt} id={r.taskId} /></td>
                     <td><Code kind="unit">{r.unitNumber}</Code></td>
                     <td>{r.staffName}</td>
                     <td><span className={res.className}>{res.label}</span></td>
@@ -2234,11 +2234,11 @@ function FacilityContractsTab({ facility, facilityName, contracts = [], reservat
               const left = daysLeft(c.endDate)
               const phaseInfo = CONTRACT_PHASE_MAP[phase]
               return (
-                <tr key={c.id} className={rowClass(c.createdAt)}>
+                <tr key={c.id} className={rowClass(c.createdAt, '', c.id)} onClick={() => markItemSeen(c.id)}>
                   <td>
                     <div className="fm-code-stack">
                       <Code kind="contract">{c.contractNumber || `HD-${c.id}`}</Code>
-                      <NewBadge createdAt={c.createdAt} />
+                      <NewBadge createdAt={c.createdAt} id={c.id} />
                     </div>
                     <small className="fm-muted fm-code-sub">Đơn <Code kind="order">{c.reservationCode || r?.reservationCode || formatReservationCode(c.reservationId)}</Code></small>
                   </td>
@@ -2340,12 +2340,12 @@ function FacilityReservationsTab({ facility, facilityName, reservations = [], co
               const isOpen = open === r.id
               return (
                 <React.Fragment key={r.id}>
-                  <tr className={rowClass(r.createdAt, `fm-row-click${isOpen ? ' fm-row-open' : ''}`)} tabIndex={0}
-                    onClick={() => setOpen(isOpen ? null : r.id)} onKeyDown={(e) => { if (e.key === 'Enter') setOpen(isOpen ? null : r.id) }}>
+                  <tr className={rowClass(r.createdAt, `fm-row-click${isOpen ? ' fm-row-open' : ''}`, r.id)} tabIndex={0}
+                    onClick={() => { markItemSeen(r.id); setOpen(isOpen ? null : r.id); }} onKeyDown={(e) => { if (e.key === 'Enter') { markItemSeen(r.id); setOpen(isOpen ? null : r.id); } }}>
                     <td>
                       <div className="fm-code-stack">
                         <Code kind="order">{r.reservationCode || formatReservationCode(r.id)}</Code>
-                        <NewBadge createdAt={r.createdAt} />
+                        <NewBadge createdAt={r.createdAt} id={r.id} />
                       </div>
                       {r.createdAt && <small className="fm-muted fm-code-sub">Đặt {timeAgo(r.createdAt)}</small>}
                     </td>
@@ -3130,9 +3130,9 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                 <div className="fm-pending-mini-list">
                   {newestFirst([...awaitingHandoverList, ...awaitingPaymentList]).slice(0, 8).map(r => {
                     return (
-                      <div key={r.id} className={rowClass(r.createdAt, 'fm-pending-mini-item')}>
+                      <div key={r.id} className={rowClass(r.createdAt, 'fm-pending-mini-item', r.id)} onClick={() => markItemSeen(r.id)}>
                         <div>
-                          <strong className="fm-mini-title"><Code kind="order">{r.reservationCode || formatReservationCode(r.id)}</Code> {r.customerName} <NewBadge createdAt={r.createdAt} /></strong>
+                          <strong className="fm-mini-title"><Code kind="order">{r.reservationCode || formatReservationCode(r.id)}</Code> {r.customerName} <NewBadge createdAt={r.createdAt} id={r.id} /></strong>
                           <small className="fm-mini-sub"><UnitCodes units={r.unitNumbers?.length ? r.unitNumbers : r.assignedUnitId} max={3} /> · {r.unitType} · Thuê {r.months} tháng · Từ <b>{fmtDate(r.startDate)}</b></small>
                         </div>
                         <div className="fm-item-right">
@@ -3194,10 +3194,20 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                 </button>
               </div>
 
-              <div className="ss-toolbar">
+              <div className="ss-toolbar" style={{ flexWrap: 'wrap', gap: '8px' }}>
                 <input className="ss-search ss-grow" type="search" value={unitQuery} onChange={(e) => setUnitQuery(e.target.value)}
                   placeholder="Tìm mã kho, loại kho, size, khu, tầng..." aria-label="Tìm kho" />
                 <SortSelect value={unitListSort} onChange={setUnitListSort} options={UNIT_SORTS} />
+                {unitList.items.length > 0 && (
+                  <button
+                    type="button"
+                    className="dashboard-secondary-btn sm"
+                    onClick={() => markAllItemsSeen(unitList.items.map((u) => u.id))}
+                    title="Tắt toàn bộ nhãn Mới của danh sách kho"
+                  >
+                    ✓ Tắt nhãn Mới
+                  </button>
+                )}
               </div>
               <FilterChips
                 options={[['', 'Tất cả'], ['AVAILABLE', 'Còn trống'], ['RESERVED', 'Đã giữ chỗ'], ['RENTED', 'Đang thuê'], ['MAINTENANCE', 'Bảo trì'], ['INACTIVE', 'Ngừng sử dụng']]}
@@ -3233,15 +3243,15 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                         <tr
                           key={unit.id}
                           id={`fm-unit-row-${unit.id}`}
-                          className={rowClass(unit.createdAt, ['fm-row-click', isFresh ? 'fm-row-fresh' : '', highlightUnitId === unit.id ? 'fm-flash' : '', lock?.locked ? 'fm-row-locked' : ''].join(' ').trim())}
+                          className={rowClass(unit.createdAt, ['fm-row-click', isFresh ? 'fm-row-fresh' : '', highlightUnitId === unit.id ? 'fm-flash' : '', lock?.locked ? 'fm-row-locked' : ''].join(' ').trim(), unit.id)}
                           tabIndex={0}
-                          onClick={() => setViewingUnitId(unit.id)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') setViewingUnitId(unit.id) }}
+                          onClick={() => { markItemSeen(unit.id); setViewingUnitId(unit.id); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { markItemSeen(unit.id); setViewingUnitId(unit.id); } }}
                         >
                           <td>
                             <div className="fm-code-stack">
                               <Code kind="unit">{unit.id}</Code>
-                              {isFresh ? <span className="fm-new-tag">Mới</span> : <NewBadge createdAt={unit.createdAt} />}
+                              {isFresh ? <span className="fm-new-tag">Mới</span> : <NewBadge createdAt={unit.createdAt} id={unit.id} />}
                             </div>
                           </td>
                           <td><UnitTypeChip type={unit.type} compact /><small className="fm-muted" style={{ display: 'block', marginTop: 4 }}>{unit.type}</small></td>

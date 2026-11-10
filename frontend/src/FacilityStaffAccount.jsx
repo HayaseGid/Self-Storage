@@ -8,7 +8,7 @@ import { RESERVATION_SORTS, UNIT_SORTS, useOpsList } from "./opsLists";
 import { useDialog } from "./Dialog";
 import { formatReservationCode } from "./storageRules";
 import { getTodayISO } from "./demoClock/demoClock";
-import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, isNewItem, newestFirst, rowClass, timeAgo, useClientPaging, useServerList } from "./listKit";
+import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, isNewItem, markAllItemsSeen, markItemSeen, newestFirst, rowClass, timeAgo, useClientPaging, useServerList } from "./listKit";
 
 /* ---------- helpers ---------- */
 const pad = (n) => String(n).padStart(2, "0");
@@ -127,6 +127,27 @@ const isAssignedToMe = (db, res) => {
   return units.length > 0 && units.every((u) => mine.some((t) => t.unitNumber === u));
 };
 
+const TASK_SORTS = [
+  { value: "date_asc", label: "Ngày hẹn gần nhất" },
+  { value: "date_desc", label: "Ngày hẹn xa nhất" },
+  { value: "newest_created", label: "Mới giao lên đầu" },
+  { value: "unit_asc", label: "Theo mã kho (A-Z)" }
+];
+
+const TASK_STATUS_FILTERS = [
+  { value: "all", label: "Tất cả trạng thái" },
+  { value: "Scheduled", label: "Chờ thực hiện" },
+  { value: "In Progress", label: "Đang làm" },
+  { value: "Completed", label: "Đã hoàn thành" }
+];
+
+const TASK_TYPE_FILTERS = [
+  { value: "all", label: "Tất cả loại việc" },
+  { value: "Move In", label: "Nhận kho" },
+  { value: "Move Out", label: "Trả kho" },
+  { value: "Inspection", label: "Kiểm tra" }
+];
+
 // Trạng thái kho KHÔNG được bàn giao (khớp HandoverService.HandoverReadyUnitStatuses ở backend)
 const UNIT_NOT_READY = ["IN_USE", "RENTED", "PENDING_INSPECTION", "NEEDS_INSPECTION", "MAINTENANCE", "INACTIVE"];
 
@@ -209,6 +230,10 @@ function ReservationDetail({ res, staff, db, actions }) {
   const [confirming, setConfirming] = useState(false);
   const dialog = useDialog();
 
+  useEffect(() => {
+    if (res?.id) markItemSeen(res.id);
+  }, [res?.id]);
+
   const today = todayStr();
   const units = unitsOf(res);
   const { checks, canHandover } = checkHandover(res, staff, db);
@@ -282,7 +307,7 @@ function ReservationDetail({ res, staff, db, actions }) {
           <div className="st-head-codes">
             <span className="st-head-label">Mã đơn</span>
             <Code kind="order">{resCode(res)}</Code>
-            <NewBadge createdAt={res.createdAt} />
+            <NewBadge createdAt={res.createdAt} id={res.id} />
           </div>
           <h2>{res.customerName}</h2>
           <div className="st-head-units">
@@ -522,14 +547,161 @@ function UnitReportModal({ unit, onClose, onSubmit }) {
   );
 }
 
+/* [STAFF-TASKS] Modal xem chi tiết công việc */
+function TaskDetailModal({ task, onClose, onGoToReservation }) {
+  if (!task) return null;
+  const parsedImages = useMemo(() => {
+    if (!task.evidenceImages) return [];
+    try {
+      const arr = typeof task.evidenceImages === "string" ? JSON.parse(task.evidenceImages) : task.evidenceImages;
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }, [task.evidenceImages]);
+
+  return (
+    <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-label={`Chi tiết việc #${task.taskId}`}>
+      <div className="st-modal" style={{ maxWidth: "600px" }}>
+        <div className="st-modal-head">
+          <div>
+            <span style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748b", fontWeight: 700, letterSpacing: "0.5px" }}>
+              CHI TIẾT CÔNG VIỆC #{task.taskId}
+            </span>
+            <h3 style={{ margin: "2px 0 0", color: "#0f172a" }}>{TASK_TYPE[task.taskType] || task.taskType} · Kho {task.unitNumber}</h3>
+          </div>
+          <button type="button" className="st-modal-close" onClick={onClose} aria-label="Đóng">×</button>
+        </div>
+
+        <div style={{ display: "grid", gap: "12px", margin: "14px 0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+            <div>
+              <small style={{ color: "#64748b", display: "block" }}>Trạng thái công việc</small>
+              <Badge map={TASK_STATUS} value={task.status} />
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <small style={{ color: "#64748b", display: "block" }}>Thời gian phân công</small>
+              <strong>{fmtDateTime(task.createdAt)}</strong>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div style={{ background: "#f8fafc", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <small style={{ color: "#64748b", display: "block" }}>Lịch hẹn thực hiện</small>
+              <strong style={{ fontSize: "14px" }}>{fmtDate(task.scheduledDate)}</strong>
+              <div style={{ fontSize: "12.5px", color: "#0369a1", marginTop: "2px" }}>
+                {task.scheduledSlot || task.scheduledTime || "Trong ngày"}
+              </div>
+            </div>
+
+            <div style={{ background: "#f8fafc", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <small style={{ color: "#64748b", display: "block" }}>Hình thức nhận / trả</small>
+              <strong style={{ fontSize: "13.5px" }}>
+                {task.handoverMethod === "Online" ? "Bàn giao online" : "Trực tiếp tại cơ sở"}
+              </strong>
+              {task.handoverMethod === "Online" && (
+                <div style={{ fontSize: "12px", color: "#059669", marginTop: "2px" }}>
+                  Chìa khóa để sẵn tại quầy lễ tân
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ background: "#f8fafc", padding: "12px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <small style={{ color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>Thông tin ô kho &amp; Đơn đặt chỗ</small>
+              {task.reservationCode && <Code kind="order">{task.reservationCode}</Code>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "13px" }}>
+              <div><strong>Ô kho:</strong> <Code kind="unit">{task.unitNumber}</Code> {task.unitType ? `(${task.unitType})` : ""}</div>
+              <div><strong>Khách hàng:</strong> {task.customerName || "—"}</div>
+              {task.customerPhone && (
+                <div><strong>SĐT:</strong> <a href={`tel:${task.customerPhone}`}>{task.customerPhone}</a></div>
+              )}
+              {task.customerEmail && (
+                <div><strong>Email:</strong> <a href={`mailto:${task.customerEmail}`}>{task.customerEmail}</a></div>
+              )}
+            </div>
+          </div>
+
+          {(task.notes || task.conditionResult) && (
+            <div style={{ background: "#f8fafc", padding: "12px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <small style={{ color: "#64748b", display: "block", marginBottom: "4px", textTransform: "uppercase", fontWeight: 700 }}>
+                Kết quả &amp; Ghi chú hiện trạng
+              </small>
+              {task.conditionResult && (
+                <p style={{ margin: "0 0 4px", fontSize: "13px" }}>
+                  <strong>Đánh giá:</strong> {task.conditionResult === "Good" ? "✓ Tốt / Đạt" : task.conditionResult === "Damaged" ? "⚠️ Hư hỏng / Có vấn đề" : task.conditionResult}
+                </p>
+              )}
+              {task.notes && (
+                <p style={{ margin: 0, fontSize: "13px", fontStyle: "italic", color: "#334155" }}>
+                  &ldquo;{task.notes}&rdquo;
+                </p>
+              )}
+              {task.actualAt && (
+                <small style={{ display: "block", color: "#64748b", marginTop: "6px" }}>
+                  Hoàn tất lúc: {fmtDateTime(task.actualAt)}
+                </small>
+              )}
+            </div>
+          )}
+
+          {parsedImages.length > 0 && (
+            <div>
+              <small style={{ color: "#64748b", display: "block", marginBottom: "6px", fontWeight: 700 }}>
+                Ảnh hiện trường ({parsedImages.length} ảnh):
+              </small>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                {parsedImages.map((img, i) => (
+                  <img
+                    key={i}
+                    src={img}
+                    alt={`Bằng chứng ${i + 1}`}
+                    style={{ width: "90px", height: "90px", objectFit: "cover", borderRadius: "8px", border: "1px solid #cbd5e1", cursor: "pointer" }}
+                    onClick={() => window.open(img, "_blank")}
+                    title="Bấm để xem ảnh lớn"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="st-modal-actions" style={{ justifyContent: "space-between" }}>
+          {task.reservationId ? (
+            <button
+              type="button"
+              className="dashboard-primary-btn"
+              onClick={() => {
+                onClose();
+                onGoToReservation?.(task.reservationId);
+              }}
+            >
+              Xem đơn đặt kho →
+            </button>
+          ) : <span />}
+          <button type="button" className="dashboard-secondary-btn" onClick={onClose}>
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReservationItem({ r, active, onSelect, db, today }) {
   const units = unitsOf(r);
+  const handleSelect = () => {
+    markItemSeen(r.id);
+    onSelect();
+  };
   return (
-    <button type="button" className={rowClass(r.createdAt, `st-item ${active ? "active" : ""}`)} onClick={onSelect}>
+    <button type="button" className={rowClass(r.createdAt, `st-item ${active ? "active" : ""}`, r.id)} onClick={handleSelect}>
       <div className="st-item-top">
         <Code kind="order">{resCode(r)}</Code>
         <span className="st-name">{r.customerName}</span>
-        <NewBadge createdAt={r.createdAt} />
+        <NewBadge createdAt={r.createdAt} id={r.id} />
         <DayTag res={r} today={today} />
       </div>
       <div className="st-item-mid">
@@ -623,6 +795,11 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   const [unitQuery, setUnitQuery] = useState("");
   const [unitStatus, setUnitStatus] = useState("");
   const [unitSort, setUnitSort] = useState("newest");
+  const [taskQuery, setTaskQuery] = useState("");
+  const [taskStatusFilter, setTaskStatusFilter] = useState("all");
+  const [taskTypeFilter, setTaskTypeFilter] = useState("all");
+  const [taskSort, setTaskSort] = useState("date_asc");
+  const [selectedTask, setSelectedTask] = useState(null);
   const dialog = useDialog();
 
   const facility = db.facilities.find((f) => f.id === staff.facilityId);
@@ -677,9 +854,49 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   const actions = { handover: (id, access) => onHandover(id, access), confirm: (id) => onConfirm(id) };
 
   // [STAFF-TOOLS] Việc được giao tại cơ sở đang chọn (tải cùng state, xem StaffPortal.loadState)
-  const tasks = (db.staffTasks || []).filter((t) => t.facilityName === staff.facilityId);
+  const rawTasks = (db.staffTasks || []).filter((t) => t.facilityName === staff.facilityId);
   const tasksError = db.staffTasksError || "";
-  const taskPaging = useClientPaging(tasks, { pageSize: 15 });
+
+  const filteredTasks = useMemo(() => {
+    let list = rawTasks;
+    if (taskQuery.trim()) {
+      const q = taskQuery.toLowerCase().trim();
+      list = list.filter((t) =>
+        (t.unitNumber || "").toLowerCase().includes(q) ||
+        (t.reservationCode || "").toLowerCase().includes(q) ||
+        (t.customerName || "").toLowerCase().includes(q) ||
+        (t.customerPhone || "").includes(q) ||
+        (t.customerEmail || "").toLowerCase().includes(q)
+      );
+    }
+    if (taskStatusFilter !== "all") {
+      list = list.filter((t) => t.status === taskStatusFilter);
+    }
+    if (taskTypeFilter !== "all") {
+      list = list.filter((t) => t.taskType === taskTypeFilter);
+    }
+    return [...list].sort((a, b) => {
+      if (taskSort === "date_asc") {
+        const da = a.scheduledDate || "";
+        const db = b.scheduledDate || "";
+        return da.localeCompare(db);
+      }
+      if (taskSort === "date_desc") {
+        const da = a.scheduledDate || "";
+        const db = b.scheduledDate || "";
+        return db.localeCompare(da);
+      }
+      if (taskSort === "newest_created") {
+        return (new Date(b.createdAt || 0)).getTime() - (new Date(a.createdAt || 0)).getTime();
+      }
+      if (taskSort === "unit_asc") {
+        return (a.unitNumber || "").localeCompare(b.unitNumber || "");
+      }
+      return 0;
+    });
+  }, [rawTasks, taskQuery, taskStatusFilter, taskTypeFilter, taskSort]);
+
+  const taskPaging = useClientPaging(filteredTasks, { pageSize: 15, resetKey: `${taskQuery}|${taskStatusFilter}|${taskTypeFilter}|${taskSort}` });
   const logPaging = useClientPaging(facilityActivity, { pageSize: 20 });
 
   // [STAFF-TOOLS] Đổi trạng thái kho (PUT /api/staff-tools/units/{unitId}/status)
@@ -824,9 +1041,19 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
 
         {section === "units" && (
           <div className="st-card">
-            <div className="ss-toolbar">
+            <div className="ss-toolbar" style={{ flexWrap: "wrap", gap: "8px" }}>
               <input className="ss-search ss-grow" placeholder="Tìm mã kho, loại kho, khu, tầng" value={unitQuery} onChange={(e) => setUnitQuery(e.target.value)} />
               <SortSelect value={unitSort} onChange={setUnitSort} options={UNIT_SORTS} />
+              {unitList.items.length > 0 && (
+                <button
+                  type="button"
+                  className="dashboard-secondary-btn sm"
+                  onClick={() => markAllItemsSeen(unitList.items.map((u) => u.id))}
+                  title="Tắt toàn bộ nhãn Mới và màu da của danh sách kho"
+                >
+                  ✓ Tắt nhãn Mới
+                </button>
+              )}
             </div>
             <FilterChips options={STAFF_UNIT_FILTERS} value={unitStatus} onChange={setUnitStatus} counts={unitList.statusCounts} total={sumCounts(unitList.statusCounts)} className="st-chips-row" />
             {unitList.error && <div className="ss-error-line" role="alert">{unitList.error}</div>}
@@ -836,12 +1063,18 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
                 {unitList.loading && unitList.items.length === 0 && <tr><td colSpan="8" className="st-empty">Đang tải danh sách kho…</td></tr>}
                 {!unitList.loading && unitList.items.length === 0 && <tr><td colSpan="8" className="st-empty">{units.length === 0 ? "Cơ sở chưa có kho." : "Không có kho phù hợp bộ lọc."}</td></tr>}
                 {unitList.items.map((u) => (
-                  <tr key={u.id} className={rowClass(u.createdAt)}>
-                    <td><Code kind="unit">{u.id}</Code> <NewBadge createdAt={u.createdAt} /></td><td>{u.type}</td><td>{u.size || "—"}</td>
+                  <tr
+                    key={u.id}
+                    className={rowClass(u.createdAt, "", u.id)}
+                    onClick={() => markItemSeen(u.id)}
+                    style={{ cursor: "pointer" }}
+                    title="Bấm vào kho để đánh dấu đã xem (tắt Mới)"
+                  >
+                    <td><Code kind="unit">{u.id}</Code> <NewBadge createdAt={u.createdAt} id={u.id} /></td><td>{u.type}</td><td>{u.size || "—"}</td>
                     <td>{[u.zone && `Khu ${u.zone}`, u.floor && `Tầng ${u.floor}`].filter(Boolean).join(" · ") || "—"}</td>
                     <td><b>{fmtMoney(u.pricePerMonth)}</b></td>
                     <td><Badge map={UNIT_STATUS} value={u.status} /></td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       {STAFF_EDITABLE_UNIT.includes(u.status) && u.unitId != null ? (
                         <select className="st-input st-unit-status" value="" disabled={unitBusy === u.id} onChange={(e) => changeUnitStatus(u, e.target.value)}>
                           <option value="">{unitBusy === u.id ? "Đang lưu..." : "Chọn trạng thái mới"}</option>
@@ -849,7 +1082,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
                         </select>
                       ) : <span className="st-hint">Kho đang có đơn hoặc ngừng dùng</span>}
                     </td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       {u.unitId != null && u.status !== "INACTIVE"
                         ? <button type="button" className="dashboard-secondary-btn sm" onClick={() => setReportUnit(u)}>Báo cáo</button>
                         : <span className="st-hint">—</span>}
@@ -867,26 +1100,125 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
         {/* [STAFF-TOOLS] VIỆC ĐƯỢC GIAO */}
         {section === "tasks" && (
           <div className="st-card">
+            <div className="ss-toolbar" style={{ flexWrap: "wrap", gap: "8px" }}>
+              <input
+                className="ss-search ss-grow"
+                placeholder="Tìm mã kho, mã đơn, tên hoặc SĐT khách..."
+                value={taskQuery}
+                onChange={(e) => setTaskQuery(e.target.value)}
+              />
+              <SortSelect value={taskSort} onChange={setTaskSort} options={TASK_SORTS} />
+              {filteredTasks.length > 0 && (
+                <button
+                  type="button"
+                  className="dashboard-secondary-btn sm"
+                  onClick={() => markAllItemsSeen(filteredTasks.map((t) => t.taskId))}
+                  title="Tắt toàn bộ nhãn Mới giao của danh sách việc hiện tại"
+                >
+                  ✓ Tắt nhãn Mới
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", margin: "10px 0 14px" }}>
+              <FilterChips
+                options={TASK_STATUS_FILTERS}
+                value={taskStatusFilter}
+                onChange={setTaskStatusFilter}
+                className="st-chips-row"
+              />
+              <FilterChips
+                options={TASK_TYPE_FILTERS}
+                value={taskTypeFilter}
+                onChange={setTaskTypeFilter}
+                className="st-chips-row"
+              />
+            </div>
+
             {tasksError && <div className="st-alert st-warn" role="alert">{tasksError}</div>}
-            {(
-              <table className="st-table">
-                <thead><tr><th>Ngày hẹn</th><th>Loại việc</th><th>Kho</th><th>Đơn / Khách</th><th>Trạng thái</th></tr></thead>
-                <tbody>
-                  {tasks.length === 0 && <tr><td colSpan="5" className="st-empty">Bạn chưa được giao việc nào tại cơ sở này.</td></tr>}
-                  {taskPaging.pageRows.map((t) => (
-                    <tr key={t.taskId} className={rowClass(t.createdAt)}>
-                      <td><b>{fmtDate(t.scheduledDate)}</b>{t.scheduledSlot || t.scheduledTime ? ` · ${t.scheduledSlot || t.scheduledTime}` : ""} <NewBadge createdAt={t.createdAt} label="Mới giao" />{t.handoverMethod === "Online" && t.taskType === "Move In" ? <span className="st-cell-sub">Bàn giao online · chìa để ở lễ tân</span> : ""}</td>
-                      <td>{TASK_TYPE[t.taskType] || t.taskType}</td>
-                      <td><Code kind="unit">{t.unitNumber}</Code></td>
-                      <td><Code kind="order">{t.reservationCode || (t.reservationId ? formatReservationCode(t.reservationId) : null)}</Code>{t.customerName ? <span className="st-cell-sub">{t.customerName}</span> : ""}{t.customerPhone || t.customerEmail ? <span className="st-cell-sub">{t.customerPhone ? <a href={`tel:${t.customerPhone}`}>{t.customerPhone}</a> : null}{t.customerPhone && t.customerEmail ? " · " : ""}{t.customerEmail ? <a href={`mailto:${t.customerEmail}`}>{t.customerEmail}</a> : null}</span> : ""}</td>
-                      <td><Badge map={TASK_STATUS} value={t.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+
+            <table className="st-table">
+              <thead>
+                <tr>
+                  <th>Ngày hẹn</th>
+                  <th>Loại việc</th>
+                  <th>Kho</th>
+                  <th>Đơn / Khách</th>
+                  <th>Trạng thái</th>
+                  <th style={{ textAlign: "center", width: "90px" }}>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTasks.length === 0 && (
+                  <tr>
+                    <td colSpan="6" className="st-empty">
+                      {rawTasks.length === 0 ? "Bạn chưa được giao việc nào tại cơ sở này." : "Không tìm thấy công việc phù hợp với bộ lọc."}
+                    </td>
+                  </tr>
+                )}
+                {taskPaging.pageRows.map((t) => (
+                  <tr
+                    key={t.taskId}
+                    className={rowClass(t.createdAt, "st-clickable-row", t.taskId)}
+                    onClick={() => {
+                      markItemSeen(t.taskId);
+                      setSelectedTask(t);
+                    }}
+                    style={{ cursor: "pointer" }}
+                    title="Bấm để xem chi tiết công việc"
+                  >
+                    <td>
+                      <b>{fmtDate(t.scheduledDate)}</b>
+                      {t.scheduledSlot || t.scheduledTime ? ` · ${t.scheduledSlot || t.scheduledTime}` : ""}
+                      <NewBadge createdAt={t.createdAt} id={t.taskId} label="Mới giao" />
+                      {t.handoverMethod === "Online" && t.taskType === "Move In" ? (
+                        <span className="st-cell-sub">Bàn giao online · chìa để ở lễ tân</span>
+                      ) : ""}
+                    </td>
+                    <td>{TASK_TYPE[t.taskType] || t.taskType}</td>
+                    <td><Code kind="unit">{t.unitNumber}</Code></td>
+                    <td>
+                      <Code kind="order">{t.reservationCode || (t.reservationId ? formatReservationCode(t.reservationId) : null)}</Code>
+                      {t.customerName ? <span className="st-cell-sub">{t.customerName}</span> : ""}
+                      {t.customerPhone || t.customerEmail ? (
+                        <span className="st-cell-sub">
+                          {t.customerPhone ? <a href={`tel:${t.customerPhone}`} onClick={(e) => e.stopPropagation()}>{t.customerPhone}</a> : null}
+                          {t.customerPhone && t.customerEmail ? " · " : ""}
+                          {t.customerEmail ? <a href={`mailto:${t.customerEmail}`} onClick={(e) => e.stopPropagation()}>{t.customerEmail}</a> : null}
+                        </span>
+                      ) : ""}
+                    </td>
+                    <td><Badge map={TASK_STATUS} value={t.status} /></td>
+                    <td style={{ textAlign: "center" }}>
+                      <button
+                        type="button"
+                        className="dashboard-secondary-btn sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markItemSeen(t.taskId);
+                          setSelectedTask(t);
+                        }}
+                      >
+                        Chi tiết
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
             <Pager {...taskPaging.pagerProps} unit="việc" />
           </div>
+        )}
+
+        {selectedTask && (
+          <TaskDetailModal
+            task={selectedTask}
+            onClose={() => setSelectedTask(null)}
+            onGoToReservation={(resId) => {
+              setSection("all");
+              setSelectedId(resId);
+            }}
+          />
         )}
 
         {reportUnit && (
