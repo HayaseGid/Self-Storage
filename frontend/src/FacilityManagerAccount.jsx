@@ -21,6 +21,8 @@ import { UnitTypeChip } from './unitTypes'
 import './unitTypes.css'
 import { ManagerReturnInspectionsTab } from './ReturnInspection' // [THÊM 14] xác nhận & khiếu nại kết quả kiểm kho
 import ManagerNav from './ManagerNav' // [THÊM] menu trái gom nhóm + số việc chờ
+import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, newestFirst, rowClass, timeAgo, useClientPaging } from './listKit' // [THÊM] phân trang + làm nổi mã
+import { CONTRACT_SORTS, RESERVATION_SORTS, UNIT_SORTS, useOpsList } from './opsLists' // [THÊM] danh sách phân trang ở backend
 
 /* Formatters */
 const fmtMoney = (n) => new Intl.NumberFormat('vi-VN').format(n || 0) + 'đ'
@@ -59,7 +61,10 @@ const RES_STATUS_MAP = {
   PENDING_CONFIRMATION: { label: 'Chờ xác nhận cọc', tone: 'warn' },
   PENDING_APPROVAL: { label: 'Đã cọc · Chờ bàn giao', tone: 'info' },
   CONFIRMED: { label: 'Đã cọc · Chờ bàn giao', tone: 'info' },
-  HANDED_OVER: { label: 'Đã bàn giao', tone: 'ok' }
+  HANDED_OVER: { label: 'Đang thuê', tone: 'ok' },
+  COMPLETED: { label: 'Đã trả kho', tone: 'info' },
+  CANCELLED: { label: 'Đã hủy', tone: 'bad' },
+  EXPIRED: { label: 'Hết hạn giữ chỗ', tone: 'bad' }
 }
 
 const UNIT_STATUS_MAP = {
@@ -1422,6 +1427,7 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
   const items = data?.items || []
   const isOpen = it => it.overdueRent?.length > 0 || Number(it.lateFeeUnpaid) > 0 || Number(it.otherUnpaid) > 0
   const visible = items.filter(it => filter === 'all' || isOpen(it))
+  const paging = useClientPaging(visible, { pageSize: 15, resetKey: filter })
   const s = data?.summary
 
   const submitWaive = async (e) => {
@@ -1501,14 +1507,14 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
               </tr>
             </thead>
             <tbody>
-              {visible.map(it => (
+              {paging.pageRows.map(it => (
                 <tr key={it.reservationId}>
                   <td>
                     <strong>{it.customerName}</strong>
                     <div className="fm-muted">{it.customerPhone || it.customerEmail}</div>
                   </td>
                   <td>
-                    {it.contractNumber || it.reservationCode}
+                    <Code kind={it.contractNumber ? 'contract' : 'order'}>{it.contractNumber || it.reservationCode}</Code>
                     {it.status === 'Completed' && <div><span className="fm-badge fm-info">Đã trả kho</span></div>}
                   </td>
                   <td>
@@ -1543,6 +1549,7 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
               ))}
             </tbody>
           </table>
+          <Pager {...paging.pagerProps} unit="hợp đồng" />
         </div>
       )}
 
@@ -1603,6 +1610,7 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
   const needsAction = (r) => r.result === 'Damaged' && latestByUnit.get(r.unitId) === r.taskId && (r.unitStatus === 'Maintenance' || r.unitStatus === 'Pending Inspection')
 
   const visible = (reports || []).filter(r => filter === 'all' || (filter === 'damaged' ? r.result === 'Damaged' : needsAction(r)))
+  const paging = useClientPaging(visible, { pageSize: 15, resetKey: filter })
   const counts = {
     damaged: (reports || []).filter(r => r.result === 'Damaged').length,
     open: (reports || []).filter(needsAction).length,
@@ -1661,12 +1669,12 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
               </tr>
             </thead>
             <tbody>
-              {visible.map(r => {
+              {paging.pageRows.map(r => {
                 const res = REPORT_RESULT_MAP[r.result] || { label: r.result, className: 'fm-badge' }
                 return (
-                  <tr key={r.taskId}>
-                    <td>{fmtDateTime(r.reportedAt)}</td>
-                    <td><strong>{r.unitNumber}</strong></td>
+                  <tr key={r.taskId} className={rowClass(r.reportedAt)}>
+                    <td><b>{fmtDateTime(r.reportedAt)}</b> <NewBadge createdAt={r.reportedAt} /></td>
+                    <td><Code kind="unit">{r.unitNumber}</Code></td>
                     <td>{r.staffName}</td>
                     <td><span className={res.className}>{res.label}</span></td>
                     <td className="fm-report-notes">{r.notes || <span className="fm-muted">—</span>}</td>
@@ -1692,6 +1700,7 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
               })}
             </tbody>
           </table>
+          <Pager {...paging.pagerProps} unit="báo cáo" />
         </div>
       )}
       {preview && (
@@ -1733,6 +1742,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
   const openTasksOf = (st) => tasks.filter(t => t.staffUserId === st.id && isOpenTask(t))
   const moveInTasksOf = (r) => tasks.filter(t => t.taskType === 'Move In' && Number(t.reservationId) === Number(r.id) && t.status !== 'Cancelled')
   const visibleTasks = tasks.filter(t => taskFilter === 'all' || (taskFilter === 'open' ? isOpenTask(t) : !isOpenTask(t)))
+  const taskPaging = useClientPaging(visibleTasks, { pageSize: 15, resetKey: taskFilter })
 
   // [AUTO-ASSIGN] Giao / đổi người phụ trách đơn: PUT /api/manager-tools/reservations/{id}/owner
   const changeOwner = async (body) => {
@@ -1797,6 +1807,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
   // Việc chờ bàn giao, sắp theo ngày hẹn gần nhất
   const today = todayStr()
   const upcoming = [...awaitingHandoverList].sort((a, b) => appointmentKey(a).localeCompare(appointmentKey(b)))
+  const upcomingPaging = useClientPaging(upcoming, { pageSize: 10 })
 
   const addStaff = async (candidate) => {
     try {
@@ -1896,7 +1907,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
                 </tr>
               </thead>
               <tbody>
-                {upcoming.map(r => {
+                {upcomingPaging.pageRows.map(r => {
                   const assigned = moveInTasksOf(r)
                   const assignedNames = [...new Set(assigned.map(t => t.staffName))]
                   const key = appointmentKey(r)
@@ -1909,9 +1920,9 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
                         {key === today && <span className="fs-tag-today">Hôm nay</span>}
                         {key && key < today && <span className="fs-tag-late">Quá hẹn</span>}
                       </td>
-                      <td><strong>{formatReservationCode(r.id)}</strong></td>
+                      <td><Code kind="order">{r.reservationCode || formatReservationCode(r.id)}</Code></td>
                       <td>{r.customerName}<small className="fm-muted" style={{ display: 'block' }}>{r.customerPhone || r.customerEmail}</small></td>
-                      <td>{unitText}</td>
+                      <td><UnitCodes units={r.unitNumbers?.length ? r.unitNumbers : unitText} max={3} /></td>
                       <td><Badge map={RES_STATUS_MAP} value={r.status} /></td>
                       <td>
                         {assignedNames.length > 0
@@ -1931,6 +1942,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
                 })}
               </tbody>
             </table>
+            <Pager {...upcomingPaging.pagerProps} unit="đơn" />
           </div>
         )}
       </div>
@@ -1963,14 +1975,14 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
                 </tr>
               </thead>
               <tbody>
-                {visibleTasks.map(t => {
+                {taskPaging.pageRows.map(t => {
                   const st = TASK_STATUS_MAP[t.status] || { label: t.status, className: 'fp-badge' }
                   return (
-                    <tr key={t.taskId}>
+                    <tr key={t.taskId} className={rowClass(t.createdAt)}>
                       <td><strong>{fmtDate(t.scheduledDate)}</strong>{t.scheduledTime && <small className="fm-muted" style={{ display: 'block' }}>{t.scheduledTime}</small>}</td>
                       <td>{TASK_TYPE_LABEL[t.taskType] || t.taskType}{t.notes && <small className="fm-muted" style={{ display: 'block' }}>{t.notes}</small>}</td>
-                      <td><strong>{t.unitNumber}</strong></td>
-                      <td>{t.reservationId ? formatReservationCode(t.reservationId) : '—'}{t.customerName && <small className="fm-muted" style={{ display: 'block' }}>{t.customerName}</small>}</td>
+                      <td><Code kind="unit">{t.unitNumber}</Code></td>
+                      <td><Code kind="order">{t.reservationCode || (t.reservationId ? formatReservationCode(t.reservationId) : null)}</Code>{t.customerName && <small className="fm-muted" style={{ display: 'block' }}>{t.customerName}</small>}</td>
                       <td>{t.staffName}</td>
                       <td><span className={st.className}>{st.label}</span></td>
                       <td>
@@ -1983,6 +1995,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
                 })}
               </tbody>
             </table>
+            <Pager {...taskPaging.pagerProps} unit="việc" />
           </div>
         )}
       </div>
@@ -2149,63 +2162,54 @@ function ManagerContractModal({ contract, reservation, facility, facilityUnits, 
   )
 }
 
-function FacilityContractsTab({ facility, facilityName, contracts = [], reservations = [], facilityUnits = [] }) {
-  const [filter, setFilter] = useState('all')
+const CONTRACT_FILTERS = [
+  ['', 'Tất cả'],
+  ['ACTIVE', 'Đang hiệu lực'],
+  ['EXPIRING', 'Sắp hết hạn'],
+  ['EXPIRED', 'Đã hết hạn'],
+  ['RENEWED', 'Đã gia hạn'],
+  ['CLOSED', 'Đã kết thúc']
+]
+const PHASE_CODE = { active: 'ACTIVE', expiring: 'EXPIRING', expired: 'EXPIRED', renewed: 'RENEWED', closed: 'CLOSED' }
+const sumCounts = counts => Object.values(counts || {}).reduce((a, b) => a + b, 0)
+
+/* [SỬA] Hợp đồng: lọc + chia trang ở backend (GET /api/operations/contracts), mới tạo lên đầu và được tô sáng. */
+function FacilityContractsTab({ facility, facilityName, contracts = [], reservations = [], facilityUnits = [], reloadKey }) {
+  const [filter, setFilter] = useState('')
   const [query, setQuery] = useState('')
+  const [sort, setSort] = useState('newest')
   const [viewing, setViewing] = useState(null)
+
+  const list = useOpsList('contracts', {
+    q: query, status: filter, sort, facilityId: facility?.facilityId, pageSize: 15,
+    reloadKey, fallbackRows: contracts, statusOf: c => PHASE_CODE[contractPhase(c)],
+    enabled: facility?.facilityId != null
+  })
 
   const reservationOf = (c) => reservations.find(x =>
     String(x.contractId ?? '') === String(c.id) ||
     (c.reservationId != null && String(x.id) === String(c.reservationId)))
 
-  const counts = {
-    all: contracts.length,
-    active: contracts.filter(c => contractPhase(c) === 'active').length,
-    expiring: contracts.filter(c => contractPhase(c) === 'expiring').length,
-    expired: contracts.filter(c => contractPhase(c) === 'expired').length
-  }
-
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return contracts
-      .filter(c => filter === 'all' || contractPhase(c) === filter)
-      .filter(c => {
-        if (!q) return true
-        const r = reservationOf(c)
-        return [c.contractNumber, c.id, c.customerName, r?.customerEmail, r?.reservationCode, ...(c.unitNumbers || [])]
-          .filter(Boolean).join(' ').toLowerCase().includes(q)
-      })
-      // Sắp hết hạn lên trước để Manager chú ý
-      .sort((a, b) => (daysLeft(a.endDate) ?? 0) - (daysLeft(b.endDate) ?? 0))
-  }, [contracts, reservations, filter, query])
-
   return (
     <div className="fm-section-card">
       <div className="fm-card-header">
         <h2>Hợp đồng thuê tại {facilityName}</h2>
-        <p>Theo dõi khách thuê, kỳ thuê, thông tin ra vào và tình trạng thanh toán. Bấm "Xem hợp đồng" để đọc toàn văn.</p>
+        <p>Mỗi dòng là một hợp đồng: khách thuê, kho, kỳ thuê, thông tin ra vào và thanh toán. Hợp đồng mới tạo nằm đầu danh sách (tô vàng). Bấm "Xem hợp đồng" để đọc toàn văn.</p>
       </div>
 
-      <div className="fp-toolbar">
-        <div className="fp-chips">
-          {[
-            ['all', `Tất cả ${counts.all}`],
-            ['active', `Đang hiệu lực ${counts.active}`],
-            ['expiring', `Sắp hết hạn ${counts.expiring}`],
-            ['expired', `Đã hết hạn ${counts.expired}`]
-          ].map(([v, t]) => (
-            <button key={v} type="button" className={filter === v ? 'active' : ''} onClick={() => setFilter(v)}>{t}</button>
-          ))}
-        </div>
-        <input className="fm-input fp-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder="Tìm mã hợp đồng, khách, mã kho..." aria-label="Tìm hợp đồng" />
+      <div className="ss-toolbar">
+        <input className="ss-search ss-grow" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="Tìm mã HĐ, mã đơn, tên / email / SĐT khách, mã kho..." aria-label="Tìm hợp đồng" />
+        <SortSelect value={sort} onChange={setSort} options={CONTRACT_SORTS} />
       </div>
+      <FilterChips options={CONTRACT_FILTERS} value={filter} onChange={setFilter} counts={list.statusCounts} total={sumCounts(list.statusCounts)} className="fm-chips-row" />
+      {list.error && <div className="ss-error-line" role="alert">{list.error}</div>}
 
       <div className="fm-table-wrap">
         <table className="fm-table">
           <thead>
             <tr>
-              <th>Mã HĐ</th>
+              <th>Mã HĐ / Mã đơn</th>
               <th>Khách hàng</th>
               <th>Kho</th>
               <th>Kỳ thuê</th>
@@ -2216,31 +2220,37 @@ function FacilityContractsTab({ facility, facilityName, contracts = [], reservat
             </tr>
           </thead>
           <tbody>
-            {visible.length === 0 && (
+            {list.loading && list.items.length === 0 && (
+              <tr><td colSpan="8" className="text-center fm-muted">Đang tải hợp đồng…</td></tr>
+            )}
+            {!list.loading && list.items.length === 0 && (
               <tr>
                 <td colSpan="8" className="text-center fm-muted">
                   {contracts.length === 0 ? 'Chưa có hợp đồng nào tại cơ sở này.' : 'Không có hợp đồng phù hợp.'}
                 </td>
               </tr>
             )}
-            {visible.map(c => {
+            {list.items.map(c => {
               const r = reservationOf(c)
               const phase = contractPhase(c)
               const left = daysLeft(c.endDate)
               const phaseInfo = CONTRACT_PHASE_MAP[phase]
               return (
-                <tr key={c.id}>
+                <tr key={c.id} className={rowClass(c.createdAt)}>
                   <td>
-                    <strong>{c.contractNumber || `HD-${c.id}`}</strong>
-                    <small className="fm-muted" style={{ display: 'block' }}>Đơn {r?.reservationCode || formatReservationCode(c.reservationId)}</small>
+                    <div className="fm-code-stack">
+                      <Code kind="contract">{c.contractNumber || `HD-${c.id}`}</Code>
+                      <NewBadge createdAt={c.createdAt} />
+                    </div>
+                    <small className="fm-muted fm-code-sub">Đơn <Code kind="order">{c.reservationCode || r?.reservationCode || formatReservationCode(c.reservationId)}</Code></small>
                   </td>
                   <td>
-                    {c.customerName}
-                    {(r?.customerPhone || r?.customerEmail) && <small className="fm-muted" style={{ display: 'block' }}>{r.customerPhone || r.customerEmail}</small>}
+                    <strong>{c.customerName}</strong>
+                    {(r?.customerPhone || c.customerEmail || r?.customerEmail) && <small className="fm-muted" style={{ display: 'block' }}>{r?.customerPhone && r.customerPhone !== '—' ? r.customerPhone : (c.customerEmail || r?.customerEmail)}</small>}
                   </td>
-                  <td><span className="fm-tag-blue">{c.unitNumbers?.length ? c.unitNumbers.join(', ') : (c.unitId || '—')}</span></td>
+                  <td><UnitCodes units={c.unitNumbers?.length ? c.unitNumbers : c.unitId} /></td>
                   <td>
-                    {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
+                    <b>{fmtDate(c.startDate)} → {fmtDate(c.endDate)}</b>
                     {left != null && phase !== 'renewed' && phase !== 'closed' && (
                       <small className={`fmc-left${left < 0 ? ' late' : left <= EXPIRING_DAYS ? ' soon' : ''}`}>
                         {left >= 0 ? `Còn ${left} ngày` : `Quá hạn ${-left} ngày`}
@@ -2259,6 +2269,7 @@ function FacilityContractsTab({ facility, facilityName, contracts = [], reservat
           </tbody>
         </table>
       </div>
+      <Pager {...list.pagerProps} unit="hợp đồng" />
 
       {viewing && (
         <ManagerContractModal
@@ -2269,6 +2280,110 @@ function FacilityContractsTab({ facility, facilityName, contracts = [], reservat
           onClose={() => setViewing(null)}
         />
       )}
+    </div>
+  )
+}
+
+const MANAGER_RES_FILTERS = [
+  ['', 'Tất cả'],
+  ['PENDING_APPROVAL,CONFIRMED', 'Chờ bàn giao'],
+  ['PENDING_PAYMENT', 'Chờ cọc'],
+  ['HANDED_OVER', 'Đang thuê'],
+  ['COMPLETED', 'Đã trả kho'],
+  ['CANCELLED,EXPIRED', 'Hủy / hết hạn']
+]
+
+/* [THÊM] Đơn đặt chỗ tại cơ sở: mọi đơn của khách, lọc + chia trang ở backend (GET /api/operations/reservations). */
+function FacilityReservationsTab({ facility, facilityName, reservations = [], contracts = [], reloadKey, onOpenContracts }) {
+  const [filter, setFilter] = useState('')
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState('newest')
+  const [open, setOpen] = useState(null)
+
+  const list = useOpsList('reservations', {
+    q: query, status: filter, sort, facilityId: facility?.facilityId, pageSize: 15,
+    reloadKey, fallbackRows: reservations, enabled: facility?.facilityId != null
+  })
+  const contractOf = r => contracts.find(c => String(c.reservationId) === String(r.id) || String(c.id) === String(r.contractId))
+
+  return (
+    <div className="fm-section-card">
+      <div className="fm-card-header">
+        <h2>Đơn đặt chỗ tại {facilityName}</h2>
+        <p>Toàn bộ đơn khách đặt tại cơ sở: chờ cọc, chờ bàn giao, đang thuê, đã trả. Đơn mới đặt nằm đầu danh sách (tô vàng). Bấm một dòng để xem chi tiết.</p>
+      </div>
+
+      <div className="ss-toolbar">
+        <input className="ss-search ss-grow" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="Tìm mã đơn, tên / email / SĐT khách, mã kho, mã HĐ..." aria-label="Tìm đơn đặt chỗ" />
+        <SortSelect value={sort} onChange={setSort} options={RESERVATION_SORTS} />
+      </div>
+      <FilterChips options={MANAGER_RES_FILTERS} value={filter} onChange={setFilter} counts={list.statusCounts} total={sumCounts(list.statusCounts)} className="fm-chips-row" />
+      {list.error && <div className="ss-error-line" role="alert">{list.error}</div>}
+
+      <div className="fm-table-wrap">
+        <table className="fm-table">
+          <thead>
+            <tr>
+              <th>Mã đơn</th>
+              <th>Khách hàng</th>
+              <th>Kho</th>
+              <th>Lịch hẹn nhận kho</th>
+              <th>Kỳ thuê</th>
+              <th>Tiền cọc</th>
+              <th>Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.loading && list.items.length === 0 && <tr><td colSpan="7" className="text-center fm-muted">Đang tải đơn đặt chỗ…</td></tr>}
+            {!list.loading && list.items.length === 0 && <tr><td colSpan="7" className="text-center fm-muted">{reservations.length === 0 ? 'Cơ sở chưa có đơn đặt chỗ nào.' : 'Không có đơn phù hợp bộ lọc.'}</td></tr>}
+            {list.items.map(r => {
+              const c = contractOf(r)
+              const isOpen = open === r.id
+              return (
+                <React.Fragment key={r.id}>
+                  <tr className={rowClass(r.createdAt, `fm-row-click${isOpen ? ' fm-row-open' : ''}`)} tabIndex={0}
+                    onClick={() => setOpen(isOpen ? null : r.id)} onKeyDown={(e) => { if (e.key === 'Enter') setOpen(isOpen ? null : r.id) }}>
+                    <td>
+                      <div className="fm-code-stack">
+                        <Code kind="order">{r.reservationCode || formatReservationCode(r.id)}</Code>
+                        <NewBadge createdAt={r.createdAt} />
+                      </div>
+                      {r.createdAt && <small className="fm-muted fm-code-sub">Đặt {timeAgo(r.createdAt)}</small>}
+                    </td>
+                    <td><strong>{r.customerName}</strong><small className="fm-muted" style={{ display: 'block' }}>{r.customerPhone !== '—' ? r.customerPhone : r.customerEmail}</small></td>
+                    <td><UnitCodes units={r.unitNumbers} /></td>
+                    <td><b>{fmtDate(r.appointmentDate)}</b> · {r.appointmentTime}</td>
+                    <td>{fmtDate(r.startDate)} → {fmtDate(r.endDate)}<small className="fm-muted" style={{ display: 'block' }}>{r.months} tháng · {r.paymentPlan === 'Upfront' ? 'trả 1 lần' : 'trả theo tháng'}</small></td>
+                    <td><b>{fmtMoney(r.deposit)}</b><div><Badge map={PAY_STATUS_MAP} value={r.paymentStatus} /></div></td>
+                    <td><Badge map={RES_STATUS_MAP} value={r.status} /></td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="fm-row-detail">
+                      <td colSpan="7">
+                        <div className="fm-res-detail">
+                          <div><small>Email</small><strong>{r.customerEmail || '—'}</strong></div>
+                          <div><small>Loại kho</small><strong>{r.unitType || '—'}</strong></div>
+                          <div><small>Tổng tiền thuê</small><strong>{fmtMoney(r.rentalFee)}</strong></div>
+                          <div><small>Tiền thuê đầu kỳ</small><strong>{r.startRentPaid ? 'Đã đóng' : `Chưa đóng ${fmtMoney(r.startRentUnpaid)}`}</strong></div>
+                          {r.rentOverdue > 0 && <div><small>Tiền thuê quá hạn</small><strong className="fm-text-bad">{fmtMoney(r.rentOverdue)}</strong></div>}
+                          {r.paymentTxn && <div><small>Mã giao dịch</small><strong><Code>{r.paymentTxn}</Code></strong></div>}
+                          {r.status === 'PENDING_PAYMENT' && r.depositExpiresAt && <div><small>Hết hạn giữ chỗ</small><strong>{fmtDateTime(r.depositExpiresAt)}</strong></div>}
+                          <div>
+                            <small>Hợp đồng</small>
+                            <strong>{c ? <><Code kind="contract">{c.contractNumber}</Code> <button type="button" className="overview-text-button" onClick={(e) => { e.stopPropagation(); onOpenContracts?.() }}>Mở mục Hợp đồng →</button></> : 'Chưa có'}</strong>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <Pager {...list.pagerProps} unit="đơn" />
     </div>
   )
 }
@@ -2353,6 +2468,15 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
   const freshIds = useMemo(() => new Set(freshUnits.map(item => item.unitNumber)), [freshUnits])
   const unitLocks = useMemo(() => new Map(facilityUnits.map(unit => [unit.id, getUnitLock(unit, facilityReservations)])), [facilityUnits, facilityReservations])
   const nextUnitCode = previewNextUnitCode(managedFacility?.unitCodePrefix, facilityUnits)
+
+  // [PHÂN TRANG] Danh mục kho: lọc + chia trang ở backend (GET /api/operations/units), mới thêm lên đầu
+  const [unitQuery, setUnitQuery] = useState('')
+  const [unitStatusFilter, setUnitStatusFilter] = useState('')
+  const [unitListSort, setUnitListSort] = useState('newest')
+  const unitList = useOpsList('units', {
+    q: unitQuery, status: unitStatusFilter, sort: unitListSort, facilityId: managedFacility?.facilityId, pageSize: 20,
+    reloadKey: db, fallbackRows: facilityUnits, enabled: activeTab === 'units' && managedFacility?.facilityId != null
+  })
 
   /* Thống kê Báo cáo (Reports & Analytics) */
   const stats = useMemo(() => {
@@ -2733,7 +2857,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
       <div className="fm-res-codes">
         {lock.reservations.map(r => (
           <span key={r.id} className="fm-res-code" title={`${r.customerName} · ${fmtDate(r.startDate)} → ${fmtDate(r.endDate)}`}>
-            <strong>{formatReservationCode(r.id)}</strong>
+            <Code kind="order">{r.reservationCode || formatReservationCode(r.id)}</Code>
             <small>{RESERVATION_STATUS_LABELS[r.status] || r.status}{r.status === 'PENDING_PAYMENT' && r.depositExpiresAt ? ` · hết hạn ${fmtDateTime(r.depositExpiresAt)}` : ''}</small>
           </span>
         ))}
@@ -2769,6 +2893,10 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
           onSelect={setActiveTab}
           facilityId={managedFacility?.facilityId}
           freshUnits={freshUnitDetails.length}
+          extraCounts={{
+            reservations: awaitingHandoverList.length + awaitingPaymentList.length,
+            contracts: stats.expiringContracts.length + stats.expiredContracts.length
+          }}
         />
 
         <div className="customer-sidebar-bottom">
@@ -2792,7 +2920,8 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
               {activeTab === 'unitTypes' && 'Thiết lập đặc tính kho'}
               {activeTab === 'prices' && 'Bảng giá tại cơ sở'}
               {activeTab === 'reports' && 'Báo cáo sự cố kho'}
-              {activeTab === 'contracts' && 'Giám sát hợp đồng thuê'}
+              {activeTab === 'reservations' && 'Đơn đặt chỗ tại cơ sở'}
+              {activeTab === 'contracts' && 'Hợp đồng thuê tại cơ sở'}
               {activeTab === 'lateFees' && 'Công nợ & phí trễ hạn'}
               {activeTab === 'returnInspections' && 'Xác nhận & khiếu nại kiểm kho'}
               {activeTab === 'staff' && 'Phân công nhân viên cơ sở'}
@@ -2887,8 +3016,8 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                   {assignInfo.unassigned.map(u => (
                     <div key={`${u.taskType || 'Move In'}-${u.reservationId}`} className="fm-pending-mini-item">
                       <div>
-                        <strong>{u.reservationCode || formatReservationCode(u.reservationId)}</strong>
-                        <small>Hẹn {fmtDate(u.scheduledDate)} · {u.reason}</small>
+                        <strong><Code kind="order">{u.reservationCode || formatReservationCode(u.reservationId)}</Code></strong>
+                        <small>Hẹn <b>{fmtDate(u.scheduledDate)}</b> · {u.reason}</small>
                       </div>
                     </div>
                   ))}
@@ -2975,8 +3104,8 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                     return (
                       <div key={c.id} className="fm-pending-mini-item">
                         <div>
-                          <strong>{c.contractNumber || c.id} · {c.customerName}</strong>
-                          <small>Kho {(c.unitNumbers || []).join(', ') || '—'} · Kết thúc {fmtDate(c.endDate)}</small>
+                          <strong className="fm-mini-title"><Code kind="contract">{c.contractNumber || c.id}</Code> {c.customerName}</strong>
+                          <small className="fm-mini-sub"><UnitCodes units={c.unitNumbers} max={3} /> · Kết thúc <b>{fmtDate(c.endDate)}</b></small>
                         </div>
                         <div className="fm-item-right">
                           <span className={CONTRACT_PHASE_MAP[contractPhase(c)].className}>{CONTRACT_PHASE_MAP[contractPhase(c)].label}</span>
@@ -2997,16 +3126,16 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                     <span className="customer-eyebrow">RESERVATIONS</span>
                     <h2>Đơn đặt kho cần theo dõi ({awaitingHandoverList.length + awaitingPaymentList.length})</h2>
                   </div>
+                  <button type="button" className="overview-text-button" onClick={() => setActiveTab('reservations')}>Xem tất cả đơn →</button>
                 </div>
 
                 <div className="fm-pending-mini-list">
-                  {[...awaitingHandoverList, ...awaitingPaymentList].map(r => {
-                    const unitText = r.unitNumbers?.length ? r.unitNumbers.join(', ') : (r.assignedUnitId || '—')
+                  {newestFirst([...awaitingHandoverList, ...awaitingPaymentList]).slice(0, 8).map(r => {
                     return (
-                      <div key={r.id} className="fm-pending-mini-item">
+                      <div key={r.id} className={rowClass(r.createdAt, 'fm-pending-mini-item')}>
                         <div>
-                          <strong>{formatReservationCode(r.id)} · {r.customerName}</strong>
-                          <small>Kho {unitText} · {r.unitType} · Thuê {r.months} tháng · Từ {fmtDate(r.startDate)}</small>
+                          <strong className="fm-mini-title"><Code kind="order">{r.reservationCode || formatReservationCode(r.id)}</Code> {r.customerName} <NewBadge createdAt={r.createdAt} /></strong>
+                          <small className="fm-mini-sub"><UnitCodes units={r.unitNumbers?.length ? r.unitNumbers : r.assignedUnitId} max={3} /> · {r.unitType} · Thuê {r.months} tháng · Từ <b>{fmtDate(r.startDate)}</b></small>
                         </div>
                         <div className="fm-item-right">
                           <Badge map={RES_STATUS_MAP} value={r.status} />
@@ -3067,55 +3196,56 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                 </button>
               </div>
 
-              <div className="fm-filter-chips" role="tablist" aria-label="Lọc kho">
-                {[
-                  ['all', `Tất cả (${facilityUnits.length})`],
-                  ['fresh', `Kho mới tạo (${freshUnitDetails.length})`],
-                  ['booked', `Đã có đơn (${facilityUnits.filter(u => unitLocks.get(u.id)?.reservations.length).length})`],
-                  ['available', `Sửa được (${facilityUnits.filter(u => u.status === 'AVAILABLE' && !unitLocks.get(u.id)?.locked).length})`]
-                ].map(([value, label]) => (
-                  <button key={value} type="button" role="tab" aria-selected={unitFilter === value} className={unitFilter === value ? 'active' : ''} onClick={() => setUnitFilter(value)}>{label}</button>
-                ))}
+              <div className="ss-toolbar">
+                <input className="ss-search ss-grow" type="search" value={unitQuery} onChange={(e) => setUnitQuery(e.target.value)}
+                  placeholder="Tìm mã kho, loại kho, size, khu, tầng..." aria-label="Tìm kho" />
+                <SortSelect value={unitListSort} onChange={setUnitListSort} options={UNIT_SORTS} />
               </div>
+              <FilterChips
+                options={[['', 'Tất cả'], ['AVAILABLE', 'Còn trống'], ['RESERVED', 'Đã giữ chỗ'], ['RENTED', 'Đang thuê'], ['MAINTENANCE', 'Bảo trì'], ['INACTIVE', 'Ngừng sử dụng']]}
+                value={unitStatusFilter} onChange={setUnitStatusFilter}
+                counts={unitList.statusCounts} total={sumCounts(unitList.statusCounts)} className="fm-chips-row" />
+              {unitList.error && <div className="ss-error-line" role="alert">{unitList.error}</div>}
 
               <div className="fm-table-wrap">
                 <table className="fm-table">
                   <thead>
                     <tr>
-                      {renderSortHeader('code', 'Mã kho')}
-                      {renderSortHeader('type', 'Loại kho')}
-                      {renderSortHeader('size', 'Size')}
-                      {renderSortHeader('location', 'Vị trí')}
-                      {renderSortHeader('price', 'Giá thuê / tháng')}
-                      {renderSortHeader('status', 'Trạng thái')}
-                      {renderSortHeader('reservation', 'Mã đơn')}
-                      <th>
-                        Thao tác
-                        {unitSort.key && (
-                          <button type="button" className="fm-sort-reset" onClick={() => setUnitSort({ key: null, dir: 'asc' })}>
-                            Bỏ sắp xếp
-                          </button>
-                        )}
-                      </th>
+                      <th>Mã kho</th>
+                      <th>Loại kho</th>
+                      <th>Size</th>
+                      <th>Vị trí</th>
+                      <th>Giá thuê / tháng</th>
+                      <th>Trạng thái</th>
+                      <th>Mã đơn đang giữ</th>
+                      <th>Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleUnits.length === 0 && (
-                      <tr><td colSpan="8" className="text-center">Không có kho phù hợp bộ lọc.</td></tr>
+                    {unitList.loading && unitList.items.length === 0 && (
+                      <tr><td colSpan="8" className="text-center fm-muted">Đang tải danh mục kho…</td></tr>
                     )}
-                    {visibleUnits.map(unit => {
+                    {!unitList.loading && unitList.items.length === 0 && (
+                      <tr><td colSpan="8" className="text-center">{facilityUnits.length === 0 ? 'Cơ sở chưa có kho nào.' : 'Không có kho phù hợp bộ lọc.'}</td></tr>
+                    )}
+                    {unitList.items.map(unit => {
                       const lock = unitLocks.get(unit.id)
                       const isFresh = freshIds.has(unit.id)
                       return (
                         <tr
                           key={unit.id}
                           id={`fm-unit-row-${unit.id}`}
-                          className={['fm-row-click', isFresh ? 'fm-row-fresh' : '', highlightUnitId === unit.id ? 'fm-flash' : '', lock?.locked ? 'fm-row-locked' : ''].join(' ').trim()}
+                          className={rowClass(unit.createdAt, ['fm-row-click', isFresh ? 'fm-row-fresh' : '', highlightUnitId === unit.id ? 'fm-flash' : '', lock?.locked ? 'fm-row-locked' : ''].join(' ').trim())}
                           tabIndex={0}
                           onClick={() => setViewingUnitId(unit.id)}
                           onKeyDown={(e) => { if (e.key === 'Enter') setViewingUnitId(unit.id) }}
                         >
-                          <td><strong>{unit.id}</strong>{isFresh && <span className="fm-new-tag">Mới</span>}</td>
+                          <td>
+                            <div className="fm-code-stack">
+                              <Code kind="unit">{unit.id}</Code>
+                              {isFresh ? <span className="fm-new-tag">Mới</span> : <NewBadge createdAt={unit.createdAt} />}
+                            </div>
+                          </td>
                           <td><UnitTypeChip type={unit.type} compact /><small className="fm-muted" style={{ display: 'block', marginTop: 4 }}>{unit.type}</small></td>
                           <td>{unit.size}</td>
                           <td>{formatUnitLocation(unit) || <span className="fm-muted">—</span>}</td>
@@ -3137,8 +3267,21 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                   </tbody>
                 </table>
               </div>
+              <Pager {...unitList.pagerProps} unit="kho" />
             </div>
           </>
+        )}
+
+        {/* [THÊM] TAB ĐƠN ĐẶT CHỖ */}
+        {activeTab === 'reservations' && (
+          <FacilityReservationsTab
+            facility={managedFacility}
+            facilityName={facilityName}
+            reservations={facilityReservations}
+            contracts={facilityContracts}
+            reloadKey={db}
+            onOpenContracts={() => setActiveTab('contracts')}
+          />
         )}
 
         {/* TAB 4: THIẾT LẬP ĐẶC TÍNH KHO (loại kho + kích thước) */}
@@ -3198,6 +3341,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
             contracts={facilityContracts}
             reservations={db.reservations}
             facilityUnits={facilityUnits}
+            reloadKey={db}
           />
         )}
 
@@ -3248,4 +3392,4 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
       )}
     </div>
   )
-}
+}

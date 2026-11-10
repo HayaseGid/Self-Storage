@@ -2461,6 +2461,7 @@ function mapCustomerReservation(reservation) {
     Paid: 'Đã thanh toán cọc · Đang tạo hợp đồng',
     Confirmed: 'Đã cọc · Chờ ký hợp đồng',
     'Handed Over': 'Đang thuê',
+    Completed: 'Đã trả kho',
     Cancelled: 'Đã hủy',
     Expired: 'Hết hạn giữ kho · Cần đặt lại'
   }

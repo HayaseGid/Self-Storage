@@ -18,6 +18,7 @@ const svg = children => (
 )
 const ICONS = {
   overview: svg(<><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20h5v-6h4v6h5V9.5" /></>),
+  reservations: svg(<><rect x="4" y="4" width="16" height="17" rx="2" /><path d="M8 2.5v3" /><path d="M16 2.5v3" /><path d="M4 9.5h16" /><path d="M8 13.5h3" /><path d="M8 17h6" /></>),
   units: svg(<><rect x="3" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" /></>),
   reports: svg(<><path d="M10.3 4.2 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z" /><path d="M12 9.5v4.5" /><path d="M12 17.5h.01" /></>),
   staff: svg(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8" /><path d="M18.5 14.2A6.5 6.5 0 0 1 21.5 20" /></>),
@@ -46,6 +47,7 @@ const GROUPS = [
     id: 'finance',
     title: 'Khách hàng & tài chính',
     items: [
+      { key: 'reservations', label: 'Đơn đặt chỗ' },
       { key: 'contracts', label: 'Hợp đồng' },
       { key: 'lateFees', label: 'Công nợ & phí trễ' },
       { key: 'returnInspections', label: 'Khiếu nại kiểm kho' }
@@ -64,6 +66,8 @@ const GROUPS = [
 
 const HINTS = {
   reports: n => `${n} kho hư chưa xử lý`,
+  reservations: n => `${n} đơn chờ bàn giao / chờ cọc`,
+  contracts: n => `${n} hợp đồng sắp / đã hết hạn`,
   lateFees: n => `${n} hợp đồng đang nợ`,
   returnInspections: n => `${n} khiếu nại chờ quyết định`
 }
@@ -110,9 +114,11 @@ export function useManagerBadges(facilityId, activeTab) {
   return counts
 }
 
-/* freshUnits: số kho mới BOM vừa thêm cho cơ sở (nhãn "Mới" sẵn có của mục Kho cơ sở). */
-export default function ManagerNav({ activeTab, onSelect, facilityId, freshUnits = 0 }) {
-  const counts = useManagerBadges(facilityId, activeTab)
+/* freshUnits: số kho mới BOM vừa thêm cho cơ sở (nhãn "Mới" sẵn có của mục Kho cơ sở).
+   extraCounts: [THÊM] số việc tính sẵn ở trang (vd { reservations: đơn cần theo dõi, contracts: HĐ cần chú ý }). */
+export default function ManagerNav({ activeTab, onSelect, facilityId, freshUnits = 0, extraCounts = {} }) {
+  const apiCounts = useManagerBadges(facilityId, activeTab)
+  const counts = { ...extraCounts, ...apiCounts }
   const [setupOpen, setSetupOpen] = useState(() => {
     try { return localStorage.getItem(SETUP_KEY) === '1' } catch { return false }
   })

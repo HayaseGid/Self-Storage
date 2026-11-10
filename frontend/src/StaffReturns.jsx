@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { Code, Pager, UnitCodes, useClientPaging } from './listKit' // [THÊM] chia trang + mã nổi bật
 import { apiGet, apiPost } from './api'
 import { useDialog } from './Dialog'
 import { formatVnd } from './storageRules'
@@ -205,6 +206,7 @@ export default function StaffReturns({ staff }) {
     done: atFacility.filter(i => i.requestStatus === 'Completed')
   }
   const shown = groups[filter]
+  const paging = useClientPaging(shown, { pageSize: 8, resetKey: filter })
 
   const catalog = [
     ...(policies.values?.renewal_return?.returnFees || []).map((f, i) => ({ key: `p${i}`, name: f.name, amount: f.amount ?? '', label: `${f.name}${f.amount ? ` · ${money(f.amount)}` : ' · theo thực tế'}` })),
@@ -241,7 +243,7 @@ export default function StaffReturns({ staff }) {
 
       {shown.length === 0 && <div className="st-card st-empty">Không có yêu cầu trả kho nào trong mục này.</div>}
 
-      {shown.map(item => {
+      {paging.pageRows.map(item => {
         const req = item.request
         return (
           <article key={item.reservationId} className="sr-item">
@@ -251,7 +253,8 @@ export default function StaffReturns({ staff }) {
                   {item.customerName}
                   {item.assignedToMe ? <span className="sr-mine">Giao cho bạn</span> : <span className="sr-other">NV {req.staffName}</span>}
                 </h3>
-                <p>{item.contractNumber} · {item.customerPhone || item.customerEmail} · hẹn trả {item.scheduledTime ? `${item.scheduledTime} ` : ''}{fmtDay(item.scheduledDate)} · hết hạn {fmtDay(item.endDate)}</p>
+                <p className="sr-codes"><Code kind="contract">{item.contractNumber}</Code><UnitCodes units={item.units.map(u => u.unitNumber)} max={4} /><span>{item.customerPhone || item.customerEmail}</span></p>
+                <p>Hẹn trả <b>{item.scheduledTime ? `${item.scheduledTime} ` : ''}{fmtDay(item.scheduledDate)}</b> · hết hạn {fmtDay(item.endDate)}</p>
                 {req.overdue && <span className="sr-other">Quá hạn · hệ thống tự lên lịch, liên hệ khách</span>}
               </div>
               <div><small>Tiền cọc đang giữ</small><br /><strong>{money(item.depositPaid)}</strong></div>
@@ -298,6 +301,7 @@ export default function StaffReturns({ staff }) {
           </article>
         )
       })}
+      <Pager {...paging.pagerProps} unit="yêu cầu" />
     </div>
   )
 }

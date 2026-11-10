@@ -1128,3 +1128,19 @@
 .fm-report-thumbs img { width: 44px; height: 44px; object-fit: cover; display: block; }
 .fm-image-preview { display: grid; gap: 12px; justify-items: center; max-width: min(900px, 92vw); padding: 16px; border-radius: 16px; background: #fff; }
 .fm-image-preview img { max-width: 100%; max-height: 75vh; border-radius: 10px; }
+
+/* ---------- [THÊM] Mã nổi bật, danh sách phân trang, đơn đặt chỗ ---------- */
+.fm-chips-row { margin-bottom: 12px; }
+.fm-code-stack { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fm-code-sub { display: flex !important; align-items: center; gap: 4px; margin-top: 5px; }
+.fm-mini-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fm-mini-sub { display: flex !important; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+.fm-row-open > td { background: #eef7ff !important; }
+.fm-row-detail > td { background: #f8fbff; padding: 0 !important; }
+.fm-res-detail { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px 20px; padding: 14px 18px; border-left: 4px solid #1684db; }
+.fm-res-detail small { display: block; color: #7d91a0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
+.fm-res-detail strong { color: #0b3967; font-size: 14px; font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fm-text-bad { color: #c94a4a !important; }
+.fm-res-code .ss-code { font-size: 11.5px; }
+.fm-bad { background: #fff0f0; color: #c94a4a; }
+.fm-table .dashboard-secondary-btn.sm, .st-table .dashboard-secondary-btn.sm { white-space: nowrap; }

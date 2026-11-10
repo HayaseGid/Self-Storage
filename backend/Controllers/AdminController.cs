@@ -16,20 +16,30 @@ public class AdminController : ControllerBase
     }
 
     [HttpGet("users")]
-    public async Task<IActionResult> GetUsers(CancellationToken cancellationToken)
+    public async Task<IActionResult> GetUsers(
+        [FromQuery] PageQuery query,
+        [FromQuery] string? role,
+        CancellationToken cancellationToken)
     {
         var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _adminService.GetUsersAsync(email, cancellationToken);
+        // [PHÂN TRANG] ?page=&pageSize=&q=&status=Active,Locked&role=&sort=newest|oldest|name -> { items, total, ... };
+        // không gửi page thì trả nguyên mảng như trước.
+        var result = query.IsPaged
+            ? await _adminService.GetUsersPageAsync(email, query, role, cancellationToken)
+            : await _adminService.GetUsersAsync(email, cancellationToken);
 
         if (!result.IsSuccess) return Forbid();
         return Ok(result.Data);
     }
 
     [HttpGet("activity")]
-    public async Task<IActionResult> GetActivity(CancellationToken cancellationToken)
+    public async Task<IActionResult> GetActivity([FromQuery] PageQuery query, CancellationToken cancellationToken)
     {
         var email = Request.Headers["X-User-Email"].ToString();
-        var result = await _adminService.GetActivityAsync(email, cancellationToken);
+        // [PHÂN TRANG] ?page=&pageSize=&q=&status=LOGIN|APPROVAL|ROLE|SECURITY&sort=newest|oldest
+        var result = query.IsPaged
+            ? await _adminService.GetActivityPageAsync(email, query, cancellationToken)
+            : await _adminService.GetActivityAsync(email, cancellationToken);
 
         if (!result.IsSuccess) return Forbid();
         return Ok(result.Data);

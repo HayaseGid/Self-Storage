@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from 'react'
 import './DataGrid.css'
+import { Pager, newestFirst, rowClass } from './listKit'
 
 /*
  * Bảng dữ liệu dùng chung: sắp xếp theo cột, tìm kiếm, lọc, phân trang.
  *
  * columns: [{ key, label, render?(row), sortValue?(row), align?: 'left'|'right'|'center', sortable?: boolean, minWidth? }]
  * filters: [{ key, label, options: [{ value, label }], match(row, value) }]
+ * getCreatedAt(row): [THÊM] ngày tạo -> chưa bấm sắp xếp cột thì MỚI NHẤT LÊN ĐẦU, bản ghi mới tạo được tô sáng.
  */
 export default function DataGrid({
   columns,
@@ -19,12 +21,14 @@ export default function DataGrid({
   onRowClick,
   emptyText = 'Không có dữ liệu.',
   toolbarExtra = null,
-  caption
+  caption,
+  getCreatedAt = null
 }) {
   const [query, setQuery] = useState('')
   const [filterValues, setFilterValues] = useState(() => Object.fromEntries(filters.map(f => [f.key, 'all'])))
   const [sort, setSort] = useState(initialSort || null) // { key, dir: 'asc' | 'desc' }
   const [page, setPage] = useState(1)
+  const [size, setSize] = useState(pageSize)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -35,7 +39,7 @@ export default function DataGrid({
   }, [rows, query, filterValues, filters, searchText])
 
   const sorted = useMemo(() => {
-    if (!sort) return filtered
+    if (!sort) return getCreatedAt ? newestFirst(filtered, { date: getCreatedAt, id: getRowId }) : filtered
     const column = columns.find(c => c.key === sort.key)
     if (!column) return filtered
     const valueOf = column.sortValue || (row => row[column.key])
@@ -49,11 +53,11 @@ export default function DataGrid({
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * factor
       return String(va).localeCompare(String(vb), 'vi', { numeric: true }) * factor
     })
-  }, [filtered, sort, columns])
+  }, [filtered, sort, columns, getCreatedAt, getRowId])
 
-  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize))
+  const pageCount = Math.max(1, Math.ceil(sorted.length / size))
   const currentPage = Math.min(page, pageCount)
-  const pageRows = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const pageRows = sorted.slice((currentPage - 1) * size, currentPage * size)
 
   const toggleSort = column => {
     if (column.sortable === false) return
@@ -134,7 +138,7 @@ export default function DataGrid({
             {pageRows.map(row => (
               <tr
                 key={getRowId(row)}
-                className={onRowClick ? 'dg-clickable' : ''}
+                className={rowClass(getCreatedAt ? getCreatedAt(row) : null, onRowClick ? 'dg-clickable' : '')}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 tabIndex={onRowClick ? 0 : undefined}
                 onKeyDown={onRowClick ? e => { if (e.key === 'Enter') onRowClick(row) } : undefined}
@@ -150,13 +154,14 @@ export default function DataGrid({
         </table>
       </div>
 
-      {pageCount > 1 && (
-        <div className="dg-pager">
-          <button type="button" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 1}>‹ Trước</button>
-          <span>Trang {currentPage} / {pageCount}</span>
-          <button type="button" onClick={() => setPage(currentPage + 1)} disabled={currentPage === pageCount}>Sau ›</button>
-        </div>
-      )}
+      <Pager
+        page={currentPage}
+        pageCount={pageCount}
+        total={sorted.length}
+        pageSize={size}
+        onPage={p => setPage(Math.max(1, Math.min(pageCount, p)))}
+        onPageSize={n => { setSize(n); setPage(1) }}
+      />
     </div>
   )
 }

@@ -62,6 +62,54 @@ public class AdminService : IAdminService
         return new AdminServiceResponse(true, null, 200, data);
     }
 
+    /* [PHÂN TRANG] Giống GetUsersAsync nhưng chỉ tải 1 trang (xem AdminRepository.GetUsersPageAsync). */
+    public async Task<AdminServiceResponse> GetUsersPageAsync(string? adminEmail, PageQuery query, string? roleName, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(adminEmail)) return new AdminServiceResponse(false, null, 403, null);
+
+        var admin = await _adminRepository.GetActiveAdministratorByEmailAsync(adminEmail, cancellationToken);
+        if (admin == null) return new AdminServiceResponse(false, null, 403, null);
+
+        var (users, total) = await _adminRepository.GetUsersPageAsync(query, roleName, cancellationToken);
+        var lastLogins = await _adminRepository.GetLastLoginsAsync(users.Select(user => user.UserID).ToArray(), cancellationToken);
+
+        var items = users.Select(user => new AdminUserResponse(
+            user.UserID,
+            user.FullName,
+            user.Username ?? user.Email,
+            user.Email ?? string.Empty,
+            user.PhoneNumber ?? string.Empty,
+            user.Role.RoleName,
+            GetFacilityName(user),
+            ToClientStatus(user.Status),
+            user.CreatedAt.ToString("yyyy-MM-dd HH:mm"),
+            lastLogins.TryGetValue(user.UserID, out var lastLogin) && lastLogin.HasValue
+                ? lastLogin.Value.ToString("yyyy-MM-dd HH:mm")
+                : "Chưa đăng nhập")).ToList();
+
+        return new AdminServiceResponse(true, null, 200, PagedResult<AdminUserResponse>.Create(items, total, query));
+    }
+
+    /* [PHÂN TRANG] Nhật ký hoạt động theo trang (mới nhất lên đầu). */
+    public async Task<AdminServiceResponse> GetActivityPageAsync(string? adminEmail, PageQuery query, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(adminEmail)) return new AdminServiceResponse(false, null, 403, null);
+
+        var admin = await _adminRepository.GetActiveAdministratorByEmailAsync(adminEmail, cancellationToken);
+        if (admin == null) return new AdminServiceResponse(false, null, 403, null);
+
+        var (logs, total) = await _adminRepository.GetActivityLogsPageAsync(query, cancellationToken);
+        var items = logs.Select(log => new AdminActivityLogResponse(
+            log.LogID,
+            new DateTimeOffset(DateTime.SpecifyKind(log.Timestamp, DateTimeKind.Local)),
+            log.User.FullName,
+            ToClientAction(log.Action),
+            log.Details ?? log.User.Username ?? log.User.Email,
+            GetActivityType(log.Action))).ToList();
+
+        return new AdminServiceResponse(true, null, 200, PagedResult<AdminActivityLogResponse>.Create(items, total, query));
+    }
+
     public async Task<AdminServiceResponse> UpdateUserAsync(int userId, UpdateAdminUserDTO request, string? adminEmail, string? ipAddress, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(adminEmail)) return new AdminServiceResponse(false, null, 403, null);

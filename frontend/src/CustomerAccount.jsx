@@ -31,6 +31,7 @@ import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
 import { payLateFeesDemo, useLateFees } from './lateFees'
 import { CustomerPaymentCenter, PendingDepositBar, pendingDepositsOf } from './PendingPayments' // [THÊM] trang Thanh toán mới + nhắc đơn chưa đặt cọc
 import { useMyInspections } from './ReturnInspection' // [THÊM 14] thông báo kết quả kiểm kho chờ xác nhận
+import { Code, FilterChips, Pager, UnitCodes, newestFirst, useClientPaging } from './listKit' // [THÊM] phân trang + mã nổi bật + mới nhất lên đầu
 
 /* Chuyển 'dd/mm/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày. */
 const dateSortValue = value => {
@@ -77,6 +78,8 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
       ? [customerRental]
       : []
   //Đã thêm: 05/10/2026
+  // [THÊM] Kiểu thẻ: mới nhất lên đầu, chia trang 5 thẻ / trang
+  const cardPaging = useClientPaging(newestFirst(rentals, { id: r => r.reservationId }), { pageSize: 5 })
 
   return (
     <div className="customer-content-page">
@@ -127,7 +130,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
               match: (rental, value) => rental.facility === value
             }
           ]}
-          initialSort={{ key: 'startDate', dir: 'desc' }}
+          getCreatedAt={rental => rental.createdAt}
           onRowClick={rental => setSelectedRental(rental)}
           caption="Bấm vào một dòng (hoặc chọn dòng rồi nhấn Enter) để xem chi tiết kho."
           toolbarExtra={(
@@ -141,15 +144,13 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
               key: 'reservationId',
               label: 'Mã đơn',
               sortValue: rental => Number(rental.reservationId) || 0,
-              render: rental => <span className="dg-cell-strong dg-nowrap">{formatReservationCode(rental.reservationId)}</span>
+              render: rental => <Code kind="order">{rental.reservationCode || formatReservationCode(rental.reservationId)}</Code>
             },
             { key: 'facility', label: 'Cơ sở' },
             {
               key: 'unitId',
               label: 'Kho',
-              render: rental => rental.unitId
-                ? <span className="dg-cell-strong dg-nowrap">{rental.unitId}</span>
-                : <span className="dg-cell-sub dg-nowrap">Chưa phân kho</span>
+              render: rental => <UnitCodes units={rental.unitNumbers?.length ? rental.unitNumbers : rental.unitId} max={3} />
             },
             {
               key: 'type',
@@ -205,7 +206,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
         </div>
       )}
 
-      {view === 'cards' && rentals.map(rental => ( //Map duyệt qua tất cả các kho trong mảng rentals
+      {view === 'cards' && cardPaging.pageRows.map(rental => ( //Map duyệt qua các kho của trang đang xem
         <div key={rental.reservationId || rental.contractId || rental.unitId} style={{ marginBottom: 28 }}>
           <div className="my-storage-card">
 
@@ -355,6 +356,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
 
         </div>
       ))}
+      {view === 'cards' && <Pager {...cardPaging.pagerProps} unit="kho" />}
 
       {selectedRental && (
         <div
@@ -450,8 +452,8 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
                 }}
               >
                 {[
-                  ['Mã đơn', formatReservationCode(selectedRental.reservationId)],
-                  ['Mã kho', selectedRental.unitId || 'Chưa phân kho'],
+                  ['Mã đơn', <Code kind="order">{selectedRental.reservationCode || formatReservationCode(selectedRental.reservationId)}</Code>],
+                  ['Mã kho', <UnitCodes units={selectedRental.unitNumbers?.length ? selectedRental.unitNumbers : selectedRental.unitId} max={8} />],
                   ['Loại kho', selectedRental.type],
                   ['Diện tích / kích thước', selectedRental.size],
                   ['Giá thuê', selectedRental.price],
@@ -882,6 +884,18 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
 
   const pendingCount = rentals.filter(r => loadedSignatures[keyOf(r)] && !signatures[keyOf(r)]).length
 
+  // [THÊM] Danh sách hợp đồng: lọc + tìm + mới nhất lên đầu + chia trang (việc cần làm vẫn nằm trên cùng)
+  const [contractFilter, setContractFilter] = useState('')
+  const [contractQuery, setContractQuery] = useState('')
+  const contractGroupOf = r => (r.status === 'Handed Over' ? 'ACTIVE' : r.status === 'Completed' ? 'DONE' : 'OTHER')
+  const contractCounts = rentals.reduce((acc, r) => ({ ...acc, [contractGroupOf(r)]: (acc[contractGroupOf(r)] || 0) + 1 }), {})
+  const listedContracts = newestFirst(rentals.filter(r => {
+    if (contractFilter && contractGroupOf(r) !== contractFilter) return false
+    const q = contractQuery.trim().toLowerCase()
+    return !q || [r.contractNumber, r.reservationCode, r.facility, ...(r.unitNumbers || [r.unitId])].some(v => String(v ?? '').toLowerCase().includes(q))
+  }), { id: r => r.reservationId })
+  const contractPaging = useClientPaging(listedContracts, { pageSize: 5, resetKey: `${contractFilter}|${contractQuery}` })
+
   return (
     <div className="customer-content-page">
 
@@ -1025,8 +1039,23 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         />
       )}
 
-      {rentals.length === 0 && <div className="empty-state">Chưa có hợp đồng trong database.</div>}
-      {rentals.map(rental => {
+      <div className="cc-list-head">
+        <div>
+          <h2>Danh sách hợp đồng <span>{rentals.length}</span></h2>
+          <p>Hợp đồng mới nhất nằm trên cùng. Hợp đồng đang chờ ký / chờ nhận kho nằm ở khu phía trên.</p>
+        </div>
+        {rentals.length > 0 && (
+          <input className="ss-search" type="search" value={contractQuery} onChange={e => setContractQuery(e.target.value)} placeholder="Tìm mã HĐ, mã đơn, cơ sở, mã kho..." aria-label="Tìm hợp đồng" />
+        )}
+      </div>
+      {rentals.length > 0 && (
+        <FilterChips
+          options={[['', 'Tất cả'], ['ACTIVE', 'Đang thuê'], ['DONE', 'Đã trả kho'], ['OTHER', 'Khác']].filter(([k]) => !k || contractCounts[k])}
+          value={contractFilter} onChange={setContractFilter} counts={contractCounts} total={rentals.length} className="cc-list-chips" />
+      )}
+      {rentals.length === 0 && <div className="empty-state">Bạn chưa có hợp đồng nào. Hợp đồng sẽ hiện ở đây sau khi bạn đặt cọc và ký.</div>}
+      {rentals.length > 0 && listedContracts.length === 0 && <div className="empty-state">Không có hợp đồng phù hợp.</div>}
+      {contractPaging.pageRows.map(rental => {
         const signature = signatures[keyOf(rental)]
         const isSigned = !!signature
         const signatureError = signatureErrors[keyOf(rental)]
@@ -1065,6 +1094,8 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
           />
         )
       })}
+
+      <Pager {...contractPaging.pagerProps} unit="hợp đồng" />
 
       {openRental && (
         <ContractModal
@@ -1332,7 +1363,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             }}
           >
             <span>◷</span>
-            Đặt kho
+            Tìm & đặt kho thêm ↗
           </button>
 
           <button

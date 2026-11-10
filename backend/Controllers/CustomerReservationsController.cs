@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SelfStorageAPI.Constants;
 using SelfStorageAPI.Data;
+using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Models;
 using SelfStorageAPI.Services;
@@ -34,7 +35,7 @@ public sealed class CustomerReservationsController(
     ILogger<CustomerReservationsController> logger) : ControllerBase
 {
     [HttpGet("mine")]
-    public async Task<IActionResult> GetMine(CancellationToken ct)
+    public async Task<IActionResult> GetMine([FromQuery] PageQuery paging, CancellationToken ct)
     {
         var email = Request.Headers["X-User-Email"].ToString();
         if (string.IsNullOrWhiteSpace(email))
@@ -65,13 +66,32 @@ public sealed class CustomerReservationsController(
             context.ChangeTracker.Clear();
         }
 
-        var rows = await context.Reservations
+        // [PHÂN TRANG] Mới nhất lên đầu. Gửi ?page=&pageSize= thì trả { items, total, page, pageSize, pageCount },
+        // không gửi thì trả nguyên mảng như trước (trang khách vẫn cần toàn bộ đơn để tính thông báo / nhắc hạn).
+        var mine = context.Reservations
             .AsNoTracking()
+            .Where(r => r.CustomerID == customerId.Value);
+        var keyword = paging.Keyword;
+        if (keyword.Length > 0)
+        {
+            mine = mine.Where(r =>
+                r.ReservationCode.Contains(keyword) ||
+                r.Facility.FacilityName.Contains(keyword) ||
+                r.ReservationUnits.Any(ru => ru.Status != "Released" && ru.Unit.UnitNumber.Contains(keyword)) ||
+                (r.Contract != null && r.Contract.ContractNumber.Contains(keyword)));
+        }
+        var total = paging.IsPaged ? await mine.CountAsync(ct) : 0;
+        IQueryable<Reservation> pageQuery = mine
+            .OrderByDescending(r => r.CreatedAt)
+            .ThenByDescending(r => r.ReservationID);
+        if (paging.IsPaged)
+            pageQuery = pageQuery.Skip(paging.SkipFor(total)).Take(paging.SafePageSize);
+
+        var rows = await pageQuery
             .AsSplitQuery()
-            .Where(r => r.CustomerID == customerId.Value)
-            .OrderByDescending(r => r.StartDate)
             .Select(r => new
             {
+                r.CreatedAt,
                 r.ReservationID,
                 r.ReservationCode,
                 FacilityName = r.Facility.FacilityName,
@@ -172,6 +192,7 @@ public sealed class CustomerReservationsController(
             {
                 reservationId = r.ReservationID,
                 reservationCode = r.ReservationCode,
+                createdAt = r.CreatedAt,
                 facility = r.FacilityName,
                 facilityId = r.FacilityID,
                 unitNumber = unitNumbers.Count > 0 ? string.Join(", ", unitNumbers) : null,
@@ -238,6 +259,8 @@ public sealed class CustomerReservationsController(
             };
         }).ToList();
 
+        if (paging.IsPaged)
+            return Ok(PagedResult<object>.Create(data.Cast<object>().ToList(), total, paging));
         return Ok(data);
     }
 

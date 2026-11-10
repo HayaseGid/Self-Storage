@@ -185,7 +185,8 @@ public class ManagerToolsService : IManagerToolsService
             scheduledDate = t.ScheduledDate?.ToString("yyyy-MM-dd"),
             scheduledTime = t.ScheduledTime?.ToString(@"hh\:mm"),
             actualAt = t.ActualAt,
-            notes = t.UnitConditionNotes
+            notes = t.UnitConditionNotes,
+            createdAt = t.CreatedAt // [THÊM] để tô sáng việc mới giao
         }).ToList();
 
         return Ok(data);

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Code, NewBadge, Pager, UnitCodes, rowClass, useClientPaging } from './listKit'
 import { formatReservationCode } from './storageRules'
 import { useDialog } from './Dialog'
 import { startVnPayPayment } from './vnpay'
@@ -149,6 +150,7 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund })
   const history = all
     .filter(r => r.paymentStatus === 'Completed' || Number(r.refundAmount) > 0)
     .sort((a, b) => (parseUtc(b.paymentDate) || 0) - (parseUtc(a.paymentDate) || 0))
+  const historyPaging = useClientPaging(history, { pageSize: 10 })
   const pendingTotal = pending.reduce((s, r) => s + Number(r.depositAmount || 0), 0)
   const paidTotal = all.filter(r => r.paymentStatus === 'Completed').reduce((s, r) => s + Number(r.paymentAmount || 0), 0)
   const refunding = all.filter(r => Number(r.refundAmount) > 0 && r.refundStatus !== 'Completed')
@@ -238,18 +240,18 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund })
                 <tr><th>Ngày</th><th>Đơn · kho</th><th>Nội dung</th><th className="num">Số tiền</th><th>Mã giao dịch</th><th>Trạng thái</th></tr>
               </thead>
               <tbody>
-                {history.map(item => {
+                {historyPaging.pageRows.map(item => {
                   const st = historyStatus(item)
                   const hasRefund = Number(item.refundAmount) > 0
                   const expanded = openRefund === item.reservationId
                   return (
                     <React.Fragment key={item.reservationId}>
-                      <tr>
-                        <td data-label="Ngày">{fmtDate(item.paymentDate)}</td>
-                        <td data-label="Đơn · kho"><span><b>{formatReservationCode(item.reservationId)}</b><small>{item.facility} · {unitsOf(item)}</small></span></td>
+                      <tr className={rowClass(item.paymentDate)}>
+                        <td data-label="Ngày"><b>{fmtDate(item.paymentDate)}</b> <NewBadge createdAt={item.paymentDate} /></td>
+                        <td data-label="Đơn · kho"><span><Code kind="order">{item.reservationCode || formatReservationCode(item.reservationId)}</Code><small>{item.facility} · {unitsOf(item)}</small></span></td>
                         <td data-label="Nội dung">{item.isRenewal ? 'Gia hạn hợp đồng' : 'Đặt cọc giữ kho'}</td>
-                        <td data-label="Số tiền" className="num">{money(item.paymentAmount ?? item.depositAmount)}</td>
-                        <td data-label="Mã giao dịch" className="mono">{item.paymentReference || '—'}</td>
+                        <td data-label="Số tiền" className="num"><b>{money(item.paymentAmount ?? item.depositAmount)}</b></td>
+                        <td data-label="Mã giao dịch"><Code>{item.paymentReference}</Code></td>
                         <td data-label="Trạng thái">
                           <span>
                           <span className={`cp-chip ${st.tone}`}>{st.label}</span>
@@ -278,6 +280,7 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund })
                 })}
               </tbody>
             </table>
+            <Pager {...historyPaging.pagerProps} unit="giao dịch" />
           </div>
         )}
       </section>

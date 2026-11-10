@@ -87,3 +87,12 @@
 .cc-rent p { margin: 0; }
 .cc-rent.ok { background: #effaf3; border-color: #bfe5cc; color: #1f5a35; }
 .cc-rent.bad { background: #fdf0f0; border-color: #f0c4c4; color: #7a2020; }
+
+/* [THÊM] Đầu danh sách hợp đồng của khách */
+.cc-list-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 28px 0 10px; }
+.cc-list-head h2 { margin: 0; font-size: 20px; color: #073d70; display: flex; align-items: center; gap: 8px; }
+.cc-list-head h2 span { padding: 0 9px; border-radius: 999px; background: #eaf4ff; color: #075a9f; font-size: 13px; line-height: 24px; }
+.cc-list-head p { margin: 4px 0 0; color: #6d849b; font-size: 13px; }
+.cc-list-head .ss-search { flex: 0 1 320px; }
+.cc-list-chips { margin-bottom: 16px; }
+.cc-chips .ss-codes { margin-left: 2px; }

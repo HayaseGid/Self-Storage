@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Code, NewBadge, Pager, UnitCodes, rowClass, useClientPaging } from './listKit' // [THÊM] chia trang + mã nổi bật
 import { apiGet, apiPost } from './api'
 import { useDialog } from './Dialog'
 import { formatVnd } from './storageRules'
@@ -593,6 +594,7 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
   const items = data?.items || []
   const s = data?.summary
   const shown = !filter || filter === 'all' ? items : items.filter(i => i.status === filter)
+  const paging = useClientPaging(shown, { pageSize: 15, resetKey: filter })
   const pill = i => (i.status === INSPECTION.DISPUTED ? 'fm-badge fm-warn' : i.status === INSPECTION.AWAITING ? 'fm-badge fm-info' : 'fm-badge fm-ok')
 
   return (
@@ -649,10 +651,10 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
               <tr><th>Khách hàng</th><th>Hợp đồng · kho</th><th>Kiểm tra</th><th>Phí kiểm kho</th><th>Trạng thái</th><th>Thao tác</th></tr>
             </thead>
             <tbody>
-              {shown.map(i => (
-                <tr key={i.inspectionId}>
-                  <td><strong>{i.customerName}</strong><div className="fm-muted">{i.customerPhone || i.customerEmail}</div></td>
-                  <td>{i.contractNumber || i.reservationCode}<div className="fm-muted">{i.units}</div></td>
+              {paging.pageRows.map(i => (
+                <tr key={i.inspectionId} className={rowClass(i.inspectedAt)}>
+                  <td><strong>{i.customerName}</strong> <NewBadge createdAt={i.inspectedAt} /><div className="fm-muted">{i.customerPhone || i.customerEmail}</div></td>
+                  <td><Code kind={i.contractNumber ? 'contract' : 'order'}>{i.contractNumber || i.reservationCode}</Code><div style={{ marginTop: 4 }}><UnitCodes units={i.units} max={4} /></div></td>
                   <td>
                     {i.conditionResult === 'Damaged' ? 'Có vấn đề' : 'Không vấn đề'} · NV {i.inspectedBy}
                     <div className="fm-muted">{fmtDateTime(i.inspectedAt)} · {i.staffImageCount} ảnh{i.customerImageCount ? ` · khách ${i.customerImageCount} ảnh` : ''}</div>
@@ -680,6 +682,7 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
               ))}
             </tbody>
           </table>
+          <Pager {...paging.pagerProps} unit="kết quả" />
         </div>
       )}
 

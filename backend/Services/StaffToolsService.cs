@@ -152,7 +152,8 @@ public class StaffToolsService : IStaffToolsService
             scheduledTime = t.ScheduledTime?.ToString(@"hh\:mm"),
             actualAt = t.ActualAt,
             notes = t.UnitConditionNotes,
-            conditionResult = t.ConditionResult
+            conditionResult = t.ConditionResult,
+            createdAt = t.CreatedAt // [THÊM] để tô sáng việc mới được giao
         }).ToList();
 
         return Ok(data);

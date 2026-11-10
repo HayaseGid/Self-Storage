@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import './CustomerNotifications.css'
+import { Pager, useClientPaging } from './listKit'
 
 /*
  * Trang "Thông báo" của khách hàng + khối "Thông báo mới" ở Tổng quan.
@@ -47,6 +48,7 @@ export default function CustomerNotificationsPage({ center, onAction }) {
 
   const counts = center.notifications.reduce((acc, n) => ({ ...acc, [n.section]: (acc[n.section] || 0) + 1 }), {})
   const shown = center.notifications.filter(n => filter === 'all' || n.section === filter)
+  const paging = useClientPaging(shown, { pageSize: 10, resetKey: filter })
 
   return (
     <div className="customer-content-page">
@@ -71,9 +73,10 @@ export default function CustomerNotificationsPage({ center, onAction }) {
         ? <div className="empty-state">Bạn chưa có thông báo nào.</div>
         : (
           <ul className="cn-list">
-            {shown.map(item => <NotificationItem key={item.id} item={item} isNew={freshAtOpen.current.has(item.id)} onAction={onAction} />)}
+            {paging.pageRows.map(item => <NotificationItem key={item.id} item={item} isNew={freshAtOpen.current.has(item.id)} onAction={onAction} />)}
           </ul>
         )}
+      <Pager {...paging.pagerProps} unit="thông báo" />
     </div>
   )
 }

@@ -114,3 +114,4 @@
   .bp-facility-grid { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .bp-area { transition: none; } .bp-area:hover { transform: none; } }
+.bp-code-row { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 6px; }

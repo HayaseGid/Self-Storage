@@ -498,3 +498,33 @@
 }
 @media (max-width: 560px) { .st-report-choice { grid-template-columns: 1fr; } }
 
+
+/* ---------- [THÊM] Làm rõ thông tin quan trọng + danh sách có phân trang ---------- */
+.st-head-codes,
+.st-head-units { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.st-head-codes .ss-code { font-size: 15px; padding: 3px 10px; }
+.st-head-label { color: #7d91a0; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.st-head-type { color: #4f6880; font-size: 13px; }
+.st-head h2 { margin: 8px 0 8px; font-size: 26px; color: #073d70; }
+
+.st-item-top .ss-code { font-size: 12.5px; }
+.st-item-mid { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
+.st-item-type { color: #4f6880; font-size: 12.5px; }
+.st-item-badges { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.st-item-when { color: #4f6880; font-size: 12px; white-space: nowrap; }
+.st-item-when b { color: #0877cf; }
+.st-item.ss-row-new:not(.active) { background: #fffbea; }
+.st-item.active.ss-row-new { box-shadow: inset 4px 0 0 #1684db; }
+
+/* Lưới thông tin: nhãn nhỏ, giá trị vừa; ô quan trọng nổi bật */
+.st-grid strong { font-weight: 600; color: #23475e; }
+.st-grid small { text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+.st-info-key { padding: 10px 12px; border-radius: 12px; background: #f5faff; border: 1px solid #dceafa; }
+.st-info-key strong { font-size: 16px; font-weight: 800; color: #073d70; }
+
+.st-chips-row { margin-bottom: 10px; }
+.st-list-toolbar { margin: 10px 0 0; justify-content: flex-end; }
+.st-cell-sub { display: block; color: #7a8fa1; font-size: 12px; margin-top: 3px; }
+.st-todo-codes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.st-log li.ss-row-new { padding-left: 12px; border-radius: 8px; }
+.sr-codes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

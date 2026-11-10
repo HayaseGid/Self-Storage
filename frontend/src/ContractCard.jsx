@@ -1,4 +1,5 @@
 import React from 'react'
+import { Code, NewBadge, UnitCodes } from './listKit'
 import { extractDistrict } from './districts'
 import { formatSignedAt } from './contractSignatures'
 import { formatVnd } from './storageRules'
@@ -64,7 +65,9 @@ export default function ContractCard({
           <h2>{rental.contractNumber || `Hợp đồng #${rental.contractId}`}</h2>
           <div className="cc-chips">
             <span className={`cc-chip ${STATUS_TONE[rental.status] || 'info'}`}>{rental.statusLabel || rental.status}</span>
-            {rental.reservationCode && <span className="cc-chip plain">Mã đơn {rental.reservationCode}</span>}
+            {rental.reservationCode && <span className="cc-chip plain">Mã đơn <Code kind="order">{rental.reservationCode}</Code></span>}
+            {rental.unitNumbers?.length > 0 && <UnitCodes units={rental.unitNumbers} max={6} />}
+            <NewBadge createdAt={rental.createdAt} />
           </div>
         </div>
         <span className={`cc-sign ${isSigned ? 'ok' : 'todo'}`}>
