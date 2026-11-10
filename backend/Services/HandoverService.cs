@@ -150,13 +150,18 @@ public class HandoverService : IHandoverService
 
             contract.ContractStatus = "Active";
 
+            var evidenceJson = request.EvidenceImages != null && request.EvidenceImages.Count > 0
+                ? System.Text.Json.JsonSerializer.Serialize(request.EvidenceImages.Take(5).ToList())
+                : null;
+
             foreach (var task in myTasks)
             {
                 // Không đổi AssignedStaffID: người làm chính là người được giao (đã kiểm tra ở bước 6)
                 task.Status = "Completed";
                 task.ActualAt = now;
-                task.ConditionResult = "Good";
+                task.ConditionResult = string.IsNullOrWhiteSpace(request.ConditionResult) ? "Good" : request.ConditionResult.Trim();
                 if (notes is not null) task.UnitConditionNotes = notes;
+                if (evidenceJson is not null) task.EvidenceImages = evidenceJson;
             }
 
             // Cấp mã Access Code 6 số cho khách nếu chưa có (duy nhất trong toàn hệ thống)

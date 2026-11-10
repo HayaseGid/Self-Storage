@@ -28,6 +28,26 @@ const fmtDateTime = (s) => {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("vi-VN");
 };
 
+// [AUTO-ASSIGN] Nén ảnh trước khi gửi: cạnh dài tối đa 1280px, JPEG chất lượng 0.7
+const compressImage = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error("Không đọc được ảnh."));
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = () => reject(new Error("File không phải ảnh hợp lệ."));
+    img.onload = () => {
+      const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.7));
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+
 // Ngày kết thúc: ưu tiên ngày backend trả về (khớp hợp đồng), chỉ tự tính khi thiếu
 const endOf = (r) => r.endDate || addMonths(r.startDate, r.months);
 const overlaps = (a, b) => a.startDate < endOf(b) && b.startDate < endOf(a);
@@ -226,13 +246,25 @@ function NoAccess({ navigate }) {
 /* ---------- Reservation detail + handover ---------- */
 function ReservationDetail({ res, staff, db, actions }) {
   const [idChecked, setIdChecked] = useState(false);
+  const [conditionChecked, setConditionChecked] = useState(false);
+  const [handoverImages, setHandoverImages] = useState([]);
+  const [handoverNotes, setHandoverNotes] = useState("");
+  const [imageError, setImageError] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [confirming, setConfirming] = useState(false);
   const dialog = useDialog();
 
   useEffect(() => {
-    if (res?.id) markItemSeen(res.id);
+    if (res?.id) {
+      markItemSeen(res.id);
+      setIdChecked(false);
+      setConditionChecked(false);
+      setHandoverImages([]);
+      setHandoverNotes("");
+      setImageError("");
+      setResult(null);
+    }
   }, [res?.id]);
 
   const today = todayStr();
@@ -241,20 +273,39 @@ function ReservationDetail({ res, staff, db, actions }) {
   const clashes = findClashes(db, res);
   const handedOver = res.status === "HANDED_OVER";
   const group = dayGroup(res, today);
-  const ready = canHandover && idChecked && !busy;
+  const ready = canHandover && idChecked && conditionChecked && !busy;
+
+  const addHandoverImages = async (fileList) => {
+    setImageError("");
+    const remaining = 3 - handoverImages.length;
+    if (remaining <= 0) return;
+    const files = [...fileList].slice(0, remaining);
+    try {
+      const compressed = await Promise.all(files.map(compressImage));
+      setHandoverImages((prev) => [...prev, ...compressed].slice(0, 3));
+    } catch (err) {
+      setImageError(err.message || "Không tải được ảnh.");
+    }
+  };
 
   const doHandover = async () => {
     const keyPreview = units.map((u) => `KEY-${u}`).join(", ");
+    const hasPhotos = handoverImages.length > 0;
     const confirmed = await dialog.confirm({
       tone: "warning",
       title: `Xác nhận bàn giao ${units.length} kho cho ${res.customerName}?`,
-      message: `Kho ${units.join(", ")} sẽ chuyển sang đang thuê và hợp đồng được kích hoạt. Hãy chắc chắn đã đối chiếu CCCD và bàn giao chìa khóa vật lý (${keyPreview}) cho khách. Mã ra vào cơ sở 6 số sẽ được hệ thống tự động cấp vào hồ sơ của khách.`,
+      message: `Kho ${units.join(", ")} sẽ chuyển sang đang thuê và hợp đồng được kích hoạt. Đã xác nhận kho nguyên vẹn, không hư hỏng ${hasPhotos ? `(kèm ${handoverImages.length} ảnh minh chứng)` : ""}. Hãy chắc chắn đã đối chiếu CCCD và bàn giao chìa khóa vật lý (${keyPreview}) cho khách. Mã ra vào cơ sở 6 số sẽ được hệ thống tự động cấp vào hồ sơ của khách.`,
       confirmLabel: "Xác nhận bàn giao"
     });
     if (!confirmed) return;
     setBusy(true);
     try {
-      const response = await actions.handover(res.id);
+      const response = await actions.handover(res.id, {
+        unitConditionConfirmed: true,
+        conditionResult: "Good",
+        notes: handoverNotes.trim() || "Kho nguyên vẹn, sạch sẽ khi bàn giao",
+        evidenceImages: handoverImages
+      });
       setResult({ tone: "ok", message: response?.message || "Bàn giao thành công." });
     } catch (error) {
       setResult({ tone: "warn", message: error.message });
@@ -403,10 +454,73 @@ function ReservationDetail({ res, staff, db, actions }) {
               </li>
             ))}
           </ul>
-          <label className="st-check">
-            <input type="checkbox" checked={idChecked} onChange={(e) => setIdChecked(e.target.checked)} />
-            Đã đối chiếu giấy tờ, đúng khách hàng đặt chỗ
-          </label>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", margin: "12px 0 16px" }}>
+            <label className="st-check">
+              <input type="checkbox" checked={idChecked} onChange={(e) => setIdChecked(e.target.checked)} />
+              Đã đối chiếu giấy tờ, đúng khách hàng đặt chỗ
+            </label>
+            <label className="st-check">
+              <input type="checkbox" checked={conditionChecked} onChange={(e) => setConditionChecked(e.target.checked)} />
+              Xác nhận tình trạng kho nguyên vẹn, bình thường, không bị hư hỏng gì
+            </label>
+          </div>
+
+          <div style={{ margin: "12px 0 16px", background: "#f8fafc", padding: "14px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <strong style={{ fontSize: "13px", color: "#0f172a" }}>
+                📸 Ảnh chụp kho nguyên vẹn trước khi bàn giao ({handoverImages.length}/3)
+              </strong>
+              {handoverImages.length > 0 && (
+                <button
+                  type="button"
+                  style={{ background: "none", border: "none", color: "#dc2626", fontSize: "12px", cursor: "pointer", padding: 0 }}
+                  onClick={() => setHandoverImages([])}
+                >
+                  Xóa tất cả
+                </button>
+              )}
+            </div>
+            <p style={{ margin: "0 0 10px", fontSize: "12px", color: "#64748b" }}>
+              Chụp ảnh hiện trường kho để lưu làm bằng chứng kho bình thường, nguyên vẹn khi bàn giao cho khách.
+            </p>
+
+            {imageError && <div className="st-alert st-warn" style={{ marginBottom: "8px" }}>{imageError}</div>}
+
+            <div className="st-report-images">
+              {handoverImages.map((src, i) => (
+                <div key={i} className="st-report-thumb">
+                  <img src={src} alt={`Ảnh kho ${i + 1}`} />
+                  <button type="button" onClick={() => setHandoverImages((prev) => prev.filter((_, j) => j !== i))} aria-label="Xóa ảnh">×</button>
+                </div>
+              ))}
+              {handoverImages.length < 3 && (
+                <label className="st-report-add">
+                  + Thêm ảnh kho
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    hidden
+                    onChange={(e) => { addHandoverImages(e.target.files); e.target.value = ""; }}
+                  />
+                </label>
+              )}
+            </div>
+
+            <div style={{ marginTop: "10px" }}>
+              <label style={{ fontSize: "12px", color: "#475569", display: "block", marginBottom: "4px" }}>
+                Ghi chú tình trạng kho khi bàn giao (tùy chọn):
+              </label>
+              <input
+                className="st-input"
+                style={{ width: "100%", fontSize: "12.5px" }}
+                placeholder="VD: Kho sạch sẽ, ổ khóa hoạt động tốt, không trầy xước"
+                value={handoverNotes}
+                onChange={(e) => setHandoverNotes(e.target.value)}
+                maxLength={500}
+              />
+            </div>
+          </div>
 
           <h3>Quyền truy cập & Chìa khóa (Hệ thống tự động cấp)</h3>
           <div style={{ display: 'grid', gap: '10px', background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0', margin: '12px 0' }}>
@@ -433,7 +547,17 @@ function ReservationDetail({ res, staff, db, actions }) {
           <button className="dashboard-primary-btn" type="button" disabled={!ready} onClick={doHandover}>
             {busy ? "Đang bàn giao..." : `Xác nhận bàn giao ${units.length} kho`}
           </button>
-          {!ready && !busy && <p className="st-hint">Cần đủ điều kiện và tick xác nhận đã đối chiếu giấy tờ để bàn giao.</p>}
+          {!ready && !busy && (
+            <p className="st-hint">
+              {!canHandover
+                ? "Chưa đủ điều kiện bàn giao theo quy định."
+                : !idChecked
+                ? "Cần tick xác nhận đã đối chiếu giấy tờ của khách."
+                : !conditionChecked
+                ? "Cần tick xác nhận tình trạng kho nguyên vẹn, không hư hỏng để kích hoạt bàn giao."
+                : ""}
+            </p>
+          )}
         </>
       )}
 
@@ -443,25 +567,6 @@ function ReservationDetail({ res, staff, db, actions }) {
 }
 
 /* Danh sách đặt chỗ + chi tiết */
-/* [AUTO-ASSIGN] Nén ảnh trước khi gửi: cạnh dài tối đa 1280px, JPEG chất lượng 0.7 */
-const compressImage = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onerror = () => reject(new Error("Không đọc được ảnh."));
-  reader.onload = () => {
-    const img = new Image();
-    img.onerror = () => reject(new Error("File không phải ảnh hợp lệ."));
-    img.onload = () => {
-      const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", 0.7));
-    };
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
-});
 
 /* [AUTO-ASSIGN] Báo cáo tình trạng / sự cố kho (POST /api/staff-tools/unit-reports)
    Hư hỏng: kho trống chuyển Bảo trì. Bình thường: kho đang Bảo trì / Chờ kiểm tra được mở lại. */
@@ -1357,11 +1462,14 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
     localStorage.removeItem(currentUserKey);
     navigate("/");
   };
-  const handover = async (reservationId) => {
+  const handover = async (reservationId, payload = {}) => {
     // [STAFF-TOOLS] Bàn giao qua API có kiểm tra phân công (hệ thống tự sinh AccessCode & KEY-UnitNumber)
     const response = await apiPost("/api/staff-tools/handover", {
       reservationID: Number(reservationId),
-      notes: ""
+      notes: payload?.notes || "",
+      unitConditionConfirmed: payload?.unitConditionConfirmed ?? true,
+      conditionResult: payload?.conditionResult || "Good",
+      evidenceImages: payload?.evidenceImages || []
     });
     await loadState({ silent: true });
     return response;

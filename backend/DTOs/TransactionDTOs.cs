@@ -42,5 +42,8 @@ namespace SelfStorageAPI.DTOs
         public string? AccessType { get; set; }
         public string? AccessValue { get; set; }
         public string? Notes { get; set; }
+        public bool? UnitConditionConfirmed { get; set; }
+        public string? ConditionResult { get; set; }
+        public List<string>? EvidenceImages { get; set; }
     }
 }
