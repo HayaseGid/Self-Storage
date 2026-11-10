@@ -80,6 +80,51 @@
 .cp-due-pay strong { font-size: 1.45rem; color: var(--blue-950, #073d70); }
 .cp-cancel { border: 0; background: none; padding: 2px 0; color: #b42318; font-weight: 600; cursor: pointer; text-decoration: underline; }
 
+/* ---------- Hóa đơn tiền thuê định kỳ & Phí trễ hạn ---------- */
+.cp-rent-bills {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid var(--line, #e4edf4);
+}
+.cp-rent-bills.has-due {
+  background: #f8fbff;
+  border-color: #bfdbfe;
+}
+.cp-bill-list {
+  display: grid;
+  gap: 12px;
+}
+.cp-bill-card {
+  border-color: #cbd5e1;
+}
+.cp-bill-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cp-bill-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: .88rem;
+  color: var(--ink, #0b3967);
+  background: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+.cp-late-line {
+  color: #b42318;
+}
+.cp-policy-note {
+  color: var(--muted, #6d849b);
+  font-size: .8rem;
+}
+
 .cp-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .cp-stat {
   display: grid;

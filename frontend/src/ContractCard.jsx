@@ -37,7 +37,7 @@ const STATUS_TONE = {
 
 export default function ContractCard({
   rental, facility, customerName, signature, signatureLoaded, signatureError, renewal,
-  onReloadSignature, onSign, onDetail, onRenew, onReturn, returnInfo, onPayRent, payingRent,
+  onReloadSignature, onSign, onDetail, onRenew, onReturn, returnInfo, onPayRent, onOpenPayment, payingRent,
   lateFee // [7a] phí trễ hạn của đơn (GET /api/late-fees/mine) + policy
 }) {
   const isSigned = Boolean(signature)
@@ -176,9 +176,11 @@ export default function ContractCard({
               <p className="cc-sub">Chính sách phí trễ hạn: {lateFeePolicyText(lateFee?.policy)}</p>
             </div>
           )}
-          {payNow > 0 && onPayRent
-            ? <button type="button" className="dashboard-primary-btn" disabled={payingRent} onClick={onPayRent}>
-                {payingRent ? 'Đang xử lý...' : `Đóng ${money(payNow)}${Number(rental.rentPayableNow) > 0 && lateUnpaid > 0 ? ' (tiền thuê + phí trễ hạn)' : lateUnpaid > 0 ? ' phí trễ hạn' : ' tiền thuê'}`}
+          {payNow > 0 && (onOpenPayment || onPayRent)
+            ? <button type="button" className="dashboard-primary-btn" disabled={payingRent} onClick={onOpenPayment || onPayRent}>
+                {onOpenPayment
+                  ? `💳 Sang trang Thanh toán đóng ${money(payNow)}${Number(rental.rentPayableNow) > 0 && lateUnpaid > 0 ? ' (tiền thuê + phí trễ)' : lateUnpaid > 0 ? ' phí trễ hạn' : ' tiền thuê'} →`
+                  : payingRent ? 'Đang xử lý...' : `Đóng ${money(payNow)}${Number(rental.rentPayableNow) > 0 && lateUnpaid > 0 ? ' (tiền thuê + phí trễ hạn)' : lateUnpaid > 0 ? ' phí trễ hạn' : ' tiền thuê'}`}
               </button>
             : rental.rentNote && <p className="cc-sub">{rental.rentNote}</p>}
         </section>

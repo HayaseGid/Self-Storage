@@ -1,0 +1,759 @@
+/* ============================================================
+   CUSTOMER PORTAL REDESIGN — REALISTIC SELF-STORAGE UI/UX
+   Typography: Be Vietnam Pro | Palette: Cool Slate & Trust Navy
+   ============================================================ */
+
+.customer-layout {
+  --cp-bg: #f4f7fb;
+  --cp-surface: #ffffff;
+  --cp-surface-subtle: #f8fafc;
+  --cp-border: #e2e8f0;
+  --cp-border-strong: #cbd5e1;
+  --cp-navy-950: #0a2540;
+  --cp-navy-900: #073d70;
+  --cp-blue-600: #0066cc;
+  --cp-blue-50: #eff6ff;
+  --cp-amber-500: #f59e0b;
+  --cp-amber-100: #fef3c7;
+  --cp-amber-900: #78350f;
+  --cp-emerald-600: #059669;
+  --cp-emerald-50: #ecfdf5;
+  --cp-rose-600: #dc2626;
+  --cp-rose-50: #fef2f2;
+  --cp-text-primary: #0f172a;
+  --cp-text-secondary: #475569;
+  --cp-text-muted: #64748b;
+
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--cp-bg);
+  color: var(--cp-text-primary);
+  min-height: 100vh;
+}
+
+.customer-layout h1,
+.customer-layout h2,
+.customer-layout h3,
+.customer-layout h4 {
+  font-family: 'Be Vietnam Pro', sans-serif;
+  letter-spacing: -0.02em;
+  color: var(--cp-navy-950);
+}
+
+/* ---- SIDEBAR ---- */
+.customer-sidebar.cportal-sidebar {
+  background: linear-gradient(180deg, #0a2540 0%, #07325b 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.cportal-sidebar .customer-brand {
+  padding: 6px 8px;
+  border-radius: 12px;
+  transition: background 0.16s ease;
+}
+
+.cportal-sidebar .customer-brand:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cportal-sidebar .customer-profile-mini {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 0;
+}
+
+.cportal-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cportal-nav-group-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.48);
+  padding: 8px 12px 4px;
+}
+
+.cportal-nav-btn {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 11px 13px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.82);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.cportal-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.cportal-nav-btn.active {
+  background: #ffd21c;
+  color: #0a2540;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.cportal-nav-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.09);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.cportal-nav-btn.active .cportal-nav-icon {
+  background: rgba(10, 37, 64, 0.12);
+  color: #0a2540;
+}
+
+.cportal-nav-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.cportal-nav-text strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.cportal-nav-text small {
+  font-size: 0.74rem;
+  opacity: 0.72;
+  line-height: 1.25;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cportal-nav-btn.active .cportal-nav-text small {
+  color: rgba(10, 37, 64, 0.78);
+  opacity: 1;
+}
+
+.cportal-book-cta {
+  margin-top: 6px;
+  border: 1px dashed rgba(255, 210, 28, 0.55);
+  background: rgba(255, 210, 28, 0.1);
+  color: #ffe57f;
+}
+
+.cportal-book-cta:hover {
+  background: rgba(255, 210, 28, 0.18);
+  border-color: #ffd21c;
+}
+
+/* ---- MAIN AREA ---- */
+.customer-main {
+  background: var(--cp-bg);
+  padding: 24px 32px 48px;
+  max-width: 1360px;
+}
+
+/* ---- TOP BAR & TAB ROLE SWITCHER ---- */
+.cportal-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 18px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--cp-border);
+}
+
+.cportal-welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cportal-welcome-kicker {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cp-blue-600);
+}
+
+.cportal-welcome h1 {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--cp-navy-950);
+}
+
+.cportal-welcome p {
+  margin: 2px 0 0;
+  font-size: 0.9rem;
+  color: var(--cp-text-secondary);
+}
+
+/* ---- HORIZONTAL ROLE TABS ---- */
+.cportal-tab-switcher {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.cportal-tab-card {
+  border: 1px solid var(--cp-border);
+  background: var(--cp-surface);
+  border-radius: 14px;
+  padding: 13px 15px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  position: relative;
+}
+
+.cportal-tab-card:hover {
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+
+.cportal-tab-card.active {
+  border-color: var(--cp-blue-600);
+  background: linear-gradient(180deg, #ffffff 0%, #f0f7ff 100%);
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.14), 0 8px 20px rgba(7, 61, 112, 0.08);
+}
+
+.cportal-tab-card-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--cp-surface-subtle);
+  border: 1px solid var(--cp-border);
+  color: var(--cp-navy-900);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  flex-shrink: 0;
+}
+
+.cportal-tab-card.active .cportal-tab-card-icon {
+  background: var(--cp-navy-900);
+  border-color: var(--cp-navy-900);
+  color: #ffd21c;
+}
+
+.cportal-tab-card-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.cportal-tab-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--cp-navy-950);
+}
+
+.cportal-tab-card-desc {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--cp-text-muted);
+}
+
+/* ---- PURPOSE BANNER PER TAB ---- */
+.cportal-purpose-banner {
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  border-left: 4px solid var(--cp-blue-600);
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.cportal-purpose-banner-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  max-width: 780px;
+}
+
+.cportal-purpose-badge {
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--cp-blue-50);
+  color: var(--cp-blue-600);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.cportal-purpose-text h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--cp-navy-950);
+}
+
+.cportal-purpose-text p {
+  margin: 4px 0 0;
+  font-size: 0.87rem;
+  line-height: 1.45;
+  color: var(--cp-text-secondary);
+}
+
+.cportal-purpose-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cportal-purpose-pill {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: var(--cp-surface-subtle);
+  border: 1px solid var(--cp-border);
+  color: var(--cp-text-secondary);
+}
+
+/* ---- URGENT ACTION CHECKLIST IN OVERVIEW ---- */
+.cportal-urgent-box {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 22px;
+}
+
+.cportal-urgent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cportal-urgent-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #92400e;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cportal-urgent-count {
+  background: #f59e0b;
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+.cportal-urgent-list {
+  display: grid;
+  gap: 10px;
+}
+
+.cportal-urgent-item {
+  background: #ffffff;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.cportal-urgent-item-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cportal-urgent-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #f59e0b;
+  flex-shrink: 0;
+}
+
+.cportal-urgent-dot.danger {
+  background: #dc2626;
+}
+
+.cportal-urgent-item-info strong {
+  display: block;
+  font-size: 0.92rem;
+  color: var(--cp-navy-950);
+}
+
+.cportal-urgent-item-info span {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--cp-text-secondary);
+  margin-top: 2px;
+}
+
+/* ---- ACCESS PASS CARD IN MY STORAGE ---- */
+.cportal-access-section {
+  margin-bottom: 24px;
+}
+
+.cportal-access-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.cportal-access-card {
+  background: linear-gradient(135deg, #0a2540 0%, #0d3b66 100%);
+  color: #ffffff;
+  border-radius: 18px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 12px 28px rgba(10, 37, 64, 0.16);
+  position: relative;
+  overflow: hidden;
+}
+
+.cportal-access-card::after {
+  content: '';
+  position: absolute;
+  right: -30px;
+  top: -30px;
+  width: 130px;
+  height: 130px;
+  border-radius: 999px;
+  background: rgba(255, 210, 28, 0.08);
+  pointer-events: none;
+}
+
+.cportal-access-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cportal-access-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #ffd21c;
+}
+
+.cportal-access-top h3 {
+  margin: 4px 0 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.cportal-access-top p {
+  margin: 3px 0 0;
+  font-size: 0.83rem;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.cportal-access-status {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  color: #6ee7b7;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.cportal-access-pin-box {
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cportal-access-pin-box small {
+  display: block;
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.cportal-access-pin-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #ffd21c;
+  margin-top: 2px;
+  display: block;
+}
+
+.cportal-copy-btn {
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+}
+
+.cportal-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.cportal-access-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.8);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 12px;
+  flex-wrap: wrap;
+}
+
+.cportal-access-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.cportal-access-btn {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 6px 11px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cportal-access-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.cportal-access-btn.primary {
+  background: #ffd21c;
+  border-color: #ffd21c;
+  color: #0a2540;
+}
+
+.cportal-access-btn.primary:hover {
+  background: #ffe055;
+}
+
+/* ---- ACTION BUTTONS IN MY STORAGE TABLE & CARDS ---- */
+.cportal-unit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.cportal-action-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 1px solid var(--cp-border-strong);
+  background: #ffffff;
+  color: var(--cp-navy-900);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.cportal-action-chip:hover:not(:disabled) {
+  border-color: var(--cp-blue-600);
+  background: var(--cp-blue-50);
+  color: var(--cp-blue-600);
+}
+
+.cportal-action-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cportal-action-chip.warn {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.cportal-action-chip.warn:hover:not(:disabled) {
+  background: #fef3c7;
+}
+
+.cportal-action-chip.primary {
+  background: var(--cp-navy-900);
+  border-color: var(--cp-navy-900);
+  color: #ffffff;
+}
+
+.cportal-action-chip.primary:hover:not(:disabled) {
+  background: #0a4f8e;
+}
+
+.cportal-action-chip.accent {
+  background: #ffd21c;
+  border-color: #eab308;
+  color: #0a2540;
+}
+
+.cportal-action-chip.accent:hover:not(:disabled) {
+  background: #fde047;
+}
+
+/* ---- CONTRACT LIFECYCLE STEPS ---- */
+.cportal-lifecycle {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.cportal-lifecycle-step {
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cportal-lifecycle-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--cp-blue-50);
+  color: var(--cp-blue-600);
+  font-size: 0.78rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cportal-lifecycle-step strong {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--cp-navy-950);
+}
+
+.cportal-lifecycle-step small {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--cp-text-muted);
+}
+
+/* ---- CARD & PANEL REFINEMENTS ---- */
+.customer-stat-card,
+.overview-panel,
+.overview-rental-card,
+.my-storage-card,
+.customer-info-card,
+.profile-card {
+  border: 1px solid var(--cp-border);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  background: var(--cp-surface);
+}
+
+.customer-eyebrow {
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--cp-blue-600);
+}
+
+.customer-page-heading h1 {
+  font-size: 1.65rem;
+  font-weight: 800;
+}
+
+/* ---- RESPONSIVE ---- */
+@media (max-width: 1120px) {
+  .cportal-tab-switcher,
+  .cportal-lifecycle {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .customer-main {
+    padding: 18px 16px 36px;
+  }
+  .cportal-tab-switcher,
+  .cportal-lifecycle {
+    grid-template-columns: 1fr;
+  }
+  .cportal-header-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
