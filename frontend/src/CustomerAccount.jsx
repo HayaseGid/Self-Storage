@@ -671,6 +671,27 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const signedBeforeHandover = allRentals.filter(r => r.status === 'Confirmed' && r.contractId && isSignedRental(r))
 
   /*
+   * [SỬA] Chia trang Hợp đồng thành các tab để khách thấy ngay mình đang ở đâu:
+   *   pending  - đã cọc: chờ ký / đang tạo hợp đồng / đã ký chờ nhận kho
+   *   active   - đang thuê (kèm gia hạn)
+   *   returns  - đang trả kho / chờ quyết toán, hoàn cọc
+   *   ended    - đã kết thúc
+   */
+  const activeRentals = rentals.filter(r => r.status === 'Handed Over')
+  const endedRentals = rentals.filter(r => r.status !== 'Handed Over')
+  const pendingCountAll = toSign.length + preparing.length + waitingApproval.length + signedBeforeHandover.length
+  const returnsInProgress = returns.items.filter(i => i.request && (i.request.status !== 'Completed' ||
+    Number(i.request.amountOwed) > 0 || (Number(i.request.refundAmount) > 0 && i.request.refundStatus !== 'Completed'))).length
+  const [contractTab, setContractTab] = useState(() => (pendingCountAll > 0 ? 'pending' : 'active'))
+  const tabOfReservation = id => {
+    const r = allRentals.find(x => String(x.reservationId) === String(id))
+    if (!r) return null
+    if (r.status === 'Handed Over') return 'active'
+    if (r.status === 'Confirmed' || r.status === 'Paid') return 'pending'
+    return 'ended'
+  }
+
+  /*
    * Không còn bước Manager duyệt: đơn đã cọc ("Paid") được xác nhận + tạo hợp đồng ngay.
    * Thường đã làm lúc thanh toán; ở đây tự thử lại nếu lần đó lỗi mạng.
    */
@@ -700,15 +721,32 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
   }, [])
   useEffect(() => {
+    // [SỬA] Thẻ hợp đồng cần mở nằm ở tab khác -> chuyển tab trước rồi mới cuộn tới
+    let pending = null
+    try { pending = sessionStorage.getItem('storespace_focus_contract') } catch { /* bỏ qua */ }
+    const targetTab = pending ? tabOfReservation(pending) : null
+    if (targetTab && targetTab !== 'pending') setContractTab(targetTab)
     const timer = window.setTimeout(() => {
       let wanted = null
       try { wanted = sessionStorage.getItem('storespace_focus_contract') } catch { /* bỏ qua */ }
       if (wanted && document.getElementById(`contract-${wanted}`)) {
         takePendingContractFocus()
         focusContract(wanted)
+      } else if (wanted && (targetTab === 'active' || targetTab === 'ended')) {
+        // Thẻ nằm ở trang khác của danh sách -> bỏ ô tìm, mở đúng trang rồi cuộn tới
+        const list = newestFirst(targetTab === 'ended' ? endedRentals : activeRentals, { id: r => r.reservationId })
+        const index = list.findIndex(r => String(r.reservationId) === String(wanted))
+        if (index >= 0) {
+          setContractQuery('')
+          contractPaging.setPage(Math.floor(index / contractPaging.pageSize) + 1)
+          retry = window.setTimeout(() => {
+            if (document.getElementById(`contract-${wanted}`)) { takePendingContractFocus(); focusContract(wanted) }
+          }, 200)
+        }
       }
     }, 350)
-    return () => window.clearTimeout(timer)
+    let retry = null
+    return () => { window.clearTimeout(timer); window.clearTimeout(retry) }
   }, [focusTick, rentals.map(r => r.reservationId).join(',')])
 
   // Thông báo "Kho sắp hết hạn" -> "Gia hạn ngay": mở hộp thoại gia hạn của đúng hợp đồng.
@@ -884,17 +922,14 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
 
   const pendingCount = rentals.filter(r => loadedSignatures[keyOf(r)] && !signatures[keyOf(r)]).length
 
-  // [THÊM] Danh sách hợp đồng: lọc + tìm + mới nhất lên đầu + chia trang (việc cần làm vẫn nằm trên cùng)
-  const [contractFilter, setContractFilter] = useState('')
+  // [SỬA] Danh sách hợp đồng của tab đang mở: tìm + mới nhất lên đầu + chia trang
   const [contractQuery, setContractQuery] = useState('')
-  const contractGroupOf = r => (r.status === 'Handed Over' ? 'ACTIVE' : r.status === 'Completed' ? 'DONE' : 'OTHER')
-  const contractCounts = rentals.reduce((acc, r) => ({ ...acc, [contractGroupOf(r)]: (acc[contractGroupOf(r)] || 0) + 1 }), {})
-  const listedContracts = newestFirst(rentals.filter(r => {
-    if (contractFilter && contractGroupOf(r) !== contractFilter) return false
+  const tabRentals = contractTab === 'ended' ? endedRentals : activeRentals
+  const listedContracts = newestFirst(tabRentals.filter(r => {
     const q = contractQuery.trim().toLowerCase()
     return !q || [r.contractNumber, r.reservationCode, r.facility, ...(r.unitNumbers || [r.unitId])].some(v => String(v ?? '').toLowerCase().includes(q))
   }), { id: r => r.reservationId })
-  const contractPaging = useClientPaging(listedContracts, { pageSize: 5, resetKey: `${contractFilter}|${contractQuery}` })
+  const contractPaging = useClientPaging(listedContracts, { pageSize: 5, resetKey: `${contractTab}|${contractQuery}` })
 
   return (
     <div className="customer-content-page">
@@ -919,9 +954,30 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         )}
       </div>
 
-      <ReturnSection returns={returns} onChanged={onRentalsChanged} />
+      <FilterChips
+        options={[
+          ['pending', 'Đã cọc · chờ nhận kho'],
+          ['active', 'Đang thuê'],
+          ['returns', 'Trả kho'],
+          ['ended', 'Đã kết thúc']
+        ]}
+        value={contractTab}
+        onChange={setContractTab}
+        counts={{ pending: pendingCountAll, active: activeRentals.length, returns: returnsInProgress, ended: endedRentals.length }}
+        className="cc-tabs"
+      />
 
-      <RenewalSection renewals={renewals} onRenew={setRenewItem} onChanged={onRentalsChanged} />
+      {contractTab === 'returns' && (
+        <>
+          <p className="cc-tab-hint">Kho bạn đã báo trả: theo dõi từng bước từ hẹn trả kho đến khi nhận lại tiền cọc.</p>
+          <ReturnSection returns={returns} onChanged={onRentalsChanged} />
+          {!returns.loading && !returns.items.some(i => i.request) && <div className="empty-state">Bạn không có kho nào đang trả. Muốn trả kho, mở tab "Đang thuê" và bấm "Trả kho" trên hợp đồng.</div>}
+        </>
+      )}
+
+      {contractTab === 'active' && (
+        <RenewalSection renewals={renewals} onRenew={setRenewItem} onChanged={onRentalsChanged} />
+      )}
 
       {returnItem && (
         <ReturnRequestModal
@@ -950,7 +1006,10 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         />
       )}
 
-      {(toSign.length > 0 || preparing.length > 0 || waitingApproval.length > 0 || signedBeforeHandover.length > 0) && (
+      {contractTab === 'pending' && pendingCountAll === 0 && (
+        <div className="empty-state">Không có đơn nào đang chờ. Đơn đã đặt cọc sẽ hiện ở đây để bạn ký hợp đồng và xem lịch nhận kho.</div>
+      )}
+      {contractTab === 'pending' && pendingCountAll > 0 && (
         <section className="sign-queue" aria-label="Hợp đồng đang xử lý">
           {buildGroups(toSign).map(group => (
             <article key={group.key} className="sign-card">
@@ -1039,23 +1098,22 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         />
       )}
 
-      <div className="cc-list-head">
-        <div>
-          <h2>Danh sách hợp đồng <span>{rentals.length}</span></h2>
-          <p>Hợp đồng mới nhất nằm trên cùng. Hợp đồng đang chờ ký / chờ nhận kho nằm ở khu phía trên.</p>
+      {(contractTab === 'active' || contractTab === 'ended') && (
+        <div className="cc-list-head">
+          <div>
+            <h2>{contractTab === 'active' ? 'Hợp đồng đang thuê' : 'Hợp đồng đã kết thúc'} <span>{tabRentals.length}</span></h2>
+            <p>{contractTab === 'active' ? 'Kho bạn đang sử dụng. Hợp đồng mới nhất nằm trên cùng.' : 'Hợp đồng đã trả kho hoặc đã đóng.'}</p>
+          </div>
+          {tabRentals.length > 0 && (
+            <input className="ss-search" type="search" value={contractQuery} onChange={e => setContractQuery(e.target.value)} placeholder="Tìm mã HĐ, mã đơn, cơ sở, mã kho..." aria-label="Tìm hợp đồng" />
+          )}
         </div>
-        {rentals.length > 0 && (
-          <input className="ss-search" type="search" value={contractQuery} onChange={e => setContractQuery(e.target.value)} placeholder="Tìm mã HĐ, mã đơn, cơ sở, mã kho..." aria-label="Tìm hợp đồng" />
-        )}
-      </div>
-      {rentals.length > 0 && (
-        <FilterChips
-          options={[['', 'Tất cả'], ['ACTIVE', 'Đang thuê'], ['DONE', 'Đã trả kho'], ['OTHER', 'Khác']].filter(([k]) => !k || contractCounts[k])}
-          value={contractFilter} onChange={setContractFilter} counts={contractCounts} total={rentals.length} className="cc-list-chips" />
       )}
-      {rentals.length === 0 && <div className="empty-state">Bạn chưa có hợp đồng nào. Hợp đồng sẽ hiện ở đây sau khi bạn đặt cọc và ký.</div>}
-      {rentals.length > 0 && listedContracts.length === 0 && <div className="empty-state">Không có hợp đồng phù hợp.</div>}
-      {contractPaging.pageRows.map(rental => {
+      {(contractTab === 'active' || contractTab === 'ended') && tabRentals.length === 0 && (
+        <div className="empty-state">{contractTab === 'active' ? 'Bạn chưa có kho nào đang thuê.' : 'Chưa có hợp đồng nào kết thúc.'}</div>
+      )}
+      {(contractTab === 'active' || contractTab === 'ended') && tabRentals.length > 0 && listedContracts.length === 0 && <div className="empty-state">Không có hợp đồng phù hợp.</div>}
+      {(contractTab === 'active' || contractTab === 'ended') && contractPaging.pageRows.map(rental => {
         const signature = signatures[keyOf(rental)]
         const isSigned = !!signature
         const signatureError = signatureErrors[keyOf(rental)]
@@ -1095,7 +1153,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         )
       })}
 
-      <Pager {...contractPaging.pagerProps} unit="hợp đồng" />
+      {(contractTab === 'active' || contractTab === 'ended') && <Pager {...contractPaging.pagerProps} unit="hợp đồng" />}
 
       {openRental && (
         <ContractModal
@@ -1418,19 +1476,22 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
       <main className="customer-main">
 
         <div className="customer-topbar">
-          <div>
-            <span className="customer-eyebrow">
-              CUSTOMER DASHBOARD
-            </span>
+          {/* [SỬA] Lời chào chỉ hiện ở Tổng quan, các mục khác dùng tiêu đề riêng của mục */}
+          {activeSection === 'overview' ? (
+            <div>
+              <span className="customer-eyebrow">
+                CUSTOMER DASHBOARD
+              </span>
 
-            <h1>
-              Xin chào, {user?.name || 'Customer'}!
-            </h1>
+              <h1>
+                Xin chào, {user?.name || 'Customer'}!
+              </h1>
 
-            <p>
-              Quản lý kho thuê và thông tin tài khoản của bạn.
-            </p>
-          </div>
+              <p>
+                Quản lý kho thuê và thông tin tài khoản của bạn.
+              </p>
+            </div>
+          ) : <div />}
 
           <div className="customer-topbar-actions">
             <button

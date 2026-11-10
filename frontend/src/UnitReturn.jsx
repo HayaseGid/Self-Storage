@@ -116,10 +116,22 @@ function ReturnProgress({ item, inspection, onChanged }) {
         </span>
       </div>
 
+      {/* [SỬA] Bước đã xong (✓ xanh lá) / bước hiện tại (số xanh dương + "Bạn đang ở bước này") / bước chưa tới (xám) */}
       <ol className="ur-steps">
-        {steps.map(([label, note], i) => (
-          <li key={label} className={i < current ? 'done' : i === current ? 'current' : ''}><b>{label}</b><small>{note}</small></li>
-        ))}
+        {steps.map(([label, note], i) => {
+          const state = i < current ? 'done' : i === current ? 'current' : 'todo'
+          return (
+            <li key={label} className={state} aria-current={state === 'current' ? 'step' : undefined}>
+              <span className="ur-dot" aria-hidden="true">{state === 'done' ? '✓' : i + 1}</span>
+              <div>
+                {state === 'current' && <em>Bạn đang ở bước này</em>}
+                {state === 'done' && <em>Đã xong</em>}
+                <b>{label}</b>
+                <small>{note}</small>
+              </div>
+            </li>
+          )
+        })}
       </ol>
 
       {/* [THÊM 14] Phí kiểm kho chờ xác nhận / khiếu nại: hộp xác nhận thay cho bảng quyết toán (chưa có số hoàn) */}
@@ -147,7 +159,7 @@ function ReturnProgress({ item, inspection, onChanged }) {
         <div className="auth-message error" role="alert">Hợp đồng đã hết hạn ngày {fmtDay(item.endDate)}. Cơ sở đã lên lịch thu hồi kho, nhân viên sẽ liên hệ bạn. Muốn đổi ngày giờ, vui lòng liên hệ cơ sở.</div>
       )}
       {stage === 'scheduled' && (
-        <p className="ur-help">Vui lòng dọn hết đồ, vệ sinh kho và mang theo khóa / thẻ ra vào khi đến trả kho {req.scheduledTime ? <>lúc <strong>{req.scheduledTime}</strong> </> : ''}ngày <strong>{fmtDay(req.scheduledDate)}</strong>.</p>
+        <p className="ur-help ur-next"><b className="ur-next-label">Việc bạn cần làm</b><span>Dọn hết đồ, vệ sinh kho và mang theo khóa / thẻ ra vào, đến trả kho {req.scheduledTime ? <>lúc <strong>{req.scheduledTime}</strong> </> : ''}ngày <strong>{fmtDay(req.scheduledDate)}</strong>.</span></p>
       )}
 
       <div className="ur-actions">

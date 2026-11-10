@@ -96,3 +96,9 @@
 .cc-list-head .ss-search { flex: 0 1 320px; }
 .cc-list-chips { margin-bottom: 16px; }
 .cc-chips .ss-codes { margin-left: 2px; }
+
+/* [SỬA] Tab của trang Hợp đồng (khách) */
+.cc-tabs { gap: 8px; margin: 4px 0 18px; padding-bottom: 14px; border-bottom: 1px solid #e4edf4; }
+.cc-tabs button { height: 42px; padding: 0 18px; font-size: 14px; border-radius: 12px; }
+.cc-tabs button span { font-size: 12px; }
+.cc-tab-hint { margin: -6px 0 14px; color: #6d849b; font-size: 13.5px; }
