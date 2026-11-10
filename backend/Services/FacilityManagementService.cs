@@ -876,7 +876,9 @@ public class FacilityManagementService : IFacilityManagementService
 
         await _repo.SaveChangesAsync(cancellationToken);
 
-        var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+        // [THỜI GIAN THỰC]: var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+        // [DEMO CLOCK]: Đồng bộ ngày theo BusinessClock
+        var todayStr = BusinessClock.Today.ToString("yyyy-MM-dd");
         var effectiveFrom = string.IsNullOrWhiteSpace(request.EffectiveFrom) ? todayStr : request.EffectiveFrom.Trim();
         var isScheduled = string.CompareOrdinal(effectiveFrom, todayStr) > 0;
 
@@ -1173,7 +1175,9 @@ public class FacilityManagementService : IFacilityManagementService
             {
                 FacilityID = facilityId,
                 UserID = staffUser.UserID,
-                AssignedDate = DateTime.Today,
+                // [THỜI GIAN THỰC]: AssignedDate = DateTime.Today,
+                // [DEMO CLOCK]: Đồng bộ ngày theo BusinessClock
+                AssignedDate = BusinessClock.Today,
                 Status = "Active"
             };
             _repo.AddFacilityStaff(assignment);

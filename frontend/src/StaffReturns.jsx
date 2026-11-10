@@ -5,6 +5,7 @@ import { useDialog } from './Dialog'
 import { formatVnd } from './storageRules'
 import { usePolicies } from './policies'
 import { fmtDay } from './UnitReturn'
+import { getTodayISO } from './demoClock/demoClock'
 import { INSPECTION, MAX_STAFF_PHOTOS, PhotoPicker, StaffInspectionStatus, useStaffInspections } from './ReturnInspection' // [THÊM 14]
 import './UnitReturn.css'
 
@@ -19,7 +20,9 @@ import './UnitReturn.css'
  */
 
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
-const todayIso = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
+// [THỜI GIAN THỰC]: const todayIso = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
+// [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock để test lịch trả kho
+const todayIso = () => getTodayISO()
 
 export function useStaffReturns() {
   const [state, setState] = useState({ loading: true, error: '', data: null })

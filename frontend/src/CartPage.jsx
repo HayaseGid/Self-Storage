@@ -9,6 +9,7 @@ import { effectiveMonthly, holdMinutesFor, quote } from './pricing'
 import { announceDepositSuccess, confirmAfterDeposit, openCustomerSection } from './afterDeposit'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
 import DepositConfirm from './DepositConfirm'
+import { getTodayDate } from './demoClock/demoClock'
 import './CartPage.css'
 
 function ArrowIcon() {
@@ -107,7 +108,11 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
   const depositMonths = cartQuote.depositMonths
   const holdMinutes = holdMinutesFor(activeGroup?.facilityId)
   const endDate = endDateFor(startDate, months)
-  const today = new Date()
+  // [THỜI GIAN THỰC]:
+  // const today = new Date()
+  // today.setHours(0, 0, 0, 0)
+  // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+  const today = getTodayDate()
   today.setHours(0, 0, 0, 0)
 
   const toggleItem = key => setExcluded(current => {

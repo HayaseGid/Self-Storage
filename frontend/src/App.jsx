@@ -868,7 +868,11 @@ function getRestoredBookingForm(facility, unit) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(draft.startDate || '')) {
     const [year, month, day] = draft.startDate.split('-').map(Number)
     const date = new Date(year, month - 1, day)
-    const today = new Date()
+    // [THỜI GIAN THỰC]:
+    // const today = new Date()
+    // today.setHours(0, 0, 0, 0)
+    // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+    const today = getTodayDate()
     today.setHours(0, 0, 0, 0)
     if (date.getTime() >= today.getTime()) {
       form.startDay = String(day)
@@ -1020,7 +1024,11 @@ function BookingPage({ facility, unit }) {
     return date
   }
 
-  const today = new Date()
+  // [THỜI GIAN THỰC]:
+  // const today = new Date()
+  // today.setHours(0, 0, 0, 0)
+  // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+  const today = getTodayDate()
   today.setHours(0, 0, 0, 0)
 
   const isValidStartDate =

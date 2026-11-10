@@ -34,7 +34,9 @@ public class ManagerToolsService : IManagerToolsService
         if (fail is not null) return fail;
 
         months = Math.Clamp(months, 1, 12);
-        var today = DateTime.UtcNow.Date;
+        // [THỜI GIAN THỰC]: var today = DateTime.UtcNow.Date;
+        // [DEMO CLOCK]: Đồng bộ ngày theo BusinessClock (header X-Simulated-Date)
+        var today = BusinessClock.Today;
         var firstMonth = new DateTime(today.Year, today.Month, 1).AddMonths(-(months - 1));
 
         var payments = await _repo.GetCompletedPaymentsAsync(facilityId, cancellationToken);

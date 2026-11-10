@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { POLICY_TITLES, describePolicy, fmtDay } from './policies'
 import { formatVnd } from './storageRules'
+import { getTodayDate } from './demoClock/demoClock'
 
 /*
  * THÔNG BÁO CHO KHÁCH HÀNG (chỉ frontend, không cần bảng / API mới).
@@ -32,8 +33,12 @@ const daysUntil = iso => {
   if (!iso) return null
   const [y, m, d] = isoDay(iso).split('-').map(Number)
   const target = Date.UTC(y, m - 1, d)
-  const now = new Date()
-  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  // [THỜI GIAN THỰC]:
+  // const now = new Date()
+  // const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock để tính thông báo hết hạn
+  const todayDate = getTodayDate()
+  const today = Date.UTC(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate())
   return Math.round((target - today) / DAY)
 }
 const stageOf = days => (days <= 3 ? 'd3' : days <= 7 ? 'd7' : days <= 14 ? 'd14' : 'd30')

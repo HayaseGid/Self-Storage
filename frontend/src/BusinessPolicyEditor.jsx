@@ -6,6 +6,7 @@ import {
   DEFAULT_POLICIES, PERIOD_LABELS, POLICY_TITLES,
   depositFor, describePolicy, fmtDay, loadPolicies
 } from './policies'
+import { getTodayISO } from './demoClock/demoClock'
 import './BusinessPolicyEditor.css'
 
 /*
@@ -22,10 +23,13 @@ const TABS = [
   ['reservation', '4', 'Đặt chỗ & hủy'],
   ['renewal_return', '5', 'Gia hạn & trả kho']
 ]
-const today = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+// [THỜI GIAN THỰC]:
+// const today = () => {
+//   const d = new Date()
+//   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+// }
+// [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+const today = () => getTodayISO()
 const clone = value => JSON.parse(JSON.stringify(value))
 const toNumber = text => {
   if (text === '' || text == null) return null

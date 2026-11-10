@@ -4,6 +4,7 @@ import { UNIT_TYPE_ORDER, UNIT_TYPE_STYLES, UnitTypeChip, getUnitTypeKey, getUni
 import { RESERVATION_STATUS_LABELS, formatVnd } from './storageRules'
 import './BusinessPanels.css'
 import { Code, NewBadge, Pager, newestFirst, rowClass, useClientPaging } from './listKit'
+import { getTodayISO } from './demoClock/demoClock'
 
 /*
  * Các màn hình của Business Operations Manager, đúng 5 nhóm chức năng:
@@ -248,7 +249,9 @@ export function BusinessReportsCenter({ reports, operationState, facilities }) {
   const [tab, setTab] = useState('facility')
   const units = operationState?.units || []
   const reservations = operationState?.reservations || []
-  const today = new Date().toISOString().slice(0, 10)
+  // [THỜI GIAN THỰC]: const today = new Date().toISOString().slice(0, 10)
+  // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+  const today = getTodayISO()
 
   const reportsByKey = {
     facility: {

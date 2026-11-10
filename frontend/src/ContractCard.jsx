@@ -5,6 +5,7 @@ import { formatSignedAt } from './contractSignatures'
 import { formatVnd } from './storageRules'
 import { fmtIsoDate } from './ContractRenewal'
 import { lateFeePolicyText } from './lateFees'
+import { getTodayDate } from './demoClock/demoClock'
 import './ContractCard.css'
 import './UnitReturn.css'
 
@@ -20,7 +21,11 @@ const parseVnDate = text => {
 }
 const daysFromToday = date => {
   if (!date) return null
-  const today = new Date()
+  // [THỜI GIAN THỰC]:
+  // const today = new Date()
+  // today.setHours(0, 0, 0, 0)
+  // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+  const today = getTodayDate()
   today.setHours(0, 0, 0, 0)
   return Math.round((date - today) / 86400000)
 }
