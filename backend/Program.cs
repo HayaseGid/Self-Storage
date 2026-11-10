@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Middleware;
+using SelfStorageAPI.Models;
 using SelfStorageAPI.Repositories;
 using SelfStorageAPI.Services;
 
@@ -137,6 +138,10 @@ builder.Services.AddScoped<ILateFeeService, LateFeeService>();
 builder.Services.AddScoped<IReturnInspectionRepository, ReturnInspectionRepository>();   // [THÊM 14]
 builder.Services.AddScoped<IReturnInspectionService, ReturnInspectionService>();         // [THÊM 14]
 //Đã sửa: 09/11/2026
+
+// Cấu hình SMTP Gmail và EmailService
+builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 
 // JWT authentication

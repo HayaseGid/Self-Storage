@@ -16,6 +16,7 @@
 import { contractUnits } from './ContractDocument'
 import { describePolicy } from './policies'
 import { formatVnd } from './storageRules'
+import { apiPost } from './api'
 
 const EMAILJS_SEND_URL = 'https://api.emailjs.com/api/v1.0/email/send'
 const SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID
@@ -77,13 +78,34 @@ export function buildContractEmailHtml({ group, customer, facilityAddress, signa
 }
 
 export async function sendContractEmail({ group, customer, facilityAddress, signature, policies }) {
-  if (!isContractEmailConfigured()) {
-    throw new Error('Chưa cấu hình EmailJS cho hợp đồng. Thêm VITE_EMAILJS_CONTRACT_TEMPLATE_ID vào file frontend/.env (xem hướng dẫn trong contractEmail.js).')
-  }
   if (!customer?.email) throw new Error('Tài khoản chưa có email.')
   const html = buildContractEmailHtml({ group, customer, facilityAddress, signature, policies })
-  if (html.length > MAX_HTML_LENGTH) throw new Error('Hợp đồng quá dài để gửi qua email. Vui lòng dùng In / Lưu PDF.')
   const first = group.rentals[0]
+  const subject = `[StoreSpace] Hợp đồng thuê kho ${group.code}${signature ? ' (đã ký)' : ''}`
+
+  // 1. Ưu tiên gửi qua Backend Gmail SMTP (bền vững, không giới hạn lượt gửi)
+  try {
+    await apiPost('/api/email/send-contract', {
+      toEmail: customer.email,
+      toName: customer.name,
+      subject,
+      contractNumber: group.code,
+      facilityName: first?.facility,
+      startDate: first?.startDate,
+      endDate: first?.endDate,
+      contractHtml: html
+    })
+    return { sentTo: customer.email }
+  } catch (backendError) {
+    console.warn('Gửi hợp đồng qua Backend SMTP gặp sự cố, chuyển sang EmailJS fallback:', backendError.message)
+  }
+
+  // 2. Fallback sang EmailJS nếu backend chưa phản hồi
+  if (!isContractEmailConfigured()) {
+    throw new Error('Chưa thể gửi email hợp đồng. Vui lòng thử lại sau ít phút hoặc in hợp đồng dạng PDF.')
+  }
+  if (html.length > MAX_HTML_LENGTH) throw new Error('Hợp đồng quá dài để gửi qua email. Vui lòng dùng In / Lưu PDF.')
+
   const response = await fetch(EMAILJS_SEND_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -94,7 +116,7 @@ export async function sendContractEmail({ group, customer, facilityAddress, sign
       template_params: {
         to_email: customer.email,
         to_name: customer.name,
-        subject: `[StoreSpace] Hợp đồng thuê kho ${group.code}${signature ? ' (đã ký)' : ''}`,
+        subject,
         contract_number: group.code,
         facility_name: first.facility,
         start_date: first.startDate,
