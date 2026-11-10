@@ -1,0 +1,559 @@
+/* ============================================================
+ * CUSTOMER PORTAL REFINEMENTS (StoreSpace Design System)
+ * Tách biệt rõ ý nghĩa từng Tab & làm nổi bật thông tin trọng tâm
+ * ============================================================ */
+
+.cportal-sidebar {
+  width: 268px !important;
+  padding: 22px 16px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cportal-main {
+  margin-left: 308px;
+}
+
+@media (max-width: 1120px) {
+  .cportal-sidebar {
+    width: 100% !important;
+  }
+  .cportal-main {
+    margin-left: 0;
+  }
+}
+
+.cportal-brand {
+  cursor: pointer;
+  padding: 0 8px 18px !important;
+}
+
+.cportal-profile-mini {
+  padding: 14px 10px !important;
+  margin-bottom: 6px;
+  border-radius: 14px;
+  background: #f4f8fc;
+  border: 1px solid #e2ecf6;
+}
+
+.cportal-nav-group-label {
+  padding: 10px 10px 4px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #647f99;
+}
+
+.cportal-nav-btn {
+  height: auto !important;
+  min-height: 52px !important;
+  padding: 9px 12px !important;
+  border-radius: 13px !important;
+  align-items: center !important;
+  gap: 11px !important;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cportal-nav-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #eff5fb;
+  color: #1e4e79;
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.cportal-nav-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cportal-nav-btn.active .cportal-nav-icon {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.cportal-nav-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.25;
+}
+
+.cportal-nav-copy strong {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: inherit;
+}
+
+.cportal-nav-copy small {
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b849c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.cportal-nav-btn.active .cportal-nav-copy small {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.cportal-cta-book {
+  margin-top: 8px;
+  padding: 10px 12px !important;
+  border-radius: 13px !important;
+  background: #edf6ff !important;
+  border: 1.5px dashed #8ec2f2 !important;
+  color: #074c87 !important;
+}
+
+.cportal-cta-book:hover {
+  background: #dfeeff !important;
+  border-style: solid !important;
+}
+
+/* Thanh định vị các Tab ngang ở đầu trang (giúp khách nhìn thấy ngay mọi khu vực) */
+.cportal-tab-switcher {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+@media (max-width: 900px) {
+  .cportal-tab-switcher {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cportal-tab-pill {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: 1.5px solid #dde8f3;
+  background: #ffffff;
+  color: #0b3967;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.cportal-tab-pill:hover {
+  border-color: #8ec2f2;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(7, 45, 90, 0.06);
+}
+
+.cportal-tab-pill.active {
+  background: #073d70;
+  border-color: #073d70;
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(7, 61, 112, 0.18);
+}
+
+.cportal-tab-pill-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #edf6ff;
+  color: #075a9f;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.cportal-tab-pill-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cportal-tab-pill.active .cportal-tab-pill-icon {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.cportal-tab-pill-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.cportal-tab-pill-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.cportal-tab-pill-head strong {
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.cportal-tab-pill-body p {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #55718c;
+}
+
+.cportal-tab-pill.active .cportal-tab-pill-body p {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* Khung giải thích ý nghĩa của Tab hiện tại */
+.cportal-purpose-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  border-radius: 16px;
+  background: #edf6ff;
+  border: 1.5px solid #c5dff8;
+  color: #0b3967;
+}
+
+.cportal-purpose-main h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #073d70;
+}
+
+.cportal-purpose-main p {
+  margin: 0;
+  font-size: 13px;
+  color: #345675;
+  line-height: 1.45;
+}
+
+.cportal-purpose-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cportal-purpose-chip {
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #bfdcf6;
+  font-size: 12px;
+  font-weight: 700;
+  color: #074c87;
+}
+
+/* Trung tâm việc cần xử lý ngay (Overview Action Center) */
+.cportal-urgent-box {
+  padding: 18px 20px;
+  margin-bottom: 22px;
+  border-radius: 16px;
+  background: #fffbeb;
+  border: 1.5px solid #fcd34d;
+  display: grid;
+  gap: 12px;
+}
+
+.cportal-urgent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cportal-urgent-head strong {
+  font-size: 15px;
+  font-weight: 800;
+  color: #92400e;
+}
+
+.cportal-urgent-head span {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.cportal-urgent-list {
+  display: grid;
+  gap: 10px;
+}
+
+.cportal-urgent-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #fde68a;
+}
+
+.cportal-urgent-item div strong {
+  display: block;
+  font-size: 13.5px;
+  color: #0b3967;
+}
+
+.cportal-urgent-item div small {
+  font-size: 12px;
+  color: #55718c;
+}
+
+/* Thẻ ra vào kho (Access Pass) ở Tab Kho của tôi */
+.cportal-access-section {
+  margin-bottom: 24px;
+}
+
+.cportal-access-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cportal-access-section-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #073d70;
+}
+
+.cportal-access-section-head p {
+  margin: 0;
+  font-size: 13px;
+  color: #55718c;
+}
+
+.cportal-access-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.cportal-access-card {
+  padding: 18px;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1.5px solid #d5e5f4;
+  box-shadow: 0 8px 22px rgba(7, 45, 90, 0.06);
+  display: grid;
+  gap: 14px;
+}
+
+.cportal-access-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cportal-access-unit {
+  font-size: 20px;
+  font-weight: 800;
+  color: #073d70;
+  margin: 2px 0;
+}
+
+.cportal-access-facility {
+  font-size: 12px;
+  font-weight: 700;
+  color: #075a9f;
+}
+
+.cportal-access-pin-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f0f7ff;
+  border: 1px solid #bfdcf6;
+}
+
+.cportal-access-pin-box small {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #4b6884;
+  text-transform: uppercase;
+}
+
+.cportal-access-pin-box strong {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #073d70;
+  font-variant-numeric: tabular-nums;
+}
+
+.cportal-copy-btn {
+  padding: 7px 11px;
+  border-radius: 8px;
+  border: 1px solid #b5d5f3;
+  background: #ffffff;
+  color: #074c87;
+  font: 700 12px 'Be Vietnam Pro', sans-serif;
+  cursor: pointer;
+}
+
+.cportal-copy-btn:hover {
+  background: #e3f0fd;
+}
+
+.cportal-access-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  font-size: 12.5px;
+}
+
+.cportal-access-meta div span {
+  display: block;
+  color: #647f99;
+  font-size: 11.5px;
+}
+
+.cportal-access-meta div strong {
+  color: #0f2942;
+  font-weight: 700;
+}
+
+.cportal-access-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid #eef3f8;
+}
+
+/* Thanh tiến trình vòng đời hợp đồng (ContractPage) */
+.cportal-lifecycle {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 820px) {
+  .cportal-lifecycle {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cportal-lifecycle-step {
+  padding: 12px 14px;
+  border-radius: 13px;
+  background: #ffffff;
+  border: 1px solid #dde8f3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cportal-lifecycle-step.has-items {
+  border-color: #93c5fd;
+  background: #f8fbff;
+}
+
+.cportal-lifecycle-step.urgent {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+
+.cportal-lifecycle-step div small {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #647f99;
+}
+
+.cportal-lifecycle-step div strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: #073d70;
+}
+
+.cportal-lifecycle-count {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #edf6ff;
+  color: #075a9f;
+  font-size: 13px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+}
+
+.cportal-lifecycle-step.urgent .cportal-lifecycle-count {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.cportal-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 22px 0 12px;
+}
+
+.cportal-section-title h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: #073d70;
+}
+
+.cportal-section-title span {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #edf6ff;
+  color: #075a9f;
+}
+
+.cportal-stat-clickable {
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cportal-stat-clickable:hover {
+  transform: translateY(-2px);
+  border-color: #8ec2f2;
+  box-shadow: 0 8px 22px rgba(7, 45, 90, 0.08);
+}
+

@@ -52,9 +52,9 @@ export default function CustomerNotificationsPage({ center, onAction }) {
     <div className="customer-content-page">
       <div className="customer-page-heading">
         <div>
-          <span className="customer-eyebrow">NOTIFICATIONS</span>
-          <h1>Thông báo</h1>
-          <p>Nhắc hạn thuê kho, gia hạn, thanh toán và thay đổi chính sách.</p>
+          <span className="customer-eyebrow">HỘP THƯ & NHẮC VIỆC TỰ ĐỘNG</span>
+          <h1>Thông báo hệ thống</h1>
+          <p>Nhắc hạn thuê kho, lịch hẹn nhận/trả kho, thanh toán và thay đổi chính sách.</p>
         </div>
         {center.notifications.length > 0 && <span className="page-count">{center.notifications.length} thông báo</span>}
       </div>
