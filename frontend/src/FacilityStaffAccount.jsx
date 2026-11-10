@@ -128,24 +128,24 @@ const isAssignedToMe = (db, res) => {
 };
 
 const TASK_SORTS = [
-  { value: "date_asc", label: "Ngày hẹn gần nhất" },
-  { value: "date_desc", label: "Ngày hẹn xa nhất" },
-  { value: "newest_created", label: "Mới giao lên đầu" },
-  { value: "unit_asc", label: "Theo mã kho (A-Z)" }
+  ["date_asc", "Ngày hẹn gần nhất"],
+  ["date_desc", "Ngày hẹn xa nhất"],
+  ["newest_created", "Mới giao lên đầu"],
+  ["unit_asc", "Theo mã kho (A-Z)"],
 ];
 
 const TASK_STATUS_FILTERS = [
-  { value: "all", label: "Tất cả trạng thái" },
-  { value: "Scheduled", label: "Chờ thực hiện" },
-  { value: "In Progress", label: "Đang làm" },
-  { value: "Completed", label: "Đã hoàn thành" }
+  ["", "Tất cả trạng thái"],
+  ["Scheduled", "Chờ thực hiện"],
+  ["In Progress", "Đang làm"],
+  ["Completed", "Đã hoàn thành"],
 ];
 
 const TASK_TYPE_FILTERS = [
-  { value: "all", label: "Tất cả loại việc" },
-  { value: "Move In", label: "Nhận kho" },
-  { value: "Move Out", label: "Trả kho" },
-  { value: "Inspection", label: "Kiểm tra" }
+  ["", "Tất cả loại việc"],
+  ["Move In", "Nhận kho"],
+  ["Move Out", "Trả kho"],
+  ["Inspection", "Kiểm tra"],
 ];
 
 // Trạng thái kho KHÔNG được bàn giao (khớp HandoverService.HandoverReadyUnitStatuses ở backend)
@@ -796,8 +796,8 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   const [unitStatus, setUnitStatus] = useState("");
   const [unitSort, setUnitSort] = useState("newest");
   const [taskQuery, setTaskQuery] = useState("");
-  const [taskStatusFilter, setTaskStatusFilter] = useState("all");
-  const [taskTypeFilter, setTaskTypeFilter] = useState("all");
+  const [taskStatusFilter, setTaskStatusFilter] = useState("");
+  const [taskTypeFilter, setTaskTypeFilter] = useState("");
   const [taskSort, setTaskSort] = useState("date_asc");
   const [selectedTask, setSelectedTask] = useState(null);
   const dialog = useDialog();
@@ -847,14 +847,20 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   });
   // Bàn giao kho: danh sách nhỏ (đơn giao cho mình) -> chia trang ở frontend
   const handoverPaging = useClientPaging(handoverVisible, { pageSize: 10, resetKey: `${dayFilter}|${query}` });
-  const pendingTasks = (db.staffTasks || []).filter((t) => t.facilityName === staff.facilityId && t.status !== "Completed" && t.status !== "Cancelled").length;
+  const pendingTasks = (db.staffTasks || []).filter((t) =>
+    (t.facilityName === staff.facilityId || (facility?.facilityId != null && Number(t.facilityId) === Number(facility.facilityId))) &&
+    t.status !== "Completed" && t.status !== "Cancelled"
+  ).length;
 
   const selected = mine.find((r) => r.id === selectedId) || allList.items.find((r) => r.id === selectedId) || null;
 
   const actions = { handover: (id, access) => onHandover(id, access), confirm: (id) => onConfirm(id) };
 
   // [STAFF-TOOLS] Việc được giao tại cơ sở đang chọn (tải cùng state, xem StaffPortal.loadState)
-  const rawTasks = (db.staffTasks || []).filter((t) => t.facilityName === staff.facilityId);
+  const rawTasks = (db.staffTasks || []).filter((t) =>
+    t.facilityName === staff.facilityId ||
+    (facility?.facilityId != null && Number(t.facilityId) === Number(facility.facilityId))
+  );
   const tasksError = db.staffTasksError || "";
 
   const filteredTasks = useMemo(() => {
@@ -869,10 +875,10 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
         (t.customerEmail || "").toLowerCase().includes(q)
       );
     }
-    if (taskStatusFilter !== "all") {
+    if (taskStatusFilter && taskStatusFilter !== "all") {
       list = list.filter((t) => t.status === taskStatusFilter);
     }
-    if (taskTypeFilter !== "all") {
+    if (taskTypeFilter && taskTypeFilter !== "all") {
       list = list.filter((t) => t.taskType === taskTypeFilter);
     }
     return [...list].sort((a, b) => {
