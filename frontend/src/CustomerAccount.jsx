@@ -182,9 +182,10 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
      - Có hợp đồng chưa ký -> Ký hợp đồng (trỏ sang Hợp đồng & mở luồng ký)
      - Có tiền thuê / phí trễ đến hạn -> Đóng tiền thuê (trỏ sang Thanh toán)
      - Đang thuê -> Xem hợp đồng, Gia hạn, Báo trả kho */
-  const renderUnitActions = (rental, { stopProp = false } = {}) => {
+  const renderUnitActions = (rental, { stopProp = false, closeDetail = false } = {}) => {
     const wrap = fn => event => {
       if (stopProp) event.stopPropagation()
+      if (closeDetail) setSelectedRental(null)
       fn()
     }
     const needDeposit = rental.status === 'Pending Deposit' && rental.paymentStatus !== 'Completed'
@@ -368,7 +369,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
           ]}
           getCreatedAt={rental => rental.createdAt}
           onRowClick={rental => setSelectedRental(rental)}
-          caption="Bấm vào một dòng để xem chi tiết kho, hoặc dùng cột 'Tác vụ nhanh' để đóng phí, ký hợp đồng, gia hạn, trả kho."
+          caption="Bấm vào một dòng để xem chi tiết kho và thực hiện các tác vụ (ký hợp đồng, gia hạn, trả kho, đóng phí)."
           toolbarExtra={(
             <div className="dg-view-toggle" role="group" aria-label="Kiểu hiển thị">
               <button type="button" className="active" aria-pressed="true">Bảng</button>
@@ -421,11 +422,6 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
               label: 'Trạng thái',
               sortValue: rental => rental.statusLabel,
               render: rental => <span className={`dg-pill dg-pill-wrap ${RENTAL_STATUS_TONES[rental.status] || 'info'}`}>{rental.statusLabel}</span>
-            },
-            {
-              key: 'actions',
-              label: 'Tác vụ nhanh',
-              render: rental => renderUnitActions(rental, { stopProp: true })
             }
           ]}
         />
@@ -518,8 +514,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
 
               </div>
 
-              <div className="storage-actions" style={{ flexWrap: 'wrap', gap: 10 }}>
-
+              <div className="storage-actions">
                 <button
                   type="button"
                   className="dashboard-primary-btn"
@@ -527,9 +522,6 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
                 >
                   Xem chi tiết kho
                 </button>
-
-                {renderUnitActions(rental)}
-
               </div>
 
             </div>
@@ -740,7 +732,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
             <section style={{ marginTop: 24 }}>
               <h3>Tác vụ liên quan đến kho này</h3>
               <div style={{ marginTop: 12 }}>
-                {renderUnitActions(selectedRental)}
+                {renderUnitActions(selectedRental, { closeDetail: true })}
               </div>
             </section>
 
