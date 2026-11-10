@@ -10,35 +10,24 @@ public class EmailController : ControllerBase
 {
     private readonly IEmailService _emailService;
     private readonly ILogger<EmailController> _logger;
+    private readonly IWebHostEnvironment _environment;
 
-    public EmailController(IEmailService emailService, ILogger<EmailController> logger)
+    public EmailController(IEmailService emailService, ILogger<EmailController> logger, IWebHostEnvironment environment)
     {
         _emailService = emailService;
         _logger = logger;
+        _environment = environment;
     }
 
-    /// <summary>
-    /// Gửi mã xác thực OTP qua Gmail SMTP.
-    /// </summary>
-    [HttpPost("send-otp")]
-    public async Task<IActionResult> SendOtp([FromBody] SendOtpEmailRequest request, CancellationToken ct)
+    /* Email người đang đăng nhập (JwtIdentityMiddleware ghi từ token vào X-User-Email). */
+    private string? CurrentUserEmail()
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
-        try
-        {
-            await _emailService.SendOtpEmailAsync(request.Email, request.FullName, request.Otp, ct);
-            return Ok(new { success = true, message = $"Đã gửi mã OTP đến {request.Email}" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Lỗi gửi mã OTP qua Gmail SMTP đến {Email}", request.Email);
-            return StatusCode(500, new { success = false, message = ex.Message });
-        }
+        var email = Request.Headers[SelfStorageAPI.Middleware.JwtIdentityMiddleware.UserEmailHeader].ToString().Trim();
+        return email.Length == 0 ? null : email;
     }
+
+    // [ĐÃ BỎ] POST /api/email/send-otp: trình duyệt tự tạo mã rồi nhờ backend gửi -> ai cũng gửi được mã bất kỳ tới email bất kỳ.
+    // OTP đăng ký giờ do backend tạo và gửi: POST /api/auth/register/start (RegistrationOtpService).
 
     /// <summary>
     /// Gửi bản hợp đồng thuê kho qua Gmail SMTP.
@@ -50,6 +39,13 @@ public class EmailController : ControllerBase
         {
             return BadRequest(ModelState);
         }
+
+        // Chỉ gửi hợp đồng về email của chính người đang đăng nhập (không cho gửi thư tùy ý tới người khác).
+        var me = CurrentUserEmail();
+        if (me is null)
+            return Unauthorized(new { success = false, message = "Vui lòng đăng nhập để gửi hợp đồng." });
+        if (!string.Equals(me, request.ToEmail.Trim(), StringComparison.OrdinalIgnoreCase))
+            return StatusCode(403, new { success = false, message = "Chỉ gửi được hợp đồng về email của tài khoản đang đăng nhập." });
 
         try
         {
@@ -75,6 +71,10 @@ public class EmailController : ControllerBase
     [HttpPost("test")]
     public async Task<IActionResult> TestEmail([FromBody] TestEmailRequest request, CancellationToken ct)
     {
+        // Chỉ dùng khi chạy Development để kiểm tra cấu hình SMTP.
+        if (!_environment.IsDevelopment())
+            return NotFound();
+
         if (!ModelState.IsValid)
         {
             return BadRequest(ModelState);

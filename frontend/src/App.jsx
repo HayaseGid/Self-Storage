@@ -40,7 +40,8 @@ import {
   withNext
 } from './bookingDraft'
 import CustomerDashboard from './CustomerAccount'
-import { generateOTP, sendOTPEmail, OTP_EXPIRES_MS, OTP_RESEND_MS, OTP_MAX_ATTEMPTS } from './otpService'
+import { startRegistration, resendRegistrationOtp, verifyRegistrationOtp } from './otpService'
+import HandoverChoice, { HANDOVER_METHODS, ONLINE_HANDOVER_NOTE, handoverChoiceError, slotLabel } from './HandoverChoice'
 
 import StaffPortal from './FacilityStaffAccount'
 //Đã thêm: 04/10/2026
@@ -907,6 +908,8 @@ function BookingPage({ facility, unit }) {
 
   const [duration, setDuration] = useState(restoredForm?.duration || RENTAL_TERMS[0])
   const [paymentMode, setPaymentMode] = useState(restoredForm?.paymentMode || 'cycle')
+  const [handoverMethod, setHandoverMethod] = useState(HANDOVER_METHODS.InPerson) // 'InPerson' | 'Online'
+  const [appointmentSlot, setAppointmentSlot] = useState('') // '08:00' | '10:00' | '12:00' | '14:00'
   const [paymentCycle, setPaymentCycle] = useState(restoredForm?.paymentCycle || 1)
   const [showRestoredNote, setShowRestoredNote] = useState(Boolean(restoredForm?.restored || restoredForm?.pastDate))
 
@@ -1091,6 +1094,12 @@ function BookingPage({ facility, unit }) {
       return
     }
 
+    const handoverError = handoverChoiceError(handoverMethod, appointmentSlot, startDate)
+    if (handoverError) {
+      await showBookingError(handoverError, 'Chưa chọn khung giờ nhận kho', 'warning')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const startDateValue = toApiDate(startDate)
@@ -1128,7 +1137,9 @@ function BookingPage({ facility, unit }) {
         startDate: startDateValue,
         months: totalMonths,
         // Khớp CK_Reservation_PaymentPlan: trả theo tháng / trả 1 lần (tiền thuê đóng sau khi nhận kho)
-        paymentPlan: paymentMode === 'full' ? 'Upfront' : 'Monthly'
+        paymentPlan: paymentMode === 'full' ? 'Upfront' : 'Monthly',
+        handoverMethod,
+        appointmentSlot: handoverMethod === HANDOVER_METHODS.Online ? null : appointmentSlot
       })
       const reservationId = reservation.reservationId
       const bookingData = {
@@ -1464,6 +1475,14 @@ function BookingPage({ facility, unit }) {
                   </div>
                 </div>
 
+                <HandoverChoice
+                  method={handoverMethod}
+                  onMethodChange={setHandoverMethod}
+                  slot={appointmentSlot}
+                  onSlotChange={setAppointmentSlot}
+                  startDate={startDate}
+                />
+
                 <div className="booking-price-breakdown">
                   <div>
                     <span>Giá thuê / tháng</span>
@@ -1521,7 +1540,9 @@ function BookingPage({ facility, unit }) {
                       Bước 2: đặt cọc xong, kho được giữ cho bạn và bạn ký hợp đồng online ngay.
                     </p>
                     <p>
-                      Bước 3: cơ sở phân nhân viên bàn giao, bạn đến nhận kho và chìa khóa vào ngày bắt đầu.
+                      {handoverMethod === HANDOVER_METHODS.Online
+                        ? `Bước 3: ngày bắt đầu, nhân viên bàn giao online. ${ONLINE_HANDOVER_NOTE}`
+                        : `Bước 3: cơ sở phân nhân viên bàn giao, bạn đến nhận kho và chìa khóa vào ngày bắt đầu${appointmentSlot ? ` (khung ${slotLabel(appointmentSlot)})` : ''}.`}
                     </p>
                     <p>
                       Bước 4: thanh toán tiền thuê theo hình thức đã chọn.
@@ -1997,25 +2018,20 @@ function RegisterPage() {
         throw new Error('Mật khẩu xác nhận không khớp.')
       }
 
-      const newOtp = generateOTP()
-      await sendOTPEmail(trimmedEmail, newOtp, fullName)
-
-      const expiresAt = Date.now() + OTP_EXPIRES_MS
-      const resendAvailableAt = Date.now() + OTP_RESEND_MS
-
-      sessionStorage.setItem('storespace_register_pending', JSON.stringify({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+      // Backend lưu thông tin đăng ký (mật khẩu đã băm), tạo mã OTP và gửi email.
+      // Trình duyệt chỉ giữ email + thời hạn để đếm ngược, KHÔNG giữ mật khẩu hay mã OTP.
+      const { expiresAt, resendAvailableAt } = await startRegistration({
         fullName,
-        gender: gender || null,
-        dateOfBirth: birthDate || null,
-        phoneNumber: phoneNumber.trim() || null,
         email: trimmedEmail,
         password,
-        otp: newOtp,
+        phoneNumber: phoneNumber.trim() || null
+      })
+
+      sessionStorage.setItem('storespace_register_pending', JSON.stringify({
+        fullName,
+        email: trimmedEmail,
         expiresAt,
         resendAvailableAt,
-        attempts: 0,
         nextPath: nextPath || ''
       }))
 
@@ -2156,35 +2172,11 @@ function VerifyOtpPage() {
       setError('Mã OTP đã hết hạn. Vui lòng gửi lại mã mới.')
       return
     }
-    if (Number(pending.attempts || 0) >= OTP_MAX_ATTEMPTS) {
-      setError('Bạn đã nhập sai OTP quá số lần cho phép. Vui lòng gửi lại mã mới.')
-      return
-    }
-
-    if (normalizedOtp !== pending.otp) {
-      const attempts = Number(pending.attempts || 0) + 1
-      const updated = { ...pending, attempts }
-      sessionStorage.setItem('storespace_register_pending', JSON.stringify(updated))
-      setPending(updated)
-      setError(
-        attempts >= OTP_MAX_ATTEMPTS
-          ? 'OTP không đúng. Bạn đã hết số lần thử, hãy gửi lại mã mới.'
-          : `OTP không đúng. Bạn còn ${OTP_MAX_ATTEMPTS - attempts} lần thử.`
-      )
-      return
-    }
 
     setIsSubmitting(true)
     try {
-      await apiPost('/api/auth/register', {
-        fullName: pending.fullName,
-        email: pending.email,
-        password: pending.password,
-        phoneNumber: pending.phoneNumber,
-        gender: pending.gender,
-        dateOfBirth: pending.dateOfBirth,
-        roleName: 'Storage Customer'
-      })
+      // Backend so mã, đếm số lần sai và tạo tài khoản khi đúng mã.
+      await verifyRegistrationOtp(pending.email, normalizedOtp)
 
       clearPending()
       setSuccess('Xác thực email thành công. Tài khoản đã được tạo. Đang chuyển sang trang đăng nhập...')
@@ -2207,16 +2199,9 @@ function VerifyOtpPage() {
     setIsSubmitting(true)
 
     try {
-      const newOtp = generateOTP()
-      await sendOTPEmail(pending.email, newOtp, pending.fullName)
+      const { expiresAt, resendAvailableAt } = await resendRegistrationOtp(pending.email)
 
-      const updated = {
-        ...pending,
-        otp: newOtp,
-        expiresAt: Date.now() + OTP_EXPIRES_MS,
-        resendAvailableAt: Date.now() + OTP_RESEND_MS,
-        attempts: 0
-      }
+      const updated = { ...pending, expiresAt, resendAvailableAt }
 
       sessionStorage.setItem('storespace_register_pending', JSON.stringify(updated))
       setPending(updated)

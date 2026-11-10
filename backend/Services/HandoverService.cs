@@ -34,10 +34,14 @@ public class HandoverService : IHandoverService
     private const string MoveIn = "Move In";
 
     private readonly IHandoverRepository _handoverRepository;
+    private readonly IEmailService _email;
+    private readonly ILogger<HandoverService> _logger;
 
-    public HandoverService(IHandoverRepository handoverRepository)
+    public HandoverService(IHandoverRepository handoverRepository, IEmailService email, ILogger<HandoverService> logger)
     {
         _handoverRepository = handoverRepository;
+        _email = email;
+        _logger = logger;
     }
 
     public async Task<HandoverServiceResponse> CompleteHandoverAsync(CompleteHandoverDTO request, string? staffEmail, CancellationToken cancellationToken)
@@ -62,7 +66,9 @@ public class HandoverService : IHandoverService
         if (staff == null)
             return Fail(403, "Chỉ tài khoản Facility Staff đang hoạt động mới được bàn giao kho.");
 
-        return await _handoverRepository.ExecuteInTransactionAsync(async () =>
+        (string Email, string Name, string Code, string Facility, string Units)? onlineNotice = null;
+
+        var result = await _handoverRepository.ExecuteInTransactionAsync(async () =>
         {
             var reservation = await _handoverRepository.GetReservationForHandoverAsync(request.ReservationID, cancellationToken);
             if (reservation == null)
@@ -179,6 +185,13 @@ public class HandoverService : IHandoverService
 
             await _handoverRepository.SaveChangesAsync(cancellationToken);
 
+            // Bàn giao online: báo khách xem mã truy cập trong tài khoản và lên lễ tân nhận chìa (gửi sau khi lưu xong)
+            if (reservation.HandoverMethod == HandoverMethod.Online && reservation.Customer is not null)
+            {
+                onlineNotice = (reservation.Customer.Email, reservation.Customer.FullName, reservation.ReservationCode,
+                    reservation.Facility?.FacilityName ?? "", string.Join(", ", heldUnits.Select(ru => ru.Unit.UnitNumber)));
+            }
+
             var responseData = new
             {
                 message = $"Bàn giao thành công {heldUnits.Count} kho. Hợp đồng {contract.ContractNumber} đã có hiệu lực.",
@@ -190,6 +203,33 @@ public class HandoverService : IHandoverService
 
             return new HandoverServiceResponse(true, null, 200, responseData);
         }, cancellationToken);
+
+        if (result.IsSuccess && onlineNotice is { } n)
+            await SendOnlineHandoverEmailAsync(n.Email, n.Name, n.Code, n.Facility, n.Units);
+        return result;
+    }
+
+    private async Task SendOnlineHandoverEmailAsync(string email, string name, string code, string facility, string units)
+    {
+        static string E(string value) => System.Net.WebUtility.HtmlEncode(value);
+        var html = $@"
+<div style=""font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;color:#1e293b"">
+  <h2 style=""margin:0 0 8px;color:#073d70"">Kho của bạn đã được bàn giao</h2>
+  <p>Xin chào <strong>{E(name)}</strong>, đơn <strong>{E(code)}</strong> (kho {E(units)}) tại {E(facility)} đã được bàn giao online.</p>
+  <ul style=""line-height:1.7"">
+    <li><strong>Mã truy cập</strong>: xem trong tài khoản StoreSpace, mục Kho của tôi.</li>
+    <li><strong>Chìa khóa</strong>: nhận tại <strong>quầy lễ tân</strong> của cơ sở. Vui lòng mang theo CCCD và báo mã đơn {E(code)}.</li>
+  </ul>
+  <p style=""font-size:12px;color:#94a3b8"">Email được gửi tự động từ hệ thống StoreSpace. Mã truy cập không được ghi trong email để đảm bảo an toàn.</p>
+</div>";
+        try
+        {
+            await _email.SendRawEmailAsync(email, $"[StoreSpace] Đơn {code} đã bàn giao online — nhận chìa tại lễ tân", html, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Không gửi được email bàn giao online cho đơn {Code}", code);
+        }
     }
 
     private static string DescribeUnitStatus(string status) => status switch

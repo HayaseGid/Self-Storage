@@ -26,6 +26,35 @@ public static class StaffAssignmentPolicy
     public static readonly TimeSpan[] ReturnSlots =
         Enumerable.Range(8, 9).Select(h => TimeSpan.FromHours(h)).ToArray(); // 08:00 ... 16:00
 
+    /// <summary>
+    /// Khung giờ NHẬN KHO khách được chọn (giờ VN), mỗi khung 2 tiếng: 8–10, 10–12, 12–14, 14–16.
+    /// Lưu giờ bắt đầu khung vào Reservation.AppointmentTime. Hai đơn cùng khung trùng giờ (cách nhau 0 phút),
+    /// hai khung liền nhau cách 120 phút nên không trùng -> mỗi nhân viên nhận tối đa 1 đơn / khung, 4 đơn / ngày.
+    /// </summary>
+    public static readonly TimeSpan[] MoveInSlots =
+        { TimeSpan.FromHours(8), TimeSpan.FromHours(10), TimeSpan.FromHours(12), TimeSpan.FromHours(14) };
+
+    public static readonly TimeSpan MoveInSlotLength = TimeSpan.FromHours(2);
+
+    /// <summary>"08:00–10:00" nếu là khung nhận kho, "09:30" nếu là giờ lẻ (dữ liệu cũ), null nếu không có giờ.</summary>
+    public static string? SlotLabel(TimeSpan? time)
+    {
+        if (time is null) return null;
+        return MoveInSlots.Contains(time.Value)
+            ? $"{time.Value:hh\\:mm}–{time.Value.Add(MoveInSlotLength):hh\\:mm}"
+            : time.Value.ToString(@"hh\:mm");
+    }
+
+    /// <summary>Đọc khung giờ client gửi ("08:00", "8", "08:00-10:00"). null = không phải khung hợp lệ.</summary>
+    public static TimeSpan? ParseMoveInSlot(string? value)
+    {
+        var raw = (value ?? string.Empty).Trim();
+        var dash = raw.IndexOfAny(new[] { '-', '–' });
+        if (dash > 0) raw = raw[..dash].Trim();
+        if (int.TryParse(raw, out var hour)) raw = $"{hour}:00";
+        return TimeSpan.TryParse(raw, out var parsed) && MoveInSlots.Contains(parsed) ? parsed : null;
+    }
+
     public sealed record Slot(int StaffId, DateTime Date, TimeSpan? Time, string Key);
 
     public sealed record Candidate(int UserId, string FullName);

@@ -148,8 +148,13 @@ public class StaffToolsService : IStaffToolsService
             reservationId = t.ReservationID,
             reservationCode = t.Reservation?.ReservationCode,
             customerName = t.Reservation?.Customer?.FullName,
+            // Liên hệ khách để nhân viên chủ động gọi trước / bàn thêm về lịch nhận kho (4.1)
+            customerPhone = t.Reservation?.Customer?.PhoneNumber,
+            customerEmail = t.Reservation?.Customer?.Email,
+            handoverMethod = t.Reservation?.HandoverMethod,
             scheduledDate = t.ScheduledDate?.ToString("yyyy-MM-dd"),
             scheduledTime = t.ScheduledTime?.ToString(@"hh\:mm"),
+            scheduledSlot = StaffAssignmentPolicy.SlotLabel(t.ScheduledTime),
             actualAt = t.ActualAt,
             notes = t.UnitConditionNotes,
             conditionResult = t.ConditionResult,

@@ -19,10 +19,14 @@ public class ManagerToolsService : IManagerToolsService
     private static readonly string[] ChargeTypes = { "Deposit", "Rent", "Renewal", "LateFee", "ExtraFee" };
 
     private readonly IManagerToolsRepository _repo;
+    private readonly IEmailService _email;
+    private readonly ILogger<ManagerToolsService> _logger;
 
-    public ManagerToolsService(IManagerToolsRepository repo)
+    public ManagerToolsService(IManagerToolsRepository repo, IEmailService email, ILogger<ManagerToolsService> logger)
     {
         _repo = repo;
+        _email = email;
+        _logger = logger;
     }
 
     /* =====================================================================
@@ -460,6 +464,7 @@ public class ManagerToolsService : IManagerToolsService
         var assigned = new List<object>();
         var unassigned = new List<object>();
         var newTasks = 0;
+        var staffNotices = new List<MoveInStaffNotifier.Notice>(); // email báo nhân viên sau khi lưu xong
 
         foreach (var plan in plans)
         {
@@ -496,6 +501,15 @@ public class ManagerToolsService : IManagerToolsService
             }
 
             slots.Add(new StaffAssignmentPolicy.Slot(pick.UserId, plan.Date, plan.Time, $"R{r.ReservationID}"));
+            var staffUser = staff.FirstOrDefault(s => s.UserID == pick.UserId);
+            if (plan.TaskType == MoveIn && staffUser is not null && r.Customer is not null)
+            {
+                staffNotices.Add(new MoveInStaffNotifier.Notice(
+                    staffUser.Email, staffUser.FullName, r.ReservationCode, r.Facility?.FacilityName ?? "",
+                    plan.Units.Select(u => u.Unit?.UnitNumber ?? $"#{u.UnitID}").ToList(),
+                    plan.Date, plan.Time, r.HandoverMethod,
+                    r.Customer.FullName, r.Customer.PhoneNumber, r.Customer.Email));
+            }
             assigned.Add(new
             {
                 reservationId = r.ReservationID,
@@ -514,12 +528,16 @@ public class ManagerToolsService : IManagerToolsService
 
         try
         {
-            return await _repo.ExecuteInTransactionAsync(async () =>
+            var result = await _repo.ExecuteInTransactionAsync(async () =>
             {
                 await _repo.SetAuditContextAsync(user!.UserID, "ManagerTools.AutoAssign", cancellationToken);
                 await _repo.SaveChangesAsync(cancellationToken);
                 return Ok(new { assigned, unassigned, message = $"Đã tự phân công {assigned.Count} đơn." });
             }, cancellationToken);
+
+            // Đã lưu xong mới gửi email (không gửi thông báo cho việc chưa được ghi nhận)
+            await MoveInStaffNotifier.SendAsync(_email, _logger, staffNotices, CancellationToken.None);
+            return result;
         }
         catch (DbUpdateException ex)
         {

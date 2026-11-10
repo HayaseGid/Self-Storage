@@ -775,6 +775,7 @@ public class OperationsStateRepository : IOperationsStateRepository
                 r.DepositMonths,
                 r.AppointmentDate,
                 r.AppointmentTime,
+                r.HandoverMethod,
                 Deposit = r.Charges
                     .Where(c => c.ChargeType == "Deposit" && c.Status != "Cancelled")
                     .Sum(c => (decimal?)c.Amount) ?? 0m,
@@ -827,7 +828,10 @@ public class OperationsStateRepository : IOperationsStateRepository
             months = r.RentalPeriod,
             depositMonths = r.DepositMonths,
             appointmentDate = r.AppointmentDate ?? r.StartDate,
-            appointmentTime = r.AppointmentTime.HasValue ? r.AppointmentTime.Value.ToString(@"hh\:mm") : "Cả ngày",
+            // Khung giờ nhận kho "08:00–10:00"; bàn giao online không hẹn giờ
+            appointmentTime = StaffAssignmentPolicy.SlotLabel(r.AppointmentTime)
+                ?? (r.HandoverMethod == HandoverMethod.Online ? "Bàn giao online" : "Cả ngày"),
+            handoverMethod = r.HandoverMethod,
             deposit = r.Deposit,
             rentalFee = r.RentalFee,
             paymentPlan = r.PaymentPlan,
