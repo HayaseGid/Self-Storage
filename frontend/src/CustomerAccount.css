@@ -1,184 +1,193 @@
 /* ============================================================
- * CUSTOMER PORTAL REFINEMENTS (StoreSpace Design System)
- * Tách biệt rõ ý nghĩa từng Tab & làm nổi bật thông tin trọng tâm
+ * CUSTOMER PORTAL REFINEMENTS (StoreSpace Impeccable Design)
+ * Chuẩn mực UI/UX trang thuê kho tự quản thực tế:
+ * - Nền mờ hiện đại & dịu mắt (Clean Slate Blue Neutral #f4f7fb)
+ * - Typography phân cấp chuẩn xác, font Be Vietnam Pro rõ ràng
+ * - Thẻ kho, mã truy cập, thẻ hợp đồng chuyên nghiệp
  * ============================================================ */
 
+:root {
+  --cp-bg: #f4f7fb;
+  --cp-card: #ffffff;
+  --cp-brand: #075a9f;
+  --cp-brand-dark: #073d70;
+  --cp-brand-light: #edf6ff;
+  --cp-text-main: #0c2d48;
+  --cp-text-sub: #4b6884;
+  --cp-text-muted: #728a9f;
+  --cp-border: #dbe7f2;
+  --cp-border-subtle: #e8f0f8;
+  --cp-shadow-sm: 0 2px 8px rgba(7, 45, 90, 0.04);
+  --cp-shadow-md: 0 8px 24px rgba(7, 45, 90, 0.06);
+  --cp-shadow-lg: 0 16px 40px rgba(7, 45, 90, 0.1);
+}
+
+/* Nền toàn trang khách hàng: chuyển từ nền trắng sáng/chói sang nền trung tính dịu mắt, sạch sẽ */
+.customer-layout {
+  background-color: var(--cp-bg) !important;
+  font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  color: var(--cp-text-main);
+  min-height: 100vh;
+}
+
+/* SIDEBAR: Thiết kế nổi bật, phân nhóm chuyên nghiệp */
 .cportal-sidebar {
-  width: 268px !important;
-  padding: 22px 16px !important;
+  width: 275px !important;
+  padding: 24px 16px !important;
+  background: #ffffff !important;
+  border-right: 1px solid var(--cp-border) !important;
+  border-radius: 0 24px 24px 0 !important;
+  box-shadow: 4px 0 24px rgba(11, 45, 80, 0.03) !important;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
 .cportal-main {
-  margin-left: 308px;
+  margin-left: 315px;
+  padding: 40px 48px 80px 24px !important;
+  max-width: 1400px;
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1180px) {
   .cportal-sidebar {
     width: 100% !important;
+    border-radius: 0 !important;
+    position: static !important;
   }
   .cportal-main {
-    margin-left: 0;
+    margin-left: 0 !important;
+    padding: 24px 20px 60px !important;
   }
 }
 
+/* Brand header trên sidebar */
 .cportal-brand {
   cursor: pointer;
-  padding: 0 8px 18px !important;
+  padding: 4px 10px 18px !important;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--cp-border-subtle) !important;
 }
 
+.cportal-brand .brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #075a9f, #043864);
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  font-weight: 900;
+  box-shadow: 0 4px 14px rgba(7, 90, 159, 0.28);
+}
+
+.cportal-brand strong {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--cp-brand-dark);
+}
+
+.cportal-brand small {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cp-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Thông tin khách hàng nhỏ trên Sidebar */
 .cportal-profile-mini {
-  padding: 14px 10px !important;
-  margin-bottom: 6px;
+  padding: 12px 14px !important;
+  margin: 12px 0 6px !important;
   border-radius: 14px;
-  background: #f4f8fc;
-  border: 1px solid #e2ecf6;
+  background: #f8fbff;
+  border: 1px solid #e2edf7;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
+.cportal-profile-mini .customer-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--cp-brand);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 8px rgba(7, 90, 159, 0.25);
+}
+
+.cportal-profile-mini strong {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--cp-text-main);
+  display: block;
+}
+
+.cportal-profile-mini small {
+  font-size: 11px;
+  font-weight: 600;
+  color: #2b79b5;
+  display: block;
+}
+
+/* Nhóm menu */
 .cportal-nav-group-label {
-  padding: 10px 10px 4px;
+  padding: 14px 10px 6px;
   font-size: 10.5px;
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #647f99;
+  color: #7b94a8;
 }
 
+/* Các nút điều hướng */
 .cportal-nav-btn {
   height: auto !important;
-  min-height: 52px !important;
+  min-height: 50px !important;
   padding: 9px 12px !important;
-  border-radius: 13px !important;
+  border-radius: 12px !important;
   align-items: center !important;
-  gap: 11px !important;
+  gap: 12px !important;
   text-align: left;
-  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: var(--cp-text-main) !important;
+  cursor: pointer;
+  transition: all 0.16s ease-in-out;
+}
+
+.cportal-nav-btn:hover {
+  background: #f1f6fb !important;
+  border-color: #e0ecf7 !important;
+}
+
+.cportal-nav-btn.active {
+  background: var(--cp-brand-dark) !important;
+  color: #ffffff !important;
+  box-shadow: 0 6px 18px rgba(7, 61, 112, 0.22) !important;
 }
 
 .cportal-nav-icon {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: #eff5fb;
-  color: #1e4e79;
+  background: #edf5fc;
+  color: var(--cp-brand);
   display: grid;
   place-items: center;
   flex: none;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: all 0.16s ease;
 }
 
 .cportal-nav-icon svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.cportal-nav-btn.active .cportal-nav-icon {
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
-}
-
-.cportal-nav-copy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-  line-height: 1.25;
-}
-
-.cportal-nav-copy strong {
-  font-size: 13.5px;
-  font-weight: 800;
-  color: inherit;
-}
-
-.cportal-nav-copy small {
-  font-size: 11px;
-  font-weight: 500;
-  color: #6b849c;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 2px;
-}
-
-.cportal-nav-btn.active .cportal-nav-copy small {
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.cportal-cta-book {
-  margin-top: 8px;
-  padding: 10px 12px !important;
-  border-radius: 13px !important;
-  background: #edf6ff !important;
-  border: 1.5px dashed #8ec2f2 !important;
-  color: #074c87 !important;
-}
-
-.cportal-cta-book:hover {
-  background: #dfeeff !important;
-  border-style: solid !important;
-}
-
-/* Thanh định vị các Tab ngang ở đầu trang (giúp khách nhìn thấy ngay mọi khu vực) */
-.cportal-tab-switcher {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 22px;
-}
-
-@media (max-width: 900px) {
-  .cportal-tab-switcher {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.cportal-tab-pill {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-  padding: 13px 14px;
-  border-radius: 14px;
-  border: 1.5px solid #dde8f3;
-  background: #ffffff;
-  color: #0b3967;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
-}
-
-.cportal-tab-pill:hover {
-  border-color: #8ec2f2;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(7, 45, 90, 0.06);
-}
-
-.cportal-tab-pill.active {
-  background: #073d70;
-  border-color: #073d70;
-  color: #ffffff;
-  box-shadow: 0 10px 24px rgba(7, 61, 112, 0.18);
-}
-
-.cportal-tab-pill-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: #edf6ff;
-  color: #075a9f;
-  display: grid;
-  place-items: center;
-  flex: none;
-}
-
-.cportal-tab-pill-icon svg {
   width: 18px;
   height: 18px;
   fill: none;
@@ -188,8 +197,147 @@
   stroke-linejoin: round;
 }
 
-.cportal-tab-pill.active .cportal-tab-pill-icon {
+.cportal-nav-btn.active .cportal-nav-icon {
   background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.cportal-nav-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.3;
+}
+
+.cportal-nav-copy strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.cportal-nav-copy small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--cp-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.cportal-nav-btn.active .cportal-nav-copy small {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Nút CTA "+ Đặt thuê kho mới" */
+.cportal-cta-book {
+  margin-top: 6px;
+  padding: 10px 12px !important;
+  border-radius: 12px !important;
+  background: #eef6fd !important;
+  border: 1.5px dashed #9bc3e8 !important;
+  color: #054f8f !important;
+}
+
+.cportal-cta-book:hover {
+  background: #e2effa !important;
+  border-style: solid !important;
+  border-color: #075a9f !important;
+}
+
+/* TOPBAR KHÁCH HÀNG */
+.customer-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.customer-topbar h1 {
+  font-size: 26px !important;
+  font-weight: 800 !important;
+  color: var(--cp-brand-dark) !important;
+  margin: 4px 0 !important;
+  letter-spacing: -0.02em;
+}
+
+.customer-topbar p {
+  color: var(--cp-text-sub) !important;
+  font-size: 13.5px !important;
+  margin: 0 !important;
+}
+
+.customer-eyebrow {
+  color: var(--cp-brand) !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase;
+}
+
+/* Thanh định vị 4 Tab ngang cao cấp */
+.cportal-tab-switcher {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 960px) {
+  .cportal-tab-switcher {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cportal-tab-pill {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #dbe6f0;
+  background: #ffffff;
+  color: var(--cp-text-main);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--cp-shadow-sm);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cportal-tab-pill:hover {
+  border-color: #92bfe6;
+  transform: translateY(-2px);
+  box-shadow: var(--cp-shadow-md);
+}
+
+.cportal-tab-pill.active {
+  background: #ffffff;
+  border-color: var(--cp-brand);
+  box-shadow: 0 0 0 2px rgba(7, 90, 159, 0.18), var(--cp-shadow-md);
+}
+
+.cportal-tab-pill-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: #edf5fc;
+  color: var(--cp-brand);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.cportal-tab-pill-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.cportal-tab-pill.active .cportal-tab-pill-icon {
+  background: var(--cp-brand);
   color: #ffffff;
 }
 
@@ -206,48 +354,45 @@
 }
 
 .cportal-tab-pill-head strong {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 800;
+  color: var(--cp-brand-dark);
 }
 
 .cportal-tab-pill-body p {
   margin: 3px 0 0;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.35;
-  color: #55718c;
+  color: var(--cp-text-sub);
 }
 
-.cportal-tab-pill.active .cportal-tab-pill-body p {
-  color: rgba(255, 255, 255, 0.82);
-}
-
-/* Khung giải thích ý nghĩa của Tab hiện tại */
+/* Banner giải thích ý nghĩa Tab */
 .cportal-purpose-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 14px;
-  padding: 16px 20px;
-  margin-bottom: 20px;
-  border-radius: 16px;
-  background: #edf6ff;
-  border: 1.5px solid #c5dff8;
-  color: #0b3967;
+  padding: 18px 24px;
+  margin-bottom: 24px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #eef6fd 0%, #e2f0fc 100%);
+  border: 1px solid #c8e0f4;
+  box-shadow: var(--cp-shadow-sm);
 }
 
 .cportal-purpose-main h2 {
   margin: 0 0 4px;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 800;
-  color: #073d70;
+  color: var(--cp-brand-dark);
 }
 
 .cportal-purpose-main p {
   margin: 0;
-  font-size: 13px;
-  color: #345675;
-  line-height: 1.45;
+  font-size: 13.5px;
+  color: #295175;
+  line-height: 1.5;
 }
 
 .cportal-purpose-chips {
@@ -257,22 +402,24 @@
 }
 
 .cportal-purpose-chip {
-  padding: 6px 11px;
+  padding: 6px 12px;
   border-radius: 999px;
   background: #ffffff;
   border: 1px solid #bfdcf6;
   font-size: 12px;
   font-weight: 700;
-  color: #074c87;
+  color: var(--cp-brand);
+  box-shadow: 0 1px 4px rgba(7, 90, 159, 0.08);
 }
 
-/* Trung tâm việc cần xử lý ngay (Overview Action Center) */
+/* Trung tâm việc cần làm ngay (Action Center) */
 .cportal-urgent-box {
-  padding: 18px 20px;
-  margin-bottom: 22px;
-  border-radius: 16px;
-  background: #fffbeb;
-  border: 1.5px solid #fcd34d;
+  padding: 20px 22px;
+  margin-bottom: 24px;
+  border-radius: 18px;
+  background: #fffdf5;
+  border: 1.5px solid #fde08a;
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.08);
   display: grid;
   gap: 12px;
 }
@@ -285,15 +432,18 @@
 }
 
 .cportal-urgent-head strong {
-  font-size: 15px;
+  font-size: 15.5px;
   font-weight: 800;
   color: #92400e;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .cportal-urgent-head span {
   font-size: 12px;
   font-weight: 700;
-  padding: 3px 10px;
+  padding: 4px 11px;
   border-radius: 999px;
   background: #fef3c7;
   color: #b45309;
@@ -309,27 +459,82 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
   background: #ffffff;
   border: 1px solid #fde68a;
 }
 
 .cportal-urgent-item div strong {
   display: block;
-  font-size: 13.5px;
-  color: #0b3967;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a3c5a;
 }
 
 .cportal-urgent-item div small {
-  font-size: 12px;
-  color: #55718c;
+  font-size: 12.5px;
+  color: #647f99;
 }
 
-/* Thẻ ra vào kho (Access Pass) ở Tab Kho của tôi */
+/* Thẻ chỉ số tổng quan (Stat cards) */
+.customer-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+@media (max-width: 900px) {
+  .customer-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.customer-stat-card {
+  padding: 22px;
+  background: #ffffff;
+  border: 1px solid var(--cp-border);
+  border-radius: 18px;
+  box-shadow: var(--cp-shadow-sm);
+  transition: all 0.16s ease;
+}
+
+.cportal-stat-clickable:hover {
+  transform: translateY(-2px);
+  border-color: #8bc2ed;
+  box-shadow: var(--cp-shadow-md);
+}
+
+.customer-stat-card small {
+  color: var(--cp-text-sub);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.customer-stat-card strong {
+  color: var(--cp-brand-dark);
+  font-size: 26px;
+  font-weight: 800;
+  margin: 6px 0;
+  display: block;
+  letter-spacing: -0.02em;
+}
+
+.customer-stat-card .stat-note {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cp-brand);
+}
+
+.customer-stat-card .stat-note.warning {
+  color: #d97706;
+}
+
+/* THẺ KHO DANG SỬ DỤNG & MÃ TRUY CẬP (ACCESS PASS) */
 .cportal-access-section {
-  margin-bottom: 24px;
+  margin-bottom: 30px;
 }
 
 .cportal-access-section-head {
@@ -338,34 +543,34 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .cportal-access-section-head h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 800;
-  color: #073d70;
+  color: var(--cp-brand-dark);
 }
 
 .cportal-access-section-head p {
   margin: 0;
-  font-size: 13px;
-  color: #55718c;
+  font-size: 13.5px;
+  color: var(--cp-text-sub);
 }
 
 .cportal-access-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
 }
 
 .cportal-access-card {
-  padding: 18px;
-  border-radius: 16px;
+  padding: 22px;
+  border-radius: 20px;
   background: #ffffff;
-  border: 1.5px solid #d5e5f4;
-  box-shadow: 0 8px 22px rgba(7, 45, 90, 0.06);
+  border: 1.5px solid #d4e5f5;
+  box-shadow: var(--cp-shadow-md);
   display: grid;
   gap: 14px;
 }
@@ -377,104 +582,118 @@
   gap: 10px;
 }
 
-.cportal-access-unit {
-  font-size: 20px;
-  font-weight: 800;
-  color: #073d70;
-  margin: 2px 0;
-}
-
 .cportal-access-facility {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
-  color: #075a9f;
+  color: var(--cp-brand);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
+.cportal-access-unit {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--cp-brand-dark);
+  margin: 2px 0 4px;
+  letter-spacing: -0.01em;
+}
+
+/* Khung hiển thị mã PIN */
 .cportal-access-pin-box {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 12px;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
   background: #f0f7ff;
-  border: 1px solid #bfdcf6;
+  border: 1px solid #bfdaf3;
 }
 
 .cportal-access-pin-box small {
   display: block;
   font-size: 11px;
-  font-weight: 700;
-  color: #4b6884;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #4b6d8c;
   text-transform: uppercase;
 }
 
 .cportal-access-pin-box strong {
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  color: #073d70;
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--cp-brand-dark);
   font-variant-numeric: tabular-nums;
 }
 
 .cportal-copy-btn {
-  padding: 7px 11px;
-  border-radius: 8px;
-  border: 1px solid #b5d5f3;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid #99c7f0;
   background: #ffffff;
-  color: #074c87;
-  font: 700 12px 'Be Vietnam Pro', sans-serif;
+  color: var(--cp-brand);
+  font: 700 12.5px 'Be Vietnam Pro', sans-serif;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .cportal-copy-btn:hover {
-  background: #e3f0fd;
+  background: #e2f0fd;
+  border-color: var(--cp-brand);
 }
 
 .cportal-access-meta {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px 12px;
-  font-size: 12.5px;
+  gap: 10px 14px;
+  font-size: 13px;
+  padding: 4px 0;
 }
 
 .cportal-access-meta div span {
   display: block;
-  color: #647f99;
-  font-size: 11.5px;
+  color: var(--cp-text-muted);
+  font-size: 12px;
+  margin-bottom: 2px;
 }
 
 .cportal-access-meta div strong {
-  color: #0f2942;
+  color: var(--cp-text-main);
   font-weight: 700;
 }
 
 .cportal-access-actions {
   display: flex;
-  gap: 8px;
-  padding-top: 4px;
-  border-top: 1px solid #eef3f8;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #edf3f8;
 }
 
-/* Thanh tiến trình vòng đời hợp đồng (ContractPage) */
+.cportal-access-actions button {
+  flex: 1;
+}
+
+/* TIẾN TRÌNH VÒNG ĐỜI HỢP ĐỒNG (LIFECYCLE) */
 .cportal-lifecycle {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
-@media (max-width: 820px) {
+@media (max-width: 860px) {
   .cportal-lifecycle {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 .cportal-lifecycle-step {
-  padding: 12px 14px;
-  border-radius: 13px;
+  padding: 14px 16px;
+  border-radius: 16px;
   background: #ffffff;
-  border: 1px solid #dde8f3;
+  border: 1px solid var(--cp-border);
+  box-shadow: var(--cp-shadow-sm);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -482,36 +701,36 @@
 }
 
 .cportal-lifecycle-step.has-items {
-  border-color: #93c5fd;
+  border-color: #a4cefa;
   background: #f8fbff;
 }
 
 .cportal-lifecycle-step.urgent {
-  border-color: #fbbf24;
-  background: #fffbeb;
+  border-color: #fcd34d;
+  background: #fffdf5;
 }
 
 .cportal-lifecycle-step div small {
   display: block;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 700;
-  color: #647f99;
+  color: var(--cp-text-muted);
 }
 
 .cportal-lifecycle-step div strong {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 800;
-  color: #073d70;
+  color: var(--cp-brand-dark);
 }
 
 .cportal-lifecycle-count {
-  min-width: 28px;
-  height: 28px;
+  min-width: 30px;
+  height: 30px;
   padding: 0 8px;
   border-radius: 999px;
   background: #edf6ff;
-  color: #075a9f;
-  font-size: 13px;
+  color: var(--cp-brand);
+  font-size: 13.5px;
   font-weight: 800;
   display: grid;
   place-items: center;
@@ -522,38 +741,84 @@
   color: #b45309;
 }
 
+/* Tiêu đề phân khu */
 .cportal-section-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin: 22px 0 12px;
+  margin: 28px 0 14px;
 }
 
 .cportal-section-title h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 800;
-  color: #073d70;
+  color: var(--cp-brand-dark);
 }
 
 .cportal-section-title span {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
-  padding: 4px 10px;
+  padding: 4px 12px;
   border-radius: 999px;
   background: #edf6ff;
-  color: #075a9f;
+  color: var(--cp-brand);
+  border: 1px solid #c7e2fb;
 }
 
-.cportal-stat-clickable {
+/* Các khung hộp chung của Overview (Thanh toán, Hợp đồng, Thao tác nhanh) */
+.overview-panel {
+  background: #ffffff !important;
+  border: 1px solid var(--cp-border) !important;
+  border-radius: 20px !important;
+  box-shadow: var(--cp-shadow-sm) !important;
+  padding: 24px !important;
+}
+
+.overview-rental-card {
+  background: #ffffff !important;
+  border: 1px solid var(--cp-border) !important;
+  border-radius: 20px !important;
+  box-shadow: var(--cp-shadow-sm) !important;
+  padding: 24px !important;
+}
+
+/* Nút bấm StoreSpace chuẩn */
+.dashboard-primary-btn {
+  background: var(--cp-brand) !important;
+  color: #ffffff !important;
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  border-radius: 11px !important;
+  box-shadow: 0 4px 12px rgba(7, 90, 159, 0.22) !important;
+  border: none !important;
   cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: all 0.15s ease;
 }
 
-.cportal-stat-clickable:hover {
-  transform: translateY(-2px);
-  border-color: #8ec2f2;
-  box-shadow: 0 8px 22px rgba(7, 45, 90, 0.08);
+.dashboard-primary-btn:hover {
+  background: var(--cp-brand-dark) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(7, 61, 112, 0.28) !important;
 }
+
+.dashboard-secondary-btn {
+  background: #ffffff !important;
+  color: var(--cp-brand-dark) !important;
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  border-radius: 11px !important;
+  border: 1px solid #c8dced !important;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dashboard-secondary-btn:hover {
+  background: #f0f7fe !important;
+  border-color: #a4cefa !important;
+}
+
 
