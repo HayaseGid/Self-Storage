@@ -203,8 +203,6 @@ function NoAccess({ navigate }) {
 
 /* ---------- Reservation detail + handover ---------- */
 function ReservationDetail({ res, staff, db, actions }) {
-  const [accessType, setAccessType] = useState(ACCESS_TYPES[0].value);
-  const [accessValue, setAccessValue] = useState("");
   const [idChecked, setIdChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -213,24 +211,24 @@ function ReservationDetail({ res, staff, db, actions }) {
 
   const today = todayStr();
   const units = unitsOf(res);
-  const access = ACCESS_TYPES.find((a) => a.value === accessType) || ACCESS_TYPES[0];
   const { checks, canHandover } = checkHandover(res, staff, db);
   const clashes = findClashes(db, res);
   const handedOver = res.status === "HANDED_OVER";
   const group = dayGroup(res, today);
-  const ready = canHandover && idChecked && accessValue.trim().length > 0 && !busy;
+  const ready = canHandover && idChecked && !busy;
 
   const doHandover = async () => {
+    const keyPreview = units.map((u) => `KEY-${u}`).join(", ");
     const confirmed = await dialog.confirm({
       tone: "warning",
       title: `Xác nhận bàn giao ${units.length} kho cho ${res.customerName}?`,
-      message: `Kho ${units.join(", ")} sẽ chuyển sang đang thuê và hợp đồng được kích hoạt. Hãy chắc chắn đã đối chiếu giấy tờ và giao ${access.label.toLowerCase()} (${accessValue.trim()}) cho khách.`,
+      message: `Kho ${units.join(", ")} sẽ chuyển sang đang thuê và hợp đồng được kích hoạt. Hãy chắc chắn đã đối chiếu CCCD và bàn giao chìa khóa vật lý (${keyPreview}) cho khách. Mã ra vào cơ sở 6 số sẽ được hệ thống tự động cấp vào hồ sơ của khách.`,
       confirmLabel: "Xác nhận bàn giao"
     });
     if (!confirmed) return;
     setBusy(true);
     try {
-      const response = await actions.handover(res.id, { type: accessType, value: accessValue });
+      const response = await actions.handover(res.id);
       setResult({ tone: "ok", message: response?.message || "Bàn giao thành công." });
     } catch (error) {
       setResult({ tone: "warn", message: error.message });
@@ -384,22 +382,32 @@ function ReservationDetail({ res, staff, db, actions }) {
             Đã đối chiếu giấy tờ, đúng khách hàng đặt chỗ
           </label>
 
-          <h3>Thông tin truy cập</h3>
-          <div className="st-form-row">
-            <label>Hình thức
-              <select className="st-input" value={accessType} onChange={(e) => setAccessType(e.target.value)}>
-                {ACCESS_TYPES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-              </select>
-            </label>
-            <label>{access.field}
-              <input className="st-input" value={accessValue} maxLength={255} onChange={(e) => setAccessValue(e.target.value)} placeholder={access.placeholder} />
-            </label>
+          <h3>Quyền truy cập & Chìa khóa (Hệ thống tự động cấp)</h3>
+          <div style={{ display: 'grid', gap: '10px', background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0', margin: '12px 0' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <span style={{ fontSize: '20px' }}>🔑</span>
+              <div>
+                <strong style={{ display: 'block', color: '#0f172a', fontSize: '13.5px' }}>Chìa khóa vật lý từng ô kho</strong>
+                <p style={{ margin: '3px 0 0', fontSize: '12.5px', color: '#475569', lineHeight: 1.5 }}>
+                  Mã chìa: {units.map((u) => <code key={u} style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 6px', borderRadius: '4px', fontWeight: 600, marginRight: '4px' }}>KEY-{u}</code>)}
+                  — Giao chìa vật lý trực tiếp cho khách tại quầy lễ tân.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <span style={{ fontSize: '20px' }}>🔢</span>
+              <div>
+                <strong style={{ display: 'block', color: '#0f172a', fontSize: '13.5px' }}>Mã ra vào cơ sở (Access Code)</strong>
+                <p style={{ margin: '3px 0 0', fontSize: '12.5px', color: '#475569', lineHeight: 1.5 }}>
+                  Mã 6 chữ số tự động kích hoạt và gửi vào hồ sơ khách hàng. Có hiệu lực trong suốt thời gian thuê, tự động tạm khóa nếu nợ quá hạn &gt; 30 ngày.
+                </p>
+              </div>
+            </div>
           </div>
-          {units.length > 1 && <p className="st-hint">Thông tin truy cập này áp dụng cho cả {units.length} kho của đơn.</p>}
           <button className="dashboard-primary-btn" type="button" disabled={!ready} onClick={doHandover}>
             {busy ? "Đang bàn giao..." : `Xác nhận bàn giao ${units.length} kho`}
           </button>
-          {!ready && !busy && <p className="st-hint">Cần đủ điều kiện, tick đối chiếu giấy tờ và nhập thông tin truy cập.</p>}
+          {!ready && !busy && <p className="st-hint">Cần đủ điều kiện và tick xác nhận đã đối chiếu giấy tờ để bàn giao.</p>}
         </>
       )}
 
@@ -988,12 +996,10 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
     localStorage.removeItem(currentUserKey);
     navigate("/");
   };
-  const handover = async (reservationId, access) => {
-    // [STAFF-TOOLS] Bàn giao qua API có kiểm tra phân công (bên trong vẫn gọi HandoverService gốc)
+  const handover = async (reservationId) => {
+    // [STAFF-TOOLS] Bàn giao qua API có kiểm tra phân công (hệ thống tự sinh AccessCode & KEY-UnitNumber)
     const response = await apiPost("/api/staff-tools/handover", {
       reservationID: Number(reservationId),
-      accessType: access.type,
-      accessValue: access.value.trim(),
       notes: ""
     });
     await loadState({ silent: true });

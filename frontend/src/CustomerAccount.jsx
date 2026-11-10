@@ -1412,14 +1412,28 @@ function RefundTimeline({ item, formatMoney }) {
 
 /* Hồ sơ tài khoản (chỉ xem). Backend hiện chưa có API sửa hồ sơ / đổi mật khẩu. */
 function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
+  const [copied, setCopied] = useState(false)
   const activeCount = rentals.filter(item => item.status === 'Handed Over').length
   const pendingCount = rentals.filter(item => item.status === 'Pending Deposit').length
   const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase()
+
+  const accessCode = user?.accessCode || rentals.find(r => r.customerAccessCode)?.customerAccessCode || rentals.flatMap(r => r.accesses || []).find(a => a.accessType === 'Access Code')?.accessValue || null
+  const accessStatus = user?.accessCodeStatus || rentals.find(r => r.customerAccessCodeStatus)?.customerAccessCodeStatus || (accessCode ? 'Active' : 'Unissued')
+
+  const handleCopyCode = () => {
+    if (!accessCode) return
+    navigator.clipboard.writeText(accessCode)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   const rows = [
     ['Họ và tên', user?.name || '—'],
     ['Email', user?.email || '—'],
     ['Loại tài khoản', 'Khách hàng thuê kho'],
-    ['Mã khách hàng', user?.userId ? `KH-${user.userId}` : '—']
+    ['Mã khách hàng', user?.userId ? `KH-${user.userId}` : '—'],
+    ['Mã ra vào cơ sở', accessCode || 'Chưa cấp (Cấp khi nhận bàn giao kho)'],
+    ['Trạng thái mã', accessCode ? (accessStatus === 'Active' ? '✓ Đang hoạt động' : '⚠️ Tạm khóa (Quá hạn thanh toán > 30 ngày)') : 'Chưa cấp']
   ]
   return (
     <div className="customer-content-page">
@@ -1444,7 +1458,90 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
             <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
           ))}
         </dl>
-        <div className="profile-stats">
+
+        <div style={{
+          marginTop: '20px',
+          padding: '18px 20px',
+          background: accessStatus === 'Locked' ? '#fff1f2' : '#f0fdf4',
+          borderRadius: '14px',
+          border: `1px solid ${accessStatus === 'Locked' ? '#fecdd3' : '#bbf7d0'}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '24px' }}>🔢</span>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15px', color: accessStatus === 'Locked' ? '#9f1239' : '#14532d', fontWeight: 700 }}>
+                  MÃ RA VÀO CƠ SỞ (ACCESS CODE)
+                </h3>
+                <small style={{ color: accessStatus === 'Locked' ? '#be123c' : '#166534', fontSize: '12px' }}>
+                  Dùng mở cổng &amp; cửa an ninh cơ sở StoreSpace
+                </small>
+              </div>
+            </div>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              borderRadius: '999px',
+              fontSize: '12px',
+              fontWeight: 600,
+              background: accessStatus === 'Locked' ? '#ffe4e6' : '#dcfce7',
+              color: accessStatus === 'Locked' ? '#e11d48' : '#15803d'
+            }}>
+              {accessStatus === 'Locked' ? '● Tạm khóa do nợ quá hạn' : '● Đang hoạt động'}
+            </span>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#ffffff',
+            padding: '12px 18px',
+            borderRadius: '10px',
+            border: `1px dashed ${accessStatus === 'Locked' ? '#f43f5e' : '#22c55e'}`
+          }}>
+            <div>
+              <span style={{ display: 'block', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, letterSpacing: '0.5px' }}>
+                Mã 6 chữ số cá nhân của bạn
+              </span>
+              <strong style={{ fontSize: '24px', letterSpacing: '4px', color: accessStatus === 'Locked' ? '#9f1239' : '#0f172a', fontFamily: 'monospace' }}>
+                {accessCode || 'Chưa cấp'}
+              </strong>
+            </div>
+            {accessCode && (
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#334155',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                {copied ? '✓ Đã sao chép' : 'Sao chép mã'}
+              </button>
+            )}
+          </div>
+
+          <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12.5px', color: '#475569', lineHeight: 1.6 }}>
+            <li>Mã 6 chữ số này là định danh cá nhân duy nhất để mở cổng và cửa an ninh cơ sở.</li>
+            <li><strong>Chìa khóa ô kho:</strong> Mỗi ô kho được cấp chìa khóa vật lý riêng, nhân viên bàn giao trực tiếp tại cơ sở.</li>
+            <li><strong>Thời hạn hiệu lực:</strong> Mã hoạt động liên tục trong suốt thời gian có hợp đồng thuê kho hợp lệ.</li>
+            <li><strong>Quy định bảo mật &amp; tạm khóa:</strong> Nếu chậm thanh toán tiền thuê hoặc chi phí phát sinh quá 30 ngày, hệ thống sẽ tự động tạm khóa mã ra vào cơ sở.</li>
+          </ul>
+        </div>
+
+        <div className="profile-stats" style={{ marginTop: '20px' }}>
           <button type="button" onClick={onOpenStorage}><strong>{rentals.length}</strong><span>Tổng đơn đặt kho</span></button>
           <button type="button" onClick={onOpenStorage}><strong>{activeCount}</strong><span>Kho đang thuê</span></button>
           <button type="button" onClick={onOpenStorage}><strong>{pendingCount}</strong><span>Chờ thanh toán cọc</span></button>

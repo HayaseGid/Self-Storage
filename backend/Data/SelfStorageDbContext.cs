@@ -72,6 +72,8 @@ public class SelfStorageDbContext : DbContext
             entity.Property(u => u.Email).HasMaxLength(150);
             entity.Property(u => u.PhoneNumber).HasMaxLength(30);
             entity.Property(u => u.Status).HasMaxLength(30);
+            entity.Property(u => u.AccessCode).HasMaxLength(10);
+            entity.Property(u => u.AccessCodeStatus).HasMaxLength(20);
 
             entity.HasOne(u => u.Role)
                 .WithMany(r => r.Users)

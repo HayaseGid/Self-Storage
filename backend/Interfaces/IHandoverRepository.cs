@@ -9,6 +9,7 @@ public interface IHandoverRepository
     Task<bool> IsStaffAssignedToFacilityAsync(int staffUserId, int facilityId, CancellationToken cancellationToken);
     Task<bool> IsContractSignedAsync(int contractId, CancellationToken cancellationToken);
     Task<List<string>> GetUnitsOccupiedByOtherReservationsAsync(int reservationId, IReadOnlyCollection<int> unitIds, CancellationToken cancellationToken);
+    Task<bool> IsAccessCodeTakenAsync(string accessCode, int excludeUserId, CancellationToken cancellationToken);
     void AddUnitAccess(UnitAccess access);
     Task<T> ExecuteInTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken);
     Task SaveChangesAsync(CancellationToken cancellationToken);

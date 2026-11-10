@@ -1936,6 +1936,8 @@ async function loginAndStoreUser(email, password) {
     email: data.email,
     role: mapBackendRole(data.roleName),
     userId: data.userID,
+    accessCode: data.accessCode,
+    accessCodeStatus: data.accessCodeStatus,
     token: data.token,
     tokenExpiresAt: data.tokenExpiresAt
   }

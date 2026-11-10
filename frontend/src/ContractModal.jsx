@@ -86,10 +86,10 @@ export default function ContractModal({
 
   const terms = [
     'Bên thuê sử dụng kho đúng mục đích lưu trữ hàng hoá hợp pháp, không lưu trữ hàng cấm, chất nguy hiểm, cháy nổ.',
-    'Bên thuê chịu trách nhiệm bảo quản mã/khoá truy cập và không chuyển nhượng quyền sử dụng cho bên thứ ba khi chưa được đồng ý.',
-    'Tiền thuê được thanh toán theo chu kỳ đã thoả thuận; chậm thanh toán có thể dẫn đến tạm khoá quyền truy cập.',
-    'Khi hết hạn hợp đồng, bên thuê dọn trống kho và bàn giao lại cho StoreSpace, hoặc gia hạn trước ngày kết thúc.',
-    'Hai bên cam kết tuân thủ nội quy của cơ sở lưu trữ. Chữ ký điện tử trên hợp đồng này xác nhận bên thuê đã đọc và đồng ý toàn bộ điều khoản.'
+    'Bên thuê được cấp 01 mã Access Code 6 số duy nhất để ra vào cơ sở; mỗi ô kho được cấp chìa khóa vật lý riêng bàn giao tại quầy lễ tân.',
+    'Mã Access Code có hiệu lực trong suốt thời gian hợp đồng thuê kho còn hiệu lực; hệ thống tự động tạm khoá mã nếu chậm thanh toán quá 30 ngày.',
+    'Bên thuê có trách nhiệm tự bảo quản chìa khóa vật lý; trường hợp làm mất chìa khóa sẽ chịu phí thay thế/làm lại chìa theo quy định của cơ sở.',
+    'Khi hết hạn hợp đồng, bên thuê hoàn trả chìa khóa, dọn trống kho và bàn giao lại cho StoreSpace, hoặc thực hiện gia hạn trước ngày kết thúc.'
   ]
 
   const renderSection = (id, title, subtitle, content) => (

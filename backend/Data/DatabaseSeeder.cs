@@ -458,6 +458,41 @@ public static class DatabaseSeeder
     }
 
     /// <summary>
+    /// Đảm bảo bảng Users có cột AccessCode và AccessCodeStatus để lưu mã ra vào cơ sở 6 số của khách hàng.
+    /// </summary>
+    public static void EnsureUserAccessCodeColumns(SelfStorageDbContext context)
+    {
+        bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+        try
+        {
+            if (isNpgsql)
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""AccessCode"" VARCHAR(10) NULL;
+                    ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""AccessCodeStatus"" VARCHAR(20) DEFAULT 'Active';
+                ");
+            }
+            else
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'AccessCode')
+                    BEGIN
+                        ALTER TABLE Users ADD AccessCode NVARCHAR(10) NULL;
+                    END
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'AccessCodeStatus')
+                    BEGIN
+                        ALTER TABLE Users ADD AccessCodeStatus NVARCHAR(20) DEFAULT 'Active';
+                    END
+                ");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[EnsureUserAccessCodeColumns] Error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Postgres (Neon): EnsureCreated chỉ tạo bảng khi DB còn trống, nên DB đã có từ trước sẽ thiếu cột mới.
     /// Thêm cột Reservation.HandoverMethod (cách nhận kho) nếu chưa có. SQL Server: chạy database/Migrations/20261110_KhungGioVaCachNhanKho.sql.
     /// </summary>

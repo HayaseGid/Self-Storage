@@ -39,10 +39,8 @@ namespace SelfStorageAPI.DTOs
     {
         [Required]
         public int ReservationID { get; set; }
-        [Required]
-        public string AccessType { get; set; } = string.Empty;
-        [Required]
-        public string AccessValue { get; set; } = string.Empty;
-        public string Notes { get; set; } = string.Empty;
+        public string? AccessType { get; set; }
+        public string? AccessValue { get; set; }
+        public string? Notes { get; set; }
     }
 }

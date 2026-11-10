@@ -32,6 +32,8 @@ public class AuthResponseDTO
     public string Email { get; set; } = null!;
     public string RoleName { get; set; } = null!;
     public string Status { get; set; } = null!;
+    public string? AccessCode { get; set; }
+    public string? AccessCodeStatus { get; set; }
     public string? PhoneNumber { get; set; }
     /// <summary>JWT access token, gửi lại trong header "Authorization: Bearer {token}".</summary>
     public string? Token { get; set; }
