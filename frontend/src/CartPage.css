@@ -1,155 +1,431 @@
-/* Giỏ hàng (CartPage.jsx) */
-.cart-page { padding: 48px 0 80px; background: #f5faff; min-height: 70vh; }
-.cart-heading { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
-.cart-heading h1 { margin: 6px 0 6px; font: 800 34px 'Be Vietnam Pro', sans-serif; color: #073d70; }
-.cart-heading p { margin: 0; color: #6d849b; max-width: 640px; }
+/* =========================================================
+   CartPage.css - Đồng nhất với giao diện BookingPage của Customer
+   ========================================================= */
 
-.cart-steps { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
-.cart-steps li { counter-increment: step; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 99px; background: #eef3f7; color: #8197ab; font-size: 12.5px; font-weight: 700; }
-.cart-steps li::before { content: counter(step); width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: #fff; font-size: 11px; }
-.cart-steps li.active { background: #075a9f; color: #fff; }
-.cart-steps li.active::before { color: #075a9f; }
-.cart-steps li.done { background: #e2f6ea; color: #2b8b55; }
-
-.cart-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
-.cart-main { display: grid; gap: 16px; }
-.cart-card { padding: 20px; border-radius: 18px; background: #fff; border: 1px solid #e4edf4; box-shadow: 0 8px 24px rgba(15, 69, 111, .05); }
-.cart-card h2 { margin: 0 0 14px; font: 800 18px 'Be Vietnam Pro', sans-serif; color: #073d70; }
-
-.cart-group { border-width: 1.5px; }
-.cart-group.active { border-color: #075a9f; box-shadow: 0 12px 30px rgba(7, 90, 159, .12); }
-.cart-group-head { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
-.cart-group-head input { width: 18px; height: 18px; margin-top: 4px; }
-.cart-group-head h2 { margin: 0; }
-.cart-group-head p { margin: 4px 0 0; color: #6d849b; font-size: 13px; }
-
-.cart-items { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
-.cart-item { display: grid; grid-template-columns: auto 96px minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 10px; border-radius: 14px; border: 1px solid #eef3f7; background: #fbfdff; }
-.cart-item input { width: 18px; height: 18px; }
-.cart-item.muted { opacity: .62; }
-.cart-item.unavailable { background: #fff7f7; border-color: #f6dada; }
-.cart-item-art { width: 96px; border-radius: 10px; overflow: hidden; }
-.cart-item-art .ut-art-icon { display: none; }
-.cart-item-info { display: grid; gap: 4px; min-width: 0; }
-.cart-item-code { justify-self: start; padding: 0; border: 0; background: none; color: #073d70; font: 800 17px 'Be Vietnam Pro', sans-serif; cursor: pointer; }
-.cart-item-code:hover { color: #1684db; text-decoration: underline; }
-.cart-item-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: #6d849b; font-size: 12.5px; }
-.cart-item-price { display: grid; justify-items: end; gap: 2px; text-align: right; }
-.cart-item-price strong { color: #075a9f; font-weight: 800; }
-.cart-item-price small { color: #8197ab; font-size: 11px; }
-.cart-item-price span { color: #6d849b; font-size: 12px; }
-.cart-remove { width: 32px; height: 32px; border: 0; border-radius: 10px; background: #f2f7fc; color: #8197ab; font-size: 18px; cursor: pointer; }
-.cart-remove:hover { background: #fff0f0; color: #c94a4a; }
-
-.cart-pill { display: inline-block; padding: 3px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 800; }
-.cart-pill.ok { background: #eefaf2; color: #2b8b55; }
-.cart-pill.warn { background: #fff4d6; color: #8a6400; }
-.cart-pill.bad { justify-self: start; background: #fff0f0; color: #c94a4a; }
-
-.cart-terms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-
-.cart-summary { position: sticky; top: 104px; display: grid; gap: 10px; padding: 20px; border-radius: 18px; background: #fff; border: 1px solid #e4edf4; box-shadow: 0 12px 30px rgba(15, 69, 111, .08); }
-.cart-summary h2 { margin: 0; font: 800 18px 'Be Vietnam Pro', sans-serif; color: #073d70; }
-.cart-summary-facility { margin: 0; color: #4f6880; font-weight: 700; }
-.cart-summary dl { display: grid; gap: 8px; margin: 4px 0; padding: 12px 0; border-top: 1px solid #eef3f7; border-bottom: 1px solid #eef3f7; }
-.cart-summary dl div { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; }
-.cart-summary dt { color: #6d849b; }
-.cart-summary dd { margin: 0; color: #073d70; font-weight: 800; }
-.cart-sum-deposit dd { color: #c27a00; font-size: 16px; }
-.cart-total { font: 800 30px 'Be Vietnam Pro', sans-serif; color: #c27a00; }
-.cart-countdown { margin: 0; padding: 8px 12px; border-radius: 10px; background: #e9f5ff; color: #075a9f; font-weight: 800; text-align: center; }
-.cart-countdown.expired { background: #fff0f0; color: #c94a4a; }
-.cart-note { margin: 0; color: #6d849b; font-size: 13px; line-height: 1.5; }
-.cart-note.small { font-size: 12px; }
-.cart-summary .dashboard-primary-btn.full { width: 100%; }
-
-.cart-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.cart-table th { padding: 10px 12px; background: #f5faff; color: #4f6880; font-size: 12px; text-align: left; text-transform: uppercase; letter-spacing: .03em; }
-.cart-table td { padding: 12px; border-bottom: 1px solid #eef3f7; color: #0b3967; }
-.cart-table small { color: #8197ab; }
-.cart-card .cart-note { margin-top: 12px; }
-
-.cart-done { max-width: 640px; margin: 0 auto; padding: 36px; border-radius: 22px; background: #fff; border: 1px solid #e4edf4; text-align: center; box-shadow: 0 16px 40px rgba(15, 69, 111, .08); }
-.cart-done-icon { width: 64px; height: 64px; display: inline-grid; place-items: center; border-radius: 50%; background: #e2f6ea; color: #2b8b55; font-size: 30px; font-weight: 800; }
-.cart-done h1 { margin: 14px 0 6px; font: 800 26px 'Be Vietnam Pro', sans-serif; color: #073d70; }
-.cart-done p { color: #6d849b; }
-.cart-next-steps { display: grid; gap: 8px; margin: 20px 0; padding: 0; list-style: none; text-align: left; counter-reset: s; }
-.cart-next-steps li { counter-increment: s; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; background: #f5faff; color: #23475e; font-weight: 700; font-size: 14px; }
-.cart-next-steps li::before { content: counter(s); width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 50%; background: #075a9f; color: #fff; font-size: 12px; }
-.cart-next-steps li.done::before { content: '✓'; background: #2b8b55; }
-.cart-next-steps li span { margin-left: auto; color: #8197ab; font-size: 12px; font-weight: 600; }
-.cart-actions { display: flex; justify-content: center; gap: 10px; }
-.cart-empty { display: grid; justify-items: center; gap: 12px; }
-
-/* Nút giỏ hàng trên header + nút "Thêm vào giỏ" */
-.header-cart { position: relative; display: inline-grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 12px; background: #f2f7fc; color: #075a9f; cursor: pointer; }
-.header-cart svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-.header-cart em { position: absolute; top: -4px; right: -4px; min-width: 19px; height: 19px; padding: 0 5px; display: grid; place-items: center; border-radius: 99px; background: #ffd21c; color: #073d70; font-style: normal; font-size: 11px; font-weight: 800; }
-.add-cart-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; padding: 0 12px; border-radius: 11px; border: 1.5px solid #cfe0ee; background: #fff; color: #075a9f; font: 800 13px 'DM Sans', sans-serif; cursor: pointer; white-space: nowrap; }
-.add-cart-btn:hover:not(:disabled) { border-color: #1684db; background: #f5faff; }
-.add-cart-btn.in-cart { border-color: #bfe5cf; background: #eefaf2; color: #2b8b55; }
-.add-cart-btn:disabled { opacity: .5; cursor: not-allowed; }
-.uc-actions { display: flex; gap: 8px; }
-
-@media (max-width: 960px) {
-  .cart-layout { grid-template-columns: 1fr; }
-  .cart-summary { position: static; }
+.cart-booking-page {
+  padding-bottom: 80px;
 }
-@media (max-width: 560px) {
-  .cart-item { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .cart-item-art { display: none; }
-  .cart-item-price { grid-column: 2; justify-items: start; text-align: left; }
-  .cart-heading h1 { font-size: 26px; }
-}
-.cart-item-discount { display: block; color: #2b8b55; font-size: 11.5px; font-weight: 700; }
-.cart-sum-saving dt, .cart-sum-saving dd { color: #2b8b55; font-weight: 700; }
-.cart-table tfoot td { font-weight: 800; color: #073d70; background: #fbfdff; }
-.cart-paid-tag { color: #2b8b55; font-weight: 700; font-size: 12px; }
 
-/* Banner thông báo hình thức thanh toán chung cho đơn thuê gộp */
+/* Empty state khi giỏ hàng trống */
+.booking-empty-cart-card {
+  max-width: 600px;
+  margin: 40px auto 60px;
+  padding: 48px 32px;
+  background: #fff;
+  border: 1px solid #dfeaf2;
+  border-radius: 22px;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(15, 69, 111, .06);
+}
+
+.booking-empty-icon {
+  font-size: 52px;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+
+.booking-empty-cart-card h2 {
+  margin: 0 0 10px;
+  font: 800 24px 'Be Vietnam Pro', sans-serif;
+  color: #0b3967;
+}
+
+.booking-empty-cart-card p {
+  margin: 0 auto 24px;
+  color: #6d849b;
+  font-size: 14px;
+  max-width: 440px;
+  line-height: 1.6;
+}
+
+/* Switcher cơ sở nếu có nhiều cơ sở trong giỏ hàng */
+.cart-facility-pills {
+  display: flex;
+  gap: 8px;
+  padding: 12px 18px;
+  background: #f4f8fc;
+  border-bottom: 1px solid #e1edf4;
+  overflow-x: auto;
+}
+
+.cart-facility-pill {
+  display: grid;
+  text-align: left;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1.5px solid #d5e4f0;
+  background: #fff;
+  color: #0b3967;
+  cursor: pointer;
+  transition: all .15s ease;
+  flex: none;
+}
+
+.cart-facility-pill strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cart-facility-pill span {
+  font-size: 11px;
+  color: #71879a;
+}
+
+.cart-facility-pill.active {
+  border-color: #0877cf;
+  background: #edf6ff;
+  color: #0877cf;
+}
+
+.cart-facility-pill.active span {
+  color: #0877cf;
+}
+
+/* Placeholder art nếu không có ảnh */
+.booking-unit-placeholder-art {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #e4f1fb, #cce4f7);
+  color: #0877cf;
+  font-weight: 800;
+  font-size: 16px;
+}
+
+/* Danh sách kho trong cột tóm tắt bên trái */
+.booking-cart-unit-list {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 20px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.booking-cart-unit-row {
+  display: grid;
+  grid-template-columns: auto 60px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1.5px solid #e7eff6;
+  background: #fbfdff;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+
+.booking-cart-unit-row:hover {
+  background: #f5faff;
+  border-color: #d2e4f3;
+}
+
+.booking-cart-unit-row.checked {
+  border-color: #b9dcf7;
+  background: #f2f8fe;
+}
+
+.booking-cart-unit-row.unavailable {
+  opacity: .55;
+  background: #fff8f8;
+  border-color: #f6dcdc;
+}
+
+.booking-cart-unit-row input[type="checkbox"] {
+  width: 19px;
+  height: 19px;
+  accent-color: #0877cf;
+  cursor: pointer;
+  margin: 0;
+}
+
+.booking-cart-unit-thumb {
+  width: 60px;
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eaf4fb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.booking-cart-unit-thumb .ut-art {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.booking-cart-unit-thumb .ut-art-icon {
+  display: none !important;
+}
+
+.booking-cart-unit-details {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.booking-cart-unit-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.booking-cart-unit-id {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 800 15px 'Be Vietnam Pro', sans-serif;
+  color: #0b3967;
+  cursor: pointer;
+  text-align: left;
+}
+
+.booking-cart-unit-id:hover {
+  color: #0877cf;
+  text-decoration: underline;
+}
+
+.booking-cart-unit-price {
+  font-weight: 800;
+  color: #0877cf;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.booking-cart-unit-price small {
+  font-size: 10.5px;
+  color: #8197ab;
+  font-weight: 600;
+}
+
+.booking-cart-unit-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #71879a;
+}
+
+.booking-cart-remove-btn {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: #eef4f9;
+  color: #8197ab;
+  font-size: 18px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+
+.booking-cart-remove-btn:hover {
+  background: #ffebeb;
+  color: #d13c3c;
+}
+
+/* Banner thông báo cho đơn gộp */
 .cart-bundle-banner {
   display: flex;
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 16px;
-  padding: 13px 15px;
-  border-radius: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
   background: #edf6ff;
   border: 1.5px solid #b8daf8;
   color: #0b3967;
 }
+
 .cart-bundle-icon {
   flex: none;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #075a9f;
+  background: #0877cf;
   color: #fff;
-  font: 800 13px 'Be Vietnam Pro', sans-serif;
-  margin-top: 1px;
+  font: 800 12px 'Be Vietnam Pro', sans-serif;
+  margin-top: 2px;
 }
+
 .cart-bundle-body {
   display: grid;
-  gap: 4px;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.cart-bundle-body strong {
-  color: #073d70;
-  font-weight: 800;
-}
-.cart-bundle-body p {
-  margin: 0;
-  color: #2f5270;
-}
-.cart-summary-bundle-note {
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: #edf6ff;
-  border: 1px solid #c5e0f9;
-  color: #0b3967;
+  gap: 3px;
   font-size: 12.5px;
   line-height: 1.45;
+}
+
+.cart-bundle-body strong {
+  color: #073d70;
+  font-weight: 700;
+}
+
+.cart-bundle-body p {
+  margin: 0;
+  color: #3b5f7e;
+}
+
+/* Nút đặt kho có mũi tên */
+.booking-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Bảng kê kho cọc trong bước 2 */
+.cart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cart-table th {
+  padding: 9px 12px;
+  background: #f4f8fb;
+  color: #556f87;
+  font-size: 11px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 800;
+  border-bottom: 1px solid #e5eff5;
+}
+
+.cart-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #edf3f8;
+  color: #0b3967;
+}
+
+.cart-table tfoot td {
+  font-weight: 800;
+  color: #073d70;
+  background: #f9fbfd;
+  border-top: 1.5px solid #d9e7f2;
+}
+
+.cart-paid-tag {
+  display: inline-block;
+  margin-left: 6px;
+  color: #2b8b55;
+  font-weight: 700;
+  font-size: 11.5px;
+}
+
+/* Countdown cọc */
+.cart-countdown {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: #eaf4fd;
+  color: #0877cf;
+  font-weight: 700;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.cart-countdown.expired {
+  background: #fff0f0;
+  color: #c94a4a;
+}
+
+/* Tag/pill chung */
+.cart-pill {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cart-pill.bad {
+  background: #fff0f0;
+  color: #c94a4a;
+}
+
+/* Header cart button trên thanh điều hướng chung */
+.header-cart {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: #f2f7fc;
+  color: #0877cf;
+  cursor: pointer;
+}
+
+.header-cart svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.header-cart em {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 99px;
+  background: #ffd21c;
+  color: #073d70;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.add-cart-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 11px;
+  border: 1.5px solid #cfe0ee;
+  background: #fff;
+  color: #0877cf;
+  font: 700 13px 'Be Vietnam Pro', sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s ease;
+}
+
+.add-cart-btn:hover:not(:disabled) {
+  border-color: #0877cf;
+  background: #f5faff;
+}
+
+.add-cart-btn.in-cart {
+  border-color: #bfe5cf;
+  background: #eefaf2;
+  color: #2b8b55;
+}
+
+.add-cart-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.uc-actions {
+  display: flex;
+  gap: 8px;
 }
