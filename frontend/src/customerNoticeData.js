@@ -8,6 +8,7 @@ import { formatVnd } from './storageRules'
  *   - danh sách đặt chỗ của khách (GET /api/customer-reservations/mine)
  *   - thông tin gia hạn (GET /api/contract-renewals/mine)
  *   - chính sách hiện hành + chính sách sắp áp dụng (GET /api/policies)
+ *   - [THÊM 14] kết quả kiểm kho khi trả (GET /api/return-inspections/mine): chờ xác nhận / khiếu nại / đã quyết toán
  * Mỗi thông báo có id ổn định (vd "expiring:120:d7"). Khách mở đúng mục (Hợp đồng, Thanh toán...)
  * hoặc trang Thông báo thì các id đó được lưu là "đã xem" (localStorage theo email) -> số trên menu biến mất.
  * Mốc gần hơn (còn 14 / 7 / 3 ngày) là id mới nên thông báo hiện lại.
@@ -19,6 +20,14 @@ import { formatVnd } from './storageRules'
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
 const DAY = 86400000
 const isoDay = iso => (iso ? String(iso).slice(0, 10) : null)
+// [SỬA] Backend trả giờ UTC KHÔNG kèm "Z" (vd HoldExpiresAt) -> Date.parse hiểu thành giờ máy (VN), lệch 7 tiếng
+// => đơn chờ cọc bị coi là đã hết giờ giữ kho và không hiện thông báo. Tự thêm "Z" khi thiếu múi giờ.
+const parseUtc = value => {
+  if (!value) return NaN
+  const text = String(value)
+  return Date.parse(/Z|[+-]\d{2}:?\d{2}$/.test(text) ? text : `${text}Z`)
+}
+const fmtTimeVn = ms => new Date(ms).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
 const daysUntil = iso => {
   if (!iso) return null
   const [y, m, d] = isoDay(iso).split('-').map(Number)
@@ -31,7 +40,7 @@ const stageOf = days => (days <= 3 ? 'd3' : days <= 7 ? 'd7' : days <= 14 ? 'd14
 const unitsText = r => (r?.units?.length ? r.units.map(u => u.number).filter(Boolean).join(', ') : r?.unitId) || ''
 const TONE_RANK = { danger: 0, warn: 1, info: 2, ok: 3 }
 
-export function buildCustomerNotifications({ rentals = [], renewals = null, policies = null, returns = null }) {
+export function buildCustomerNotifications({ rentals = [], renewals = null, policies = null, returns = null, inspections = null }) {
   const list = []
   const push = item => list.push({ priority: 50, ...item })
   const values = policies?.values || {}
@@ -43,7 +52,8 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
 
   // 1) Đơn chờ thanh toán cọc / yêu cầu gia hạn chờ thanh toán
   rentals.filter(r => r.status === 'Pending Deposit' && r.paymentStatus !== 'Completed').forEach(r => {
-    const left = r.depositExpiresAt ? Date.parse(r.depositExpiresAt) - Date.now() : 0
+    const expiresAt = parseUtc(r.depositExpiresAt) // [SỬA] giờ UTC
+    const left = Number.isNaN(expiresAt) ? 0 : expiresAt - Date.now()
     if (left <= 0) return
     const minutes = Math.max(1, Math.ceil(left / 60000))
     push(r.isRenewal ? {
@@ -56,7 +66,7 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
       id: `deposit:${r.reservationId}`,
       section: 'payment', tone: 'warn', priority: 5,
       title: 'Đơn đặt kho chờ thanh toán cọc',
-      message: `Kho ${unitsText(r)} tại ${r.facility} đang được giữ cho bạn thêm ${minutes} phút. Thanh toán ${money(r.depositAmount)} tiền cọc để giữ kho.`,
+      message: `Kho ${unitsText(r)} tại ${r.facility} đang được giữ cho bạn đến ${fmtTimeVn(expiresAt)} (còn ${minutes} phút). Thanh toán ${money(r.depositAmount)} tiền cọc để giữ kho, quá giờ đơn tự hủy và kho mở lại cho khách khác.${r.paymentStatus === 'Pending' ? ' Lần trước bạn đã mở VNPay nhưng chưa hoàn tất.' : ''}`,
       action: { label: 'Thanh toán cọc', section: 'payment' }
     })
   })
@@ -154,9 +164,54 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
   })
 
   // 4c) Trả kho: lịch hẹn, kết quả kiểm kho, quyết toán / hoàn cọc
+  const inspectionItems = Array.isArray(inspections?.items) ? inspections.items : []
   ;(Array.isArray(returns?.items) ? returns.items : []).filter(i => i.request).forEach(i => {
     const q = i.request
     const units = i.units.join(', ')
+    // [THÊM 14] Có phí kiểm kho: chưa trừ cọc cho tới khi khách xác nhận / khiếu nại được giải quyết
+    const insp = inspectionItems.find(x => String(x.reservationId) === String(i.reservationId))
+    if (q.status === 'Completed' && insp && insp.settledBy !== 'NoFee') {
+      const deadline = parseUtc(insp.confirmDeadline)
+      if (insp.status === 'Awaiting Customer') {
+        const hoursLeft = Number.isNaN(deadline) ? null : Math.ceil((deadline - Date.now()) / 3600000)
+        push({
+          // Còn dưới 24 giờ là id mới -> nhắc lại dù khách đã xem
+          id: `inspection-confirm:${insp.inspectionId}:${hoursLeft != null && hoursLeft <= 24 ? 'h24' : 'new'}`,
+          section: 'contract', tone: 'danger', priority: 2,
+          title: hoursLeft != null && hoursLeft <= 24 ? 'Sắp hết hạn xác nhận kết quả kiểm kho' : 'Kết quả kiểm kho chờ bạn xác nhận',
+          message: `Nhân viên ghi nhận phí kiểm kho ${money(insp.proposedTotal)} cho kho ${units}${insp.staffImageCount ? ` kèm ${insp.staffImageCount} ảnh` : ''}. Tiền cọc CHƯA bị trừ: vui lòng xem ảnh rồi đồng ý hoặc khiếu nại trước ${Number.isNaN(deadline) ? 'hạn' : fmtTimeVn(deadline)}. Quá hạn hệ thống tự xác nhận và trừ vào cọc.`,
+          action: { label: 'Xem & xác nhận', section: 'contract', focusReservationId: i.reservationId }
+        })
+        return
+      }
+      if (insp.status === 'Disputed') {
+        push({
+          id: `inspection-disputed:${insp.inspectionId}`,
+          section: 'contract', tone: 'info', priority: 24,
+          title: 'Khiếu nại kiểm kho đang được xem xét',
+          message: `Facility Manager đang đối chiếu ảnh và khiếu nại của bạn về phí kiểm kho ${money(insp.proposedTotal)} (kho ${units}). Tiền cọc chưa bị trừ cho tới khi có quyết định.`,
+          action: { label: 'Xem trả kho', section: 'contract', focusReservationId: i.reservationId }
+        })
+        return
+      }
+      if (insp.settledBy === 'Manager') {
+        push({
+          id: `inspection-resolved:${insp.inspectionId}`,
+          section: 'contract', tone: Number(insp.finalTotal) < Number(insp.proposedTotal) ? 'ok' : 'info', priority: 6,
+          title: 'Đã có quyết định khiếu nại kiểm kho',
+          message: `Phí kiểm kho chốt ${money(insp.finalTotal)} (đề xuất ${money(insp.proposedTotal)}).${insp.resolutionNotes ? ` ${insp.resolutionNotes}` : ''}`,
+          action: { label: 'Xem chi tiết', section: 'contract', focusReservationId: i.reservationId }
+        })
+      } else if (insp.settledBy === 'Auto') {
+        push({
+          id: `inspection-auto:${insp.inspectionId}`,
+          section: 'contract', tone: 'info', priority: 6,
+          title: 'Hệ thống đã tự xác nhận kết quả kiểm kho',
+          message: `Quá hạn xác nhận nên phí kiểm kho ${money(insp.finalTotal)} của kho ${units} đã được trừ vào tiền cọc theo đề xuất của nhân viên.`,
+          action: { label: 'Xem chi tiết', section: 'contract', focusReservationId: i.reservationId }
+        })
+      }
+    }
     if (q.status === 'Scheduled') {
       push({
         id: `return-scheduled:${i.reservationId}:${isoDay(q.scheduledDate)}`,
@@ -245,10 +300,10 @@ const writeSeen = (email, set) => {
   try { localStorage.setItem(seenKey(email), JSON.stringify([...set].slice(-400))) } catch { /* bỏ qua */ }
 }
 
-export function useCustomerNotifications({ email, rentals, renewals, policies, returns }) {
+export function useCustomerNotifications({ email, rentals, renewals, policies, returns, inspections }) {
   const notifications = useMemo(
-    () => buildCustomerNotifications({ rentals, renewals, policies, returns }),
-    [rentals, renewals, policies, returns]
+    () => buildCustomerNotifications({ rentals, renewals, policies, returns, inspections }),
+    [rentals, renewals, policies, returns, inspections]
   )
   const [seen, setSeen] = useState(() => readSeen(email))
   useEffect(() => { setSeen(readSeen(email)) }, [email])

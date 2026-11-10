@@ -30,6 +30,7 @@ import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
 import DemoClockWidget from './demoClock/DemoClockWidget'
 import { getTodayDate } from './demoClock/demoClock'
 import { CART_LIMIT, addToCart, isInCart, useCart } from './cart'
+import HeaderNotificationBell, { HeaderPendingDepositBar } from './HeaderNotificationBell' // [THÊM] chuông thông báo + nhắc đơn chưa đặt cọc
 import {
   clearBookingDraft,
   draftMatchesUnit,
@@ -309,6 +310,23 @@ function HomeIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 10 8-7 8 7" /><path d="M6 9v11h12V9" /><path d="M10 20v-6h4v6" /></svg>
 }
 
+/* [THÊM] Danh sách đơn của khách cho chuông thông báo trên header: cùng API + cùng cách lọc / đổi dữ liệu với trang khách (CustomerPage). */
+function fetchCustomerRentals() {
+  const user = getCurrentUser()
+  if (!user?.email) return Promise.resolve([])
+  return apiGet('/api/customer-reservations/mine')
+    .catch(fastError => {
+      if (fastError?.status !== 404) throw fastError
+      return apiGet(`/api/reservation/customer/${encodeURIComponent(user.email)}`)
+    })
+    .then(data => {
+      if (!Array.isArray(data)) return []
+      const abandoned = r => r.status === 'Expired' ||
+        (r.status === 'Cancelled' && !r.contractId && !(Number(r.refundAmount) > 0))
+      return data.filter(r => !abandoned(r)).map(mapCustomerReservation)
+    })
+}
+
 function SiteHeader() {
   const [storageOpen, setStorageOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -357,6 +375,7 @@ function SiteHeader() {
           )}
         </nav>
         <div className="header-actions">
+          {currentUser?.role === 'customer' && <HeaderNotificationBell user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />}
           {showCart && (
             <button className="header-cart" type="button" onClick={() => go('/cart')} aria-label={`Giỏ hàng (${cartItems.length} kho)`} title="Giỏ hàng">
               <CartIcon />
@@ -375,6 +394,10 @@ function SiteHeader() {
           <button className="menu-button" type="button" onClick={() => setMenuOpen(v => !v)} aria-label="Mở menu"><MenuIcon /></button>
         </div>
       </header>
+      {/* [THÊM] Nhắc đơn chưa đặt cọc (khách thoát VNPay giữa chừng) - ẩn ở giỏ hàng / trang đặt kho / kết quả thanh toán vì ở đó đã có đồng hồ riêng */}
+      {currentUser?.role === 'customer' && !['/cart', '/payment-result'].includes(window.location.pathname) && !window.location.pathname.includes('/unit/') && (
+        <HeaderPendingDepositBar user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />
+      )}
       {menuOpen && (
         <>
           <div className="mobile-menu-overlay" onClick={() => setMenuOpen(false)} />
@@ -387,6 +410,7 @@ function SiteHeader() {
               <div className="mobile-menu-section">
                 <div className="mobile-menu-title">KHÁM PHÁ</div>
                 {currentUser && <button className="mobile-menu-item" type="button" onClick={() => go(roleHome(currentUser.role))}>⌂ <span>{currentUser.role && currentUser.role !== 'customer' ? 'Trang làm việc' : 'Hồ sơ của tôi'}</span></button>}
+                {currentUser?.role === 'customer' && <HeaderNotificationBell variant="menu" user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />}
                 <button className="mobile-menu-item" type="button" onClick={() => go('/')}>⌂ <span>Trang chủ</span></button>
                 <button className="mobile-menu-item" type="button" onClick={() => go('/search')}>⌕ <span>Tìm kho</span></button>
                 <button className="mobile-menu-item mobile-menu-button" type="button" onClick={() => setMobileStorageOpen(v => !v)}>▣ <span>Loại kho</span><span>›</span></button>
@@ -715,6 +739,12 @@ function FacilityDetailPage({ facility }) {
             onOpenDetail={unit => navigate(getUnitPath(facility, unit))}
             onBook={unit => navigate(getBookingPath(facility, unit))}
           />
+          <div className="cart-note" role="note" style={{ margin: '18px 0', padding: '14px 16px', borderRadius: 12, background: '#eef5ff', border: '1px solid #c9dcf7' }}>
+            <strong>Cần kho lớn hơn các kho đang có, hoặc kích thước đặc biệt?</strong>{' '}
+            Kho quá lớn không bán sẵn mà nhận theo đơn đặt riêng: liên hệ cơ sở để được báo giá
+            {facilityPoint?.phone ? <> qua số <a href={`tel:${String(facilityPoint.phone).replace(/\s/g, '')}`}>{facilityPoint.phone}</a> hoặc</> : ''}{' '}
+            qua email <a href={`mailto:support@storespace.vn?subject=${encodeURIComponent(`Đặt kho theo yêu cầu - ${facility.name}`)}`}>support@storespace.vn</a>.
+          </div>
           <div className="units-heading">
             <div><div className="eyebrow">AVAILABLE UNITS</div><h2>Các kho tại {facility.name}</h2></div>
             <span>{filteredUnits.length} / {units.length} kho phù hợp</span>
@@ -1411,7 +1441,7 @@ function BookingPage({ facility, unit }) {
                     >
                       <span className="payment-mode-icon">↻</span>
                       <strong>Trả theo tháng</strong>
-                      <small>Ngày nhận kho đóng tiền tháng đầu, các tháng sau đóng trước ngày đầu mỗi kỳ.</small>
+                      <small>Sau khi nhận kho đóng tiền tháng đầu, các tháng sau đóng trước ngày đầu mỗi kỳ.</small>
                     </button>
 
                     <button
@@ -1447,16 +1477,28 @@ function BookingPage({ facility, unit }) {
                   <div className="price-divider" />
 
                   <div>
-                    <span>Tổng tiền thuê ({duration} tháng)</span>
+                    <span>Tổng tiền thuê ({formatPrice(monthlyPrice)} × {totalMonths} tháng)</span>
                     <strong className="main-price">{formatPrice(totalRent)}</strong>
                   </div>
+                  {priceQuote.discountPercent > 0 && (
+                    <div className="discount-row">
+                      <span>Giảm giá gói {totalMonths} tháng ({priceQuote.discountPercent}%)</span>
+                      <strong>−{formatPrice(priceQuote.saving)}</strong>
+                    </div>
+                  )}
+                  <div>
+                    <span>Đóng sau khi nhận kho</span>
+                    <strong>{formatPrice(paymentMode === 'full' ? totalRent : (priceQuote.monthly ?? monthlyPrice))}{paymentMode === 'full' ? ' (cả kỳ)' : ' (tháng đầu)'}</strong>
+                  </div>
+
+                  <div className="price-divider" />
 
                   <div className="deposit-row">
                     <div>
-                      <span>Tiền cọc bắt buộc</span>
+                      <span>Cần thanh toán khi đặt kho: tiền cọc</span>
                       <small>{depositMonths} tháng tiền thuê · hoàn lại khi trả kho</small>
                     </div>
-                    <strong className="deposit-price">{formatPrice(deposit)}</strong>
+                    <strong className="deposit-price main-price">{formatPrice(deposit)}</strong>
                   </div>
                 </div>
 
@@ -1532,7 +1574,7 @@ function BookingPage({ facility, unit }) {
                       ]}
                       lines={[
                         ['Giá thuê / tháng', Number(booking.monthlyPrice || 0)],
-                        ['Tổng tiền thuê (trả theo hợp đồng)', Number(booking.totalRent || 0)],
+                        [`Tổng tiền thuê (${booking.durationMonths} tháng, đóng sau khi nhận kho)`, Number(booking.totalRent || 0)],
                         [`Tiền cọc (${depositMonths} tháng tiền thuê)`, Number(booking.deposit || 0)]
                       ]}
                       amount={booking.deposit}
@@ -2417,6 +2459,7 @@ function mapCustomerReservation(reservation) {
     Paid: 'Đã thanh toán cọc · Đang tạo hợp đồng',
     Confirmed: 'Đã cọc · Chờ ký hợp đồng',
     'Handed Over': 'Đang thuê',
+    Completed: 'Đã trả kho',
     Cancelled: 'Đã hủy',
     Expired: 'Hết hạn giữ kho · Cần đặt lại'
   }
@@ -2496,7 +2539,10 @@ function CustomerPage() {
         if (!Array.isArray(data)) {
           throw new Error('Backend trả về danh sách đặt chỗ không hợp lệ.')
         }
-        setReservations(data.map(mapCustomerReservation))
+        // Ẩn đơn bỏ dở ở bước đặt cọc: hết hạn giữ kho, hoặc đã hủy khi chưa cọc (không hợp đồng, không hoàn tiền)
+        const abandoned = r => r.status === 'Expired' ||
+          (r.status === 'Cancelled' && !r.contractId && !(Number(r.refundAmount) > 0))
+        setReservations(data.filter(r => !abandoned(r)).map(mapCustomerReservation))
       })
       .catch(loadError => {
         if (silent) return // tải lại ngầm (vd sau khi gia hạn) lỗi thì giữ dữ liệu cũ

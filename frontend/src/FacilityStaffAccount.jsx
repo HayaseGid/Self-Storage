@@ -4,9 +4,11 @@ import "./staffstyles.css";
 import { apiGet, apiPost, apiPut } from "./api";
 import StaffReturns from "./StaffReturns"; // [MAIN-10] luồng trả kho của nhóm
 import { mapOperationsState } from "./operationsState";
+import { RESERVATION_SORTS, UNIT_SORTS, useOpsList } from "./opsLists";
 import { useDialog } from "./Dialog";
 import { formatReservationCode } from "./storageRules";
 import { getTodayISO } from "./demoClock/demoClock";
+import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, isNewItem, newestFirst, rowClass, timeAgo, useClientPaging, useServerList } from "./listKit";
 
 /* ---------- helpers ---------- */
 const pad = (n) => String(n).padStart(2, "0");
@@ -155,11 +157,11 @@ const Badge = ({ map, value }) => {
   const s = map[value] || { label: value, tone: "info" };
   return <span className={`st-badge st-${s.tone}`}>{s.label}</span>;
 };
-const Info = ({ k, children }) => (
-  <div><small>{k}</small><strong>{children}</strong></div>
+const Info = ({ k, children, strong = false }) => (
+  <div className={strong ? "st-info-key" : ""}><small>{k}</small><strong>{children}</strong></div>
 );
 const DayTag = ({ res, today }) => {
-  if (res.status === "HANDED_OVER") return null;
+  if (!AWAITING.includes(res.status)) return null; // [SỬA] chỉ nhắc ngày hẹn cho đơn đang chờ bàn giao
   const group = dayGroup(res, today);
   if (group === "today") return <span className="st-badge st-new">Hôm nay</span>;
   if (group === "overdue") return <span className="st-badge st-bad">Quá hẹn</span>;
@@ -279,9 +281,17 @@ function ReservationDetail({ res, staff, db, actions }) {
     <div className="st-card st-detail">
       <div className="st-head">
         <div>
-          <span className="customer-eyebrow">MÃ ĐƠN {resCode(res)}</span>
+          <div className="st-head-codes">
+            <span className="st-head-label">Mã đơn</span>
+            <Code kind="order">{resCode(res)}</Code>
+            <NewBadge createdAt={res.createdAt} />
+          </div>
           <h2>{res.customerName}</h2>
-          <p>{res.unitType} · {units.length} kho: {units.join(", ") || "—"}</p>
+          <div className="st-head-units">
+            <span className="st-head-label">{units.length} kho</span>
+            <UnitCodes units={units} max={8} />
+            <span className="st-head-type">{res.unitType}</span>
+          </div>
         </div>
         <Badge map={RES_STATUS} value={res.status} />
       </div>
@@ -321,13 +331,14 @@ function ReservationDetail({ res, staff, db, actions }) {
       )}
 
       <div className="st-grid">
-        <Info k="Liên hệ">{res.customerPhone} · {res.customerEmail}</Info>
+        <Info k="Lịch hẹn nhận kho" strong>{fmtDate(res.appointmentDate)} · {res.appointmentTime}</Info>
+        <Info k="Tiền cọc" strong>{fmtMoney(res.deposit)} <Badge map={PAY_STATUS} value={res.paymentStatus} /></Info>
         <Info k="Kỳ thuê">{fmtDate(res.startDate)} → {fmtDate(endOf(res))} ({res.months} tháng)</Info>
-        <Info k="Lịch hẹn">{fmtDate(res.appointmentDate)} · {res.appointmentTime}</Info>
-        <Info k="Tiền cọc">{fmtMoney(res.deposit)} <Badge map={PAY_STATUS} value={res.paymentStatus} /></Info>
+        <Info k="Liên hệ">{res.customerPhone || "—"} · {res.customerEmail}</Info>
         <Info k="Tổng tiền thuê">{fmtMoney(res.rentalFee)}</Info>
         <Info k="Hình thức trả">{res.paymentPlan === "Upfront" ? "Trả 1 lần" : "Trả theo tháng"} · {res.startRentPaid ? "đã đóng tiền thuê đầu kỳ" : `sau khi nhận kho khách đóng online ${fmtMoney(res.startRentUnpaid)} (${res.paymentPlan === "Upfront" ? "toàn bộ kỳ thuê" : "tháng đầu"})`}</Info>
-        {res.paymentTxn && <Info k="Mã giao dịch">{res.paymentTxn}</Info>}
+        {res.paymentTxn && <Info k="Mã giao dịch"><Code>{res.paymentTxn}</Code></Info>}
+        {res.createdAt && <Info k="Ngày đặt">{fmtDateTime(res.createdAt)} <span className="st-hint">({timeAgo(res.createdAt)})</span></Info>}
       </div>
 
       <h3>Kho bàn giao ({units.length})</h3>
@@ -338,7 +349,7 @@ function ReservationDetail({ res, staff, db, actions }) {
             const u = db.units.find((x) => x.id === unitId);
             return (
               <tr key={unitId}>
-                <td><strong>{unitId}</strong></td>
+                <td><Code kind="unit">{unitId}</Code></td>
                 <td>{u?.type || "—"}</td>
                 <td>{u?.size || "—"}</td>
                 <td>{u ? <Badge map={UNIT_STATUS} value={u.status} /> : "—"}</td>
@@ -350,7 +361,7 @@ function ReservationDetail({ res, staff, db, actions }) {
 
       {handedOver ? (
         <>
-          <div className="st-alert st-ok">Đã bàn giao{res.contractId ? ` · hợp đồng ${res.contractId}` : ""}.</div>
+          <div className="st-alert st-ok">Đã bàn giao{res.contractId ? <> · hợp đồng <Code kind="contract">{res.contractNumber || `#${res.contractId}`}</Code></> : ""}.</div>
           <button className="dashboard-secondary-btn" type="button" onClick={retryHandover} disabled={busy}>
             {busy ? "Đang kiểm tra..." : "Thử bàn giao lại (kiểm tra chống trùng)"}
           </button>
@@ -500,33 +511,51 @@ function UnitReportModal({ unit, onClose, onSubmit }) {
   );
 }
 
-function Workspace({ list, query, setQuery, selected, selectedId, setSelectedId, staff, db, actions, chips }) {
+function ReservationItem({ r, active, onSelect, db, today }) {
+  const units = unitsOf(r);
+  return (
+    <button type="button" className={rowClass(r.createdAt, `st-item ${active ? "active" : ""}`)} onClick={onSelect}>
+      <div className="st-item-top">
+        <Code kind="order">{resCode(r)}</Code>
+        <span className="st-name">{r.customerName}</span>
+        <NewBadge createdAt={r.createdAt} />
+        <DayTag res={r} today={today} />
+      </div>
+      <div className="st-item-mid">
+        <UnitCodes units={units} max={3} />
+        {r.unitType && <span className="st-item-type">{r.unitType}</span>}
+      </div>
+      <div className="st-item-foot">
+        <span className="st-item-badges">
+          <Badge map={RES_STATUS} value={r.status} />
+          {AWAITING.includes(r.status) && (isAssignedToMe(db, r)
+            ? <span className="st-badge st-ok">Giao cho bạn</span>
+            : <span className="st-badge st-warn">Chưa giao cho bạn</span>)}
+        </span>
+        <span className="st-item-when"><b>{r.appointmentTime}</b> · Hẹn {fmtDate(r.appointmentDate)}</span>
+      </div>
+    </button>
+  );
+}
+
+/* Danh sách (trái) + chi tiết (phải). pager / toolbar: phân trang + bộ lọc của từng màn hình. */
+function Workspace({ list, query, setQuery, selected, selectedId, setSelectedId, staff, db, actions, chips, toolbar, pager, loading, error, emptyText }) {
   const today = todayStr();
   return (
     <div className="st-split">
       <div>
         {chips}
-        <input className="st-search" placeholder="Tìm theo mã đơn, tên, email, mã kho" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <div className="st-list">
-          {list.length === 0 && <div className="st-card st-empty">Không có đặt chỗ nào phù hợp.</div>}
+        <input className="st-search" placeholder="Tìm theo mã đơn, tên khách, email, SĐT, mã kho" value={query} onChange={(e) => setQuery(e.target.value)} />
+        {toolbar}
+        {error && <div className="ss-error-line" role="alert">{error}</div>}
+        <div className="st-list" aria-busy={loading ? "true" : "false"}>
+          {loading && list.length === 0 && <div className="st-card st-empty">Đang tải danh sách…</div>}
+          {!loading && list.length === 0 && <div className="st-card st-empty">{emptyText || "Không có đặt chỗ nào phù hợp."}</div>}
           {list.map((r) => (
-            <button type="button" key={r.id} className={`st-item ${r.id === selectedId ? "active" : ""}`} onClick={() => setSelectedId(r.id)}>
-              <div className="st-item-top">
-                <strong className="st-time">{r.appointmentTime}</strong>
-                <span className="st-name">{r.customerName}</span>
-                <DayTag res={r} today={today} />
-              </div>
-              <div className="st-item-sub">{resCode(r)} · {unitsOf(r).join(", ") || "—"} · {r.unitType}</div>
-              <div className="st-item-foot">
-                <Badge map={RES_STATUS} value={r.status} />
-                {AWAITING.includes(r.status) && (isAssignedToMe(db, r)
-                  ? <span className="st-badge st-ok">Giao cho bạn</span>
-                  : <span className="st-badge st-warn">Chưa giao cho bạn</span>)}
-                <span>Hẹn {fmtDate(r.appointmentDate)}</span>
-              </div>
-            </button>
+            <ReservationItem key={r.id} r={r} active={r.id === selectedId} onSelect={() => setSelectedId(r.id)} db={db} today={today} />
           ))}
         </div>
+        {pager && <Pager {...pager} unit="đơn" compact />}
       </div>
       <div>
         {selected ? (
@@ -540,15 +569,34 @@ function Workspace({ list, query, setQuery, selected, selectedId, setSelectedId,
 }
 
 /* ---------- Portal (khung giống Customer Portal) ---------- */
+/* [SỬA] Tên mục nói rõ việc của mục đó; số bên cạnh = việc đang chờ */
 const NAV = [
-  ["overview", "⌂", "Tổng quan"],
-  ["today", "◷", "Nhận kho"],
-  ["all", "▤", "Tất cả đặt chỗ"],
-  ["units", "▣", "Kho tại cơ sở"],
-  ["returns", "⇦", "Trả kho & kiểm kho"],
-  ["tasks", "☑", "Việc được giao"],
-  ["log", "◫", "Nhật ký bàn giao"],
+  ["overview", "⌂", "Tổng quan", "Việc hôm nay, số liệu nhanh"],
+  ["today", "◷", "Bàn giao kho", "Đơn đã cọc chờ giao kho cho khách"],
+  ["all", "▤", "Đơn đặt chỗ", "Mọi đơn tại cơ sở, mới nhất lên đầu"],
+  ["units", "▣", "Kho tại cơ sở", "Tình trạng từng kho, báo sự cố"],
+  ["returns", "⇦", "Trả kho & kiểm kho", "Nhận lại kho, quyết toán cọc"],
+  ["tasks", "☑", "Việc được giao", "Việc Manager giao cho bạn"],
+  ["log", "◫", "Nhật ký bàn giao", "Lịch sử bàn giao kho"],
 ];
+
+const STAFF_RES_FILTERS = [
+  ["", "Tất cả"],
+  ["PENDING_APPROVAL,CONFIRMED", "Chờ bàn giao"],
+  ["HANDED_OVER", "Đang thuê"],
+  ["PENDING_PAYMENT", "Chờ cọc"],
+  ["COMPLETED", "Đã trả kho"],
+  ["CANCELLED,EXPIRED", "Hủy / hết hạn"],
+];
+const STAFF_UNIT_FILTERS = [
+  ["", "Tất cả"],
+  ["AVAILABLE", "Còn trống"],
+  ["RESERVED", "Đã giữ chỗ"],
+  ["RENTED", "Đang thuê"],
+  ["MAINTENANCE", "Bảo trì / chờ kiểm tra"],
+  ["INACTIVE", "Ngừng dùng"],
+];
+const sumCounts = (counts) => Object.values(counts || {}).reduce((a, b) => a + b, 0);
 
 function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, onHandover, onConfirm, onUnitStatus, onReportUnit }) {
   const [section, setSection] = useState("overview");
@@ -558,6 +606,12 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   // [STAFF-TOOLS] việc được giao + đổi trạng thái kho
   const [unitBusy, setUnitBusy] = useState("");
   const [reportUnit, setReportUnit] = useState(null); // [AUTO-ASSIGN] kho đang mở form báo cáo
+  // [PHÂN TRANG] bộ lọc của "Đơn đặt chỗ" và "Kho tại cơ sở" (lọc / chia trang ở backend)
+  const [allStatus, setAllStatus] = useState("");
+  const [allSort, setAllSort] = useState("newest");
+  const [unitQuery, setUnitQuery] = useState("");
+  const [unitStatus, setUnitStatus] = useState("");
+  const [unitSort, setUnitSort] = useState("newest");
   const dialog = useDialog();
 
   const facility = db.facilities.find((f) => f.id === staff.facilityId);
@@ -592,13 +646,30 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   };
   const units = db.units.filter((u) => u.facilityId === staff.facilityId);
   const freeUnits = units.filter((u) => u.status === "AVAILABLE").length;
-  const selected = mine.find((r) => r.id === selectedId) || null;
+
+  // [PHÂN TRANG] Đơn đặt chỗ: backend lọc + chia trang (GET /api/operations/reservations)
+  const allList = useOpsList("reservations", {
+    q: query, status: allStatus, sort: allSort, facilityId: facility?.facilityId, pageSize: 10,
+    reloadKey: db, fallbackRows: mine, enabled: section === "all" && facility?.facilityId != null,
+  });
+  // [PHÂN TRANG] Kho tại cơ sở (GET /api/operations/units)
+  const unitList = useOpsList("units", {
+    q: unitQuery, status: unitStatus, sort: unitSort, facilityId: facility?.facilityId, pageSize: 20,
+    reloadKey: db, fallbackRows: units, enabled: section === "units" && facility?.facilityId != null,
+  });
+  // Bàn giao kho: danh sách nhỏ (đơn giao cho mình) -> chia trang ở frontend
+  const handoverPaging = useClientPaging(handoverVisible, { pageSize: 10, resetKey: `${dayFilter}|${query}` });
+  const pendingTasks = (db.staffTasks || []).filter((t) => t.facilityName === staff.facilityId && t.status !== "Completed" && t.status !== "Cancelled").length;
+
+  const selected = mine.find((r) => r.id === selectedId) || allList.items.find((r) => r.id === selectedId) || null;
 
   const actions = { handover: (id, access) => onHandover(id, access), confirm: (id) => onConfirm(id) };
 
   // [STAFF-TOOLS] Việc được giao tại cơ sở đang chọn (tải cùng state, xem StaffPortal.loadState)
   const tasks = (db.staffTasks || []).filter((t) => t.facilityName === staff.facilityId);
   const tasksError = db.staffTasksError || "";
+  const taskPaging = useClientPaging(tasks, { pageSize: 15 });
+  const logPaging = useClientPaging(facilityActivity, { pageSize: 20 });
 
   // [STAFF-TOOLS] Đổi trạng thái kho (PUT /api/staff-tools/units/{unitId}/status)
   const changeUnitStatus = async (unit, nextStatus) => {
@@ -624,8 +695,8 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
 
   const HEAD = {
     overview: ["STAFF DASHBOARD", `Xin chào, ${staff.fullName}!`, `Nhận kho và bàn giao cho khách tại ${facility?.name || staff.facilityId}.`],
-    today: ["CHECK-IN & HANDOVER", "Nhận kho", "Kiểm tra đặt chỗ, thanh toán và bàn giao kho cho khách theo lịch hẹn."],
-    all: ["RESERVATIONS", "Tất cả đặt chỗ", "Toàn bộ đặt chỗ thuộc cơ sở của bạn."],
+    today: ["CHECK-IN & HANDOVER", "Bàn giao kho", "Đơn đã cọc được giao cho bạn: kiểm tra điều kiện và bàn giao kho cho khách theo lịch hẹn."],
+    all: ["RESERVATIONS", "Đơn đặt chỗ", "Toàn bộ đơn đặt chỗ tại cơ sở. Đơn mới đặt nằm đầu danh sách và được tô vàng."],
     units: ["FACILITY UNITS", "Kho tại cơ sở", "Kiểm tra kho và báo cáo khi phát hiện sự cố. Kho hư hỏng tự chuyển sang Bảo trì."],
     returns: ["MOVE-OUT & INSPECTION", "Trả kho & kiểm kho", "Nhận lại kho khách trả, kiểm tra tình trạng và quyết toán tiền cọc."],
     tasks: ["MY TASKS", "Việc được giao", "Các công việc nhận kho, trả kho, kiểm tra được giao cho bạn."],
@@ -669,12 +740,15 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
         )}
 
         <nav className="customer-nav">
-          {NAV.map(([key, icon, label]) => (
-            <button key={key} type="button" className={section === key ? "active" : ""} onClick={() => setSection(key)}>
-              <span>{icon}</span>{label}
-              {key === "today" && actionable.length > 0 && <span className="st-nav-count">{actionable.length}</span>}
-            </button>
-          ))}
+          {NAV.map(([key, icon, label, hint]) => {
+            const count = key === "today" ? actionable.length : key === "tasks" ? pendingTasks : 0;
+            return (
+              <button key={key} type="button" className={section === key ? "active" : ""} onClick={() => setSection(key)} title={hint}>
+                <span>{icon}</span>{label}
+                {count > 0 && <span className="st-nav-count">{count}</span>}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="customer-sidebar-bottom">
@@ -712,7 +786,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
                 {actionable.map((r) => (
                   <button type="button" key={r.id} className="st-todo" onClick={() => open(r.id)}>
                     <span className="st-time">{r.appointmentTime}</span>
-                    <span className="st-todo-main"><strong>{r.customerName}</strong><small>{resCode(r)} · {unitsOf(r).join(", ")} · {r.unitType}</small></span>
+                    <span className="st-todo-main"><strong>{r.customerName}</strong><small className="st-todo-codes"><Code kind="order">{resCode(r)}</Code><UnitCodes units={unitsOf(r)} max={3} /><span>{r.unitType}</span></small></span>
                     <DayTag res={r} today={today} />
                     <Badge map={RES_STATUS} value={r.status} />
                     <span className="st-go">→</span>
@@ -727,21 +801,34 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
         )}
 
         {section === "today" && (
-          <Workspace list={handoverVisible} query={query} setQuery={setQuery} selected={selected} selectedId={selectedId} setSelectedId={setSelectedId} staff={staff} db={db} actions={actions} chips={dayChips} />
+          <Workspace list={handoverPaging.pageRows} query={query} setQuery={setQuery} selected={selected} selectedId={selectedId} setSelectedId={setSelectedId} staff={staff} db={db} actions={actions} chips={dayChips}
+            pager={handoverPaging.pagerProps} emptyText="Không có đơn nào cần bàn giao trong nhóm này." />
         )}
         {section === "all" && (
-          <Workspace list={allVisible} query={query} setQuery={setQuery} selected={selected} selectedId={selectedId} setSelectedId={setSelectedId} staff={staff} db={db} actions={actions} />
+          <Workspace list={allList.items} query={query} setQuery={setQuery} selected={selected} selectedId={selectedId} setSelectedId={setSelectedId} staff={staff} db={db} actions={actions}
+            chips={<FilterChips options={STAFF_RES_FILTERS} value={allStatus} onChange={setAllStatus} counts={allList.statusCounts} total={sumCounts(allList.statusCounts)} className="st-chips-row" />}
+            toolbar={<div className="ss-toolbar st-list-toolbar"><SortSelect value={allSort} onChange={setAllSort} options={RESERVATION_SORTS} /></div>}
+            pager={allList.pagerProps} loading={allList.loading} error={allList.error} />
         )}
 
         {section === "units" && (
           <div className="st-card">
+            <div className="ss-toolbar">
+              <input className="ss-search ss-grow" placeholder="Tìm mã kho, loại kho, khu, tầng" value={unitQuery} onChange={(e) => setUnitQuery(e.target.value)} />
+              <SortSelect value={unitSort} onChange={setUnitSort} options={UNIT_SORTS} />
+            </div>
+            <FilterChips options={STAFF_UNIT_FILTERS} value={unitStatus} onChange={setUnitStatus} counts={unitList.statusCounts} total={sumCounts(unitList.statusCounts)} className="st-chips-row" />
+            {unitList.error && <div className="ss-error-line" role="alert">{unitList.error}</div>}
             <table className="st-table">
-              <thead><tr><th>Mã kho</th><th>Loại kho</th><th>Size</th><th>Giá thuê / tháng</th><th>Trạng thái</th><th>Đổi trạng thái</th><th>Báo cáo</th></tr></thead>
+              <thead><tr><th>Mã kho</th><th>Loại kho</th><th>Size</th><th>Vị trí</th><th>Giá thuê / tháng</th><th>Trạng thái</th><th>Đổi trạng thái</th><th>Báo cáo</th></tr></thead>
               <tbody>
-                {units.length === 0 && <tr><td colSpan="7" className="st-empty">Cơ sở chưa có kho.</td></tr>}
-                {[...units].sort((a, b) => String(a.id).localeCompare(String(b.id), "vi", { numeric: true })).map((u) => (
-                  <tr key={u.id}>
-                    <td><strong>{u.id}</strong></td><td>{u.type}</td><td>{u.size || "—"}</td><td>{fmtMoney(u.pricePerMonth)}</td>
+                {unitList.loading && unitList.items.length === 0 && <tr><td colSpan="8" className="st-empty">Đang tải danh sách kho…</td></tr>}
+                {!unitList.loading && unitList.items.length === 0 && <tr><td colSpan="8" className="st-empty">{units.length === 0 ? "Cơ sở chưa có kho." : "Không có kho phù hợp bộ lọc."}</td></tr>}
+                {unitList.items.map((u) => (
+                  <tr key={u.id} className={rowClass(u.createdAt)}>
+                    <td><Code kind="unit">{u.id}</Code> <NewBadge createdAt={u.createdAt} /></td><td>{u.type}</td><td>{u.size || "—"}</td>
+                    <td>{[u.zone && `Khu ${u.zone}`, u.floor && `Tầng ${u.floor}`].filter(Boolean).join(" · ") || "—"}</td>
+                    <td><b>{fmtMoney(u.pricePerMonth)}</b></td>
                     <td><Badge map={UNIT_STATUS} value={u.status} /></td>
                     <td>
                       {STAFF_EDITABLE_UNIT.includes(u.status) && u.unitId != null ? (
@@ -760,6 +847,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
                 ))}
               </tbody>
             </table>
+            <Pager {...unitList.pagerProps} unit="kho" />
           </div>
         )}
 
@@ -774,18 +862,19 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
                 <thead><tr><th>Ngày hẹn</th><th>Loại việc</th><th>Kho</th><th>Đơn / Khách</th><th>Trạng thái</th></tr></thead>
                 <tbody>
                   {tasks.length === 0 && <tr><td colSpan="5" className="st-empty">Bạn chưa được giao việc nào tại cơ sở này.</td></tr>}
-                  {tasks.map((t) => (
-                    <tr key={t.taskId}>
-                      <td>{fmtDate(t.scheduledDate)}{t.scheduledTime ? ` · ${t.scheduledTime}` : ""}</td>
+                  {taskPaging.pageRows.map((t) => (
+                    <tr key={t.taskId} className={rowClass(t.createdAt)}>
+                      <td><b>{fmtDate(t.scheduledDate)}</b>{t.scheduledTime ? ` · ${t.scheduledTime}` : ""} <NewBadge createdAt={t.createdAt} label="Mới giao" /></td>
                       <td>{TASK_TYPE[t.taskType] || t.taskType}</td>
-                      <td><strong>{t.unitNumber}</strong></td>
-                      <td>{t.reservationCode || (t.reservationId ? formatReservationCode(t.reservationId) : "—")}{t.customerName ? ` · ${t.customerName}` : ""}</td>
+                      <td><Code kind="unit">{t.unitNumber}</Code></td>
+                      <td><Code kind="order">{t.reservationCode || (t.reservationId ? formatReservationCode(t.reservationId) : null)}</Code>{t.customerName ? <span className="st-cell-sub">{t.customerName}</span> : ""}</td>
                       <td><Badge map={TASK_STATUS} value={t.status} /></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
+            <Pager {...taskPaging.pagerProps} unit="việc" />
           </div>
         )}
 
@@ -806,10 +895,11 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
           <div className="st-card">
             {facilityActivity.length === 0 && <div className="st-empty">Chưa có lần bàn giao nào.</div>}
             <ul className="st-log">
-              {facilityActivity.map((a) => (
-                <li key={a.id}><small>{fmtDateTime(a.at)} · {a.staffName}</small><div>{a.text}</div></li>
+              {logPaging.pageRows.map((a) => (
+                <li key={a.id} className={rowClass(a.at)}><small><b>{fmtDateTime(a.at)}</b> · {a.staffName} <NewBadge createdAt={a.at} /></small><div>{a.text}</div></li>
               ))}
             </ul>
+            <Pager {...logPaging.pagerProps} unit="lượt" />
           </div>
         )}
       </main>
@@ -848,6 +938,8 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
         .filter((f) => myFacilityNames.includes(f.id) && f.facilityId != null)
         .map((f) => f.facilityId);
       await Promise.all(facilityIds.map((id) => apiPost(`/api/manager-tools/facilities/${id}/auto-assign`, {}).catch(() => null)));
+      // [7a] Cập nhật phí trễ hạn tiền thuê của cơ sở tới hôm nay (lỗi không chặn trang)
+      await Promise.all(facilityIds.map((id) => apiPost(`/api/late-fees/facilities/${id}/sync`, {}).catch(() => null)));
       // [STAFF-TOOLS] Việc Manager giao cho mình: dùng để kiểm tra quyền bàn giao và hiện mục "Việc được giao"
       let staffTasks = [];
       let staffTasksError = "";
@@ -934,4 +1026,4 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
             <NoAccess navigate={navigate} />}
     </div>
   );
-}
+}

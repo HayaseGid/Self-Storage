@@ -31,6 +31,49 @@ public class OperationsController : ControllerBase
         return MapResponse(response);
     }
 
+    /*
+     * Danh sách có phân trang (Staff / Manager / Business / Admin / Khách - cùng phạm vi dữ liệu với /state):
+     *   GET /api/operations/reservations?page=1&pageSize=20&q=&status=HANDED_OVER,CONFIRMED&sort=newest|oldest|appointment|appointment_desc|start|code&facilityId=
+     *   GET /api/operations/units?page=1&pageSize=20&q=&status=AVAILABLE&typeId=&sort=newest|oldest|code|code_desc|updated&facilityId=
+     *   GET /api/operations/contracts?page=1&pageSize=20&q=&status=ACTIVE,EXPIRING,EXPIRED,RENEWED,CLOSED&sort=newest|oldest|ending|code&facilityId=
+     * Trả về { items, total, page, pageSize, pageCount, statusCounts }.
+     */
+    [HttpGet("reservations")]
+    public Task<IActionResult> GetReservationsPage(
+        [FromQuery] PageQuery query,
+        [FromQuery] string? email,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
+        CancellationToken cancellationToken)
+        => GetPagedList("reservations", query, email, userEmail, cancellationToken);
+
+    [HttpGet("units")]
+    public Task<IActionResult> GetUnitsPage(
+        [FromQuery] PageQuery query,
+        [FromQuery] string? email,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
+        CancellationToken cancellationToken)
+        => GetPagedList("units", query, email, userEmail, cancellationToken);
+
+    [HttpGet("contracts")]
+    public Task<IActionResult> GetContractsPage(
+        [FromQuery] PageQuery query,
+        [FromQuery] string? email,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
+        CancellationToken cancellationToken)
+        => GetPagedList("contracts", query, email, userEmail, cancellationToken);
+
+    private async Task<IActionResult> GetPagedList(
+        string kind,
+        PageQuery query,
+        string? email,
+        string? userEmail,
+        CancellationToken cancellationToken)
+    {
+        var authenticatedByJwt = HttpContext.Items.ContainsKey(SelfStorageAPI.Middleware.JwtIdentityMiddleware.AuthenticatedByJwtItem);
+        var response = await _stateService.GetPagedListAsync(kind, query, authenticatedByJwt ? null : email, userEmail, cancellationToken);
+        return MapResponse(response);
+    }
+
     [HttpGet("reports")]
     public async Task<IActionResult> GetReports(
         [FromHeader(Name = "X-User-Email")] string? userEmail,

@@ -52,7 +52,7 @@ public sealed class UnitReturnsController(
 
     public sealed record ReturnRequest(int ReservationId, DateTime ReturnDate, string? ReturnTime, string? Note);
     public sealed record FeeLine(string? FeeCode, string? Description, decimal Amount);
-    public sealed record CompleteRequest(string? Condition, string? Notes, string? UnitStatus, List<FeeLine>? Fees);
+    public sealed record CompleteRequest(string? Condition, string? Notes, string? UnitStatus, List<FeeLine>? Fees, List<string>? Images = null); // [SỬA 14] thêm Images (ảnh kiểm kho)
     private sealed record ReturnRules(int NoticeDays, int RefundDays);
 
     // ================================================================== KHÁCH
@@ -466,6 +466,12 @@ public sealed class UnitReturnsController(
         if (condition == "Damaged" && string.IsNullOrWhiteSpace(request.Notes))
             return BadRequest(new { message = "Kho có vấn đề: vui lòng ghi rõ tình trạng để gửi cho khách." });
 
+        // [THÊM 14] Ảnh bằng chứng (bắt buộc khi kho có vấn đề / có phí) + phí đúng khoảng của danh mục. Services/ReturnInspectionService.cs
+        var inspections = HttpContext.RequestServices.GetRequiredService<IReturnInspectionService>();
+        var inspectionFees = fees.Select(f => new InspectionFeeInput(f.FeeCode, f.Description!, f.Amount)).ToList();
+        var inspectionError = await inspections.ValidateAsync(condition, request.Images, inspectionFees, ct);
+        if (inspectionError is not null) return BadRequest(new { message = inspectionError });
+
         var r = await LoadForStaffAsync(reservationId, staffId.Value, ct);
         if (r is null) return NotFound(new { message = "Không tìm thấy yêu cầu trả kho tại cơ sở của bạn." });
         var tasks = r.HandoverTasks.Where(t => t.TaskType == MoveOut && t.Status == "In Progress").ToList();
@@ -490,6 +496,17 @@ public sealed class UnitReturnsController(
             var deposits = r.Charges.Where(c => c.ChargeType == "Deposit" && c.Status == "Paid" && c.RefundedAmount == 0).OrderBy(c => c.ChargeID).ToList();
             var remaining = deposits.Sum(c => c.Amount);
             decimal fromDeposit = 0, owed = 0;
+
+            // [THÊM 7b] Công nợ còn lại của hợp đồng trừ vào cọc TRƯỚC phí kiểm kho: tiền thuê đã tới kỳ chưa đóng,
+            // phí trễ hạn (chốt tới hôm nay), phí cũ chưa đóng; kỳ thuê chưa tới (trả trước hạn) được hủy.
+            // Chi tiết: Services/LateFeeService.cs -> SettleOnReturnAsync (chạy trong transaction này).
+            var debt = await HttpContext.RequestServices.GetRequiredService<ILateFeeService>()
+                .SettleOnReturnAsync(r, remaining, today, now, staffId.Value, ct);
+            remaining = debt.RemainingDeposit; fromDeposit += debt.FromDeposit; owed += debt.Owed;
+
+            // [THÊM 14] Lưu kết quả kiểm kho + ảnh. Có phí kiểm kho -> CHƯA trừ cọc, CHƯA hoàn cọc: khách xác nhận / khiếu nại trước,
+            // quyết toán sau ở ReturnInspectionService (khách Đồng ý / quá hạn tự xác nhận / Manager giải quyết khiếu nại).
+            var hold = await inspections.RecordAsync(r, condition, request.Notes, request.Images, inspectionFees, remaining, now, staffId.Value, ct);
             Charge NewFee(FeeLine f, decimal amount, bool settled, string suffix) => new()
             {
                 ReservationID = r.ReservationID,
@@ -504,7 +521,7 @@ public sealed class UnitReturnsController(
                 CreatedAt = now,
                 CreatedByUserID = staffId.Value
             };
-            foreach (var f in fees)
+            foreach (var f in hold.Held ? new List<FeeLine>() : fees) // [SỬA 14] chờ khách xác nhận thì chưa tạo khoản phí
             {
                 if (remaining >= f.Amount)
                 {
@@ -526,7 +543,7 @@ public sealed class UnitReturnsController(
             await context.SaveChangesAsync(ct);
 
             // 2) Cọc còn dư -> hoàn sau N ngày (Payment Refund DepositReturn, Pending, ngày hoàn dự kiến ở ExpiresAt).
-            if (remaining > 0)
+            if (remaining > 0 && !hold.Held) // [SỬA 14] chờ khách xác nhận thì chưa hoàn cọc
             {
                 var refund = new Payment
                 {
@@ -559,6 +576,7 @@ public sealed class UnitReturnsController(
             // 3) Kết quả kiểm kho, trạng thái kho, kết thúc đơn + hợp đồng.
             var notes = request.Notes?.Trim();
             var feeText = fees.Count == 0 ? "Không phát sinh phí." : "Phí: " + string.Join("; ", fees.Select(f => $"{f.Description} {Vnd(f.Amount)}đ")) + ".";
+            if (hold.Held) feeText = "Phí đề xuất (chờ khách xác nhận): " + string.Join("; ", fees.Select(f => $"{f.Description} {Vnd(f.Amount)}đ")) + "."; // [THÊM 14]
             var unitStatus = string.Equals(request.UnitStatus, "Maintenance", StringComparison.OrdinalIgnoreCase) ? UnitStatus.Maintenance : UnitStatus.Available;
             foreach (var t in tasks)
             {
@@ -625,6 +643,8 @@ public sealed class UnitReturnsController(
                 : remaining > 0
                     ? $"Đã hoàn tất kiểm tra. Khách được hoàn {Vnd(remaining)}đ tiền cọc sau {rules.RefundDays} ngày."
                     : "Đã hoàn tất kiểm tra. Tiền cọc đã dùng hết để bù phí phát sinh.";
+            if (hold.Held) summary = hold.Message!; // [THÊM 14]
+            if (debt.Message is not null) summary = $"{debt.Message} {summary}"; // [THÊM 7b]
             if (unitStatus == UnitStatus.Maintenance)
                 summary += " Kho chuyển Bảo trì, đã ghi báo cáo cho Facility Manager.";
             if (warnings.Count > 0)
@@ -635,8 +655,9 @@ public sealed class UnitReturnsController(
                 warnings,
                 fromDeposit,
                 owed,
-                refundAmount = remaining,
-                refundDueDate = remaining > 0 ? now.AddDays(rules.RefundDays) : (DateTime?)null
+                refundAmount = hold.Held ? 0 : remaining, // [SỬA 14]
+                refundDueDate = remaining > 0 && !hold.Held ? now.AddDays(rules.RefundDays) : (DateTime?)null, // [SỬA 14]
+                confirmDeadline = hold.ConfirmDeadline // [THÊM 14] hạn khách xác nhận phí kiểm kho (null = không có phí)
             });
         }
         catch (DbUpdateException exception)

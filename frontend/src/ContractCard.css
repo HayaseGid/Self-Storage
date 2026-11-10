@@ -87,3 +87,18 @@
 .cc-rent p { margin: 0; }
 .cc-rent.ok { background: #effaf3; border-color: #bfe5cc; color: #1f5a35; }
 .cc-rent.bad { background: #fdf0f0; border-color: #f0c4c4; color: #7a2020; }
+
+/* [THÊM] Đầu danh sách hợp đồng của khách */
+.cc-list-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 28px 0 10px; }
+.cc-list-head h2 { margin: 0; font-size: 20px; color: #073d70; display: flex; align-items: center; gap: 8px; }
+.cc-list-head h2 span { padding: 0 9px; border-radius: 999px; background: #eaf4ff; color: #075a9f; font-size: 13px; line-height: 24px; }
+.cc-list-head p { margin: 4px 0 0; color: #6d849b; font-size: 13px; }
+.cc-list-head .ss-search { flex: 0 1 320px; }
+.cc-list-chips { margin-bottom: 16px; }
+.cc-chips .ss-codes { margin-left: 2px; }
+
+/* [SỬA] Tab của trang Hợp đồng (khách) */
+.cc-tabs { gap: 8px; margin: 4px 0 18px; padding-bottom: 14px; border-bottom: 1px solid #e4edf4; }
+.cc-tabs button { height: 42px; padding: 0 18px; font-size: 14px; border-radius: 12px; }
+.cc-tabs button span { font-size: 12px; }
+.cc-tab-hint { margin: -6px 0 14px; color: #6d849b; font-size: 13.5px; }

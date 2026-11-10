@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { Code, Pager, UnitCodes, useClientPaging } from './listKit' // [THÊM] chia trang + mã nổi bật
 import { apiGet, apiPost } from './api'
 import { useDialog } from './Dialog'
 import { formatVnd } from './storageRules'
 import { usePolicies } from './policies'
 import { fmtDay } from './UnitReturn'
+import { INSPECTION, MAX_STAFF_PHOTOS, PhotoPicker, StaffInspectionStatus, useStaffInspections } from './ReturnInspection' // [THÊM 14]
 import './UnitReturn.css'
 
 /*
@@ -12,6 +14,8 @@ import './UnitReturn.css'
  *   2. "Nhận lại kho": kho chuyển "Đang kiểm tra", thu hồi mã / thẻ ra vào của khách.
  *   3. "Hoàn tất kiểm tra": tình trạng + các khoản phí -> hệ thống trừ vào cọc, báo khách đóng thêm nếu thiếu,
  *      cọc dư hoàn sau N ngày; kho trở lại "Còn trống" hoặc "Bảo trì".
+ *   [14] Kho có vấn đề / có phí: bắt buộc chụp 1-5 ảnh. Có phí kiểm kho thì CHƯA trừ cọc: khách xác nhận hoặc khiếu nại
+ *        trong N ngày (quá hạn tự xác nhận), khiếu nại do Facility Manager quyết định. Công nợ hợp đồng (7b) vẫn trừ ngay.
  */
 
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
@@ -29,19 +33,33 @@ export function useStaffReturns() {
   return { ...state, items: state.data?.items || [], fees: state.data?.fees || [], rules: state.data?.rules || null, reload }
 }
 
-function InspectForm({ item, catalog, refundDays, onDone, onCancel }) {
+function InspectForm({ item, catalog, refundDays, confirmDays = 3, onDone, onCancel }) {
   const dialog = useDialog()
   const [condition, setCondition] = useState('Good')
   const [notes, setNotes] = useState('')
   const [unitStatus, setUnitStatus] = useState('Available')
   const [fees, setFees] = useState([])
   const [busy, setBusy] = useState(false)
+  const [images, setImages] = useState([]) // [THÊM 14] ảnh hiện trạng kho
+  // [7b] Công nợ còn lại của hợp đồng (tiền thuê chưa đóng, phí trễ hạn...) - backend trừ vào cọc TRƯỚC phí kiểm kho
+  const [debt, setDebt] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    apiGet(`/api/late-fees/returns/${item.reservationId}/preview`)
+      .then(data => { if (!cancelled) setDebt(data) })
+      .catch(() => { if (!cancelled) setDebt(null) })
+    return () => { cancelled = true }
+  }, [item.reservationId])
+  const debtTotal = Number(debt?.debtTotal || 0)
 
   const total = fees.reduce((n, f) => n + (Number(f.amount) || 0), 0)
   const deposit = Number(item.depositPaid || 0)
-  const fromDeposit = Math.min(total, deposit)
-  const owed = Math.max(0, total - deposit)
-  const refund = Math.max(0, deposit - total)
+  const fromDeposit = Math.min(debtTotal + total, deposit)
+  const owed = Math.max(0, debtTotal + total - deposit)
+  const refund = Math.max(0, deposit - debtTotal - total)
+  // [THÊM 14] Có vấn đề / có phí -> bắt buộc ảnh; có phí kiểm kho -> chờ khách xác nhận rồi mới trừ cọc
+  const photosRequired = condition === 'Damaged' || total > 0
+  const debtFromDeposit = Math.min(debtTotal, deposit)
 
   const addFee = key => {
     const f = catalog.find(c => c.key === key)
@@ -54,17 +72,23 @@ function InspectForm({ item, catalog, refundDays, onDone, onCancel }) {
       await dialog.alert({ tone: 'warning', title: 'Thiếu mô tả', message: 'Kho có vấn đề: ghi rõ tình trạng để gửi cho khách.' })
       return
     }
+    if (photosRequired && images.length === 0) { // [THÊM 14]
+      await dialog.alert({ tone: 'warning', title: 'Thiếu ảnh', message: 'Kho có vấn đề hoặc có phí phát sinh: chụp ít nhất 1 ảnh làm bằng chứng gửi khách.' })
+      return
+    }
     const ok = await dialog.confirm({
       tone: 'warning',
       title: 'Hoàn tất kiểm tra?',
-      message: `${condition === 'Good' ? 'Kho không có vấn đề.' : 'Kho có vấn đề.'} Phí phát sinh: ${money(total)}.\n${owed > 0 ? `Khách cần đóng thêm ${money(owed)}.` : `Hoàn cọc cho khách: ${money(refund)} sau ${refundDays} ngày.`}\nKết quả sẽ gửi cho khách và không sửa lại được.`,
+      message: total > 0 // [SỬA 14]
+        ? `${condition === 'Good' ? 'Kho không có vấn đề.' : 'Kho có vấn đề.'}${debtTotal > 0 ? ` Công nợ hợp đồng ${money(debtTotal)} trừ vào cọc ngay.` : ''}\nPhí kiểm kho ${money(total)} kèm ${images.length} ảnh sẽ gửi khách xác nhận trong ${confirmDays} ngày, CHƯA trừ cọc cho tới khi khách đồng ý / quá hạn / Manager giải quyết khiếu nại.\nKết quả và ảnh không sửa lại được.`
+        : `${condition === 'Good' ? 'Kho không có vấn đề.' : 'Kho có vấn đề.'}${debtTotal > 0 ? ` Công nợ hợp đồng: ${money(debtTotal)}.` : ''} Không có phí kiểm kho.\n${owed > 0 ? `Khách cần đóng thêm ${money(owed)}.` : `Hoàn cọc cho khách: ${money(refund)} sau ${refundDays} ngày.`}\nKết quả sẽ gửi cho khách và không sửa lại được.`,
       confirmLabel: 'Hoàn tất', cancelLabel: 'Xem lại'
     })
     if (!ok) return
     setBusy(true)
     try {
       const result = await apiPost(`/api/unit-returns/staff/${item.reservationId}/complete`, {
-        condition, notes, unitStatus,
+        condition, notes, unitStatus, images, // [SỬA 14] gửi kèm ảnh
         fees: fees.filter(f => Number(f.amount) > 0).map(f => ({ feeCode: f.feeCode, description: f.description, amount: Number(f.amount) }))
       })
       await dialog.alert({ tone: 'success', title: 'Đã hoàn tất kiểm tra', message: result.message })
@@ -84,6 +108,10 @@ function InspectForm({ item, catalog, refundDays, onDone, onCancel }) {
       <label>Ghi chú tình trạng {condition === 'Damaged' && <em>(bắt buộc)</em>}
         <textarea className="st-input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ví dụ: tường trầy 2 vết, mất 1 thẻ từ, còn rác..." />
       </label>
+
+      {/* [THÊM 14] Ảnh hiện trạng kho */}
+      <PhotoPicker images={images} onChange={setImages} max={MAX_STAFF_PHOTOS} required={photosRequired} disabled={busy}
+        hint={photosRequired ? 'Chụp rõ chỗ hư hỏng / bẩn / thiếu đồ: khách và Facility Manager sẽ xem ảnh này trước khi trừ cọc.' : 'Nên chụp vài ảnh kho trống để lưu bằng chứng tình trạng lúc nhận lại.'} />
 
       <div>
         <strong>Phí phát sinh</strong>
@@ -114,13 +142,42 @@ function InspectForm({ item, catalog, refundDays, onDone, onCancel }) {
         </div>
       )}
 
+      {debt && (debtTotal > 0 || debt.futureRents?.length > 0) && (
+        <div className="st-alert st-warn">
+          <strong>Công nợ của hợp đồng sẽ trừ vào cọc trước phí kiểm kho:</strong>
+          {(debt.rentDebts || []).map((d, i) => (
+            <div key={`r${i}`}>• Tiền thuê kỳ {fmtDay(d.periodStart)}–{fmtDay(d.periodEnd)}{d.unitNumber ? ` (kho ${d.unitNumber})` : ''} chưa đóng: <b>{money(d.amount)}</b></div>
+          ))}
+          {(debt.fees || []).map((f, i) => (
+            <div key={`f${i}`}>• {f.description}: <b>{money(f.amount)}</b></div>
+          ))}
+          {debt.futureRents?.length > 0 && (
+            <div>• {debt.futureRents.length} kỳ tiền thuê chưa tới (khách trả trước hạn) sẽ được hủy, không thu.</div>
+          )}
+        </div>
+      )}
+
       <div className="sr-summary">
         <div><span>Tiền cọc khách đã đóng</span><b>{money(deposit)}</b></div>
+        {debtTotal > 0 && <div><span>Công nợ hợp đồng (tiền thuê, phí trễ hạn)</span><b>{money(debtTotal)}</b></div>}
         <div><span>Tổng phí phát sinh</span><b>{money(total)}</b></div>
-        <div><span>Trừ vào cọc</span><b>{money(fromDeposit)}</b></div>
-        {owed > 0
-          ? <div className="bad"><span>Khách cần đóng thêm</span><b>{money(owed)}</b></div>
-          : <div className="ok"><span>Hoàn cọc sau {refundDays} ngày</span><b>{money(refund)}</b></div>}
+        {total > 0 ? (
+          /* [SỬA 14] Có phí kiểm kho: chỉ công nợ hợp đồng trừ ngay, phí kiểm kho chờ khách xác nhận */
+          <>
+            <div><span>Trừ vào cọc ngay (công nợ hợp đồng)</span><b>{money(debtFromDeposit)}</b></div>
+            <div><span>Phí kiểm kho chờ khách xác nhận ({confirmDays} ngày)</span><b>{money(total)}</b></div>
+            {owed > 0
+              ? <div className="bad"><span>Nếu khách đồng ý: cần đóng thêm</span><b>{money(owed)}</b></div>
+              : <div className="ok"><span>Nếu khách đồng ý: hoàn cọc</span><b>{money(refund)}</b></div>}
+          </>
+        ) : (
+          <>
+            <div><span>Trừ vào cọc</span><b>{money(fromDeposit)}</b></div>
+            {owed > 0
+              ? <div className="bad"><span>Khách cần đóng thêm</span><b>{money(owed)}</b></div>
+              : <div className="ok"><span>Hoàn cọc sau {refundDays} ngày</span><b>{money(refund)}</b></div>}
+          </>
+        )}
       </div>
 
       <div className="sr-actions">
@@ -134,6 +191,7 @@ function InspectForm({ item, catalog, refundDays, onDone, onCancel }) {
 export default function StaffReturns({ staff }) {
   const dialog = useDialog()
   const data = useStaffReturns()
+  const inspections = useStaffInspections() // [THÊM 14]
   const policies = usePolicies()
   const [filter, setFilter] = useState('todo')
   const [inspecting, setInspecting] = useState(null)
@@ -148,6 +206,7 @@ export default function StaffReturns({ staff }) {
     done: atFacility.filter(i => i.requestStatus === 'Completed')
   }
   const shown = groups[filter]
+  const paging = useClientPaging(shown, { pageSize: 8, resetKey: filter })
 
   const catalog = [
     ...(policies.values?.renewal_return?.returnFees || []).map((f, i) => ({ key: `p${i}`, name: f.name, amount: f.amount ?? '', label: `${f.name}${f.amount ? ` · ${money(f.amount)}` : ' · theo thực tế'}` })),
@@ -184,7 +243,7 @@ export default function StaffReturns({ staff }) {
 
       {shown.length === 0 && <div className="st-card st-empty">Không có yêu cầu trả kho nào trong mục này.</div>}
 
-      {shown.map(item => {
+      {paging.pageRows.map(item => {
         const req = item.request
         return (
           <article key={item.reservationId} className="sr-item">
@@ -194,7 +253,8 @@ export default function StaffReturns({ staff }) {
                   {item.customerName}
                   {item.assignedToMe ? <span className="sr-mine">Giao cho bạn</span> : <span className="sr-other">NV {req.staffName}</span>}
                 </h3>
-                <p>{item.contractNumber} · {item.customerPhone || item.customerEmail} · hẹn trả {item.scheduledTime ? `${item.scheduledTime} ` : ''}{fmtDay(item.scheduledDate)} · hết hạn {fmtDay(item.endDate)}</p>
+                <p className="sr-codes"><Code kind="contract">{item.contractNumber}</Code><UnitCodes units={item.units.map(u => u.unitNumber)} max={4} /><span>{item.customerPhone || item.customerEmail}</span></p>
+                <p>Hẹn trả <b>{item.scheduledTime ? `${item.scheduledTime} ` : ''}{fmtDay(item.scheduledDate)}</b> · hết hạn {fmtDay(item.endDate)}</p>
                 {req.overdue && <span className="sr-other">Quá hạn · hệ thống tự lên lịch, liên hệ khách</span>}
               </div>
               <div><small>Tiền cọc đang giữ</small><br /><strong>{money(item.depositPaid)}</strong></div>
@@ -218,19 +278,30 @@ export default function StaffReturns({ staff }) {
               </div>
             )}
             {item.requestStatus === 'In Progress' && item.assignedToMe && (inspecting === item.reservationId
-              ? <InspectForm item={item} catalog={catalog} refundDays={data.rules?.depositRefundDays ?? 7} onCancel={() => setInspecting(null)} onDone={() => { setInspecting(null); data.reload(); setFilter('done') }} />
+              ? <InspectForm item={item} catalog={catalog} refundDays={data.rules?.depositRefundDays ?? 7} confirmDays={inspections.confirmDays} onCancel={() => setInspecting(null)} onDone={() => { setInspecting(null); data.reload(); inspections.reload(); setFilter('done') }} />
               : <div className="sr-actions"><button type="button" className="dashboard-primary-btn" onClick={() => setInspecting(item.reservationId)}>Nhập kết quả kiểm tra</button></div>)}
-            {item.requestStatus === 'Completed' && (
-              <div className="sr-summary">
-                <div><span>Kết quả</span><b>{req.conditionResult === 'Damaged' ? 'Có vấn đề' : 'Không có vấn đề'}</b></div>
-                <div><span>Trừ vào cọc</span><b>{money(req.deductedFromDeposit)}</b></div>
-                {Number(req.amountOwed) > 0 && <div className="bad"><span>Khách còn nợ</span><b>{money(req.amountOwed)}</b></div>}
-                <div className="ok"><span>Hoàn cọc</span><b>{money(req.refundAmount)}{Number(req.refundAmount) > 0 ? (req.refundStatus === 'Completed' ? ' · đã chuyển' : ` · ${fmtDay(req.refundDueDate)}`) : ''}</b></div>
-              </div>
-            )}
+            {item.requestStatus === 'Completed' && (() => {
+              // [SỬA 14] Phí kiểm kho đang chờ khách xác nhận / khiếu nại thì chưa có số hoàn cọc
+              const insp = inspections.byReservation(item.reservationId)
+              const pending = insp && insp.status !== INSPECTION.SETTLED
+              return (
+                <>
+                  <div className="sr-summary">
+                    <div><span>Kết quả</span><b>{req.conditionResult === 'Damaged' ? 'Có vấn đề' : 'Không có vấn đề'}</b></div>
+                    <div><span>Trừ vào cọc{pending ? ' (công nợ hợp đồng)' : ''}</span><b>{money(req.deductedFromDeposit)}</b></div>
+                    {Number(req.amountOwed) > 0 && <div className="bad"><span>Khách còn nợ</span><b>{money(req.amountOwed)}</b></div>}
+                    {pending
+                      ? <div><span>Phí kiểm kho chờ quyết toán</span><b>{money(insp.proposedTotal)}</b></div>
+                      : <div className="ok"><span>Hoàn cọc</span><b>{money(req.refundAmount)}{Number(req.refundAmount) > 0 ? (req.refundStatus === 'Completed' ? ' · đã chuyển' : ` · ${fmtDay(req.refundDueDate)}`) : ''}</b></div>}
+                  </div>
+                  <StaffInspectionStatus inspection={insp} />
+                </>
+              )
+            })()}
           </article>
         )
       })}
+      <Pager {...paging.pagerProps} unit="yêu cầu" />
     </div>
   )
 }

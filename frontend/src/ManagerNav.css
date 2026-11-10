@@ -1,0 +1,56 @@
+/* Menu trái Facility Manager (ManagerNav.jsx). Kế thừa kiểu nút của .customer-nav, chỉ chỉnh phần riêng. */
+
+.mnav { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; min-width: 0; }
+.mnav-group { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 0; }
+.mnav-group + .mnav-group { margin-top: 14px; }
+
+/* Tiêu đề nhóm: nhỏ, nhạt, không tranh chú ý với mục */
+.customer-nav .mnav-title,
+.mnav-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 0;
+  padding: 0 13px 4px;
+  border: 0;
+  background: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-transform: none;
+  color: #9aabbc;
+  text-align: left;
+  cursor: default;
+}
+.customer-nav .mnav-title.toggle { cursor: pointer; }
+.customer-nav .mnav-title.toggle:hover:not(:disabled) { background: none; color: var(--muted, #6d849b); }
+.customer-nav .mnav-title.toggle:disabled { cursor: default; opacity: 1; }
+.mnav-chevron { width: 14px; height: 14px; margin-left: auto; fill: none; stroke: currentColor; stroke-width: 2; transition: transform .15s; }
+.mnav-chevron.open { transform: rotate(90deg); }
+.mnav-dot { width: 7px; height: 7px; border-radius: 50%; background: #e5484d; }
+
+/* Mục */
+.customer-nav button.mnav-item { min-height: 42px; min-width: 0; width: 100%; gap: 11px; overflow: hidden; }
+.customer-nav button.mnav-item .mnav-icon { display: inline-flex; flex: 0 0 auto; width: 20px; color: #7b93ab; }
+.customer-nav button.mnav-item:hover .mnav-icon,
+.customer-nav button.mnav-item.active .mnav-icon { color: #0877cf; }
+.mnav-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mnav-label { flex: 1; min-width: 0; font-style: normal; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Số việc chờ: đỏ = cần Manager xử lý; xanh lá "Mới" = kho mới BOM vừa thêm */
+.mnav-badge {
+  flex: 0 0 auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.mnav-badge.new { background: #dff6e8; color: #1f7a48; }

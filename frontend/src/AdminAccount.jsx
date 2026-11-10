@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { NewBadge, Pager, newestFirst, parseTime, rowClass, timeAgo, useServerList } from "./listKit"; // [THÊM] phân trang ở backend + tô sáng bản ghi mới
 import "./AdminAccount.css";
 import { apiGet, apiPut } from "./api";
 import { useDialog } from "./Dialog";
@@ -39,6 +40,7 @@ function Admin() {
       setUsers(userData);
       setLogs(activityData.map((log) => ({
         id: log.id,
+        at: log.time,
         time: new Date(log.time).toLocaleString("vi-VN"),
         actor: log.actor,
         action: log.action,
@@ -141,6 +143,36 @@ function Admin() {
     return !q || [log.actor, log.action, log.target].some((value) => value.toLowerCase().includes(q));
   }), [logs, logSearch]);
 
+  // [PHÂN TRANG] Quản lý tài khoản: backend lọc + chia trang (GET /api/admin/users?page=...), mới tạo lên đầu.
+  // Backend cũ (trả cả mảng) -> tự chia trang từ danh sách đã tải.
+  const userList = useServerList({
+    path: "/api/admin/users",
+    q: search,
+    status: statusFilter === "All" ? "" : statusFilter.toUpperCase(),
+    extra: { role: roleFilter === "All" ? undefined : roleFilter },
+    pageSize: 20,
+    reloadKey: users,
+    enabled: activeMenu === "users",
+    fallback: {
+      rows: roleFilter === "All" ? users : users.filter((u) => u.role === roleFilter),
+      match: (u, { q }) => !q || [u.name, u.username, u.email, u.facility].some((v) => String(v || "").toLowerCase().includes(q)),
+      statusOf: (u) => String(u.status || "").toUpperCase(),
+      compare: (a, b) => (parseTime(b.createdAt) || 0) - (parseTime(a.createdAt) || 0) || b.id - a.id,
+    },
+  });
+  // [PHÂN TRANG] Nhật ký hoạt động (GET /api/admin/activity?page=...), mới nhất lên đầu
+  const logList = useServerList({
+    path: "/api/admin/activity",
+    q: logSearch,
+    pageSize: 25,
+    reloadKey: logs,
+    enabled: activeMenu === "logs",
+    fallback: { rows: logs, match: (l, { q }) => !q || [l.actor, l.action, l.target].some((v) => String(v || "").toLowerCase().includes(q)), compare: () => 0 },
+  });
+  const logRows = logList.mode === "server"
+    ? logList.items.map((l) => ({ ...l, at: l.time, time: new Date(l.time).toLocaleString("vi-VN") }))
+    : logList.items;
+
   const selectUser = (user) => {
     setSelectedUser(user);
     setTimeout(() => document.getElementById("admin-user-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
@@ -169,9 +201,9 @@ function Admin() {
         <table className="admin-table">
           <thead><tr><th>Người dùng</th><th>Tài khoản</th><th>Role đăng ký</th><th>Cơ sở</th><th>Ngày đăng ký</th><th>Trạng thái</th><th></th></tr></thead>
           <tbody>
-            {pendingUsers.length === 0 ? <tr><td colSpan="7" className="admin-empty">Không có tài khoản đang chờ duyệt.</td></tr> : pendingUsers.map((user) => (
-              <tr key={user.id} onClick={() => selectUser(user)} className="admin-clickable-row">
-                <td><strong>{user.name}</strong><small>{user.email}</small></td>
+            {pendingUsers.length === 0 ? <tr><td colSpan="7" className="admin-empty">Không có tài khoản đang chờ duyệt.</td></tr> : newestFirst(pendingUsers, { date: (u) => u.createdAt }).map((user) => (
+              <tr key={user.id} onClick={() => selectUser(user)} className={rowClass(user.createdAt, "admin-clickable-row")}>
+                <td><strong>{user.name} <NewBadge createdAt={user.createdAt} /></strong><small>{user.email}</small></td>
                 <td>{user.username}</td><td>{user.role}</td><td>{user.facility}</td><td>{user.createdAt}</td><td>{renderStatus(user.status)}</td>
                 <td><button className="admin-link-button" onClick={(e) => { e.stopPropagation(); selectUser(user); }}>Xem</button></td>
               </tr>
@@ -199,9 +231,13 @@ function Admin() {
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}><option value="All">Tất cả role</option>{roleOptions.map((role) => <option key={role}>{role}</option>)}</select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="All">Tất cả trạng thái</option><option>Active</option><option>Pending</option><option>Locked</option><option>Rejected</option></select>
       </div>
-      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Người dùng</th><th>Tài khoản</th><th>Role</th><th>Cơ sở</th><th>Trạng thái</th><th>Đăng nhập gần nhất</th></tr></thead><tbody>
-        {filteredUsers.map((user) => <tr key={user.id} onClick={() => selectUser(user)} className="admin-clickable-row"><td><strong>{user.name}</strong><small>{user.email}</small></td><td>{user.username}</td><td>{user.role}</td><td>{user.facility}</td><td>{renderStatus(user.status)}</td><td>{user.lastLogin}</td></tr>)}
+      {userList.error && <div className="ss-error-line" role="alert">{userList.error}</div>}
+      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Người dùng</th><th>Tài khoản</th><th>Role</th><th>Cơ sở</th><th>Trạng thái</th><th>Ngày tạo</th><th>Đăng nhập gần nhất</th></tr></thead><tbody>
+        {userList.loading && userList.items.length === 0 && <tr><td colSpan="7" className="admin-empty">Đang tải tài khoản…</td></tr>}
+        {!userList.loading && userList.items.length === 0 && <tr><td colSpan="7" className="admin-empty">Không có tài khoản phù hợp.</td></tr>}
+        {userList.items.map((user) => <tr key={user.id} onClick={() => selectUser(user)} className={rowClass(user.createdAt, "admin-clickable-row")}><td><strong>{user.name} <NewBadge createdAt={user.createdAt} /></strong><small>{user.email}</small></td><td><span className="admin-username">{user.username}</span></td><td>{user.role}</td><td>{user.facility}</td><td>{renderStatus(user.status)}</td><td>{user.createdAt}<small>{timeAgo(user.createdAt)}</small></td><td>{user.lastLogin}</td></tr>)}
       </tbody></table></div>
+      <Pager {...userList.pagerProps} unit="tài khoản" />
       {selectedUser && renderUserDetail(selectedUser)}
     </section>
   );
@@ -239,7 +275,8 @@ function Admin() {
     <section className="admin-section">
       <div className="admin-section-heading"><div><p className="admin-eyebrow">AUDIT TRAIL</p><h2>Nhật ký hoạt động</h2><p>Theo dõi đăng nhập và các thay đổi quan trọng do người dùng thực hiện.</p></div></div>
       <div className="admin-toolbar"><input value={logSearch} onChange={(e) => setLogSearch(e.target.value)} placeholder="Tìm actor, hành động, tài khoản..." /></div>
-      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Hành động</th><th>Đối tượng</th><th>Loại</th></tr></thead><tbody>{filteredLogs.map((log) => <tr key={log.id}><td>{log.time}</td><td><strong>{log.actor}</strong></td><td>{log.action}</td><td>{log.target}</td><td><span className={`admin-log-type admin-log-${log.type}`}>{log.type}</span></td></tr>)}</tbody></table></div>
+      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Hành động</th><th>Đối tượng</th><th>Loại</th></tr></thead><tbody>{logRows.map((log) => <tr key={log.id} className={rowClass(log.at)}><td><b>{log.time}</b> <NewBadge createdAt={log.at} /></td><td><strong>{log.actor}</strong></td><td>{log.action}</td><td>{log.target}</td><td><span className={`admin-log-type admin-log-${log.type}`}>{log.type}</span></td></tr>)}</tbody></table></div>
+      <Pager {...logList.pagerProps} unit="dòng nhật ký" />
     </section>
   );
 
@@ -267,7 +304,7 @@ function Admin() {
         <div><strong>StoreSpace</strong><small>System Administrator</small></div>
       </div>
       <nav className="customer-nav">
-        {[['dashboard', 'Dashboard', '⌂'], ['pending', 'Duyệt tài khoản', '◷'], ['users', 'Quản lý tài khoản', '▣'], ['roles', 'Phân quyền', '▤'], ['logs', 'Nhật ký hoạt động', '≡']].map(([key, label, icon]) => (
+        {[['dashboard', 'Tổng quan', '⌂'], ['pending', 'Duyệt tài khoản', '◷'], ['users', 'Tất cả tài khoản', '▣'], ['roles', 'Vai trò & quyền', '▤'], ['logs', 'Nhật ký hoạt động', '≡']].map(([key, label, icon]) => (
           <button key={key} className={activeMenu === key ? 'active' : ''} onClick={() => { setActiveMenu(key); setSelectedUser(null); }}>
             <span>{icon}</span>{label}
             {key === 'pending' && pendingUsers.length > 0 && <b className="admin-nav-badge">{pendingUsers.length}</b>}
@@ -282,7 +319,7 @@ function Admin() {
       <div className="customer-topbar">
         <div>
           <span className="customer-eyebrow">SYSTEM ADMINISTRATOR</span>
-          <h1>{activeMenu === 'dashboard' ? 'Dashboard' : activeMenu === 'pending' ? 'Duyệt tài khoản' : activeMenu === 'users' ? 'Quản lý tài khoản' : activeMenu === 'roles' ? 'Phân quyền' : 'Nhật ký hoạt động'}</h1>
+          <h1>{activeMenu === 'dashboard' ? 'Tổng quan hệ thống' : activeMenu === 'pending' ? 'Duyệt tài khoản' : activeMenu === 'users' ? 'Tất cả tài khoản' : activeMenu === 'roles' ? 'Vai trò & quyền' : 'Nhật ký hoạt động'}</h1>
           <p>StoreSpace · System Administration</p>
         </div>
         <div className="admin-profile"><div className="admin-profile-avatar">AD</div><div><strong>System Admin</strong><span>Administrator</span></div></div>

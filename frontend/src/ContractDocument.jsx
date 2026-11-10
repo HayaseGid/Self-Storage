@@ -21,8 +21,17 @@ const fmtTime = iso => {
 
 /* Danh sách kho trong hợp đồng (gộp các đơn của nhóm). */
 export function contractUnits(rentals) {
-  return rentals.flatMap(r => (r.units?.length ? r.units : [{ number: r.unitId, type: r.type, size: r.size, monthlyPrice: r.monthlyPrice }])
-    .map(u => ({ ...u, reservationCode: r.reservationCode, reservationId: r.reservationId, deposit: u.monthlyPrice != null ? Number(u.monthlyPrice) * Number(r.depositMonths || 2) : null })))
+  // Đơn 1 kho: lấy đúng giá / tháng và tiền cọc của hợp đồng (số backend đã tính), để từng dòng khớp dòng Tổng cộng
+  return rentals.flatMap(r => {
+    const list = r.units?.length ? r.units : [{ number: r.unitId, type: r.type, size: r.size, monthlyPrice: r.monthlyPrice }]
+    const single = list.length === 1
+    return list.map(u => {
+      const monthlyPrice = single && r.monthlyPrice != null ? Number(r.monthlyPrice) : u.monthlyPrice
+      const deposit = single && r.depositAmount != null ? Number(r.depositAmount)
+        : monthlyPrice != null ? Number(monthlyPrice) * Number(r.depositMonths || 2) : null
+      return { ...u, monthlyPrice, deposit, reservationCode: r.reservationCode, reservationId: r.reservationId }
+    })
+  })
 }
 
 export default function ContractDocument({ group, customer, facilityAddress, signature, showTerms = false, draft = false, id = 'csf-print' }) {

@@ -1,8 +1,10 @@
 import React from 'react'
+import { Code, NewBadge, UnitCodes } from './listKit'
 import { extractDistrict } from './districts'
 import { formatSignedAt } from './contractSignatures'
 import { formatVnd } from './storageRules'
 import { fmtIsoDate } from './ContractRenewal'
+import { lateFeePolicyText } from './lateFees'
 import './ContractCard.css'
 import './UnitReturn.css'
 
@@ -35,9 +37,15 @@ const STATUS_TONE = {
 
 export default function ContractCard({
   rental, facility, customerName, signature, signatureLoaded, signatureError, renewal,
-  onReloadSignature, onSign, onDetail, onRenew, onReturn, returnInfo, onPayRent, payingRent
+  onReloadSignature, onSign, onDetail, onRenew, onReturn, returnInfo, onPayRent, payingRent,
+  lateFee // [7a] phí trễ hạn của đơn (GET /api/late-fees/mine) + policy
 }) {
   const isSigned = Boolean(signature)
+  // [7a] Phí trễ hạn: khoản chưa đóng (trừ khoản đang chờ VNPay) + các kỳ tiền thuê đang trễ
+  const unpaidLateFees = (lateFee?.lateFees || []).filter(f => f.status === 'Unpaid')
+  const lateUnpaid = unpaidLateFees.filter(f => !f.pendingPayment).reduce((n, f) => n + Number(f.amount || 0), 0)
+  const overdueItems = lateFee?.overdueRent || []
+  const payNow = Number(rental.rentPayableNow || 0) + lateUnpaid
   const isRenewal = Boolean(rental.isRenewal || rental.renewedFrom || renewal?.renewedFrom)
   const district = facility?.district?.label || extractDistrict(facility?.location, rental.facility)?.label
   const address = facility?.location
@@ -57,7 +65,9 @@ export default function ContractCard({
           <h2>{rental.contractNumber || `Hợp đồng #${rental.contractId}`}</h2>
           <div className="cc-chips">
             <span className={`cc-chip ${STATUS_TONE[rental.status] || 'info'}`}>{rental.statusLabel || rental.status}</span>
-            {rental.reservationCode && <span className="cc-chip plain">Mã đơn {rental.reservationCode}</span>}
+            {rental.reservationCode && <span className="cc-chip plain">Mã đơn <Code kind="order">{rental.reservationCode}</Code></span>}
+            {rental.unitNumbers?.length > 0 && <UnitCodes units={rental.unitNumbers} max={6} />}
+            <NewBadge createdAt={rental.createdAt} />
           </div>
         </div>
         <span className={`cc-sign ${isSigned ? 'ok' : 'todo'}`}>
@@ -142,16 +152,34 @@ export default function ContractCard({
         </section>
       </div>
 
-      {/* ---- Tiền thuê (luật ở backend: RentPaymentRules) ---- */}
-      {!ended && rental.paymentPlan && Number(rental.rentDueAtStart) > 0 && (
-        <section className={`cc-rent${Number(rental.rentOverdue) > 0 ? ' bad' : rental.startRentPaid ? ' ok' : ''}`} aria-label="Tiền thuê">
+      {/* ---- Tiền thuê (luật ở backend: RentPaymentRules) + phí trễ hạn (LateFeeRules) ---- */}
+      {((!ended && rental.paymentPlan && Number(rental.rentDueAtStart) > 0) || lateUnpaid > 0) && (
+        <section className={`cc-rent${Number(rental.rentOverdue) > 0 || lateUnpaid > 0 ? ' bad' : rental.startRentPaid ? ' ok' : ''}`} aria-label="Tiền thuê">
           {Number(rental.rentOverdue) > 0
             ? <p><strong>Tiền thuê quá hạn: {money(rental.rentOverdue)}.</strong> Vui lòng đóng sớm để tránh phí trễ hạn.</p>
-            : rental.startRentPaid
-              ? <p>✓ Đã đóng tiền thuê {rental.paymentPlan === 'Upfront' ? 'toàn bộ kỳ thuê' : 'tháng đầu'} ({money(rental.rentDueAtStart)}).</p>
-              : <p>{rental.status === 'Handed Over' ? 'Bạn đã nhận kho, vui lòng đóng' : 'Sau khi nhận kho, bạn đóng'} <strong>{money(rental.rentDueAtStart)}</strong> tiền thuê ({rental.paymentPlan === 'Upfront' ? 'toàn bộ kỳ thuê' : 'tháng đầu'}), hạn là ngày bắt đầu thuê.</p>}
-          {Number(rental.rentPayableNow) > 0 && onPayRent
-            ? <button type="button" className="dashboard-primary-btn" disabled={payingRent} onClick={onPayRent}>{payingRent ? 'Đang xử lý...' : `Đóng ${money(rental.rentPayableNow)} tiền thuê`}</button>
+            : lateUnpaid > 0 && !(Number(rental.rentPayableNow) > 0)
+              ? <p><strong>Bạn còn {money(lateUnpaid)} phí trễ hạn tiền thuê chưa đóng.</strong></p>
+              : rental.startRentPaid
+                ? <p>✓ Đã đóng tiền thuê {rental.paymentPlan === 'Upfront' ? 'toàn bộ kỳ thuê' : 'tháng đầu'} ({money(rental.rentDueAtStart)}).</p>
+                : <p>{rental.status === 'Handed Over' ? 'Bạn đã nhận kho, vui lòng đóng' : 'Sau khi nhận kho, bạn đóng'} <strong>{money(rental.rentDueAtStart)}</strong> tiền thuê ({rental.paymentPlan === 'Upfront' ? 'toàn bộ kỳ thuê' : 'tháng đầu'}), hạn là ngày bắt đầu thuê.</p>}
+          {(overdueItems.length > 0 || unpaidLateFees.length > 0) && (
+            <div className="cc-late">
+              {overdueItems.map(o => (
+                <p key={`o${o.chargeId}`} className="cc-sub">
+                  Kỳ {fmtIsoDate(o.periodStart)}–{fmtIsoDate(o.periodEnd)}{o.unitNumber ? ` (kho ${o.unitNumber})` : ''}: trễ {o.daysLate} ngày
+                  {o.graceDaysLeft > 0 ? ` · còn ${o.graceDaysLeft} ngày nữa mới bắt đầu tính phí trễ` : ' · đang tính phí trễ hạn'}
+                </p>
+              ))}
+              {unpaidLateFees.map(f => (
+                <p key={`f${f.chargeId}`} className="cc-sub">• {f.description}: <strong>{money(f.amount)}</strong>{f.pendingPayment ? ' (đang chờ VNPay xác nhận)' : ''}</p>
+              ))}
+              <p className="cc-sub">Chính sách phí trễ hạn: {lateFeePolicyText(lateFee?.policy)}</p>
+            </div>
+          )}
+          {payNow > 0 && onPayRent
+            ? <button type="button" className="dashboard-primary-btn" disabled={payingRent} onClick={onPayRent}>
+                {payingRent ? 'Đang xử lý...' : `Đóng ${money(payNow)}${Number(rental.rentPayableNow) > 0 && lateUnpaid > 0 ? ' (tiền thuê + phí trễ hạn)' : lateUnpaid > 0 ? ' phí trễ hạn' : ' tiền thuê'}`}
+              </button>
             : rental.rentNote && <p className="cc-sub">{rental.rentNote}</p>}
         </section>
       )}

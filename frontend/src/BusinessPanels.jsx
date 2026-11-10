@@ -3,6 +3,7 @@ import { getFacilityDistrict, groupFacilitiesByDistrict } from './districts'
 import { UNIT_TYPE_ORDER, UNIT_TYPE_STYLES, UnitTypeChip, getUnitTypeKey, getUnitTypeStyle } from './unitTypes'
 import { RESERVATION_STATUS_LABELS, formatVnd } from './storageRules'
 import './BusinessPanels.css'
+import { Code, NewBadge, Pager, newestFirst, rowClass, useClientPaging } from './listKit'
 
 /*
  * Các màn hình của Business Operations Manager, đúng 5 nhóm chức năng:
@@ -34,7 +35,7 @@ function OccupancyBar({ value }) {
 /* ===================== 1. CƠ SỞ THEO KHU VỰC ===================== */
 
 export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onUpdateStatus, onDelete }) {
-  const [district, setDistrict] = useState('')
+  const [district, setDistrict] = useState('__all')
   const [query, setQuery] = useState('')
 
   const withStats = useMemo(() => facilities.map(facility => {
@@ -59,7 +60,10 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
     ? withStats.filter(f => `${f.name} ${f.address} ${f.unitCodePrefix} ${f.manager || ''}`.toLowerCase().includes(keyword))
     : null
   const activeGroup = groups.find(group => group.slug === district)
-  const shown = searchResults || activeGroup?.facilities || []
+  // [SỬA] Mặc định hiện TẤT CẢ cơ sở (mới thêm lên đầu, tô sáng), chọn khu vực để thu hẹp; chia trang 12 cơ sở / trang
+  const showAll = district === '__all'
+  const shown = newestFirst(searchResults || (showAll ? withStats : activeGroup?.facilities) || [], { id: f => f.facilityId })
+  const paging = useClientPaging(shown, { pageSize: 12, resetKey: `${district}|${keyword}` })
 
   return (
     <section className="business-panel bp-root">
@@ -78,6 +82,11 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
 
       {!searchResults && (
         <div className="bp-area-grid" role="group" aria-label="Chọn khu vực">
+          <button type="button" className={`bp-area${showAll ? ' active' : ''}`} aria-pressed={showAll} onClick={() => setDistrict('__all')}>
+            <span className="bp-area-name"><PinIcon /> Tất cả khu vực</span>
+            <strong>{facilities.length} <small>cơ sở</small></strong>
+            <span className="bp-area-meta">{withStats.reduce((n, f) => n + f.total, 0)} kho</span>
+          </button>
           {groups.map(group => {
             const total = group.facilities.reduce((n, f) => n + f.total, 0)
             const rented = group.facilities.reduce((n, f) => n + f.rented, 0)
@@ -88,7 +97,7 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
                 type="button"
                 className={`bp-area${district === group.slug ? ' active' : ''}`}
                 aria-pressed={district === group.slug}
-                onClick={() => setDistrict(district === group.slug ? '' : group.slug)}
+                onClick={() => setDistrict(district === group.slug ? '__all' : group.slug)}
               >
                 <span className="bp-area-name"><PinIcon /> {group.label}</span>
                 <strong>{group.facilities.length} <small>cơ sở</small></strong>
@@ -99,18 +108,18 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
         </div>
       )}
 
-      {(searchResults || activeGroup) ? (
+      {(searchResults || activeGroup || showAll) ? (
         <>
           <div className="bp-list-head">
-            <h3>{searchResults ? `Kết quả tìm “${query.trim()}”` : <><PinIcon /> {activeGroup.label}</>}</h3>
+            <h3>{searchResults ? `Kết quả tìm “${query.trim()}”` : showAll ? <><PinIcon /> Tất cả cơ sở</> : <><PinIcon /> {activeGroup.label}</>}</h3>
             <span>{shown.length} cơ sở</span>
           </div>
           <div className="bp-facility-grid">
-            {shown.map(f => (
-              <article key={f.facilityId} className={`bp-facility${f.status === 'inactive' ? ' inactive' : ''}`}>
+            {paging.pageRows.map(f => (
+              <article key={f.facilityId} className={rowClass(f.createdAt, `bp-facility${f.status === 'inactive' ? ' inactive' : ''}`)}>
                 <div className="bp-facility-top">
                   <div>
-                    <span className="bp-code">{f.unitCodePrefix}</span>
+                    <span className="bp-code-row"><Code kind="order" title="Mã chi nhánh (tiền tố mã kho)">{f.unitCodePrefix}</Code><NewBadge createdAt={f.createdAt} label="Mới thêm" /></span>
                     <h4>{f.name}</h4>
                     <p>{f.address}</p>
                   </div>
@@ -135,6 +144,7 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
             ))}
           </div>
           {shown.length === 0 && <div className="empty-state">Không tìm thấy cơ sở phù hợp.</div>}
+          <Pager {...paging.pagerProps} unit="cơ sở" pageSizes={[12, 24, 48]} />
         </>
       ) : (
         <div className="bp-hint">Chọn một khu vực ở trên để xem danh sách cơ sở.</div>

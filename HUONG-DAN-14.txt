@@ -1,0 +1,88 @@
+GÓP Ý 14 - KIỂM KHO KHI TRẢ: CÓ ẢNH + KHÁCH XÁC NHẬN / KHIẾU NẠI RỒI MỚI TRỪ CỌC
+==================================================================================
+
+LUỒNG MỚI
+  1. Staff "Hoàn tất kiểm tra":
+     - Kho có vấn đề HOẶC có phí phát sinh -> bắt buộc chụp 1-5 ảnh (nén ~1 MB/ảnh).
+     - Phí chọn từ danh mục phí -> phải nằm trong khoảng Min-Max của danh mục. Tối đa 10 khoản.
+     - Công nợ hợp đồng (tiền thuê chưa đóng, phí trễ hạn - 7b) vẫn trừ vào cọc NGAY (nghĩa vụ hợp đồng).
+     - Không có phí kiểm kho  -> quyết toán ngay như cũ.
+     - Có phí kiểm kho        -> CHƯA trừ cọc, CHƯA hoàn cọc, gửi khách xác nhận.
+  2. Khách (trang Hợp đồng -> khối Trả kho) có 3 ngày:
+     - "Đồng ý & quyết toán" -> trừ phí vào cọc, dư thì hoàn, thiếu thì đóng thêm.
+     - "Khiếu nại" -> lý do (10-1000 ký tự) + tối đa 3 ảnh. Mỗi kết quả khiếu nại 1 lần.
+     - Không phản hồi tới hạn -> hệ thống tự xác nhận (chạy khi khách / Staff / Manager mở trang).
+  3. Facility Manager -> tab mới "🧾 Khiếu nại kiểm kho": xem ảnh nhân viên + ảnh khách,
+     từng khoản chỉ được GIỮ / GIẢM / MIỄN (không tăng), ghi nội dung quyết định -> quyết toán. Quyết định là cuối cùng.
+
+RÀNG BUỘC (DB + BE cùng chặn)
+  - Mỗi đơn chỉ 1 kết quả kiểm kho (unique ReservationID).
+  - Kho "có vấn đề" phải có ảnh (CHECK).
+  - Luồng trạng thái đúng thứ tự (trigger): Chờ khách -> Khiếu nại / Đã quyết toán; Khiếu nại -> Đã quyết toán (Manager).
+  - Ảnh, ghi chú, phí đề xuất, hạn xác nhận, số cọc còn lại: KHÔNG sửa được sau khi gửi (trigger).
+  - Khiếu nại phải trước hạn; đã gửi thì không sửa / rút.
+  - Khách đồng ý / tự xác nhận: đúng số đề xuất. Chỉ Manager được giảm, 0 <= số chốt <= đề xuất.
+  - Quyết toán xong thì không thêm / sửa / xóa phí.
+  - 2 người cùng xử lý 1 kết quả (khách bấm Đồng ý đúng lúc hệ thống tự xác nhận) -> khóa dòng, chỉ 1 lần quyết toán.
+  - Quyền: khách chỉ thấy của mình; Staff thấy cơ sở mình làm; Manager chỉ cơ sở mình quản lý (BOM thấy hết).
+
+----------------------------------------------------------------------------------
+BƯỚC 1 - DATABASE (bắt buộc, làm trước)
+  Mở SSMS -> New Query -> mở file database/20261109_KiemKhoXacNhan.sql -> Execute.
+  (Dòng đầu là USE SelfStorageDB_test; DB tên khác thì sửa dòng đó.) Chạy lại nhiều lần không sao.
+  KHÔNG dán vào cuối SelfStorageDB_test.sql rồi chạy cả file (sẽ tạo lại DB).
+
+BƯỚC 2 - BACKEND
+  FILE MỚI (chép vào đúng thư mục):
+    backend/Controllers/ReturnInspectionsController.cs
+    backend/Services/ReturnInspectionService.cs
+    backend/Repositories/ReturnInspectionRepository.cs
+    backend/Interfaces/IReturnInspectionService.cs
+    backend/Interfaces/IReturnInspectionRepository.cs
+    backend/DTOs/ReturnInspectionDTOs.cs
+
+  Program.cs - THÊM 2 dòng, ngay dưới 2 dòng LateFee đã thêm ở 7a:
+    builder.Services.AddScoped<IReturnInspectionRepository, ReturnInspectionRepository>();
+    builder.Services.AddScoped<IReturnInspectionService, ReturnInspectionService>();
+
+  backend/Controllers/UnitReturnsController.cs (FILE CỦA NHÓM - báo nhóm):
+    Chép đè cả file (bản này = bản đang chạy + 7b + 14). Các chỗ đổi đều có đánh dấu [THÊM 14] / [SỬA 14]:
+      - CompleteRequest: thêm Images
+      - Complete: kiểm ảnh + phí trước khi lưu; gọi RecordAsync sau phần 7b;
+        có phí kiểm kho thì không tạo khoản phí / không hoàn cọc; câu thông báo + response có confirmDeadline.
+    Không sửa SelfStorageDbContext.cs (2 bảng mới đọc / ghi bằng SQL qua chính kết nối + transaction của EF).
+
+  Chạy: dotnet build  (môi trường của mình không có dotnet, lỗi gì chụp gửi mình).
+
+BƯỚC 3 - FRONTEND (frontend/src)
+  FILE MỚI:
+    ReturnInspection.jsx
+    ReturnInspection.css
+  CHÉP ĐÈ:
+    StaffReturns.jsx            (trang Staff - của mình)       : chọn ảnh trong form kiểm tra + trạng thái xác nhận ở "Đã xong"
+    FacilityManagerAccount.jsx  (trang Manager - của mình)     : tab "🧾 Khiếu nại kiểm kho"
+    UnitReturn.jsx              (khối Trả kho của KHÁCH - báo nhóm) : hộp xem ảnh, Đồng ý / Khiếu nại
+  Mọi chỗ đổi có đánh dấu [THÊM 14] / [SỬA 14].
+
+----------------------------------------------------------------------------------
+TEST NHANH (1 đơn đang thuê đã bàn giao, ví dụ của customer1 / cust1@test.com, mật khẩu 123456)
+  A. Có phí -> khách đồng ý
+     1. Khách báo trả kho -> SQL dời lịch về hôm nay (như lần test 7b) -> staff được giao "Nhận lại kho".
+     2. "Nhập kết quả kiểm tra": chọn "Có vấn đề", ghi chú, thêm phí -> bấm Hoàn tất KHÔNG chọn ảnh -> phải bị chặn.
+        Thêm 1-2 ảnh -> Hoàn tất -> thông báo "CHƯA trừ vào cọc ... trước HH:mm dd/MM".
+     3. Staff tab "Đã xong": "Chờ khách xác nhận", "Phí kiểm kho chờ quyết toán".
+     4. Khách -> Hợp đồng -> khối Trả kho: badge "Chờ bạn xác nhận", xem ảnh, bảng "Nếu đồng ý: được hoàn / đóng thêm".
+        Bấm "Đồng ý & quyết toán" -> bảng quyết toán thật hiện ra, hoàn cọc dự kiến sau 7 ngày.
+  B. Có phí -> khách khiếu nại -> Manager giảm
+     Làm lại A.1-A.2 với đơn khác -> khách bấm "Khiếu nại" (lý do < 10 ký tự phải bị chặn) -> gửi kèm ảnh.
+     fac_manager1 -> tab "🧾 Khiếu nại kiểm kho" -> "Giải quyết": xem ảnh 2 bên, bấm "Miễn" 1 khoản,
+     nhập số lớn hơn đề xuất phải bị chặn, ghi quyết định -> "Chốt quyết định". Khách thấy giá đề xuất bị gạch + quyết định.
+  C. Quá hạn tự xác nhận (không muốn chờ 3 ngày):
+     UPDATE ReturnInspection SET ConfirmDeadline = DATEADD(MINUTE, -1, SYSUTCDATETIME()) ... -> KHÔNG được (trigger khóa hạn).
+     Cách test: đổi chính sách trước khi kiểm (không có UI) hoặc chạy:
+       DISABLE TRIGGER TR_ReturnInspection_Validate ON ReturnInspection;
+       UPDATE ReturnInspection SET ConfirmDeadline = DATEADD(MINUTE, -1, SYSUTCDATETIME()), InspectedAt = DATEADD(MINUTE, -2, SYSUTCDATETIME())
+       WHERE Status = N'Awaiting Customer';
+       ENABLE TRIGGER TR_ReturnInspection_Validate ON ReturnInspection;
+     Rồi mở trang khách -> tự thành "Hệ thống đã tự xác nhận (quá hạn)".
+  D. Không có phí, kho tốt -> vẫn quyết toán ngay như trước (ảnh không bắt buộc).

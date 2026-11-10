@@ -4,6 +4,7 @@ import { useDialog } from './Dialog'
 import { formatVnd } from './storageRules'
 import { announceDepositSuccess, announceRenewalSuccess, openCustomerSection, requestContractSign } from './afterDeposit'
 import { clearPendingVnPay, readPendingVnPay } from './vnpay'
+import { cancelHeldReservations, restoreToCart, takeVnPayCartItems } from './cart'
 import './PaymentResultPage.css'
 
 /*
@@ -19,6 +20,16 @@ export default function PaymentResultPage({ navigate }) {
   const [state, setState] = useState({ loading: true, result: null, error: '' })
   const started = useRef(false)
   const pending = readPendingVnPay()
+  const isDeposit = !pending?.kind || pending.kind === 'deposit'
+  const [released, setReleased] = useState(false)
+
+  /* Đặt cọc thất bại / khách bấm Hủy trên VNPay: hủy đơn giữ kho, trả kho về giỏ. */
+  const releaseHeld = async () => {
+    await cancelHeldReservations(pending?.reservationIds, 'Khách hủy thanh toán cọc trên VNPay')
+    restoreToCart(takeVnPayCartItems())
+    clearPendingVnPay()
+    setReleased(true)
+  }
 
   useEffect(() => {
     if (started.current) return
@@ -70,6 +81,11 @@ export default function PaymentResultPage({ navigate }) {
           return
         }
         setState({ loading: false, result, error: '' })
+        // Mã 24 = khách bấm "Hủy giao dịch" trên VNPay -> không giữ đơn lại
+        if (!result.success && isDeposit && new URLSearchParams(search).get('vnp_ResponseCode') === '24') {
+          await releaseHeld()
+          return
+        }
         if (result.success) {
           clearPendingVnPay()
           await announceDepositSuccess(dialog, {
@@ -113,7 +129,18 @@ export default function PaymentResultPage({ navigate }) {
             </button>
           </>
         )}
-        {failed && (
+        {failed && released && (
+          <>
+            <span className="pr-icon err" aria-hidden="true">!</span>
+            <h1>Đã hủy thanh toán</h1>
+            <p>Đơn giữ kho đã được hủy, bạn không mất phí. Các kho đã được trả về giỏ hàng nếu bạn muốn đặt lại.</p>
+            <div className="pr-actions">
+              <button type="button" className="dashboard-secondary-btn" onClick={() => navigate('/')}>Về trang chủ</button>
+              <button type="button" className="dashboard-primary-btn" onClick={() => navigate('/cart')}>Về giỏ hàng</button>
+            </div>
+          </>
+        )}
+        {failed && !released && (
           <>
             <span className="pr-icon err" aria-hidden="true">!</span>
             <h1>Chưa thanh toán được</h1>
@@ -126,6 +153,9 @@ export default function PaymentResultPage({ navigate }) {
                 : 'Kho vẫn được giữ cho bạn đến hết thời gian giữ chỗ. Bạn có thể thanh toán lại trong mục Thanh toán.'}</p>
             <div className="pr-actions">
               <button type="button" className="dashboard-secondary-btn" onClick={() => navigate('/')}>Về trang chủ</button>
+              {isDeposit && pending?.reservationIds?.length > 0 && (
+                <button type="button" className="dashboard-secondary-btn" onClick={releaseHeld}>Hủy đặt kho</button>
+              )}
               <button type="button" className="dashboard-primary-btn" onClick={() => openCustomerSection(navigate, pending?.kind === 'renewal' || pending?.kind === 'rent' ? 'contract' : 'payment')}>Thanh toán lại</button>
             </div>
           </>

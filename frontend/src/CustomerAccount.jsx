@@ -28,6 +28,10 @@ import CancelReservationModal, { retryRefund } from './CancelReservation'
 import ContractCard from './ContractCard'
 import { ReturnRequestModal, ReturnSection, useUnitReturns } from './UnitReturn'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
+import { payLateFeesDemo, useLateFees } from './lateFees'
+import { CustomerPaymentCenter, PendingDepositBar, pendingDepositsOf } from './PendingPayments' // [THÊM] trang Thanh toán mới + nhắc đơn chưa đặt cọc
+import { useMyInspections } from './ReturnInspection' // [THÊM 14] thông báo kết quả kiểm kho chờ xác nhận
+import { Code, FilterChips, Pager, UnitCodes, newestFirst, useClientPaging } from './listKit' // [THÊM] phân trang + mã nổi bật + mới nhất lên đầu
 
 /* Chuyển 'dd/mm/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày. */
 const dateSortValue = value => {
@@ -74,6 +78,8 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
       ? [customerRental]
       : []
   //Đã thêm: 05/10/2026
+  // [THÊM] Kiểu thẻ: mới nhất lên đầu, chia trang 5 thẻ / trang
+  const cardPaging = useClientPaging(newestFirst(rentals, { id: r => r.reservationId }), { pageSize: 5 })
 
   return (
     <div className="customer-content-page">
@@ -124,7 +130,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
               match: (rental, value) => rental.facility === value
             }
           ]}
-          initialSort={{ key: 'startDate', dir: 'desc' }}
+          getCreatedAt={rental => rental.createdAt}
           onRowClick={rental => setSelectedRental(rental)}
           caption="Bấm vào một dòng (hoặc chọn dòng rồi nhấn Enter) để xem chi tiết kho."
           toolbarExtra={(
@@ -138,15 +144,13 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
               key: 'reservationId',
               label: 'Mã đơn',
               sortValue: rental => Number(rental.reservationId) || 0,
-              render: rental => <span className="dg-cell-strong dg-nowrap">{formatReservationCode(rental.reservationId)}</span>
+              render: rental => <Code kind="order">{rental.reservationCode || formatReservationCode(rental.reservationId)}</Code>
             },
             { key: 'facility', label: 'Cơ sở' },
             {
               key: 'unitId',
               label: 'Kho',
-              render: rental => rental.unitId
-                ? <span className="dg-cell-strong dg-nowrap">{rental.unitId}</span>
-                : <span className="dg-cell-sub dg-nowrap">Chưa phân kho</span>
+              render: rental => <UnitCodes units={rental.unitNumbers?.length ? rental.unitNumbers : rental.unitId} max={3} />
             },
             {
               key: 'type',
@@ -202,7 +206,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
         </div>
       )}
 
-      {view === 'cards' && rentals.map(rental => ( //Map duyệt qua tất cả các kho trong mảng rentals
+      {view === 'cards' && cardPaging.pageRows.map(rental => ( //Map duyệt qua các kho của trang đang xem
         <div key={rental.reservationId || rental.contractId || rental.unitId} style={{ marginBottom: 28 }}>
           <div className="my-storage-card">
 
@@ -352,6 +356,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
 
         </div>
       ))}
+      {view === 'cards' && <Pager {...cardPaging.pagerProps} unit="kho" />}
 
       {selectedRental && (
         <div
@@ -447,8 +452,8 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
                 }}
               >
                 {[
-                  ['Mã đơn', formatReservationCode(selectedRental.reservationId)],
-                  ['Mã kho', selectedRental.unitId || 'Chưa phân kho'],
+                  ['Mã đơn', <Code kind="order">{selectedRental.reservationCode || formatReservationCode(selectedRental.reservationId)}</Code>],
+                  ['Mã kho', <UnitCodes units={selectedRental.unitNumbers?.length ? selectedRental.unitNumbers : selectedRental.unitId} max={8} />],
                   ['Loại kho', selectedRental.type],
                   ['Diện tích / kích thước', selectedRental.size],
                   ['Giá thuê', selectedRental.price],
@@ -579,6 +584,14 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const [renewItem, setRenewItem] = useState(null)
   const [cancelRental, setCancelRental] = useState(null)
   const returns = useUnitReturns()
+  const lateFees = useLateFees() // [7a] phí trễ hạn tiền thuê
+  const lateFeeOf = rental => {
+    const item = lateFees.byReservation(rental.reservationId)
+    return item ? { ...item, policy: lateFees.policy } : null
+  }
+  const lateUnpaidOf = rental => (lateFeeOf(rental)?.lateFees || [])
+    .filter(f => f.status === 'Unpaid' && !f.pendingPayment)
+    .reduce((n, f) => n + Number(f.amount || 0), 0)
   const [returnItem, setReturnItem] = useState(null)
   const [creatingContracts, setCreatingContracts] = useState(false)
   const policies = usePolicies()
@@ -590,13 +603,18 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
      Backend quyết định đóng được bao nhiêu (GET/POST /api/rent-payments, POST /api/vnpay/create). */
   const [payingRent, setPayingRent] = useState(null)
   const payRent = async rental => {
-    const amount = Number(rental.rentPayableNow || 0)
+    // [7a] tiền thuê đóng được ngay + phí trễ hạn chưa đóng (VNPay thu chung 1 giao dịch)
+    const rentAmount = Number(rental.rentPayableNow || 0)
+    const lateAmount = lateUnpaidOf(rental)
+    const amount = rentAmount + lateAmount
     if (!amount) return
+    const vnd = n => new Intl.NumberFormat('vi-VN').format(n)
     const ok = await dialog.confirm({
       tone: 'info',
-      title: `Đóng ${new Intl.NumberFormat('vi-VN').format(amount)}đ tiền thuê?`,
-      message: `Hợp đồng ${rental.contractNumber || rental.reservationCode} · ${rental.paymentPlan === 'Upfront' ? 'trả 1 lần (toàn bộ kỳ thuê)' : 'trả theo tháng'}.`,
-      confirmLabel: 'Đóng tiền thuê'
+      title: `Đóng ${vnd(amount)}đ${lateAmount > 0 ? (rentAmount > 0 ? ' (tiền thuê + phí trễ hạn)' : ' phí trễ hạn') : ' tiền thuê'}?`,
+      message: `Hợp đồng ${rental.contractNumber || rental.reservationCode} · ${rental.paymentPlan === 'Upfront' ? 'trả 1 lần (toàn bộ kỳ thuê)' : 'trả theo tháng'}.` +
+        (lateAmount > 0 ? `\nGồm ${rentAmount > 0 ? `${vnd(rentAmount)}đ tiền thuê và ` : ''}${vnd(lateAmount)}đ phí trễ hạn.` : ''),
+      confirmLabel: 'Đóng tiền'
     })
     if (!ok) return
     setPayingRent(rental.reservationId)
@@ -609,9 +627,12 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         await startVnPayPayment([rental.reservationId], { amount, count: 1, label: rental.contractNumber, kind: 'rent' })
         return
       }
-      const result = await apiPost(`/api/rent-payments/${rental.reservationId}/pay-demo`, {})
+      const messages = []
+      if (rentAmount > 0) messages.push((await apiPost(`/api/rent-payments/${rental.reservationId}/pay-demo`, {})).message)
+      if (lateAmount > 0) messages.push((await payLateFeesDemo(rental.reservationId)).message)
       onRentalsChanged?.()
-      await dialog.alert({ tone: 'success', title: 'Đã đóng tiền thuê', message: result.message })
+      lateFees.reload()
+      await dialog.alert({ tone: 'success', title: 'Đã thanh toán', message: messages.join(' ') })
     } catch (error) {
       await dialog.alert({ tone: 'danger', title: 'Chưa đóng được tiền thuê', message: error.message })
     } finally {
@@ -650,6 +671,27 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const signedBeforeHandover = allRentals.filter(r => r.status === 'Confirmed' && r.contractId && isSignedRental(r))
 
   /*
+   * [SỬA] Chia trang Hợp đồng thành các tab để khách thấy ngay mình đang ở đâu:
+   *   pending  - đã cọc: chờ ký / đang tạo hợp đồng / đã ký chờ nhận kho
+   *   active   - đang thuê (kèm gia hạn)
+   *   returns  - đang trả kho / chờ quyết toán, hoàn cọc
+   *   ended    - đã kết thúc
+   */
+  const activeRentals = rentals.filter(r => r.status === 'Handed Over')
+  const endedRentals = rentals.filter(r => r.status !== 'Handed Over')
+  const pendingCountAll = toSign.length + preparing.length + waitingApproval.length + signedBeforeHandover.length
+  const returnsInProgress = returns.items.filter(i => i.request && (i.request.status !== 'Completed' ||
+    Number(i.request.amountOwed) > 0 || (Number(i.request.refundAmount) > 0 && i.request.refundStatus !== 'Completed'))).length
+  const [contractTab, setContractTab] = useState(() => (pendingCountAll > 0 ? 'pending' : 'active'))
+  const tabOfReservation = id => {
+    const r = allRentals.find(x => String(x.reservationId) === String(id))
+    if (!r) return null
+    if (r.status === 'Handed Over') return 'active'
+    if (r.status === 'Confirmed' || r.status === 'Paid') return 'pending'
+    return 'ended'
+  }
+
+  /*
    * Không còn bước Manager duyệt: đơn đã cọc ("Paid") được xác nhận + tạo hợp đồng ngay.
    * Thường đã làm lúc thanh toán; ở đây tự thử lại nếu lần đó lỗi mạng.
    */
@@ -679,15 +721,32 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
   }, [])
   useEffect(() => {
+    // [SỬA] Thẻ hợp đồng cần mở nằm ở tab khác -> chuyển tab trước rồi mới cuộn tới
+    let pending = null
+    try { pending = sessionStorage.getItem('storespace_focus_contract') } catch { /* bỏ qua */ }
+    const targetTab = pending ? tabOfReservation(pending) : null
+    if (targetTab && targetTab !== 'pending') setContractTab(targetTab)
     const timer = window.setTimeout(() => {
       let wanted = null
       try { wanted = sessionStorage.getItem('storespace_focus_contract') } catch { /* bỏ qua */ }
       if (wanted && document.getElementById(`contract-${wanted}`)) {
         takePendingContractFocus()
         focusContract(wanted)
+      } else if (wanted && (targetTab === 'active' || targetTab === 'ended')) {
+        // Thẻ nằm ở trang khác của danh sách -> bỏ ô tìm, mở đúng trang rồi cuộn tới
+        const list = newestFirst(targetTab === 'ended' ? endedRentals : activeRentals, { id: r => r.reservationId })
+        const index = list.findIndex(r => String(r.reservationId) === String(wanted))
+        if (index >= 0) {
+          setContractQuery('')
+          contractPaging.setPage(Math.floor(index / contractPaging.pageSize) + 1)
+          retry = window.setTimeout(() => {
+            if (document.getElementById(`contract-${wanted}`)) { takePendingContractFocus(); focusContract(wanted) }
+          }, 200)
+        }
       }
     }, 350)
-    return () => window.clearTimeout(timer)
+    let retry = null
+    return () => { window.clearTimeout(timer); window.clearTimeout(retry) }
   }, [focusTick, rentals.map(r => r.reservationId).join(',')])
 
   // Thông báo "Kho sắp hết hạn" -> "Gia hạn ngay": mở hộp thoại gia hạn của đúng hợp đồng.
@@ -863,6 +922,15 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
 
   const pendingCount = rentals.filter(r => loadedSignatures[keyOf(r)] && !signatures[keyOf(r)]).length
 
+  // [SỬA] Danh sách hợp đồng của tab đang mở: tìm + mới nhất lên đầu + chia trang
+  const [contractQuery, setContractQuery] = useState('')
+  const tabRentals = contractTab === 'ended' ? endedRentals : activeRentals
+  const listedContracts = newestFirst(tabRentals.filter(r => {
+    const q = contractQuery.trim().toLowerCase()
+    return !q || [r.contractNumber, r.reservationCode, r.facility, ...(r.unitNumbers || [r.unitId])].some(v => String(v ?? '').toLowerCase().includes(q))
+  }), { id: r => r.reservationId })
+  const contractPaging = useClientPaging(listedContracts, { pageSize: 5, resetKey: `${contractTab}|${contractQuery}` })
+
   return (
     <div className="customer-content-page">
 
@@ -886,9 +954,30 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         )}
       </div>
 
-      <ReturnSection returns={returns} onChanged={onRentalsChanged} />
+      <FilterChips
+        options={[
+          ['pending', 'Đã cọc · chờ nhận kho'],
+          ['active', 'Đang thuê'],
+          ['returns', 'Trả kho'],
+          ['ended', 'Đã kết thúc']
+        ]}
+        value={contractTab}
+        onChange={setContractTab}
+        counts={{ pending: pendingCountAll, active: activeRentals.length, returns: returnsInProgress, ended: endedRentals.length }}
+        className="cc-tabs"
+      />
 
-      <RenewalSection renewals={renewals} onRenew={setRenewItem} onChanged={onRentalsChanged} />
+      {contractTab === 'returns' && (
+        <>
+          <p className="cc-tab-hint">Kho bạn đã báo trả: theo dõi từng bước từ hẹn trả kho đến khi nhận lại tiền cọc.</p>
+          <ReturnSection returns={returns} onChanged={onRentalsChanged} />
+          {!returns.loading && !returns.items.some(i => i.request) && <div className="empty-state">Bạn không có kho nào đang trả. Muốn trả kho, mở tab "Đang thuê" và bấm "Trả kho" trên hợp đồng.</div>}
+        </>
+      )}
+
+      {contractTab === 'active' && (
+        <RenewalSection renewals={renewals} onRenew={setRenewItem} onChanged={onRentalsChanged} />
+      )}
 
       {returnItem && (
         <ReturnRequestModal
@@ -917,7 +1006,10 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         />
       )}
 
-      {(toSign.length > 0 || preparing.length > 0 || waitingApproval.length > 0 || signedBeforeHandover.length > 0) && (
+      {contractTab === 'pending' && pendingCountAll === 0 && (
+        <div className="empty-state">Không có đơn nào đang chờ. Đơn đã đặt cọc sẽ hiện ở đây để bạn ký hợp đồng và xem lịch nhận kho.</div>
+      )}
+      {contractTab === 'pending' && pendingCountAll > 0 && (
         <section className="sign-queue" aria-label="Hợp đồng đang xử lý">
           {buildGroups(toSign).map(group => (
             <article key={group.key} className="sign-card">
@@ -1006,8 +1098,22 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         />
       )}
 
-      {rentals.length === 0 && <div className="empty-state">Chưa có hợp đồng trong database.</div>}
-      {rentals.map(rental => {
+      {(contractTab === 'active' || contractTab === 'ended') && (
+        <div className="cc-list-head">
+          <div>
+            <h2>{contractTab === 'active' ? 'Hợp đồng đang thuê' : 'Hợp đồng đã kết thúc'} <span>{tabRentals.length}</span></h2>
+            <p>{contractTab === 'active' ? 'Kho bạn đang sử dụng. Hợp đồng mới nhất nằm trên cùng.' : 'Hợp đồng đã trả kho hoặc đã đóng.'}</p>
+          </div>
+          {tabRentals.length > 0 && (
+            <input className="ss-search" type="search" value={contractQuery} onChange={e => setContractQuery(e.target.value)} placeholder="Tìm mã HĐ, mã đơn, cơ sở, mã kho..." aria-label="Tìm hợp đồng" />
+          )}
+        </div>
+      )}
+      {(contractTab === 'active' || contractTab === 'ended') && tabRentals.length === 0 && (
+        <div className="empty-state">{contractTab === 'active' ? 'Bạn chưa có kho nào đang thuê.' : 'Chưa có hợp đồng nào kết thúc.'}</div>
+      )}
+      {(contractTab === 'active' || contractTab === 'ended') && tabRentals.length > 0 && listedContracts.length === 0 && <div className="empty-state">Không có hợp đồng phù hợp.</div>}
+      {(contractTab === 'active' || contractTab === 'ended') && contractPaging.pageRows.map(rental => {
         const signature = signatures[keyOf(rental)]
         const isSigned = !!signature
         const signatureError = signatureErrors[keyOf(rental)]
@@ -1031,6 +1137,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
             returnInfo={returns.byReservation(rental.reservationId)}
             onPayRent={() => payRent(rental)}
             payingRent={payingRent === rental.reservationId}
+            lateFee={lateFeeOf(rental)}
             onReturn={rental.status === 'Handed Over' ? () => {
               const info = returns.byReservation(rental.reservationId)
               if (info?.eligible) setReturnItem(info)
@@ -1045,6 +1152,8 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
           />
         )
       })}
+
+      {(contractTab === 'active' || contractTab === 'ended') && <Pager {...contractPaging.pagerProps} unit="hợp đồng" />}
 
       {openRental && (
         <ContractModal
@@ -1111,114 +1220,7 @@ function RefundTimeline({ item, formatMoney }) {
   )
 }
 
-function CustomerPaymentPage({ reservations, onChanged }) {
-  const dialog = useDialog()
-  const [paying, setPaying] = useState(null)
-  const [cancelRental, setCancelRental] = useState(null)
-  const [retrying, setRetrying] = useState(null)
-  const payWithVnPay = async items => {
-    setPaying(items.map(i => i.reservationId).join(','))
-    try {
-      await startVnPayPayment(items.map(i => i.reservationId), {
-        amount: items.reduce((n, i) => n + Number(i.depositAmount || 0), 0),
-        count: items.length,
-        kind: items.every(i => i.isRenewal) ? 'renewal' : 'deposit'
-      })
-    } catch (error) {
-      setPaying(null)
-      await dialog.alert({ tone: 'danger', title: 'Chưa mở được trang thanh toán VNPay', message: error.message })
-    }
-  }
-  const pending = reservations.filter(item =>
-    item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed'
-  )
-  const paid = reservations.filter(item => item.paymentStatus === 'Completed')
-  const retry = async item => {
-    setRetrying(item.reservationId)
-    await retryRefund(dialog, item.reservationId)
-    setRetrying(null)
-    onChanged?.()
-  }
-  const pendingAmount = pending.reduce(
-    (total, item) => total + Number(item.depositAmount || 0),
-    0
-  )
-  const formatMoney = amount => `${new Intl.NumberFormat('vi-VN').format(amount || 0)}đ`
-
-  return (
-    <div className="customer-content-page">
-      <div className="customer-page-heading">
-        <div>
-          <span className="customer-eyebrow">PAYMENT CENTER</span>
-          <h1>Thanh toán</h1>
-          <p>Trạng thái và giao dịch tiền cọc đã lưu trong database.</p>
-        </div>
-      </div>
-      <section className="customer-stats">
-        <div className="customer-stat-card">
-          <small>Tiền cọc đang chờ</small>
-          <strong>{formatMoney(pendingAmount)}</strong>
-          <span className="stat-note">{pending.length} đặt chỗ</span>
-          {pending.length > 1 && (
-            <button type="button" className="dashboard-primary-btn" disabled={Boolean(paying)} onClick={() => payWithVnPay(pending)}>
-              {paying ? 'Đang chuyển...' : `Thanh toán tất cả qua VNPay`}
-            </button>
-          )}
-        </div>
-        <div className="customer-stat-card">
-          <small>Giao dịch đã ghi nhận</small>
-          <strong>{paid.length}</strong>
-          <span className="stat-note">Theo dữ liệu backend</span>
-        </div>
-      </section>
-      {reservations.length === 0 && <div className="empty-state">Chưa có giao dịch hoặc đặt chỗ.</div>}
-      {reservations.map(item => (
-        <section className="customer-section" key={item.reservationId}>
-          <div className="overview-panel">
-            <div className="overview-panel-heading">
-              <div>
-                <h2>{item.facility}</h2>
-                <p>{item.unitId || 'Chưa phân kho'} · Mã đơn {formatReservationCode(item.reservationId)}</p>
-              </div>
-              <span className="rental-status">
-                {item.paymentStatus === 'Completed' ? '● Đã thanh toán' : '● Chưa thanh toán'}
-              </span>
-            </div>
-            <div className="contract-summary">
-              <div><span>{item.isRenewal ? 'Gia hạn · trả ngay' : 'Tiền cọc yêu cầu'}</span><strong>{formatMoney(item.depositAmount)}</strong></div>
-              <div><span>Đã thanh toán</span><strong>{item.paymentAmount == null ? '—' : formatMoney(item.paymentAmount)}</strong></div>
-              <div><span>Trạng thái đặt chỗ</span><strong>{item.statusLabel}</strong></div>
-              <div><span>Mã giao dịch</span><strong>{item.paymentReference || '—'}</strong></div>
-              <div><span>Ngày giao dịch</span><strong>{item.paymentDate ? item.paymentDate.slice(0, 10) : '—'}</strong></div>
-            </div>
-            {item.refundAmount > 0 && <RefundTimeline item={item} formatMoney={formatMoney} />}
-            {item.refundStatus === 'Pending' && (
-              <div className="contract-actions">
-                <button type="button" className="dashboard-secondary-btn" disabled={retrying === item.reservationId} onClick={() => retry(item)}>
-                  {retrying === item.reservationId ? 'Đang gửi...' : 'Gửi lại yêu cầu hoàn tiền'}
-                </button>
-              </div>
-            )}
-            {item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed' && (
-              <div className="contract-actions">
-                {!item.isRenewal && <button type="button" className="cr-link-btn" onClick={() => setCancelRental(item)}>Hủy đặt chỗ</button>}
-                <button type="button" className="dashboard-primary-btn" disabled={Boolean(paying)} onClick={() => payWithVnPay([item])}>
-                  {paying === String(item.reservationId) ? 'Đang chuyển sang VNPay...' : `Thanh toán ${formatMoney(item.depositAmount)} qua VNPay`}
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
-      ))}
-      {cancelRental && (
-        <CancelReservationModal rental={cancelRental} onClose={() => setCancelRental(null)} onDone={() => onChanged?.()} />
-      )}
-      <div className="payment-warning">
-        Tiền cọc được thanh toán qua cổng VNPay (môi trường thử nghiệm). Giao dịch chỉ được ghi nhận khi VNPay xác nhận và hệ thống kiểm tra đúng chữ ký, số tiền.
-      </div>
-    </div>
-  )
-}
+/* [SỬA] Trang Thanh toán cũ (CustomerPaymentPage) đã thay bằng CustomerPaymentCenter trong PendingPayments.jsx */
 
 /* Hồ sơ tài khoản (chỉ xem). Backend hiện chưa có API sửa hồ sơ / đổi mật khẩu. */
 function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
@@ -1292,12 +1294,14 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
   const renewalsForNotices = useContractRenewals()
   const policiesForNotices = usePolicies()
   const returnsForNotices = useUnitReturns()
+  const inspectionsForNotices = useMyInspections() // [THÊM 14]
   const notices = useCustomerNotifications({
     email: user?.email,
     rentals,
     renewals: renewalsForNotices.data,
     policies: policiesForNotices,
-    returns: returnsForNotices.data
+    returns: returnsForNotices.data,
+    inspections: inspectionsForNotices.data // [THÊM 14]
   })
   const noticeIdsKey = notices.notifications.map(n => n.id).join('|')
   useEffect(() => {
@@ -1306,7 +1310,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
   // Dữ liệu đặt chỗ thay đổi (gia hạn, ký, thanh toán) -> tải lại thông tin gia hạn cho thông báo.
   const rentalsKey = rentals.map(r => `${r.reservationId}:${r.status}:${r.contractStatus}`).join(',')
   const firstRentalsKey = React.useRef(rentalsKey)
-  useEffect(() => { if (rentalsKey !== firstRentalsKey.current) { renewalsForNotices.reload(); returnsForNotices.reload() } }, [rentalsKey])
+  useEffect(() => { if (rentalsKey !== firstRentalsKey.current) { renewalsForNotices.reload(); returnsForNotices.reload(); inspectionsForNotices.reload() } }, [rentalsKey])
   const openNotice = item => {
     const action = item.action || {}
     if (action.signContractId) requestContractSign(action.signContractId)
@@ -1314,8 +1318,14 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
     if (action.section) setActiveSection(action.section)
     if (action.focusReservationId && !action.renewReservationId && !action.signContractId) focusContract(action.focusReservationId)
   }
+  // [THÊM] Đơn chưa đặt cọc là việc phải làm: mục Thanh toán vẫn hiện số cho tới khi trả xong / hết giờ giữ kho
+  // (gộp với thông báo "deposit:<id>" để không đếm 2 lần)
+  const paymentBadgeIds = new Set([
+    ...notices.notifications.filter(n => n.section === 'payment' && !notices.isSeen(n.id)).map(n => n.id),
+    ...pendingDepositsOf(rentals).filter(r => !r.isRenewal).map(r => `deposit:${r.reservationId}`)
+  ])
   const navBadge = section => {
-    const count = section === 'notifications' ? notices.unseenCount : notices.countBySection[section] || 0
+    const count = section === 'notifications' ? notices.unseenCount : section === 'payment' ? paymentBadgeIds.size : notices.countBySection[section] || 0
     return count > 0 && activeSection !== section
       ? <span className="cnav-badge" aria-label={`${count} thông báo mới`}>{count > 9 ? '9+' : count}</span>
       : null
@@ -1411,7 +1421,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             }}
           >
             <span>◷</span>
-            Đặt kho
+            Tìm & đặt kho thêm ↗
           </button>
 
           <button
@@ -1466,19 +1476,22 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
       <main className="customer-main">
 
         <div className="customer-topbar">
-          <div>
-            <span className="customer-eyebrow">
-              CUSTOMER DASHBOARD
-            </span>
+          {/* [SỬA] Lời chào chỉ hiện ở Tổng quan, các mục khác dùng tiêu đề riêng của mục */}
+          {activeSection === 'overview' ? (
+            <div>
+              <span className="customer-eyebrow">
+                CUSTOMER DASHBOARD
+              </span>
 
-            <h1>
-              Xin chào, {user?.name || 'Customer'}!
-            </h1>
+              <h1>
+                Xin chào, {user?.name || 'Customer'}!
+              </h1>
 
-            <p>
-              Quản lý kho thuê và thông tin tài khoản của bạn.
-            </p>
-          </div>
+              <p>
+                Quản lý kho thuê và thông tin tài khoản của bạn.
+              </p>
+            </div>
+          ) : <div />}
 
           <div className="customer-topbar-actions">
             <button
@@ -1496,6 +1509,11 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
             </button>
           </div>
         </div>
+
+        {/* [THÊM] Đơn chưa đặt cọc: nhắc ở đầu mọi mục (trừ mục Thanh toán vì ở đó đã có khối "Cần thanh toán") */}
+        {activeSection !== 'payment' && (
+          <PendingDepositBar rentals={rentals} variant="inline" onPay={() => setActiveSection('payment')} actionLabel="Thanh toán ngay" />
+        )}
 
         {activeSection === 'overview' && (
           <div className="overview-page">
@@ -1980,7 +1998,11 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
 
         {activeSection === 'payment' && (
-          <CustomerPaymentPage reservations={rentals} onChanged={onReloadRentals} />
+          <CustomerPaymentCenter
+            reservations={rentals}
+            onChanged={onReloadRentals}
+            renderRefund={item => <RefundTimeline item={item} formatMoney={n => `${new Intl.NumberFormat('vi-VN').format(n || 0)}đ`} />}
+          />
         )}
 
         {activeSection === 'notifications' && (
