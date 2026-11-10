@@ -212,6 +212,93 @@
 .ri-pill.warn { background: #fff1c2; color: #8a5a00; }
 .ri-pill.bad { background: #fde3df; color: #b42318; }
 .ri-pill.ok { background: #e3f1da; color: #2f6b1f; }
+.ri-pill.info { background: #e0f2fe; color: #0369a1; }
+
+/* Thông tin chi tiết kho trong form khiếu nại của khách hàng */
+.ri-dispute-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  font-size: 0.9rem;
+}
+.ri-dic-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.ri-dic-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--blue-950, #073d70);
+}
+.ri-dic-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #e2e8f0;
+  color: #475569;
+}
+.ri-dic-contract {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ri-dic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+.ri-dic-item {
+  display: grid;
+  gap: 2px;
+}
+.ri-dic-item.ri-dic-full {
+  grid-column: 1 / -1;
+}
+.ri-dic-item span {
+  font-size: 0.8rem;
+  color: var(--muted, #6d849b);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.ri-dic-item strong {
+  color: var(--ink, #0b3967);
+  font-weight: 600;
+}
+.ri-dic-fees {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+.ri-dic-fee-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.86rem;
+}
+.ri-dic-fee-row strong {
+  color: #b42318;
+}
+.ri-dic-notes {
+  margin: 4px 0 0;
+  font-style: italic;
+  color: #475569;
+  background: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
 
 /* Manager */
 .fm-modal-card.ri-resolve { width: min(860px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); overflow: auto; }

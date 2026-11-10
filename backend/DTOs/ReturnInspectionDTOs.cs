@@ -14,6 +14,13 @@ public class ResolveInspectionDTO
     public string? Notes { get; set; }
 }
 
+/* Facility Manager phê duyệt kết quả kiểm kho từ Staff trước khi gửi cho khách. */
+public class ApproveInspectionDTO
+{
+    public List<ResolveInspectionFeeDTO>? Fees { get; set; }
+    public string? Notes { get; set; }
+}
+
 public class ResolveInspectionFeeDTO
 {
     public int FeeId { get; set; }

@@ -45,6 +45,7 @@ public class ReturnInspectionService : IReturnInspectionService
     private const int OwedDueDays = 7;            // giống phí còn thiếu khi trả kho (UnitReturnsController)
     private const int MinReasonLength = 10;
 
+    public const string PendingManager = "Pending Manager";
     public const string Awaiting = "Awaiting Customer";
     public const string Disputed = "Disputed";
     public const string Settled = "Settled";
@@ -106,19 +107,19 @@ public class ReturnInspectionService : IReturnInspectionService
 
         var rules = await ReadRulesAsync(cancellationToken);
         var photos = CleanImages(images);
-        var held = fees.Count > 0;
-        var deadline = held ? now.AddDays(rules.ConfirmDays) : now;
+        var deadline = now.AddDays(rules.ConfirmDays);
         var catalog = fees.Any(f => !string.IsNullOrWhiteSpace(f.FeeCode)) ? await _repo.GetFeePoliciesAsync(cancellationToken) : new List<FeePolicy>();
         var remaining = Math.Max(0, depositRemaining);
 
         int id;
         try
         {
+            // [QUY TRÌNH MỚI]: Sau khi Staff kiểm tra kho xong, đơn được chuyển qua Facility Manager để xác nhận & duyệt trước khi trả về cho khách
             id = await _repo.InsertAsync(
                 new NewReturnInspection(
                     reservation.ReservationID, condition, Trim(notes, 1000), photos.Count > 0 ? JsonSerializer.Serialize(photos) : null,
                     staffUserId, now, deadline, remaining,
-                    held ? Awaiting : Settled, held ? null : "NoFee", held ? null : now),
+                    PendingManager, null, null),
                 fees.Select(f => new NewReturnInspectionFee(
                     Trim(f.FeeCode, 50),
                     catalog.FirstOrDefault(p => string.Equals(p.FeeCode, f.FeeCode, StringComparison.OrdinalIgnoreCase))?.FeePolicyID,
@@ -135,12 +136,9 @@ public class ReturnInspectionService : IReturnInspectionService
             throw new DbUpdateException(exception.Message, exception);
         }
 
-        if (!held) return new InspectionRecordResult(false, id, null, null);
-
         var total = fees.Sum(f => decimal.Round(f.Amount, 0));
         return new InspectionRecordResult(true, id, deadline,
-            $"Đã gửi kết quả kiểm tra kèm {photos.Count} ảnh cho khách. Phí kiểm kho {Vnd(total)}đ CHƯA trừ vào cọc: khách xác nhận " +
-            $"hoặc khiếu nại trước {VnTime(deadline)}, quá hạn hệ thống tự xác nhận. Cọc còn lại {Vnd(remaining)}đ sẽ quyết toán sau đó.");
+            $"Đã hoàn tất kiểm tra kho kèm {photos.Count} ảnh. Đơn kiểm kho đã được chuyển đến Facility Manager để phê duyệt trước khi gửi kết quả cho khách hàng.");
     }
 
     /* ----- Điểm vào công khai (bọc lỗi DB) ----- */
@@ -174,6 +172,9 @@ public class ReturnInspectionService : IReturnInspectionService
 
     public Task<ReturnInspectionResponse> AcceptAsync(int inspectionId, string? userEmail, CancellationToken cancellationToken)
         => GuardAsync(() => AcceptCoreAsync(inspectionId, userEmail, cancellationToken));
+
+    public Task<ReturnInspectionResponse> ApproveAsync(int inspectionId, ApproveInspectionDTO request, string? userEmail, CancellationToken cancellationToken)
+        => GuardAsync(() => ApproveCoreAsync(inspectionId, request, userEmail, cancellationToken));
 
     public Task<ReturnInspectionResponse> ResolveAsync(int inspectionId, ResolveInspectionDTO request, string? userEmail, CancellationToken cancellationToken)
         => GuardAsync(() => ResolveCoreAsync(inspectionId, request, userEmail, cancellationToken));
@@ -287,13 +288,79 @@ public class ReturnInspectionService : IReturnInspectionService
             confirmDays = rules.ConfirmDays,
             summary = new
             {
+                pendingManager = rows.Count(r => r.Status == PendingManager),
                 disputed = rows.Count(r => r.Status == Disputed),
                 awaiting = rows.Count(r => r.Status == Awaiting),
                 settled = rows.Count(r => r.Status == Settled),
-                heldAmount = rows.Where(r => r.Status != Settled).Sum(r => r.Fees.Sum(f => f.ProposedAmount)),
+                heldAmount = rows.Where(r => r.Status != Settled).Sum(r => r.Fees.Sum(f => f.FinalAmount ?? f.ProposedAmount)),
                 reducedAmount = rows.Where(r => r.SettledBy == "Manager").Sum(r => r.Fees.Sum(f => f.ProposedAmount - (f.FinalAmount ?? f.ProposedAmount)))
             },
             items = rows.Select(r => ToDto(r, forCustomer: false, includeImages: false))
+        });
+    }
+
+    private async Task<ReturnInspectionResponse> ApproveCoreAsync(int inspectionId, ApproveInspectionDTO request, string? userEmail,
+        CancellationToken cancellationToken)
+    {
+        var row = await _repo.GetAsync(inspectionId, includeImages: false, cancellationToken);
+        if (row is null) return Fail(404, "Không tìm thấy kết quả kiểm kho.");
+        var (user, fail) = await AuthorizeFacilityManagerAsync(userEmail, row.FacilityID, cancellationToken);
+        if (fail is not null) return fail;
+        if (row.Status != PendingManager)
+            return Fail(409, $"Kết quả kiểm kho này không ở trạng thái chờ duyệt (hiện tại: {StatusLabel(row)}).");
+
+        var notes = request.Notes?.Trim();
+        var input = request.Fees ?? new List<ResolveInspectionFeeDTO>();
+        if (input.Select(f => f.FeeId).Distinct().Count() != input.Count) return Fail(400, "Mỗi khoản phí chỉ chốt một lần.");
+
+        var finals = new Dictionary<int, decimal>();
+        foreach (var fee in row.Fees)
+        {
+            var given = input.FirstOrDefault(f => f.FeeId == fee.FeeID);
+            var amount = given is not null ? decimal.Round(given.FinalAmount, 0) : fee.ProposedAmount;
+            if (amount < 0) return Fail(400, "Số tiền phí không được âm.");
+            if (amount > fee.ProposedAmount)
+                return Fail(400, $"Khoản \"{fee.Description}\": chỉ được giữ nguyên hoặc giảm (tối đa {Vnd(fee.ProposedAmount)}đ), không tăng.");
+            finals[fee.FeeID] = amount;
+        }
+
+        var totalFinal = finals.Values.Sum();
+        var rules = await ReadRulesAsync(cancellationToken);
+        var now = DateTime.UtcNow;
+
+        // Nếu tổng phí sau khi duyệt = 0đ (không có phí hoặc Manager đã miễn hết) -> quyết toán cọc luôn!
+        if (totalFinal <= 0)
+        {
+            return await SettleInTransactionAsync(inspectionId, PendingManager, "Manager", actorUserId: user!.UserID, finals, notes, cancellationToken);
+        }
+
+        // Nếu có phí -> duyệt và chuyển sang cho Khách xác nhận (Awaiting Customer)
+        try
+        {
+            await using var transaction = await _repo.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+            var locked = await _repo.LockAsync(inspectionId, cancellationToken);
+            if (locked is null || locked.Status != PendingManager)
+                return Fail(409, locked is null ? "Không tìm thấy kết quả kiểm kho." : AlreadyHandledMessage(locked));
+
+            foreach (var (feeId, amount) in finals)
+            {
+                await _repo.SetFinalAmountAsync(feeId, amount, cancellationToken);
+            }
+
+            var deadline = now.AddDays(rules.ConfirmDays);
+            await _repo.MarkApprovedAsync(inspectionId, Awaiting, deadline, user!.UserID, notes, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is DbException or DbUpdateException)
+        {
+            _repo.ClearTracking();
+            _logger.LogWarning(exception, "Phê duyệt kiểm kho thất bại ({InspectionId})", inspectionId);
+            return Fail(409, ReadDatabaseMessage(exception, "Chưa phê duyệt được, vui lòng thử lại."));
+        }
+
+        return Ok(new
+        {
+            message = $"Đã phê duyệt kết quả kiểm kho và chuyển cho khách hàng xác nhận. Hạn khách phản hồi: {VnTime(now.AddDays(rules.ConfirmDays))}."
         });
     }
 
@@ -534,6 +601,10 @@ public class ReturnInspectionService : IReturnInspectionService
             facilityId = r.FacilityID,
             facilityName = r.FacilityName,
             units = r.Units,
+            unitDetails = r.UnitDetails,
+            startDate = r.StartDate,
+            endDate = r.EndDate,
+            depositPaid = r.DepositPaid,
             customerName = forCustomer ? null : r.CustomerName,
             customerEmail = forCustomer ? null : r.CustomerEmail,
             customerPhone = forCustomer ? null : r.CustomerPhone,
@@ -547,6 +618,8 @@ public class ReturnInspectionService : IReturnInspectionService
             confirmDeadline = r.Status == Settled && r.SettledBy == "NoFee" ? (DateTime?)null : r.ConfirmDeadline,
             hoursLeft = r.Status == Awaiting ? Math.Max(0, (int)Math.Ceiling((r.ConfirmDeadline - now).TotalHours)) : 0,
             canRespond = r.Status == Awaiting && now <= r.ConfirmDeadline,
+            canManagerApprove = r.Status == PendingManager,
+            canManagerResolve = r.Status == Disputed,
             depositRemaining = r.DepositRemaining,
             fees = r.Fees.Select(f => new
             {
@@ -577,6 +650,7 @@ public class ReturnInspectionService : IReturnInspectionService
 
     private static string StatusLabel(ReturnInspectionRow r) => r.Status switch
     {
+        PendingManager => "Chờ Manager duyệt",
         Awaiting => "Chờ khách xác nhận",
         Disputed => "Khách khiếu nại · chờ Manager",
         _ => r.SettledBy switch
@@ -584,13 +658,14 @@ public class ReturnInspectionService : IReturnInspectionService
             "NoFee" => "Không phát sinh phí kiểm kho",
             "Customer" => "Khách đã đồng ý",
             "Auto" => "Tự xác nhận (quá hạn)",
-            "Manager" => "Manager đã giải quyết khiếu nại",
+            "Manager" => "Manager đã duyệt & quyết toán",
             _ => "Đã quyết toán"
         }
     };
 
     private static string AlreadyHandledMessage(ReturnInspectionRow r) => r.Status switch
     {
+        PendingManager => "Kết quả kiểm kho đang chờ Facility Manager phê duyệt.",
         Disputed => "Kết quả này đang được Facility Manager giải quyết khiếu nại.",
         Settled => $"Kết quả kiểm kho đã được quyết toán ({StatusLabel(r).ToLowerInvariant()}).",
         _ => "Kết quả kiểm kho đang chờ khách xác nhận."

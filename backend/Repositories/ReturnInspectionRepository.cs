@@ -77,7 +77,7 @@ SELECT ri.""InspectionID"", ri.""ReservationID"", ri.""ConditionResult"", ri.""S
        ri.""ResolvedByUserID"", mu.""FullName"" AS ""ResolvedByName"", ri.""ResolvedAt"", ri.""ResolutionNotes"", ri.""SettledAt"", ri.""SettledBy"",
        r.""ReservationCode"", c.""ContractNumber"", r.""CustomerID"", cu.""FullName"" AS ""CustomerName"", cu.""Email"" AS ""CustomerEmail"",
        cu.""PhoneNumber"" AS ""CustomerPhone"", r.""FacilityID"", f.""FacilityName""
-FROM dbo.""ReturnInspection"" AS ri
+FROM ""ReturnInspection"" AS ri
 JOIN ""Reservation"" AS r ON r.""ReservationID"" = ri.""ReservationID""
 JOIN ""Users"" AS cu ON cu.""UserID"" = r.""CustomerID""
 JOIN ""Facility"" AS f ON f.""FacilityID"" = r.""FacilityID""
@@ -152,7 +152,7 @@ LEFT JOIN dbo.Contract AS c ON c.ReservationID = r.ReservationID";
         string sql;
         if (_isNpgsql)
         {
-            sql = @"SELECT ri.""InspectionID"" FROM dbo.""ReturnInspection"" AS ri JOIN ""Reservation"" AS r ON r.""ReservationID"" = ri.""ReservationID""
+            sql = @"SELECT ri.""InspectionID"" FROM ""ReturnInspection"" AS ri JOIN ""Reservation"" AS r ON r.""ReservationID"" = ri.""ReservationID""
                     WHERE ri.""Status"" = 'Awaiting Customer' AND ri.""ConfirmDeadline"" <= @now";
             if (customerId is not null) { sql += " AND r.\"CustomerID\" = @customerId"; parameters.Add(("@customerId", customerId.Value)); }
             if (facilityIds is not null)
@@ -175,7 +175,7 @@ LEFT JOIN dbo.Contract AS c ON c.ReservationID = r.ReservationID";
         var ids = string.Join(",", rows.Select(r => r.InspectionID.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         var sql = _isNpgsql
             ? $@"SELECT ""FeeID"", ""InspectionID"", ""FeeCode"", ""FeePolicyID"", ""Description"", ""ProposedAmount"", ""FinalAmount""
-               FROM dbo.""ReturnInspectionFee"" WHERE ""InspectionID"" IN ({ids}) ORDER BY ""FeeID"""
+               FROM ""ReturnInspectionFee"" WHERE ""InspectionID"" IN ({ids}) ORDER BY ""FeeID"""
             : $@"SELECT FeeID, InspectionID, FeeCode, FeePolicyID, Description, ProposedAmount, FinalAmount
                FROM dbo.ReturnInspectionFee WHERE InspectionID IN ({ids}) ORDER BY FeeID";
 
@@ -196,11 +196,36 @@ LEFT JOIN dbo.Contract AS c ON c.ReservationID = r.ReservationID";
 
         var reservationIds = rows.Select(r => r.ReservationID).Distinct().ToList();
         var units = await _context.ReservationUnits.AsNoTracking()
-            .Where(ru => reservationIds.Contains(ru.ReservationID) && (ru.Status == "Active" || ru.Status == "Returned"))
-            .Select(ru => new { ru.ReservationID, ru.Unit.UnitNumber })
+            .Where(ru => reservationIds.Contains(ru.ReservationID))
+            .Select(ru => new {
+                ru.ReservationID,
+                ru.Unit.UnitNumber,
+                Size = ru.Unit.UnitSize.DisplayName,
+                TypeName = ru.Unit.UnitType.TypeName,
+                ru.Reservation.StartDate,
+                ru.Reservation.EndDate
+            })
             .ToListAsync(cancellationToken);
+
+        var deposits = await _context.Charges.AsNoTracking()
+            .Where(c => reservationIds.Contains(c.ReservationID) && c.ChargeType == "Deposit" && c.Status == "Paid")
+            .GroupBy(c => c.ReservationID)
+            .Select(g => new { ReservationID = g.Key, Total = g.Sum(c => c.Amount) })
+            .ToListAsync(cancellationToken);
+
         foreach (var row in rows)
-            row.Units = string.Join(", ", units.Where(u => u.ReservationID == row.ReservationID).Select(u => u.UnitNumber));
+        {
+            var uList = units.Where(u => u.ReservationID == row.ReservationID).ToList();
+            row.Units = string.Join(", ", uList.Select(u => u.UnitNumber).Distinct());
+            row.UnitDetails = string.Join("; ", uList.Select(u => $"{u.UnitNumber} ({u.TypeName ?? "Kho"} · {u.Size})").Distinct());
+            var firstU = uList.FirstOrDefault();
+            if (firstU != null)
+            {
+                row.StartDate = firstU.StartDate;
+                row.EndDate = firstU.EndDate;
+            }
+            row.DepositPaid = deposits.FirstOrDefault(d => d.ReservationID == row.ReservationID)?.Total ?? 0m;
+        }
     }
 
     private static ReturnInspectionRow ReadInspection(DbDataReader rd)
@@ -259,7 +284,7 @@ LEFT JOIN dbo.Contract AS c ON c.ReservationID = r.ReservationID";
         if (_isNpgsql)
         {
             var insertSql = @"
-INSERT INTO dbo.""ReturnInspection""
+INSERT INTO ""ReturnInspection""
     (""ReservationID"", ""ConditionResult"", ""StaffNotes"", ""StaffImages"", ""InspectedByUserID"", ""InspectedAt"", ""ConfirmDeadline"", ""DepositRemaining"",
      ""Status"", ""SettledBy"", ""SettledAt"")
 VALUES (@reservationId, @condition, @notes, @images, @staffId, @inspectedAt, @deadline, @deposit, @status, @settledBy, @settledAt)
@@ -278,7 +303,7 @@ RETURNING ""InspectionID"";";
             foreach (var fee in fees)
             {
                 await ExecuteAsync(@"
-INSERT INTO dbo.""ReturnInspectionFee"" (""InspectionID"", ""FeeCode"", ""FeePolicyID"", ""Description"", ""ProposedAmount"")
+INSERT INTO ""ReturnInspectionFee"" (""InspectionID"", ""FeeCode"", ""FeePolicyID"", ""Description"", ""ProposedAmount"")
 VALUES (@inspectionId, @code, @policyId, @description, @amount);",
                     new List<(string, object?)>
                     {
@@ -323,7 +348,7 @@ VALUES (@inspectionId, @code, @policyId, @description, @amount);",
     {
         if (_isNpgsql)
         {
-            await ExecuteAsync(@"SELECT ""InspectionID"" FROM dbo.""ReturnInspection"" WHERE ""InspectionID"" = @id FOR UPDATE;",
+            await ExecuteAsync(@"SELECT ""InspectionID"" FROM ""ReturnInspection"" WHERE ""InspectionID"" = @id FOR UPDATE;",
                 new List<(string, object?)> { ("@id", inspectionId) }, cancellationToken);
         }
         else
@@ -337,7 +362,7 @@ VALUES (@inspectionId, @code, @policyId, @description, @amount);",
     public Task SetFinalAmountAsync(int feeId, decimal finalAmount, CancellationToken cancellationToken)
     {
         var sql = _isNpgsql
-            ? @"UPDATE dbo.""ReturnInspectionFee"" SET ""FinalAmount"" = @amount WHERE ""FeeID"" = @id;"
+            ? @"UPDATE ""ReturnInspectionFee"" SET ""FinalAmount"" = @amount WHERE ""FeeID"" = @id;"
             : "UPDATE dbo.ReturnInspectionFee SET FinalAmount = @amount WHERE FeeID = @id;";
 
         return ExecuteAsync(sql, new List<(string, object?)> { ("@amount", finalAmount), ("@id", feeId) }, cancellationToken);
@@ -346,7 +371,7 @@ VALUES (@inspectionId, @code, @policyId, @description, @amount);",
     public Task MarkDisputedAsync(int inspectionId, string reason, string? customerImagesJson, DateTime respondedAt, CancellationToken cancellationToken)
     {
         var sql = _isNpgsql
-            ? @"UPDATE dbo.""ReturnInspection""
+            ? @"UPDATE ""ReturnInspection""
                 SET ""Status"" = 'Disputed', ""DisputeReason"" = @reason, ""CustomerImages"" = @images, ""RespondedAt"" = @at
                 WHERE ""InspectionID"" = @id AND ""Status"" = 'Awaiting Customer';"
             : @"UPDATE dbo.ReturnInspection
@@ -358,11 +383,32 @@ VALUES (@inspectionId, @code, @policyId, @description, @amount);",
             cancellationToken);
     }
 
+    public Task MarkApprovedAsync(int inspectionId, string nextStatus, DateTime confirmDeadline,
+        int resolvedByUserId, string? resolutionNotes, CancellationToken cancellationToken)
+    {
+        var sql = _isNpgsql
+            ? @"UPDATE ""ReturnInspection""
+                SET ""Status"" = @status, ""ConfirmDeadline"" = @deadline,
+                    ""ResolvedByUserID"" = @resolvedBy, ""ResolvedAt"" = CURRENT_TIMESTAMP, ""ResolutionNotes"" = @notes
+                WHERE ""InspectionID"" = @id AND ""Status"" = 'Pending Manager';"
+            : @"UPDATE dbo.ReturnInspection
+                SET Status = @status, ConfirmDeadline = @deadline,
+                    ResolvedByUserID = @resolvedBy, ResolvedAt = SYSUTCDATETIME(), ResolutionNotes = @notes
+                WHERE InspectionID = @id AND Status = N'Pending Manager';";
+
+        return ExecuteAsync(sql,
+            new List<(string, object?)>
+            {
+                ("@status", nextStatus), ("@deadline", confirmDeadline), ("@resolvedBy", resolvedByUserId),
+                ("@notes", resolutionNotes), ("@id", inspectionId)
+            }, cancellationToken);
+    }
+
     public Task MarkSettledAsync(int inspectionId, string settledBy, DateTime settledAt, DateTime? respondedAt,
         int? resolvedByUserId, string? resolutionNotes, CancellationToken cancellationToken)
     {
         var sql = _isNpgsql
-            ? @"UPDATE dbo.""ReturnInspection""
+            ? @"UPDATE ""ReturnInspection""
                 SET ""Status"" = 'Settled', ""SettledBy"" = @by, ""SettledAt"" = @at,
                     ""RespondedAt"" = COALESCE(""RespondedAt"", @respondedAt),
                     ""ResolvedByUserID"" = @resolvedBy, ""ResolvedAt"" = CASE WHEN @resolvedBy IS NULL THEN NULL ELSE @at END, ""ResolutionNotes"" = @notes

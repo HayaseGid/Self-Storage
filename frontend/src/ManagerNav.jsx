@@ -97,7 +97,7 @@ export function useManagerBadges(facilityId, activeTab) {
         it.overdueRent?.length > 0 || Number(it.lateFeeUnpaid) > 0 || Number(it.otherUnpaid) > 0).length
     }
     if (inspections.status === 'fulfilled' && inspections.value?.summary) {
-      next.returnInspections = Number(inspections.value.summary.disputed || 0)
+      next.returnInspections = Number(inspections.value.summary.pendingManager || 0) + Number(inspections.value.summary.disputed || 0)
     }
     setCounts(next)
   }, [facilityId])

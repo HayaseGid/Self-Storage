@@ -39,6 +39,10 @@ public sealed class ReturnInspectionRow
     public int FacilityID { get; set; }
     public string? FacilityName { get; set; }
     public string? Units { get; set; }
+    public string? UnitDetails { get; set; }
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public decimal DepositPaid { get; set; }
 
     public List<ReturnInspectionFeeRow> Fees { get; set; } = new();
 }
@@ -77,6 +81,8 @@ public interface IReturnInspectionRepository
     Task<int> InsertAsync(NewReturnInspection row, IReadOnlyList<NewReturnInspectionFee> fees, CancellationToken cancellationToken);
     Task<ReturnInspectionRow?> LockAsync(int inspectionId, CancellationToken cancellationToken);
     Task SetFinalAmountAsync(int feeId, decimal finalAmount, CancellationToken cancellationToken);
+    Task MarkApprovedAsync(int inspectionId, string nextStatus, DateTime confirmDeadline,
+        int resolvedByUserId, string? resolutionNotes, CancellationToken cancellationToken);
     Task MarkDisputedAsync(int inspectionId, string reason, string? customerImagesJson, DateTime respondedAt, CancellationToken cancellationToken);
     Task MarkSettledAsync(int inspectionId, string settledBy, DateTime settledAt, DateTime? respondedAt,
         int? resolvedByUserId, string? resolutionNotes, CancellationToken cancellationToken);

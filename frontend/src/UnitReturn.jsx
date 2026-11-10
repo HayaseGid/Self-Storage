@@ -49,6 +49,7 @@ export function returnStage(req, inspection) {
   if (!req) return null
   if (req.status === 'Scheduled') return 'scheduled'
   if (req.status === 'In Progress') return 'inspecting'
+  if (inspection?.status === INSPECTION.PENDING_MANAGER) return 'pending_manager'
   if (inspection?.status === INSPECTION.AWAITING) return 'confirm' // [THÊM 14] chờ khách xác nhận phí kiểm kho
   if (inspection?.status === INSPECTION.DISPUTED) return 'disputed' // [THÊM 14] đang giải quyết khiếu nại
   if (Number(req.amountOwed) > 0) return 'owed'
@@ -72,16 +73,16 @@ function ReturnProgress({ item, inspection, onChanged }) {
   const [busy, setBusy] = useState(false)
   const req = item.request
   const stage = returnStage(req, inspection)
-  const held = stage === 'confirm' || stage === 'disputed' // [THÊM 14] phí kiểm kho chưa quyết toán
+  const held = stage === 'pending_manager' || stage === 'confirm' || stage === 'disputed' // [THÊM 14] phí kiểm kho chưa quyết toán
   const steps = [
     ['Báo trả kho', `Hẹn ${req.scheduledTime ? `${req.scheduledTime} ` : ''}ngày ${fmtDay(req.scheduledDate)}${req.staffName ? ` · NV ${req.staffName}` : ''}`],
     ['Nhận lại & kiểm tra kho', stage === 'scheduled' ? 'Chờ đến ngày hẹn' : stage === 'inspecting' ? 'Nhân viên đang kiểm tra' : (req.conditionResult === 'Damaged' ? 'Có vấn đề' : 'Không có vấn đề')],
-    ['Quyết toán tiền cọc', stage === 'confirm' ? `Chờ bạn xác nhận phí ${money(inspection.proposedTotal)}` : stage === 'disputed' ? 'Đang giải quyết khiếu nại' : stage === 'owed' ? `Cần đóng thêm ${money(req.amountOwed)}` : ['scheduled', 'inspecting'].includes(stage) ? 'Sau khi kiểm tra' : Number(req.refundAmount) > 0 ? `Hoàn ${money(req.refundAmount)}` : 'Cọc đã bù hết phí'],
+    ['Quản lý duyệt & Quyết toán', stage === 'pending_manager' ? 'Đang chờ Quản lý duyệt kết quả' : stage === 'confirm' ? `Chờ bạn xác nhận phí ${money(inspection?.proposedTotal)}` : stage === 'disputed' ? 'Đang giải quyết khiếu nại' : stage === 'owed' ? `Cần đóng thêm ${money(req.amountOwed)}` : ['scheduled', 'inspecting'].includes(stage) ? 'Sau khi kiểm tra' : Number(req.refundAmount) > 0 ? `Hoàn ${money(req.refundAmount)}` : 'Cọc đã bù hết phí'],
     ['Hoàn cọc', held ? 'Sau khi quyết toán' : Number(req.refundAmount) > 0
       ? req.refundStatus === 'Completed' ? `Đã chuyển ${fmtDay(req.refundedAt)}` : req.refundDueDate ? `Dự kiến ${fmtDay(req.refundDueDate)}` : 'Sau khi kiểm tra'
       : ['scheduled', 'inspecting'].includes(stage) ? `Sau kiểm tra ${req.refundDays} ngày` : 'Không có']
   ]
-  const current = { scheduled: 0, inspecting: 1, confirm: 2, disputed: 2, owed: 2, refunding: 3, done: 4 }[stage]
+  const current = { scheduled: 0, inspecting: 1, pending_manager: 2, confirm: 2, disputed: 2, owed: 2, refunding: 3, done: 4 }[stage]
 
   const cancel = async () => {
     const ok = await dialog.confirm({ tone: 'warning', title: 'Hủy lịch trả kho?', message: 'Bạn tiếp tục thuê kho như bình thường đến hết hợp đồng.', confirmLabel: 'Hủy lịch', cancelLabel: 'Không' })
@@ -112,7 +113,7 @@ function ReturnProgress({ item, inspection, onChanged }) {
           <p>{item.facility}</p>
         </div>
         <span className={`ur-badge ${stage}`}>
-          {{ scheduled: 'Đã hẹn trả kho', inspecting: 'Đang kiểm tra kho', confirm: 'Chờ bạn xác nhận', disputed: 'Đang xử lý khiếu nại', owed: 'Cần đóng thêm phí', refunding: 'Chờ hoàn cọc', done: 'Hoàn tất' }[stage]}
+          {{ scheduled: 'Đã hẹn trả kho', inspecting: 'Đang kiểm tra kho', pending_manager: 'Chờ Quản lý duyệt', confirm: 'Chờ bạn xác nhận', disputed: 'Đang xử lý khiếu nại', owed: 'Cần đóng thêm phí', refunding: 'Chờ hoàn cọc', done: 'Hoàn tất' }[stage]}
         </span>
       </div>
 

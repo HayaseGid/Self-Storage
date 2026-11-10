@@ -14,7 +14,7 @@ import './ReturnInspection.css'
  *   - Manager: ManagerReturnInspectionsTab: xem ảnh 2 bên, giữ / giảm / miễn từng khoản, ghi quyết định.
  */
 
-export const INSPECTION = { AWAITING: 'Awaiting Customer', DISPUTED: 'Disputed', SETTLED: 'Settled' }
+export const INSPECTION = { PENDING_MANAGER: 'Pending Manager', AWAITING: 'Awaiting Customer', DISPUTED: 'Disputed', SETTLED: 'Settled' }
 export const MAX_STAFF_PHOTOS = 5
 export const MAX_CUSTOMER_PHOTOS = 3
 
@@ -286,13 +286,57 @@ function DisputeModal({ inspection, onClose, onDone }) {
     <div className="ri-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose() }}>
       <form className="ri-modal" role="dialog" aria-modal="true" aria-labelledby="ri-dispute-title" onSubmit={submit}>
         <div className="ri-modal-head">
-          <h3 id="ri-dispute-title">Khiếu nại kết quả kiểm kho</h3>
+          <h3 id="ri-dispute-title">Đơn khiếu nại kết quả kiểm kho</h3>
           <button type="button" className="ri-close" onClick={onClose} disabled={busy} aria-label="Đóng">×</button>
         </div>
+
+        {/* Thông tin quan trọng về kho thuê của khách hàng */}
+        <div className="ri-dispute-card">
+          <div className="ri-dic-head">
+            <span className="ri-dic-tag">Thông tin kho thuê</span>
+            <span className="ri-dic-contract">Hợp đồng: <b>{inspection.contractNumber || inspection.reservationCode}</b></span>
+          </div>
+          <div className="ri-dic-grid">
+            <div className="ri-dic-item">
+              <small>Phòng kho</small>
+              <strong>{inspection.units || '—'}</strong>
+            </div>
+            <div className="ri-dic-item">
+              <small>Cơ sở</small>
+              <span>{inspection.facilityName || 'StoreSpace'}</span>
+            </div>
+            {inspection.unitDetails && (
+              <div className="ri-dic-item ri-dic-full">
+                <small>Chi tiết diện tích / loại kho</small>
+                <span>{inspection.unitDetails}</span>
+              </div>
+            )}
+            <div className="ri-dic-item">
+              <small>Tiền cọc đã đóng</small>
+              <span>{money(inspection.depositPaid || inspection.depositTotal || inspection.depositRemaining)}</span>
+            </div>
+            <div className="ri-dic-item">
+              <small>Phí kiểm kho duyệt</small>
+              <strong style={{ color: '#c4373c' }}>{money(inspection.finalTotal || inspection.proposedTotal)}</strong>
+            </div>
+          </div>
+          {inspection.fees && inspection.fees.length > 0 && (
+            <div className="ri-dic-fees">
+              <small>Khoản phí cần xác minh lại:</small>
+              <div>{inspection.fees.map(f => `${f.description} (${money(f.finalAmount ?? f.proposedAmount)})`).join(' · ')}</div>
+            </div>
+          )}
+          {inspection.staffNotes && (
+            <div className="ri-dic-notes">
+              <small>Ghi chú hiện trạng của nhân viên:</small>
+              <p>“{inspection.staffNotes}”</p>
+            </div>
+          )}
+        </div>
+
         <p className="ri-hint">
-          Hợp đồng {inspection.contractNumber} · phí đề xuất {money(inspection.proposedTotal)}. Facility Manager sẽ đối chiếu ảnh của nhân viên
-          với lý do và ảnh của bạn rồi quyết định giữ nguyên, giảm hoặc miễn từng khoản. Tiền cọc chưa bị trừ trong lúc chờ.
-          Mỗi kết quả chỉ khiếu nại được 1 lần, quyết định của Manager là cuối cùng.
+          ℹ️ Đơn khiếu nại kèm thông tin chi tiết này sẽ được chuyển trực tiếp về cho <b>Facility Manager (Quản lý cơ sở)</b> để kiểm tra và xác nhận lại.
+          Facility Manager sẽ đối chiếu ảnh của nhân viên với lý do và ảnh bằng chứng của bạn rồi đưa ra quyết định cuối cùng. Tiền cọc chưa bị trừ trong lúc chờ giải quyết.
         </p>
         {error && <div className="ri-error" role="alert">{error}</div>}
         <label className="ri-label" htmlFor="ri-reason">Lý do khiếu nại <em>(bắt buộc, 10–1000 ký tự)</em></label>
@@ -304,7 +348,7 @@ function DisputeModal({ inspection, onClose, onDone }) {
           hint="Ví dụ: ảnh kho lúc bạn trả, ảnh lúc mới nhận kho." />
         <div className="ri-actions">
           <button type="button" className="dashboard-secondary-btn" onClick={onClose} disabled={busy}>Để sau</button>
-          <button type="submit" className="dashboard-primary-btn" disabled={busy || reason.trim().length < 10}>{busy ? 'Đang gửi...' : 'Gửi khiếu nại'}</button>
+          <button type="submit" className="dashboard-primary-btn" disabled={busy || reason.trim().length < 10}>{busy ? 'Đang gửi...' : 'Gửi khiếu nại đến Facility Manager'}</button>
         </div>
       </form>
     </div>,
@@ -324,16 +368,22 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
   const i = inspection
   if (!i) return null
   const settled = i.status === INSPECTION.SETTLED
-  const noFee = i.settledBy === 'NoFee'
+  const isPendingManager = i.status === INSPECTION.PENDING_MANAGER
+  const isAwaiting = i.status === INSPECTION.AWAITING
+  const isDisputed = i.status === INSPECTION.DISPUTED
+  const tone = isDisputed ? 'bad' : isPendingManager ? 'info' : isAwaiting ? 'warn' : 'ok'
+  const isDamaged = i.conditionResult === 'Damaged'
 
   const accept = async () => {
+    const feeAmount = i.finalTotal || i.proposedTotal
     const ok = await dialog.confirm({
       tone: 'warning',
       title: 'Đồng ý kết quả kiểm kho?',
-      message: `Phí kiểm kho ${money(i.proposedTotal)} sẽ trừ vào tiền cọc còn lại ${money(i.depositRemaining)}.\n` +
+      message: `Phí kiểm kho ${money(feeAmount)} sẽ trừ vào tiền cọc còn lại ${money(i.depositRemaining)}.\n` +
         (Number(i.expectedOwed) > 0 ? `Bạn cần đóng thêm ${money(i.expectedOwed)}.` : `Bạn được hoàn ${money(i.expectedRefund)}.`) +
         '\nSau khi đồng ý sẽ không khiếu nại được nữa.',
-      confirmLabel: 'Đồng ý', cancelLabel: 'Xem lại'
+      confirmLabel: 'Đồng ý & quyết toán',
+      cancelLabel: 'Xem lại'
     })
     if (!ok) return
     setBusy(true)
@@ -347,24 +397,16 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
     } finally { setBusy(false) }
   }
 
-  if (noFee) {
-    // Không có phí kiểm kho: chỉ hiện ảnh (nếu có) cho minh bạch
-    return i.staffImageCount > 0
-      ? <div className="ri-box ok" onClick={e => e.stopPropagation()}><InspectionPhotos inspection={i} showCustomer={false} /></div>
-      : null
-  }
-
-  const isDamaged = i.conditionResult === 'Damaged'
-
   return (
-    <div className={`ri-box ${i.status === INSPECTION.AWAITING ? 'warn' : i.status === INSPECTION.DISPUTED ? 'info' : 'ok'}`}
+    <div className={`ri-box ${tone}`}
       onClick={e => e.stopPropagation()}>{/* chỉ chặn click (thẻ trả kho bấm vào là mở hợp đồng); không chặn phím để Esc / mũi tên vẫn chạy */}
       <div className="ri-box-head">
         <div>
           <strong>
-            {i.status === INSPECTION.AWAITING && 'Kết quả kiểm kho chờ bạn xác nhận'}
-            {i.status === INSPECTION.DISPUTED && 'Bạn đã gửi khiếu nại · Facility Manager đang xem xét'}
-            {settled && (i.settledBy === 'Manager' ? 'Manager đã giải quyết khiếu nại' : i.settledBy === 'Auto' ? 'Hệ thống đã tự xác nhận (quá hạn)' : 'Bạn đã đồng ý kết quả kiểm kho')}
+            {isPendingManager && 'Đã hoàn tất kiểm tra kho · Đang chờ Facility Manager phê duyệt'}
+            {isAwaiting && 'Kết quả kiểm kho đã được Quản lý duyệt · Chờ bạn xác nhận'}
+            {isDisputed && 'Bạn đã gửi khiếu nại · Facility Manager đang xem xét lại'}
+            {settled && (i.settledBy === 'Manager' ? 'Manager đã duyệt & giải quyết khiếu nại' : i.settledBy === 'Auto' ? 'Hệ thống đã tự xác nhận (quá hạn)' : 'Bạn đã đồng ý kết quả kiểm kho')}
           </strong>
           <div className="ri-subhead">
             <small>Kiểm tra bởi NV {i.inspectedBy} lúc {fmtDateTime(i.inspectedAt)}</small>
@@ -373,8 +415,14 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
             </span>
           </div>
         </div>
-        {i.status === INSPECTION.AWAITING && <span className="ri-deadline">Hạn {fmtDateTime(i.confirmDeadline)} · {timeLeft(i.confirmDeadline)}</span>}
+        {isAwaiting && <span className="ri-deadline">Hạn {fmtDateTime(i.confirmDeadline)} · {timeLeft(i.confirmDeadline)}</span>}
       </div>
+
+      {isPendingManager && (
+        <div className="st-alert st-info" style={{ margin: '4px 0 0' }}>
+          Nhân viên cơ sở đã hoàn thành việc kiểm tra kho. Đơn kiểm kho đang được chuyển qua <b>Facility Manager (Quản lý cơ sở)</b> để xem xét hình ảnh và duyệt các khoản phí. Sau khi Quản lý duyệt, bạn sẽ nhận được thông báo để xác nhận hoặc khiếu nại nếu có nhầm lẫn.
+        </div>
+      )}
 
       {i.staffNotes && (
         <div className="ri-staff-notes-box">
@@ -385,18 +433,20 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
       <InspectionPhotos inspection={i} />
       {i.fees && i.fees.length > 0 && (
         <div className="ri-fees-section">
-          <div className="ri-section-title">Chi tiết các khoản phí kiểm kho:</div>
-          <FeeTable inspection={i} showFinal={i.settledBy === 'Manager'} />
+          <div className="ri-section-title">
+            {isPendingManager ? 'Các khoản phí nhân viên đề xuất (chờ Quản lý duyệt):' : 'Chi tiết các khoản phí kiểm kho:'}
+          </div>
+          <FeeTable inspection={i} showFinal={i.settledBy === 'Manager' || isAwaiting} />
         </div>
       )}
 
       {/* Đã quyết toán: bảng quyết toán thật nằm ngay trên (khối Trả kho), ở đây chỉ còn ảnh + quyết định */}
-      {!settled && <table className="ri-table ri-sum">
+      {!settled && !isPendingManager && <table className="ri-table ri-sum">
         <tbody>
-          {depositTotal != null && <tr><td>Tiền cọc đã đóng</td><td>{money(depositTotal)}</td></tr>}
+          {(depositTotal != null || i.depositPaid != null) && <tr><td>Tiền cọc đã đóng</td><td>{money(depositTotal ?? i.depositPaid)}</td></tr>}
           {Number(debtDeducted) > 0 && <tr><td>Đã trừ công nợ hợp đồng (tiền thuê, phí trễ hạn)</td><td>− {money(debtDeducted)}</td></tr>}
           <tr><td>Tiền cọc còn lại để quyết toán</td><td>{money(i.depositRemaining)}</td></tr>
-          <tr><td>{settled ? 'Phí kiểm kho đã chốt' : 'Phí kiểm kho đề xuất'}</td><td>− {money(i.finalTotal)}</td></tr>
+          <tr><td>{settled ? 'Phí kiểm kho đã chốt' : 'Phí kiểm kho Quản lý đã duyệt'}</td><td>− {money(i.finalTotal || i.proposedTotal)}</td></tr>
         </tbody>
         <tfoot>
           {Number(i.expectedOwed) > 0
@@ -412,14 +462,15 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
       )}
       {i.resolutionNotes && (
         <div className="ri-quote decision">
-          <b>Quyết định của {i.resolvedBy || 'Facility Manager'} ({fmtDateTime(i.resolvedAt)}):</b> {i.resolutionNotes}
+          <b>Ý kiến / Quyết định của {i.resolvedBy || 'Facility Manager'} ({fmtDateTime(i.resolvedAt)}):</b> {i.resolutionNotes}
         </div>
       )}
 
-      {i.status === INSPECTION.AWAITING && (
+      {isAwaiting && (
         <>
           <p className="ri-hint">
-            Tiền cọc <b>chưa bị trừ</b>. Kiểm tra ảnh và các khoản phí: đồng ý để quyết toán ngay, hoặc khiếu nại nếu thấy chưa đúng.
+            Tiền cọc <b>chưa bị trừ</b>. Hãy kiểm tra ảnh và các khoản phí do Quản lý cơ sở đã duyệt.
+            Nếu đồng ý, bấm <b>Đồng ý & quyết toán</b>. Nếu thấy có vấn đề nhầm lẫn, hãy bấm <b>Khiếu nại</b> để chuyển lại cho Quản lý kiểm tra.
             Quá hạn mà bạn không phản hồi, hệ thống sẽ tự xác nhận theo số tiền trên.
           </p>
           <div className="ri-actions">
@@ -428,7 +479,7 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
           </div>
         </>
       )}
-      {i.status === INSPECTION.DISPUTED && <p className="ri-hint">Tiền cọc chưa bị trừ cho tới khi Manager quyết định. Bạn sẽ thấy kết quả tại đây.</p>}
+      {isDisputed && <p className="ri-hint">Đơn khiếu nại của bạn kèm thông tin kho và ảnh đã được gửi lại cho Facility Manager kiểm tra và xác nhận lại. Tiền cọc chưa bị trừ cho tới khi Manager quyết định.</p>}
 
       {disputing && (
         <DisputeModal inspection={i} onClose={() => setDisputing(false)} onDone={async result => {
@@ -479,7 +530,10 @@ export function StaffInspectionStatus({ inspection, fallbackNote }) {
       </div>
     )
   }
-  const tone = i.status === INSPECTION.DISPUTED ? 'bad' : i.status === INSPECTION.AWAITING ? 'warn' : 'ok'
+  const isPendingManager = i.status === INSPECTION.PENDING_MANAGER
+  const isDisputed = i.status === INSPECTION.DISPUTED
+  const isAwaiting = i.status === INSPECTION.AWAITING
+  const tone = isDisputed ? 'bad' : isPendingManager ? 'info' : isAwaiting ? 'warn' : 'ok'
   const isDamaged = i.conditionResult === 'Damaged'
 
   return (
@@ -491,7 +545,10 @@ export function StaffInspectionStatus({ inspection, fallbackNote }) {
             {isDamaged ? '⚠️ Có vấn đề' : '✓ Kho bình thường'}
           </span>
         </div>
-        {i.status === INSPECTION.AWAITING && (
+        {isPendingManager && (
+          <small className="ri-staff-settled-time">Đang chờ Manager duyệt</small>
+        )}
+        {isAwaiting && (
           <span className="ri-deadline">
             Hạn khách xác nhận {fmtDateTime(i.confirmDeadline)} · {timeLeft(i.confirmDeadline)}
           </span>
@@ -500,6 +557,12 @@ export function StaffInspectionStatus({ inspection, fallbackNote }) {
           <small className="ri-staff-settled-time">Quyết toán {fmtDateTime(i.settledAt)}</small>
         )}
       </div>
+
+      {isPendingManager && (
+        <p className="ri-hint" style={{ fontStyle: 'italic', margin: '4px 0' }}>
+          Đã hoàn tất kiểm tra kho. Đơn đang được Facility Manager xem xét hình ảnh và phê duyệt phí trước khi chuyển về cho khách hàng.
+        </p>
+      )}
 
       {/* Ghi chú hiện trạng của nhân viên */}
       {i.staffNotes && (
@@ -513,9 +576,9 @@ export function StaffInspectionStatus({ inspection, fallbackNote }) {
       {i.fees && i.fees.length > 0 && (
         <div className="ri-fees-section">
           <div className="ri-section-title">
-            Chi tiết phí kiểm kho ({i.status === INSPECTION.AWAITING ? 'Chờ khách xác nhận' : 'Đã chốt'}):
+            Chi tiết phí kiểm kho ({isPendingManager ? 'Nhân viên đề xuất' : isAwaiting ? 'Quản lý đã duyệt' : 'Đã chốt'}):
           </div>
-          <FeeTable inspection={i} showFinal={i.settledBy === 'Manager'} />
+          <FeeTable inspection={i} showFinal={i.settledBy === 'Manager' || isAwaiting} />
         </div>
       )}
 
@@ -546,7 +609,9 @@ function ResolveModal({ inspectionId, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const d = detail.data
-  const canResolve = d?.status === INSPECTION.DISPUTED
+  const isPendingManager = d?.status === INSPECTION.PENDING_MANAGER
+  const isDisputed = d?.status === INSPECTION.DISPUTED
+  const canAct = isPendingManager || isDisputed
 
   useEffect(() => {
     if (!d) return
@@ -571,22 +636,50 @@ function ResolveModal({ inspectionId, onClose, onDone }) {
   const submit = async e => {
     e.preventDefault()
     if (invalid) { setError(`Khoản "${invalid.description}": số tiền chốt phải từ 0 đến ${money(invalid.proposedAmount)} (chỉ giữ nguyên hoặc giảm).`); return }
-    if (notes.trim().length < 10) { setError('Vui lòng ghi nội dung quyết định gửi khách (ít nhất 10 ký tự).'); return }
-    const ok = await dialog.confirm({
-      tone: 'warning', title: 'Chốt quyết định khiếu nại?',
-      message: `Phí chốt ${money(finalTotal)} (đề xuất ${money(d.proposedTotal)}).\n${owed > 0 ? `Khách cần đóng thêm ${money(owed)}.` : `Hoàn cọc cho khách ${money(refund)}.`}\nQuyết định là cuối cùng, hệ thống quyết toán tiền cọc ngay.`,
-      confirmLabel: 'Chốt quyết định', cancelLabel: 'Xem lại'
-    })
-    if (!ok) return
-    setBusy(true); setError('')
-    try {
-      const result = await apiPost(`/api/return-inspections/${inspectionId}/resolve`, {
-        notes: notes.trim(),
-        fees: d.fees.map(f => ({ feeId: f.feeId, finalAmount: finalOf(f) }))
+    
+    if (isPendingManager) {
+      const ok = await dialog.confirm({
+        tone: 'info',
+        title: 'Phê duyệt kết quả kiểm kho?',
+        message: `Tổng phí duyệt: ${money(finalTotal)} (nhân viên đề xuất: ${money(d.proposedTotal)}).\n` +
+          (finalTotal === 0
+            ? `Vì không có phí bồi thường, hệ thống sẽ tự động hoàn cọc ${money(remaining)} và hoàn tất hợp đồng.`
+            : `Hệ thống sẽ chuyển thông tin duyệt về cho khách hàng để kiểm tra & quyết toán (hoàn cọc ${money(refund)}${owed > 0 ? `, khách đóng thêm ${money(owed)}` : ''}).`),
+        confirmLabel: 'Xác nhận duyệt',
+        cancelLabel: 'Xem lại'
       })
-      onDone(result)
-    } catch (err) {
-      setError(err.message); setBusy(false)
+      if (!ok) return
+      setBusy(true); setError('')
+      try {
+        const result = await apiPost(`/api/return-inspections/${inspectionId}/approve`, {
+          notes: notes.trim() || null,
+          fees: d.fees.map(f => ({ feeId: f.feeId, finalAmount: finalOf(f) }))
+        })
+        onDone(result)
+      } catch (err) {
+        setError(err.message); setBusy(false)
+      }
+      return
+    }
+
+    if (isDisputed) {
+      if (notes.trim().length < 10) { setError('Vui lòng ghi nội dung quyết định gửi khách (ít nhất 10 ký tự).'); return }
+      const ok = await dialog.confirm({
+        tone: 'warning', title: 'Chốt quyết định khiếu nại?',
+        message: `Phí chốt ${money(finalTotal)} (đề xuất ${money(d.proposedTotal)}).\n${owed > 0 ? `Khách cần đóng thêm ${money(owed)}.` : `Hoàn cọc cho khách ${money(refund)}.`}\nQuyết định là cuối cùng, hệ thống quyết toán tiền cọc ngay.`,
+        confirmLabel: 'Chốt quyết định', cancelLabel: 'Xem lại'
+      })
+      if (!ok) return
+      setBusy(true); setError('')
+      try {
+        const result = await apiPost(`/api/return-inspections/${inspectionId}/resolve`, {
+          notes: notes.trim(),
+          fees: d.fees.map(f => ({ feeId: f.feeId, finalAmount: finalOf(f) }))
+        })
+        onDone(result)
+      } catch (err) {
+        setError(err.message); setBusy(false)
+      }
     }
   }
 
@@ -594,7 +687,9 @@ function ResolveModal({ inspectionId, onClose, onDone }) {
     <div className="fm-modal-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose() }}>
       <div className="fm-modal-card ri-resolve" role="dialog" aria-modal="true" aria-labelledby="ri-resolve-title">
         <div className="fm-modal-header">
-          <h2 id="ri-resolve-title">{canResolve ? 'Giải quyết khiếu nại kiểm kho' : 'Kết quả kiểm kho'}</h2>
+          <h2 id="ri-resolve-title">
+            {isPendingManager ? 'Duyệt kết quả kiểm kho (từ Staff)' : isDisputed ? 'Giải quyết khiếu nại kiểm kho' : 'Chi tiết kiểm kho'}
+          </h2>
           <button type="button" className="fm-modal-close" onClick={onClose} disabled={busy} aria-label="Đóng">×</button>
         </div>
         {!d ? <p className="fm-muted">{detail.error || 'Đang tải...'}</p> : (
@@ -613,58 +708,66 @@ function ResolveModal({ inspectionId, onClose, onDone }) {
               </section>
               <section>
                 <h4>Khách khiếu nại {d.respondedAt ? <small>({fmtDateTime(d.respondedAt)})</small> : null}</h4>
-                {d.disputeReason ? <p className="ri-notes">“{d.disputeReason}”</p> : <p className="fm-muted">Khách chưa khiếu nại.</p>}
-                <PhotoGallery images={d.customerImages} emptyText="Khách không gửi ảnh." />
+                {d.disputeReason ? <p className="ri-notes">“{d.disputeReason}”</p> : <p className="fm-muted">{isPendingManager ? 'Chưa gửi khách (đang chờ duyệt)' : 'Khách chưa khiếu nại.'}</p>}
+                <PhotoGallery images={d.customerImages} emptyText={isPendingManager ? 'Đang ở bước duyệt trước khi gửi khách.' : 'Khách không gửi ảnh.'} />
               </section>
             </div>
 
             <table className="ri-table">
-              <thead><tr><th>Khoản phí</th><th>Đề xuất</th><th>Chốt (chỉ giữ / giảm)</th></tr></thead>
+              <thead><tr><th>Khoản phí</th><th>NV đề xuất</th><th>{canAct ? 'Số tiền chốt (giữ / giảm)' : 'Đã chốt'}</th></tr></thead>
               <tbody>
-                {d.fees.map(f => (
-                  <tr key={f.feeId}>
-                    <td>{f.description}</td>
-                    <td>{money(f.proposedAmount)}</td>
-                    <td>
-                      {canResolve ? (
-                        <div className="ri-final">
-                          <input type="number" min="0" max={Number(f.proposedAmount)} step="1000" className="ri-input"
-                            aria-label={`Số tiền chốt cho ${f.description}`}
-                            value={finals[f.feeId] ?? ''} onChange={e => { setFinals(m => ({ ...m, [f.feeId]: e.target.value })); setError('') }} />
-                          <button type="button" className="fp-btn" onClick={() => setFinals(m => ({ ...m, [f.feeId]: String(Math.round(Number(f.proposedAmount))) }))}>Giữ</button>
-                          <button type="button" className="fp-btn" onClick={() => setFinals(m => ({ ...m, [f.feeId]: '0' }))}>Miễn</button>
-                        </div>
-                      ) : (f.finalAmount == null ? '—' : money(f.finalAmount))}
-                    </td>
-                  </tr>
-                ))}
+                {d.fees.length === 0 ? (
+                  <tr><td colSpan={3} style={{ textAlign: 'center', color: '#64748b', padding: '12px' }}>Không có phí bồi thường hư hại nào.</td></tr>
+                ) : (
+                  d.fees.map(f => (
+                    <tr key={f.feeId}>
+                      <td>{f.description}</td>
+                      <td>{money(f.proposedAmount)}</td>
+                      <td>
+                        {canAct ? (
+                          <div className="ri-final">
+                            <input type="number" min="0" max={Number(f.proposedAmount)} step="1000" className="ri-input"
+                              aria-label={`Số tiền chốt cho ${f.description}`}
+                              value={finals[f.feeId] ?? ''} onChange={e => { setFinals(m => ({ ...m, [f.feeId]: e.target.value })); setError('') }} />
+                            <button type="button" className="fp-btn" onClick={() => setFinals(m => ({ ...m, [f.feeId]: String(Math.round(Number(f.proposedAmount))) }))}>Giữ</button>
+                            <button type="button" className="fp-btn" onClick={() => setFinals(m => ({ ...m, [f.feeId]: '0' }))}>Miễn</button>
+                          </div>
+                        ) : (f.finalAmount == null ? '—' : money(f.finalAmount))}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
 
             <table className="ri-table ri-sum">
               <tbody>
-                <tr><td>Tiền cọc còn lại (sau công nợ hợp đồng)</td><td>{money(remaining)}</td></tr>
-                <tr><td>Phí {canResolve ? 'chốt' : 'đã chốt'}</td><td>− {money(canResolve ? finalTotal : d.finalTotal)}</td></tr>
+                <tr><td>Tiền cọc ban đầu / còn lại</td><td>{money(remaining)}</td></tr>
+                <tr><td>Phí {canAct ? 'chốt duyệt' : 'đã chốt'}</td><td>− {money(canAct ? finalTotal : d.finalTotal)}</td></tr>
               </tbody>
               <tfoot>
-                {(canResolve ? owed : Number(d.expectedOwed)) > 0
-                  ? <tr className="bad"><td>Khách cần đóng thêm</td><td>{money(canResolve ? owed : d.expectedOwed)}</td></tr>
-                  : <tr className="good"><td>Hoàn cọc cho khách</td><td>{money(canResolve ? refund : d.expectedRefund)}</td></tr>}
+                {(canAct ? owed : Number(d.expectedOwed)) > 0
+                  ? <tr className="bad"><td>Khách cần đóng thêm</td><td>{money(canAct ? owed : d.expectedOwed)}</td></tr>
+                  : <tr className="good"><td>Hoàn cọc cho khách</td><td>{money(canAct ? refund : d.expectedRefund)}</td></tr>}
               </tfoot>
             </table>
 
-            {d.resolutionNotes && <p className="ri-quote decision"><b>Quyết định ({d.resolvedBy}, {fmtDateTime(d.resolvedAt)}):</b> {d.resolutionNotes}</p>}
+            {d.resolutionNotes && <p className="ri-quote decision"><b>Ghi chú duyệt/quyết định ({d.resolvedBy}, {fmtDateTime(d.resolvedAt)}):</b> {d.resolutionNotes}</p>}
 
-            {canResolve && (
+            {canAct && (
               <label>
-                Nội dung quyết định gửi khách (bắt buộc, 10–1000 ký tự)
+                {isPendingManager ? 'Ghi chú duyệt gửi khách (tùy chọn)' : 'Nội dung quyết định khiếu nại gửi khách (bắt buộc, 10–1000 ký tự)'}
                 <textarea rows={3} maxLength={1000} value={notes} onChange={e => { setNotes(e.target.value); setError('') }}
-                  placeholder="Ví dụ: Đối chiếu biên bản bàn giao, vết trầy đã có từ trước nên miễn phí sửa tường; phí vệ sinh giữ nguyên." />
+                  placeholder={isPendingManager ? 'Ghi chú phê duyệt (nếu có điều chỉnh hoặc lưu ý cho khách)...' : 'Ví dụ: Đối chiếu biên bản bàn giao, vết trầy đã có từ trước nên miễn phí sửa tường; phí vệ sinh giữ nguyên.'} />
               </label>
             )}
             <div className="fm-modal-actions">
               <button type="button" className="dashboard-secondary-btn" onClick={onClose} disabled={busy}>Đóng</button>
-              {canResolve && <button type="submit" className="dashboard-primary-btn" disabled={busy}>{busy ? 'Đang lưu...' : 'Chốt quyết định'}</button>}
+              {canAct && (
+                <button type="submit" className="dashboard-primary-btn" disabled={busy}>
+                  {busy ? 'Đang xử lý...' : isPendingManager ? 'Phê duyệt & chuyển về khách' : 'Chốt quyết định'}
+                </button>
+              )}
             </div>
           </form>
         )}
@@ -685,7 +788,7 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
       setError('')
       const result = await apiGet(`/api/return-inspections/facilities/${facilityId}`)
       setData(result)
-      setFilter(f => f ?? (result?.summary?.disputed > 0 ? INSPECTION.DISPUTED : 'all'))
+      setFilter(f => f ?? (result?.summary?.pendingManager > 0 ? INSPECTION.PENDING_MANAGER : result?.summary?.disputed > 0 ? INSPECTION.DISPUTED : 'all'))
     } catch (err) {
       setData({ items: [], summary: null })
       setError(missingTableMessage(err))
@@ -697,7 +800,12 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
   const s = data?.summary
   const shown = !filter || filter === 'all' ? items : items.filter(i => i.status === filter)
   const paging = useClientPaging(shown, { pageSize: 15, resetKey: filter })
-  const pill = i => (i.status === INSPECTION.DISPUTED ? 'fm-badge fm-warn' : i.status === INSPECTION.AWAITING ? 'fm-badge fm-info' : 'fm-badge fm-ok')
+  const pill = i => {
+    if (i.status === INSPECTION.PENDING_MANAGER) return 'fm-badge fm-warn'
+    if (i.status === INSPECTION.DISPUTED) return 'fm-badge fm-bad'
+    if (i.status === INSPECTION.AWAITING) return 'fm-badge fm-info'
+    return 'fm-badge fm-ok'
+  }
 
   return (
     <div className="fm-section-card">
@@ -705,8 +813,8 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
         <div>
           <h2>Xác nhận & khiếu nại kết quả kiểm kho</h2>
           <p>
-            Kho có phí khi trả: nhân viên chụp ảnh, khách có {data?.confirmDays ?? 3} ngày để đồng ý hoặc khiếu nại trước khi trừ cọc
-            (quá hạn hệ thống tự xác nhận). Khiếu nại do Facility Manager quyết định: chỉ giữ nguyên, giảm hoặc miễn, không tăng phí.
+            Quy trình trả kho: Khách gửi yêu cầu → Staff kiểm tra thực tế & gửi duyệt → Facility Manager xem xét & duyệt phí → Khách thanh toán / quyết toán cọc.
+            Nếu khách khiếu nại, Manager đối chiếu thông tin kho và ảnh để đưa ra quyết định cuối cùng.
           </p>
         </div>
         <button type="button" className="dashboard-secondary-btn" onClick={load}>Tải lại</button>
@@ -714,6 +822,12 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
 
       {s && (
         <section className="customer-stats" style={{ marginBottom: 16 }}>
+          <div className="customer-stat-card">
+            <span className="stat-icon yellow">📋</span>
+            <small>Chờ Manager duyệt</small>
+            <strong>{s.pendingManager ?? 0}</strong>
+            <span className="stat-note warning">Staff đã kiểm tra xong</span>
+          </div>
           <div className="customer-stat-card">
             <span className="stat-icon yellow">!</span>
             <small>Khiếu nại chờ xử lý</small>
@@ -737,7 +851,13 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
 
       <div className="fp-toolbar">
         <div className="fp-chips">
-          {[[INSPECTION.DISPUTED, `Khiếu nại ${s?.disputed ?? 0}`], [INSPECTION.AWAITING, `Chờ khách ${s?.awaiting ?? 0}`], [INSPECTION.SETTLED, `Đã quyết toán ${s?.settled ?? 0}`], ['all', `Tất cả ${items.length}`]].map(([v, t]) => (
+          {[
+            [INSPECTION.PENDING_MANAGER, `Chờ duyệt ${s?.pendingManager ?? 0}`],
+            [INSPECTION.DISPUTED, `Khiếu nại ${s?.disputed ?? 0}`],
+            [INSPECTION.AWAITING, `Chờ khách ${s?.awaiting ?? 0}`],
+            [INSPECTION.SETTLED, `Đã quyết toán ${s?.settled ?? 0}`],
+            ['all', `Tất cả ${items.length}`]
+          ].map(([v, t]) => (
             <button key={v} type="button" className={(filter || 'all') === v ? 'active' : ''} onClick={() => setFilter(v)}>{t}</button>
           ))}
         </div>
@@ -777,7 +897,7 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
                   </td>
                   <td>
                     <button type="button" className="fp-btn" style={{ whiteSpace: 'nowrap' }} onClick={() => setOpenId(i.inspectionId)}>
-                      {i.status === INSPECTION.DISPUTED ? 'Giải quyết' : 'Xem ảnh & chi tiết'}
+                      {i.status === INSPECTION.PENDING_MANAGER ? 'Duyệt kết quả' : i.status === INSPECTION.DISPUTED ? 'Giải quyết khiếu nại' : 'Xem chi tiết'}
                     </button>
                   </td>
                 </tr>

@@ -460,7 +460,24 @@ public static class DatabaseSeeder
     public static void EnsureReturnInspectionTables(SelfStorageDbContext context)
     {
         bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
-        if (!isNpgsql) return;
+        if (!isNpgsql)
+        {
+            // SQL Server: gỡ check constraint và trigger cũ nếu có để hỗ trợ trạng thái "Pending Manager"
+            try
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    IF OBJECT_ID(N'dbo.CK_ReturnInspection_Status', N'C') IS NOT NULL
+                        ALTER TABLE dbo.ReturnInspection DROP CONSTRAINT CK_ReturnInspection_Status;
+                    IF OBJECT_ID(N'dbo.TR_ReturnInspection_Validate', N'TR') IS NOT NULL
+                        DISABLE TRIGGER dbo.TR_ReturnInspection_Validate ON dbo.ReturnInspection;
+                ");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[EnsureReturnInspectionTables SQLServer] Error: {ex.Message}");
+            }
+            return;
+        }
 
         try
         {

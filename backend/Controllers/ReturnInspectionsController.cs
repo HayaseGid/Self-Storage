@@ -66,6 +66,14 @@ public class ReturnInspectionsController : ControllerBase
         CancellationToken cancellationToken)
         => MapResponse(await _service.GetFacilityAsync(facilityId, userEmail, cancellationToken));
 
+    [HttpPost("{inspectionId:int}/approve")]
+    public async Task<IActionResult> Approve(
+        int inspectionId,
+        [FromBody] ApproveInspectionDTO request,
+        [FromHeader(Name = "X-User-Email")] string? userEmail,
+        CancellationToken cancellationToken)
+        => MapResponse(await _service.ApproveAsync(inspectionId, request, userEmail, cancellationToken));
+
     [HttpPost("{inspectionId:int}/resolve")]
     public async Task<IActionResult> Resolve(
         int inspectionId,

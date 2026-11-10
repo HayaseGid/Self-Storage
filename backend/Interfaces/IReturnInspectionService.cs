@@ -26,6 +26,7 @@ public interface IReturnInspectionService
     // ----- Staff / Manager / BOM
     Task<ReturnInspectionResponse> GetStaffAsync(string? userEmail, CancellationToken cancellationToken);
     Task<ReturnInspectionResponse> GetFacilityAsync(int facilityId, string? userEmail, CancellationToken cancellationToken);
+    Task<ReturnInspectionResponse> ApproveAsync(int inspectionId, ApproveInspectionDTO request, string? userEmail, CancellationToken cancellationToken);
     Task<ReturnInspectionResponse> ResolveAsync(int inspectionId, ResolveInspectionDTO request, string? userEmail, CancellationToken cancellationToken);
 
     // ----- Chi tiết (kèm ảnh) cho mọi vai trò có quyền xem
