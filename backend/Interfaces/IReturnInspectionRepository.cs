@@ -25,6 +25,8 @@ public sealed class ReturnInspectionRow
     public int CustomerImageCount { get; set; }
     public int? ResolvedByUserID { get; set; }
     public string? ResolvedByName { get; set; }
+    public string? ResolvedByEmail { get; set; }
+    public string? ResolvedByPhone { get; set; }
     public DateTime? ResolvedAt { get; set; }
     public string? ResolutionNotes { get; set; }
     public DateTime? SettledAt { get; set; }

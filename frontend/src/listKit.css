@@ -38,6 +38,13 @@
   line-height: 1.6;
   white-space: nowrap;
   vertical-align: middle;
+  cursor: pointer;
+  transition: transform 0.1s ease, opacity 0.1s ease;
+  user-select: none;
+}
+.ss-new-badge:hover {
+  opacity: 0.88;
+  transform: scale(1.05);
 }
 .ss-new-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #fff; opacity: .9; }
 

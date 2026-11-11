@@ -8,7 +8,7 @@ import { RESERVATION_SORTS, UNIT_SORTS, useOpsList } from "./opsLists";
 import { useDialog } from "./Dialog";
 import { formatReservationCode } from "./storageRules";
 import { getTodayISO } from "./demoClock/demoClock";
-import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, isNewItem, newestFirst, rowClass, timeAgo, useClientPaging, useServerList } from "./listKit";
+import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, isNewItem, markAllItemsSeen, markItemSeen, newestFirst, rowClass, timeAgo, useClientPaging, useServerList } from "./listKit";
 
 /* ---------- helpers ---------- */
 const pad = (n) => String(n).padStart(2, "0");
@@ -27,6 +27,26 @@ const fmtDateTime = (s) => {
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("vi-VN");
 };
+
+// [AUTO-ASSIGN] Nén ảnh trước khi gửi: cạnh dài tối đa 1280px, JPEG chất lượng 0.7
+const compressImage = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error("Không đọc được ảnh."));
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = () => reject(new Error("File không phải ảnh hợp lệ."));
+    img.onload = () => {
+      const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.7));
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
 
 // Ngày kết thúc: ưu tiên ngày backend trả về (khớp hợp đồng), chỉ tự tính khi thiếu
 const endOf = (r) => r.endDate || addMonths(r.startDate, r.months);
@@ -127,6 +147,28 @@ const isAssignedToMe = (db, res) => {
   return units.length > 0 && units.every((u) => mine.some((t) => t.unitNumber === u));
 };
 
+const TASK_SORTS = [
+  ["date_asc", "Ngày hẹn gần nhất"],
+  ["date_desc", "Ngày hẹn xa nhất"],
+  ["newest_created", "Mới giao lên đầu"],
+  ["unit_asc", "Theo mã kho (A-Z)"],
+];
+
+const TASK_STATUS_FILTERS = [
+  ["", "Tất cả trạng thái"],
+  ["Scheduled", "Chờ thực hiện"],
+  ["In Progress", "Đang làm"],
+  ["Completed", "Đã hoàn thành"],
+];
+
+const TASK_TYPE_FILTERS = [
+  ["", "Tất cả loại việc"],
+  ["Move In", "Nhận kho"],
+  ["Move Out", "Trả kho"],
+  ["Inspection", "Kiểm tra kho"],
+  ["Support", "Hỗ trợ khách"],
+];
+
 // Trạng thái kho KHÔNG được bàn giao (khớp HandoverService.HandoverReadyUnitStatuses ở backend)
 const UNIT_NOT_READY = ["IN_USE", "RENTED", "PENDING_INSPECTION", "NEEDS_INSPECTION", "MAINTENANCE", "INACTIVE"];
 
@@ -203,34 +245,67 @@ function NoAccess({ navigate }) {
 
 /* ---------- Reservation detail + handover ---------- */
 function ReservationDetail({ res, staff, db, actions }) {
-  const [accessType, setAccessType] = useState(ACCESS_TYPES[0].value);
-  const [accessValue, setAccessValue] = useState("");
   const [idChecked, setIdChecked] = useState(false);
+  const [conditionChecked, setConditionChecked] = useState(false);
+  const [handoverImages, setHandoverImages] = useState([]);
+  const [handoverNotes, setHandoverNotes] = useState("");
+  const [imageError, setImageError] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [confirming, setConfirming] = useState(false);
   const dialog = useDialog();
 
+  useEffect(() => {
+    if (res?.id) {
+      markItemSeen(res.id);
+      setIdChecked(false);
+      setConditionChecked(false);
+      setHandoverImages([]);
+      setHandoverNotes("");
+      setImageError("");
+      setResult(null);
+    }
+  }, [res?.id]);
+
   const today = todayStr();
   const units = unitsOf(res);
-  const access = ACCESS_TYPES.find((a) => a.value === accessType) || ACCESS_TYPES[0];
   const { checks, canHandover } = checkHandover(res, staff, db);
   const clashes = findClashes(db, res);
   const handedOver = res.status === "HANDED_OVER";
   const group = dayGroup(res, today);
-  const ready = canHandover && idChecked && accessValue.trim().length > 0 && !busy;
+  const ready = canHandover && idChecked && conditionChecked && !busy;
+
+  const addHandoverImages = async (fileList) => {
+    setImageError("");
+    const remaining = 3 - handoverImages.length;
+    if (remaining <= 0) return;
+    const files = [...fileList].slice(0, remaining);
+    try {
+      const compressed = await Promise.all(files.map(compressImage));
+      setHandoverImages((prev) => [...prev, ...compressed].slice(0, 3));
+    } catch (err) {
+      setImageError(err.message || "Không tải được ảnh.");
+    }
+  };
 
   const doHandover = async () => {
+    const keyPreview = units.map((u) => `KEY-${u}`).join(", ");
+    const hasPhotos = handoverImages.length > 0;
     const confirmed = await dialog.confirm({
       tone: "warning",
       title: `Xác nhận bàn giao ${units.length} kho cho ${res.customerName}?`,
-      message: `Kho ${units.join(", ")} sẽ chuyển sang đang thuê và hợp đồng được kích hoạt. Hãy chắc chắn đã đối chiếu giấy tờ và giao ${access.label.toLowerCase()} (${accessValue.trim()}) cho khách.`,
+      message: `Kho ${units.join(", ")} sẽ chuyển sang đang thuê và hợp đồng được kích hoạt. Đã xác nhận kho nguyên vẹn, không hư hỏng ${hasPhotos ? `(kèm ${handoverImages.length} ảnh minh chứng)` : ""}. Hãy chắc chắn đã đối chiếu CCCD và bàn giao chìa khóa vật lý (${keyPreview}) cho khách. Mã ra vào cơ sở 6 số sẽ được hệ thống tự động cấp vào hồ sơ của khách.`,
       confirmLabel: "Xác nhận bàn giao"
     });
     if (!confirmed) return;
     setBusy(true);
     try {
-      const response = await actions.handover(res.id, { type: accessType, value: accessValue });
+      const response = await actions.handover(res.id, {
+        unitConditionConfirmed: true,
+        conditionResult: "Good",
+        notes: handoverNotes.trim() || "Kho nguyên vẹn, sạch sẽ khi bàn giao",
+        evidenceImages: handoverImages
+      });
       setResult({ tone: "ok", message: response?.message || "Bàn giao thành công." });
     } catch (error) {
       setResult({ tone: "warn", message: error.message });
@@ -284,7 +359,7 @@ function ReservationDetail({ res, staff, db, actions }) {
           <div className="st-head-codes">
             <span className="st-head-label">Mã đơn</span>
             <Code kind="order">{resCode(res)}</Code>
-            <NewBadge createdAt={res.createdAt} />
+            <NewBadge createdAt={res.createdAt} id={res.id} />
           </div>
           <h2>{res.customerName}</h2>
           <div className="st-head-units">
@@ -379,27 +454,110 @@ function ReservationDetail({ res, staff, db, actions }) {
               </li>
             ))}
           </ul>
-          <label className="st-check">
-            <input type="checkbox" checked={idChecked} onChange={(e) => setIdChecked(e.target.checked)} />
-            Đã đối chiếu giấy tờ, đúng khách hàng đặt chỗ
-          </label>
-
-          <h3>Thông tin truy cập</h3>
-          <div className="st-form-row">
-            <label>Hình thức
-              <select className="st-input" value={accessType} onChange={(e) => setAccessType(e.target.value)}>
-                {ACCESS_TYPES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-              </select>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", margin: "12px 0 16px" }}>
+            <label className="st-check">
+              <input type="checkbox" checked={idChecked} onChange={(e) => setIdChecked(e.target.checked)} />
+              Đã đối chiếu giấy tờ, đúng khách hàng đặt chỗ
             </label>
-            <label>{access.field}
-              <input className="st-input" value={accessValue} maxLength={255} onChange={(e) => setAccessValue(e.target.value)} placeholder={access.placeholder} />
+            <label className="st-check">
+              <input type="checkbox" checked={conditionChecked} onChange={(e) => setConditionChecked(e.target.checked)} />
+              Xác nhận tình trạng kho nguyên vẹn, bình thường, không bị hư hỏng gì
             </label>
           </div>
-          {units.length > 1 && <p className="st-hint">Thông tin truy cập này áp dụng cho cả {units.length} kho của đơn.</p>}
+
+          <div style={{ margin: "12px 0 16px", background: "#f8fafc", padding: "14px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <strong style={{ fontSize: "13px", color: "#0f172a" }}>
+                📸 Ảnh chụp kho nguyên vẹn trước khi bàn giao ({handoverImages.length}/3)
+              </strong>
+              {handoverImages.length > 0 && (
+                <button
+                  type="button"
+                  style={{ background: "none", border: "none", color: "#dc2626", fontSize: "12px", cursor: "pointer", padding: 0 }}
+                  onClick={() => setHandoverImages([])}
+                >
+                  Xóa tất cả
+                </button>
+              )}
+            </div>
+            <p style={{ margin: "0 0 10px", fontSize: "12px", color: "#64748b" }}>
+              Chụp ảnh hiện trường kho để lưu làm bằng chứng kho bình thường, nguyên vẹn khi bàn giao cho khách.
+            </p>
+
+            {imageError && <div className="st-alert st-warn" style={{ marginBottom: "8px" }}>{imageError}</div>}
+
+            <div className="st-report-images">
+              {handoverImages.map((src, i) => (
+                <div key={i} className="st-report-thumb">
+                  <img src={src} alt={`Ảnh kho ${i + 1}`} />
+                  <button type="button" onClick={() => setHandoverImages((prev) => prev.filter((_, j) => j !== i))} aria-label="Xóa ảnh">×</button>
+                </div>
+              ))}
+              {handoverImages.length < 3 && (
+                <label className="st-report-add">
+                  + Thêm ảnh kho
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    hidden
+                    onChange={(e) => { addHandoverImages(e.target.files); e.target.value = ""; }}
+                  />
+                </label>
+              )}
+            </div>
+
+            <div style={{ marginTop: "10px" }}>
+              <label style={{ fontSize: "12px", color: "#475569", display: "block", marginBottom: "4px" }}>
+                Ghi chú tình trạng kho khi bàn giao (tùy chọn):
+              </label>
+              <input
+                className="st-input"
+                style={{ width: "100%", fontSize: "12.5px" }}
+                placeholder="VD: Kho sạch sẽ, ổ khóa hoạt động tốt, không trầy xước"
+                value={handoverNotes}
+                onChange={(e) => setHandoverNotes(e.target.value)}
+                maxLength={500}
+              />
+            </div>
+          </div>
+
+          <h3>Quyền truy cập & Chìa khóa (Hệ thống tự động cấp)</h3>
+          <div style={{ display: 'grid', gap: '10px', background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0', margin: '12px 0' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <span style={{ fontSize: '20px' }}>🔑</span>
+              <div>
+                <strong style={{ display: 'block', color: '#0f172a', fontSize: '13.5px' }}>Chìa khóa vật lý từng ô kho</strong>
+                <p style={{ margin: '3px 0 0', fontSize: '12.5px', color: '#475569', lineHeight: 1.5 }}>
+                  Mã chìa: {units.map((u) => <code key={u} style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 6px', borderRadius: '4px', fontWeight: 600, marginRight: '4px' }}>KEY-{u}</code>)}
+                  — Giao chìa vật lý trực tiếp cho khách tại quầy lễ tân.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+              <span style={{ fontSize: '20px' }}>🔢</span>
+              <div>
+                <strong style={{ display: 'block', color: '#0f172a', fontSize: '13.5px' }}>Mã ra vào cơ sở (Access Code)</strong>
+                <p style={{ margin: '3px 0 0', fontSize: '12.5px', color: '#475569', lineHeight: 1.5 }}>
+                  Mã 6 chữ số tự động kích hoạt và gửi vào hồ sơ khách hàng. Có hiệu lực trong suốt thời gian thuê, tự động tạm khóa nếu nợ quá hạn &gt; 30 ngày.
+                </p>
+              </div>
+            </div>
+          </div>
           <button className="dashboard-primary-btn" type="button" disabled={!ready} onClick={doHandover}>
             {busy ? "Đang bàn giao..." : `Xác nhận bàn giao ${units.length} kho`}
           </button>
-          {!ready && !busy && <p className="st-hint">Cần đủ điều kiện, tick đối chiếu giấy tờ và nhập thông tin truy cập.</p>}
+          {!ready && !busy && (
+            <p className="st-hint">
+              {!canHandover
+                ? "Chưa đủ điều kiện bàn giao theo quy định."
+                : !idChecked
+                ? "Cần tick xác nhận đã đối chiếu giấy tờ của khách."
+                : !conditionChecked
+                ? "Cần tick xác nhận tình trạng kho nguyên vẹn, không hư hỏng để kích hoạt bàn giao."
+                : ""}
+            </p>
+          )}
         </>
       )}
 
@@ -409,25 +567,6 @@ function ReservationDetail({ res, staff, db, actions }) {
 }
 
 /* Danh sách đặt chỗ + chi tiết */
-/* [AUTO-ASSIGN] Nén ảnh trước khi gửi: cạnh dài tối đa 1280px, JPEG chất lượng 0.7 */
-const compressImage = (file) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onerror = () => reject(new Error("Không đọc được ảnh."));
-  reader.onload = () => {
-    const img = new Image();
-    img.onerror = () => reject(new Error("File không phải ảnh hợp lệ."));
-    img.onload = () => {
-      const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", 0.7));
-    };
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
-});
 
 /* [AUTO-ASSIGN] Báo cáo tình trạng / sự cố kho (POST /api/staff-tools/unit-reports)
    Hư hỏng: kho trống chuyển Bảo trì. Bình thường: kho đang Bảo trì / Chờ kiểm tra được mở lại. */
@@ -514,14 +653,161 @@ function UnitReportModal({ unit, onClose, onSubmit }) {
   );
 }
 
+/* [STAFF-TASKS] Modal xem chi tiết công việc */
+function TaskDetailModal({ task, onClose, onGoToReservation }) {
+  if (!task) return null;
+  const parsedImages = useMemo(() => {
+    if (!task.evidenceImages) return [];
+    try {
+      const arr = typeof task.evidenceImages === "string" ? JSON.parse(task.evidenceImages) : task.evidenceImages;
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }, [task.evidenceImages]);
+
+  return (
+    <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-label={`Chi tiết việc #${task.taskId}`}>
+      <div className="st-modal" style={{ maxWidth: "600px" }}>
+        <div className="st-modal-head">
+          <div>
+            <span style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748b", fontWeight: 700, letterSpacing: "0.5px" }}>
+              CHI TIẾT CÔNG VIỆC #{task.taskId}
+            </span>
+            <h3 style={{ margin: "2px 0 0", color: "#0f172a" }}>{TASK_TYPE[task.taskType] || task.taskType} · Kho {task.unitNumber}</h3>
+          </div>
+          <button type="button" className="st-modal-close" onClick={onClose} aria-label="Đóng">×</button>
+        </div>
+
+        <div style={{ display: "grid", gap: "12px", margin: "14px 0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+            <div>
+              <small style={{ color: "#64748b", display: "block" }}>Trạng thái công việc</small>
+              <Badge map={TASK_STATUS} value={task.status} />
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <small style={{ color: "#64748b", display: "block" }}>Thời gian phân công</small>
+              <strong>{fmtDateTime(task.createdAt)}</strong>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div style={{ background: "#f8fafc", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <small style={{ color: "#64748b", display: "block" }}>Lịch hẹn thực hiện</small>
+              <strong style={{ fontSize: "14px" }}>{fmtDate(task.scheduledDate)}</strong>
+              <div style={{ fontSize: "12.5px", color: "#0369a1", marginTop: "2px" }}>
+                {task.scheduledSlot || task.scheduledTime || "Trong ngày"}
+              </div>
+            </div>
+
+            <div style={{ background: "#f8fafc", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <small style={{ color: "#64748b", display: "block" }}>Hình thức nhận / trả</small>
+              <strong style={{ fontSize: "13.5px" }}>
+                {task.handoverMethod === "Online" ? "Bàn giao online" : "Trực tiếp tại cơ sở"}
+              </strong>
+              {task.handoverMethod === "Online" && (
+                <div style={{ fontSize: "12px", color: "#059669", marginTop: "2px" }}>
+                  Chìa khóa để sẵn tại quầy lễ tân
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ background: "#f8fafc", padding: "12px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <small style={{ color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>Thông tin ô kho &amp; Đơn đặt chỗ</small>
+              {task.reservationCode && <Code kind="order">{task.reservationCode}</Code>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "13px" }}>
+              <div><strong>Ô kho:</strong> <Code kind="unit">{task.unitNumber}</Code> {task.unitType ? `(${task.unitType})` : ""}</div>
+              <div><strong>Khách hàng:</strong> {task.customerName || "—"}</div>
+              {task.customerPhone && (
+                <div><strong>SĐT:</strong> <a href={`tel:${task.customerPhone}`}>{task.customerPhone}</a></div>
+              )}
+              {task.customerEmail && (
+                <div><strong>Email:</strong> <a href={`mailto:${task.customerEmail}`}>{task.customerEmail}</a></div>
+              )}
+            </div>
+          </div>
+
+          {(task.notes || task.conditionResult) && (
+            <div style={{ background: "#f8fafc", padding: "12px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <small style={{ color: "#64748b", display: "block", marginBottom: "4px", textTransform: "uppercase", fontWeight: 700 }}>
+                Kết quả &amp; Ghi chú hiện trạng
+              </small>
+              {task.conditionResult && (
+                <p style={{ margin: "0 0 4px", fontSize: "13px" }}>
+                  <strong>Đánh giá:</strong> {task.conditionResult === "Good" ? "✓ Tốt / Đạt" : task.conditionResult === "Damaged" ? "⚠️ Hư hỏng / Có vấn đề" : task.conditionResult}
+                </p>
+              )}
+              {task.notes && (
+                <p style={{ margin: 0, fontSize: "13px", fontStyle: "italic", color: "#334155" }}>
+                  &ldquo;{task.notes}&rdquo;
+                </p>
+              )}
+              {task.actualAt && (
+                <small style={{ display: "block", color: "#64748b", marginTop: "6px" }}>
+                  Hoàn tất lúc: {fmtDateTime(task.actualAt)}
+                </small>
+              )}
+            </div>
+          )}
+
+          {parsedImages.length > 0 && (
+            <div>
+              <small style={{ color: "#64748b", display: "block", marginBottom: "6px", fontWeight: 700 }}>
+                Ảnh hiện trường ({parsedImages.length} ảnh):
+              </small>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                {parsedImages.map((img, i) => (
+                  <img
+                    key={i}
+                    src={img}
+                    alt={`Bằng chứng ${i + 1}`}
+                    style={{ width: "90px", height: "90px", objectFit: "cover", borderRadius: "8px", border: "1px solid #cbd5e1", cursor: "pointer" }}
+                    onClick={() => window.open(img, "_blank")}
+                    title="Bấm để xem ảnh lớn"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="st-modal-actions" style={{ justifyContent: "space-between" }}>
+          {task.reservationId ? (
+            <button
+              type="button"
+              className="dashboard-primary-btn"
+              onClick={() => {
+                onClose();
+                onGoToReservation?.(task.reservationId);
+              }}
+            >
+              Xem đơn đặt kho →
+            </button>
+          ) : <span />}
+          <button type="button" className="dashboard-secondary-btn" onClick={onClose}>
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReservationItem({ r, active, onSelect, db, today }) {
   const units = unitsOf(r);
+  const handleSelect = () => {
+    markItemSeen(r.id);
+    onSelect();
+  };
   return (
-    <button type="button" className={rowClass(r.createdAt, `st-item ${active ? "active" : ""}`)} onClick={onSelect}>
+    <button type="button" className={rowClass(r.createdAt, `st-item ${active ? "active" : ""}`, r.id)} onClick={handleSelect}>
       <div className="st-item-top">
         <Code kind="order">{resCode(r)}</Code>
         <span className="st-name">{r.customerName}</span>
-        <NewBadge createdAt={r.createdAt} />
+        <NewBadge createdAt={r.createdAt} id={r.id} />
         <DayTag res={r} today={today} />
       </div>
       <div className="st-item-mid">
@@ -615,6 +901,11 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   const [unitQuery, setUnitQuery] = useState("");
   const [unitStatus, setUnitStatus] = useState("");
   const [unitSort, setUnitSort] = useState("newest");
+  const [taskQuery, setTaskQuery] = useState("");
+  const [taskStatusFilter, setTaskStatusFilter] = useState("");
+  const [taskTypeFilter, setTaskTypeFilter] = useState("");
+  const [taskSort, setTaskSort] = useState("date_asc");
+  const [selectedTask, setSelectedTask] = useState(null);
   const dialog = useDialog();
 
   const facility = db.facilities.find((f) => f.id === staff.facilityId);
@@ -662,16 +953,80 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   });
   // Bàn giao kho: danh sách nhỏ (đơn giao cho mình) -> chia trang ở frontend
   const handoverPaging = useClientPaging(handoverVisible, { pageSize: 10, resetKey: `${dayFilter}|${query}` });
-  const pendingTasks = (db.staffTasks || []).filter((t) => t.facilityName === staff.facilityId && t.status !== "Completed" && t.status !== "Cancelled").length;
+  const pendingTasks = (db.staffTasks || []).filter((t) =>
+    (t.facilityName === staff.facilityId || (facility?.facilityId != null && Number(t.facilityId) === Number(facility.facilityId))) &&
+    t.status !== "Completed" && t.status !== "Cancelled"
+  ).length;
 
   const selected = mine.find((r) => r.id === selectedId) || allList.items.find((r) => r.id === selectedId) || null;
 
   const actions = { handover: (id, access) => onHandover(id, access), confirm: (id) => onConfirm(id) };
 
   // [STAFF-TOOLS] Việc được giao tại cơ sở đang chọn (tải cùng state, xem StaffPortal.loadState)
-  const tasks = (db.staffTasks || []).filter((t) => t.facilityName === staff.facilityId);
+  const rawTasks = (db.staffTasks || []).filter((t) =>
+    t.facilityName === staff.facilityId ||
+    (facility?.facilityId != null && Number(t.facilityId) === Number(facility.facilityId))
+  );
   const tasksError = db.staffTasksError || "";
-  const taskPaging = useClientPaging(tasks, { pageSize: 15 });
+
+  const taskStatusCounts = useMemo(() => {
+    const counts = {};
+    for (const t of rawTasks) {
+      const st = t.status || "";
+      if (st) counts[st] = (counts[st] || 0) + 1;
+    }
+    return counts;
+  }, [rawTasks]);
+
+  const taskTypeCounts = useMemo(() => {
+    const counts = {};
+    for (const t of rawTasks) {
+      const tp = t.taskType || "";
+      if (tp) counts[tp] = (counts[tp] || 0) + 1;
+    }
+    return counts;
+  }, [rawTasks]);
+
+  const filteredTasks = useMemo(() => {
+    let list = rawTasks;
+    if (taskQuery.trim()) {
+      const q = taskQuery.toLowerCase().trim();
+      list = list.filter((t) =>
+        (t.unitNumber || "").toLowerCase().includes(q) ||
+        (t.reservationCode || "").toLowerCase().includes(q) ||
+        (t.customerName || "").toLowerCase().includes(q) ||
+        (t.customerPhone || "").includes(q) ||
+        (t.customerEmail || "").toLowerCase().includes(q)
+      );
+    }
+    if (taskStatusFilter && taskStatusFilter !== "all") {
+      list = list.filter((t) => t.status === taskStatusFilter);
+    }
+    if (taskTypeFilter && taskTypeFilter !== "all") {
+      list = list.filter((t) => t.taskType === taskTypeFilter);
+    }
+    return [...list].sort((a, b) => {
+      if (taskSort === "date_asc") {
+        const da = a.scheduledDate || "";
+        const db = b.scheduledDate || "";
+        return da.localeCompare(db);
+      }
+      if (taskSort === "date_desc") {
+        const da = a.scheduledDate || "";
+        const db = b.scheduledDate || "";
+        return db.localeCompare(da);
+      }
+      if (taskSort === "newest_created") {
+        return (new Date(b.createdAt || 0)).getTime() - (new Date(a.createdAt || 0)).getTime();
+      }
+      if (taskSort === "unit_asc") {
+        return (a.unitNumber || "").localeCompare(b.unitNumber || "");
+      }
+      return 0;
+    });
+  }, [rawTasks, taskQuery, taskStatusFilter, taskTypeFilter, taskSort]);
+
+  const taskPaging = useClientPaging(filteredTasks, { pageSize: 15, resetKey: `${taskQuery}|${taskStatusFilter}|${taskTypeFilter}|${taskSort}` });
   const logPaging = useClientPaging(facilityActivity, { pageSize: 20 });
 
   // [STAFF-TOOLS] Đổi trạng thái kho (PUT /api/staff-tools/units/{unitId}/status)
@@ -816,9 +1171,19 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
 
         {section === "units" && (
           <div className="st-card">
-            <div className="ss-toolbar">
+            <div className="ss-toolbar" style={{ flexWrap: "wrap", gap: "8px" }}>
               <input className="ss-search ss-grow" placeholder="Tìm mã kho, loại kho, khu, tầng" value={unitQuery} onChange={(e) => setUnitQuery(e.target.value)} />
               <SortSelect value={unitSort} onChange={setUnitSort} options={UNIT_SORTS} />
+              {unitList.items.length > 0 && (
+                <button
+                  type="button"
+                  className="dashboard-secondary-btn sm"
+                  onClick={() => markAllItemsSeen(unitList.items.map((u) => u.id))}
+                  title="Tắt toàn bộ nhãn Mới và màu da của danh sách kho"
+                >
+                  ✓ Tắt nhãn Mới
+                </button>
+              )}
             </div>
             <FilterChips options={STAFF_UNIT_FILTERS} value={unitStatus} onChange={setUnitStatus} counts={unitList.statusCounts} total={sumCounts(unitList.statusCounts)} className="st-chips-row" />
             {unitList.error && <div className="ss-error-line" role="alert">{unitList.error}</div>}
@@ -828,12 +1193,18 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
                 {unitList.loading && unitList.items.length === 0 && <tr><td colSpan="8" className="st-empty">Đang tải danh sách kho…</td></tr>}
                 {!unitList.loading && unitList.items.length === 0 && <tr><td colSpan="8" className="st-empty">{units.length === 0 ? "Cơ sở chưa có kho." : "Không có kho phù hợp bộ lọc."}</td></tr>}
                 {unitList.items.map((u) => (
-                  <tr key={u.id} className={rowClass(u.createdAt)}>
-                    <td><Code kind="unit">{u.id}</Code> <NewBadge createdAt={u.createdAt} /></td><td>{u.type}</td><td>{u.size || "—"}</td>
+                  <tr
+                    key={u.id}
+                    className={rowClass(u.createdAt, "", u.id)}
+                    onClick={() => markItemSeen(u.id)}
+                    style={{ cursor: "pointer" }}
+                    title="Bấm vào kho để đánh dấu đã xem (tắt Mới)"
+                  >
+                    <td><Code kind="unit">{u.id}</Code> <NewBadge createdAt={u.createdAt} id={u.id} /></td><td>{u.type}</td><td>{u.size || "—"}</td>
                     <td>{[u.zone && `Khu ${u.zone}`, u.floor && `Tầng ${u.floor}`].filter(Boolean).join(" · ") || "—"}</td>
                     <td><b>{fmtMoney(u.pricePerMonth)}</b></td>
                     <td><Badge map={UNIT_STATUS} value={u.status} /></td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       {STAFF_EDITABLE_UNIT.includes(u.status) && u.unitId != null ? (
                         <select className="st-input st-unit-status" value="" disabled={unitBusy === u.id} onChange={(e) => changeUnitStatus(u, e.target.value)}>
                           <option value="">{unitBusy === u.id ? "Đang lưu..." : "Chọn trạng thái mới"}</option>
@@ -841,7 +1212,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
                         </select>
                       ) : <span className="st-hint">Kho đang có đơn hoặc ngừng dùng</span>}
                     </td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       {u.unitId != null && u.status !== "INACTIVE"
                         ? <button type="button" className="dashboard-secondary-btn sm" onClick={() => setReportUnit(u)}>Báo cáo</button>
                         : <span className="st-hint">—</span>}
@@ -859,26 +1230,129 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
         {/* [STAFF-TOOLS] VIỆC ĐƯỢC GIAO */}
         {section === "tasks" && (
           <div className="st-card">
+            <div className="ss-toolbar" style={{ flexWrap: "wrap", gap: "8px" }}>
+              <input
+                className="ss-search ss-grow"
+                placeholder="Tìm mã kho, mã đơn, tên hoặc SĐT khách..."
+                value={taskQuery}
+                onChange={(e) => setTaskQuery(e.target.value)}
+              />
+              <SortSelect value={taskSort} onChange={setTaskSort} options={TASK_SORTS} />
+              {filteredTasks.length > 0 && (
+                <button
+                  type="button"
+                  className="dashboard-secondary-btn sm"
+                  onClick={() => markAllItemsSeen(filteredTasks.map((t) => t.taskId))}
+                  title="Tắt toàn bộ nhãn Mới giao của danh sách việc hiện tại"
+                >
+                  ✓ Tắt nhãn Mới
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", margin: "10px 0 14px" }}>
+              <FilterChips
+                options={TASK_STATUS_FILTERS}
+                value={taskStatusFilter}
+                onChange={setTaskStatusFilter}
+                counts={taskStatusCounts}
+                total={rawTasks.length}
+                className="st-chips-row"
+              />
+              <FilterChips
+                options={TASK_TYPE_FILTERS}
+                value={taskTypeFilter}
+                onChange={setTaskTypeFilter}
+                counts={taskTypeCounts}
+                total={rawTasks.length}
+                className="st-chips-row"
+              />
+            </div>
+
             {tasksError && <div className="st-alert st-warn" role="alert">{tasksError}</div>}
-            {(
-              <table className="st-table">
-                <thead><tr><th>Ngày hẹn</th><th>Loại việc</th><th>Kho</th><th>Đơn / Khách</th><th>Trạng thái</th></tr></thead>
-                <tbody>
-                  {tasks.length === 0 && <tr><td colSpan="5" className="st-empty">Bạn chưa được giao việc nào tại cơ sở này.</td></tr>}
-                  {taskPaging.pageRows.map((t) => (
-                    <tr key={t.taskId} className={rowClass(t.createdAt)}>
-                      <td><b>{fmtDate(t.scheduledDate)}</b>{t.scheduledSlot || t.scheduledTime ? ` · ${t.scheduledSlot || t.scheduledTime}` : ""} <NewBadge createdAt={t.createdAt} label="Mới giao" />{t.handoverMethod === "Online" && t.taskType === "Move In" ? <span className="st-cell-sub">Bàn giao online · chìa để ở lễ tân</span> : ""}</td>
-                      <td>{TASK_TYPE[t.taskType] || t.taskType}</td>
-                      <td><Code kind="unit">{t.unitNumber}</Code></td>
-                      <td><Code kind="order">{t.reservationCode || (t.reservationId ? formatReservationCode(t.reservationId) : null)}</Code>{t.customerName ? <span className="st-cell-sub">{t.customerName}</span> : ""}{t.customerPhone || t.customerEmail ? <span className="st-cell-sub">{t.customerPhone ? <a href={`tel:${t.customerPhone}`}>{t.customerPhone}</a> : null}{t.customerPhone && t.customerEmail ? " · " : ""}{t.customerEmail ? <a href={`mailto:${t.customerEmail}`}>{t.customerEmail}</a> : null}</span> : ""}</td>
-                      <td><Badge map={TASK_STATUS} value={t.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+
+            <table className="st-table">
+              <thead>
+                <tr>
+                  <th>Ngày hẹn</th>
+                  <th>Loại việc</th>
+                  <th>Kho</th>
+                  <th>Đơn / Khách</th>
+                  <th>Trạng thái</th>
+                  <th style={{ textAlign: "center", width: "90px" }}>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTasks.length === 0 && (
+                  <tr>
+                    <td colSpan="6" className="st-empty">
+                      {rawTasks.length === 0 ? "Bạn chưa được giao việc nào tại cơ sở này." : "Không tìm thấy công việc phù hợp với bộ lọc."}
+                    </td>
+                  </tr>
+                )}
+                {taskPaging.pageRows.map((t) => (
+                  <tr
+                    key={t.taskId}
+                    className={rowClass(t.createdAt, "st-clickable-row", t.taskId)}
+                    onClick={() => {
+                      markItemSeen(t.taskId);
+                      setSelectedTask(t);
+                    }}
+                    style={{ cursor: "pointer" }}
+                    title="Bấm để xem chi tiết công việc"
+                  >
+                    <td>
+                      <b>{fmtDate(t.scheduledDate)}</b>
+                      {t.scheduledSlot || t.scheduledTime ? ` · ${t.scheduledSlot || t.scheduledTime}` : ""}
+                      <NewBadge createdAt={t.createdAt} id={t.taskId} label="Mới giao" />
+                      {t.handoverMethod === "Online" && t.taskType === "Move In" ? (
+                        <span className="st-cell-sub">Bàn giao online · chìa để ở lễ tân</span>
+                      ) : ""}
+                    </td>
+                    <td>{TASK_TYPE[t.taskType] || t.taskType}</td>
+                    <td><Code kind="unit">{t.unitNumber}</Code></td>
+                    <td>
+                      <Code kind="order">{t.reservationCode || (t.reservationId ? formatReservationCode(t.reservationId) : null)}</Code>
+                      {t.customerName ? <span className="st-cell-sub">{t.customerName}</span> : ""}
+                      {t.customerPhone || t.customerEmail ? (
+                        <span className="st-cell-sub">
+                          {t.customerPhone ? <a href={`tel:${t.customerPhone}`} onClick={(e) => e.stopPropagation()}>{t.customerPhone}</a> : null}
+                          {t.customerPhone && t.customerEmail ? " · " : ""}
+                          {t.customerEmail ? <a href={`mailto:${t.customerEmail}`} onClick={(e) => e.stopPropagation()}>{t.customerEmail}</a> : null}
+                        </span>
+                      ) : ""}
+                    </td>
+                    <td><Badge map={TASK_STATUS} value={t.status} /></td>
+                    <td style={{ textAlign: "center" }}>
+                      <button
+                        type="button"
+                        className="dashboard-secondary-btn sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markItemSeen(t.taskId);
+                          setSelectedTask(t);
+                        }}
+                      >
+                        Chi tiết
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
             <Pager {...taskPaging.pagerProps} unit="việc" />
           </div>
+        )}
+
+        {selectedTask && (
+          <TaskDetailModal
+            task={selectedTask}
+            onClose={() => setSelectedTask(null)}
+            onGoToReservation={(resId) => {
+              setSection("all");
+              setSelectedId(resId);
+            }}
+          />
         )}
 
         {reportUnit && (
@@ -988,13 +1462,14 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
     localStorage.removeItem(currentUserKey);
     navigate("/");
   };
-  const handover = async (reservationId, access) => {
-    // [STAFF-TOOLS] Bàn giao qua API có kiểm tra phân công (bên trong vẫn gọi HandoverService gốc)
+  const handover = async (reservationId, payload = {}) => {
+    // [STAFF-TOOLS] Bàn giao qua API có kiểm tra phân công (hệ thống tự sinh AccessCode & KEY-UnitNumber)
     const response = await apiPost("/api/staff-tools/handover", {
       reservationID: Number(reservationId),
-      accessType: access.type,
-      accessValue: access.value.trim(),
-      notes: ""
+      notes: payload?.notes || "",
+      unitConditionConfirmed: payload?.unitConditionConfirmed ?? true,
+      conditionResult: payload?.conditionResult || "Good",
+      evidenceImages: payload?.evidenceImages || []
     });
     await loadState({ silent: true });
     return response;

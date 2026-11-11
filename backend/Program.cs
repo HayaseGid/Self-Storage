@@ -205,6 +205,7 @@ using (var scope = app.Services.CreateScope())
     {
         dbContext.Database.EnsureCreated();
         DatabaseSeeder.EnsureHandoverMethodColumn(dbContext); // DB Neon đã có từ trước: thêm cột mới trước khi seed / đọc Reservation
+        DatabaseSeeder.EnsureUserAccessCodeColumns(dbContext);
         DatabaseSeeder.SeedIfEmpty(dbContext);
         DatabaseSeeder.EnsureReturnInspectionTables(dbContext);
     }

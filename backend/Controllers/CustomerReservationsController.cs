@@ -41,13 +41,12 @@ public sealed class CustomerReservationsController(
         if (string.IsNullOrWhiteSpace(email))
             return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
 
-        var customerId = await context.Users
-            .Where(u => u.Email == email && u.RoleID == 1 && u.Status == "Active")
-            .Select(u => (int?)u.UserID)
-            .FirstOrDefaultAsync(ct);
-        if (customerId is null)
+        var customer = await context.Users
+            .FirstOrDefaultAsync(u => u.Email == email && u.RoleID == 1 && u.Status == "Active", ct);
+        if (customer is null)
             return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
 
+        var customerId = customer.UserID;
         var now = DateTime.UtcNow;
 
         // Giống API cũ: nhả các đơn giữ chỗ đã hết hạn. Lỗi ở bước phụ này không được làm hỏng cả trang.
@@ -59,18 +58,61 @@ public sealed class CustomerReservationsController(
         }
 
         // Giống API cũ: đơn đã Confirmed / Handed Over mà chưa có hợp đồng thì tạo hợp đồng.
-        try { await CreateMissingContractsAsync(customerId.Value, ct); }
+        try { await CreateMissingContractsAsync(customerId, ct); }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             logger.LogWarning(exception, "Không tạo được hợp đồng còn thiếu.");
             context.ChangeTracker.Clear();
         }
 
+        var today = BusinessClock.Today;
+
+        // Tự động kiểm tra điều kiện Access Code 6 số:
+        // 1. Kiểm tra nợ quá hạn 30 ngày: nếu có khoản Unpaid trễ hạn > 30 ngày => Tạm khóa (Locked).
+        // 2. Nếu khách có kho đang bàn giao (Handed Over) mà chưa có AccessCode => tự sinh 6 số duy nhất.
+        var hasOverdue30Days = await context.Charges
+            .AnyAsync(c => c.Reservation.CustomerID == customerId
+                           && c.Status == "Unpaid"
+                           && c.DueDate.Date.AddDays(30) < today, ct);
+
+        var targetAccessStatus = hasOverdue30Days ? "Locked" : "Active";
+        bool customerUpdated = false;
+
+        if (customer.AccessCodeStatus != targetAccessStatus)
+        {
+            customer.AccessCodeStatus = targetAccessStatus;
+            customerUpdated = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(customer.AccessCode))
+        {
+            var hasActiveRental = await context.Reservations
+                .AnyAsync(r => r.CustomerID == customerId && (r.Status == ReservationStatus.HandedOver || r.Status == ReservationStatus.Confirmed), ct);
+
+            if (hasActiveRental)
+            {
+                string code;
+                do
+                {
+                    code = Random.Shared.Next(100000, 999999).ToString();
+                } while (await context.Users.AnyAsync(u => u.AccessCode == code && u.UserID != customerId, ct));
+
+                customer.AccessCode = code;
+                customerUpdated = true;
+            }
+        }
+
+        if (customerUpdated)
+        {
+            try { await context.SaveChangesAsync(ct); }
+            catch (Exception ex) { logger.LogWarning(ex, "Không thể cập nhật AccessCode/AccessCodeStatus của khách."); }
+        }
+
         // [PHÂN TRANG] Mới nhất lên đầu. Gửi ?page=&pageSize= thì trả { items, total, page, pageSize, pageCount },
         // không gửi thì trả nguyên mảng như trước (trang khách vẫn cần toàn bộ đơn để tính thông báo / nhắc hạn).
         var mine = context.Reservations
             .AsNoTracking()
-            .Where(r => r.CustomerID == customerId.Value);
+            .Where(r => r.CustomerID == customerId);
         var keyword = paging.Keyword;
         if (keyword.Length > 0)
         {
@@ -176,7 +218,6 @@ public sealed class CustomerReservationsController(
             })
             .ToListAsync(ct);
 
-        var today = BusinessClock.Today;
         var data = rows.Select(r =>
         {
             // Tiền thuê: cùng luật RentPaymentRules với thanh toán và điều kiện bàn giao
@@ -257,6 +298,9 @@ public sealed class CustomerReservationsController(
                 refundLastAttemptAt = r.LastRefund?.LastNoteAt,
                 accessType = activeAccess?.AccessType,
                 accessValue = activeAccess?.AccessValue,
+                customerAccessCode = customer.AccessCode,
+                customerAccessCodeStatus = customer.AccessCodeStatus,
+                accesses = r.Accesses.Select(a => new { a.AccessType, a.AccessValue, a.Status }).ToList(),
                 size = r.Units.Count > 1
                     ? string.Join(", ", r.Units.Select(u => $"{u.SizeCode}: {u.SizeName}").Distinct())
                     : activeUnit != null

@@ -79,8 +79,11 @@ export default function ContractDocument({ group, customer, facilityAddress, sig
         <p>Giá thuê đã xác nhận không thay đổi trong suốt thời hạn hợp đồng.</p>
       </section>
       <section>
-        <h4>Điều 4. Quyền và nghĩa vụ</h4>
-        <p>Bên thuê sử dụng kho đúng mục đích, không lưu trữ hàng cấm, hàng dễ cháy nổ; bảo quản khóa/thẻ ra vào; báo trả kho trước ít nhất {policies.values.renewal_return?.returnNoticeDays ?? 7} ngày. Bên cho thuê bàn giao kho đúng hiện trạng, bảo đảm an ninh khu vực chung và hoàn cọc đúng hạn.</p>
+        <h4>Điều 4. Quyền và nghĩa vụ, mã ra vào & chìa khóa</h4>
+        <p>Bên thuê sử dụng kho đúng mục đích, không lưu trữ hàng cấm, hàng dễ cháy nổ, chất nguy hiểm.</p>
+        <p><strong>Mã ra vào cơ sở:</strong> Khách hàng được cấp 01 mã Access Code 6 số duy nhất để ra vào cổng và cửa an ninh cơ sở. Mã có hiệu lực trong suốt thời gian thuê, tự động tạm khóa nếu chậm thanh toán quá 30 ngày.</p>
+        <p><strong>Chìa khóa ô kho:</strong> Mỗi ô kho được cấp chìa khóa vật lý riêng, nhân viên bàn giao tại quầy lễ tân khi nhận kho. Bên thuê có trách nhiệm tự bảo quản chìa khóa; trường hợp làm mất chìa sẽ chịu phí làm lại/thay ổ khóa theo quy định.</p>
+        <p>Bên thuê có trách nhiệm báo trả kho trước ít nhất {policies.values.renewal_return?.returnNoticeDays ?? 7} ngày, hoàn trả chìa khóa vật lý và dọn trống kho khi kết thúc hợp đồng.</p>
       </section>
       <section>
         <h4>Điều 5. Hiệu lực</h4>

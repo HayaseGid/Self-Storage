@@ -75,15 +75,39 @@ public static class DatabaseSeeder
         // 2. Users (Mật khẩu: 123456)
         var users = new List<User>
         {
-            new User { UserID = 1, RoleID = 3, Username = "fac_manager1", PasswordHash = "$2a$11$WevdVfuB0NfM5FGAR424Ge5wnkFWyUDDB75hfeuFG20344kbTG60.", FullName = "Nguyễn Quản Lý Cơ Sở 1", Email = "fm1@test.com", EmailVerified = true, PhoneNumber = "0901000001", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 2, RoleID = 3, Username = "fac_manager2", PasswordHash = "$2a$11$V6p9aH0Sr2K9jWdtIPu8h.WsCXUWZH5xY1C.MIulFF4pwWpoz26Wy", FullName = "Trần Quản Lý Cơ Sở 2", Email = "fm2@test.com", EmailVerified = true, PhoneNumber = "0901000002", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 3, RoleID = 2, Username = "staff1", PasswordHash = "$2a$11$5vUNIDk.1IszB6hVO8b5/.1WdOb8kB20RNqXjwwcd8gD89rjFr1I6", FullName = "Lê Nhân Viên Một", Email = "staff1@test.com", EmailVerified = true, PhoneNumber = "0902000001", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 4, RoleID = 2, Username = "staff2", PasswordHash = "$2a$11$xIPRi/Har6SQwCAtelRbKuc786AWbZUt5HrqWD9Rrl9yIriBeta7O", FullName = "Phạm Nhân Viên Hai", Email = "staff2@test.com", EmailVerified = true, PhoneNumber = "0902000002", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 5, RoleID = 2, Username = "staff3", PasswordHash = "$2a$11$OD99/.KgkGK3VkbT/ELXieAHJ2TqTJyaxFwmb71u6YDzjftC3GRUi", FullName = "Hoàng Nhân Viên Ba", Email = "staff3@test.com", EmailVerified = true, PhoneNumber = "0902000003", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 6, RoleID = 1, Username = "customer1", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Đinh Khách Hàng", Email = "cust1@test.com", EmailVerified = true, PhoneNumber = "0903000001", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 7, RoleID = 1, Username = "customer2", PasswordHash = "$2a$11$27bbRuD2nAlQcY.squQKcuN44mEpDndqJsq9EXHIIEP7mJPAjQsge", FullName = "Vũ Khách Hàng", Email = "cust2@test.com", EmailVerified = true, PhoneNumber = "0903000002", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 8, RoleID = 1, Username = "customer3", PasswordHash = "$2a$11$cr7/qLThxQP3MBNSbJ/bX.b27wOPowqPiqN.vHn5MS/sAZtkj4182", FullName = "Bùi Khách Hàng", Email = "cust3@test.com", EmailVerified = true, PhoneNumber = "0903000003", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new User { UserID = 9, RoleID = 1, Username = "customer4", PasswordHash = "$2a$11$l5dxnygwHvNHkrE7u5ml0.E1MSLImWL/OPDjzKqhpqqSyiuJlF5Gi", FullName = "Đỗ Khách Hàng", Email = "cust4@test.com", EmailVerified = true, PhoneNumber = "0903000004", Status = "Active", CreatedAt = DateTime.UtcNow },
+            // Facility Managers
+            new User { UserID = 1, RoleID = 3, Username = "fac_manager1", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Nguyễn Quản Lý Cơ Sở 1", Email = "fm1@test.com", EmailVerified = true, PhoneNumber = "0901000001", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 2, RoleID = 3, Username = "fac_manager2", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Trần Quản Lý Cơ Sở 2", Email = "fm2@test.com", EmailVerified = true, PhoneNumber = "0901000002", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 14, RoleID = 3, Username = "fac_manager3", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Lê Quản Lý Thủ Đức", Email = "fm3@test.com", EmailVerified = true, PhoneNumber = "0901000003", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 15, RoleID = 3, Username = "fac_manager4", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Phạm Quản Lý Quận 2", Email = "fm4@test.com", EmailVerified = true, PhoneNumber = "0901000004", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 16, RoleID = 3, Username = "fac_manager5", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Hoàng Quản Lý Quận 3", Email = "fm5@test.com", EmailVerified = true, PhoneNumber = "0901000005", Status = "Active", CreatedAt = DateTime.UtcNow },
+
+            // Facility Staff (3 nhân viên / cơ sở x 5 cơ sở = 15 nhân viên)
+            new User { UserID = 3, RoleID = 2, Username = "staff1", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Lê Nhân Viên Một", Email = "staff1@test.com", EmailVerified = true, PhoneNumber = "0902000001", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 4, RoleID = 2, Username = "staff2", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Phạm Nhân Viên Hai", Email = "staff2@test.com", EmailVerified = true, PhoneNumber = "0902000002", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 17, RoleID = 2, Username = "staff_q1_3", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Đặng Nhân Viên Ba (Q1)", Email = "staff_q1_3@test.com", EmailVerified = true, PhoneNumber = "0902000013", Status = "Active", CreatedAt = DateTime.UtcNow },
+
+            new User { UserID = 5, RoleID = 2, Username = "staff3", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Hoàng Nhân Viên Ba", Email = "staff3@test.com", EmailVerified = true, PhoneNumber = "0902000003", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 18, RoleID = 2, Username = "staff_tb_2", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Ngô Nhân Viên Hai (Tân Bình)", Email = "staff_tb_2@test.com", EmailVerified = true, PhoneNumber = "0902000022", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 19, RoleID = 2, Username = "staff_tb_3", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Dương Nhân Viên Ba (Tân Bình)", Email = "staff_tb_3@test.com", EmailVerified = true, PhoneNumber = "0902000023", Status = "Active", CreatedAt = DateTime.UtcNow },
+
+            new User { UserID = 20, RoleID = 2, Username = "staff_td_1", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Phan Nhân Viên Một (Thủ Đức)", Email = "staff_td_1@test.com", EmailVerified = true, PhoneNumber = "0902000031", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 21, RoleID = 2, Username = "staff_td_2", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Trịnh Nhân Viên Hai (Thủ Đức)", Email = "staff_td_2@test.com", EmailVerified = true, PhoneNumber = "0902000032", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 22, RoleID = 2, Username = "staff_td_3", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Mai Nhân Viên Ba (Thủ Đức)", Email = "staff_td_3@test.com", EmailVerified = true, PhoneNumber = "0902000033", Status = "Active", CreatedAt = DateTime.UtcNow },
+
+            new User { UserID = 23, RoleID = 2, Username = "staff_q2_1", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Đoàn Nhân Viên Một (Quận 2)", Email = "staff_q2_1@test.com", EmailVerified = true, PhoneNumber = "0902000041", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 24, RoleID = 2, Username = "staff_q2_2", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Lâm Nhân Viên Hai (Quận 2)", Email = "staff_q2_2@test.com", EmailVerified = true, PhoneNumber = "0902000042", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 25, RoleID = 2, Username = "staff_q2_3", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Hà Nhân Viên Ba (Quận 2)", Email = "staff_q2_3@test.com", EmailVerified = true, PhoneNumber = "0902000043", Status = "Active", CreatedAt = DateTime.UtcNow },
+
+            new User { UserID = 26, RoleID = 2, Username = "staff_q3_1", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Vũ Nhân Viên Một (Quận 3)", Email = "staff_q3_1@test.com", EmailVerified = true, PhoneNumber = "0902000051", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 27, RoleID = 2, Username = "staff_q3_2", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Bùi Nhân Viên Hai (Quận 3)", Email = "staff_q3_2@test.com", EmailVerified = true, PhoneNumber = "0902000052", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 28, RoleID = 2, Username = "staff_q3_3", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Đỗ Nhân Viên Ba (Quận 3)", Email = "staff_q3_3@test.com", EmailVerified = true, PhoneNumber = "0902000053", Status = "Active", CreatedAt = DateTime.UtcNow },
+
+            // Khách hàng & Quản trị
+            new User { UserID = 6, RoleID = 1, Username = "customer1", PasswordHash = "$2a$11$ST0fSfq/YhEHebJwAvqeSe.nZnzuf9I62QysmaBrL8mZ2D/Wp5iGO", FullName = "Đinh Khách Hàng", Email = "cust1@test.com", EmailVerified = true, PhoneNumber = "0903000001", Status = "Active", AccessCode = "612345", AccessCodeStatus = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 7, RoleID = 1, Username = "customer2", PasswordHash = "$2a$11$27bbRuD2nAlQcY.squQKcuN44mEpDndqJsq9EXHIIEP7mJPAjQsge", FullName = "Vũ Khách Hàng", Email = "cust2@test.com", EmailVerified = true, PhoneNumber = "0903000002", Status = "Active", AccessCode = "623456", AccessCodeStatus = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 8, RoleID = 1, Username = "customer3", PasswordHash = "$2a$11$cr7/qLThxQP3MBNSbJ/bX.b27wOPowqPiqN.vHn5MS/sAZtkj4182", FullName = "Bùi Khách Hàng", Email = "cust3@test.com", EmailVerified = true, PhoneNumber = "0903000003", Status = "Active", AccessCode = "634567", AccessCodeStatus = "Active", CreatedAt = DateTime.UtcNow },
+            new User { UserID = 9, RoleID = 1, Username = "customer4", PasswordHash = "$2a$11$l5dxnygwHvNHkrE7u5ml0.E1MSLImWL/OPDjzKqhpqqSyiuJlF5Gi", FullName = "Đỗ Khách Hàng", Email = "cust4@test.com", EmailVerified = true, PhoneNumber = "0903000004", Status = "Active", AccessCode = "645678", AccessCodeStatus = "Active", CreatedAt = DateTime.UtcNow },
             new User { UserID = 10, RoleID = 4, Username = "biz_ops_mgr", PasswordHash = "$2a$11$N2/L1iRkRbIAwLhubV71meEVZ9g.IZY5nD0HsjSekbaPtfvcI.W42", FullName = "Lý Vận Hành Tổng", Email = "ops@test.com", EmailVerified = true, PhoneNumber = "0904000001", Status = "Active", CreatedAt = DateTime.UtcNow },
             new User { UserID = 11, RoleID = 5, Username = "sys_admin", PasswordHash = "$2a$11$HDFjRM5RTirvAJ2/vEzwhuv5OQOjpw7wT/3ElFEbwmIUwI2pWmepS", FullName = "Quản Trị Viên", Email = "admin@test.com", EmailVerified = true, PhoneNumber = "0905000001", Status = "Active", CreatedAt = DateTime.UtcNow }
         };
@@ -129,9 +153,9 @@ public static class DatabaseSeeder
         {
             new Facility { FacilityID = 1, ManagerID = 1, FacilityName = "Cơ sở Lưu trữ Quận 1", UnitCodePrefix = "Q1", StreetAddress = "123 Lê Lợi", Ward = "Phường Bến Thành", District = "Quận 1", City = "TP. Hồ Chí Minh", Latitude = 10.773100m, Longitude = 106.700800m, ContactPhone = "0812345678", OpeningHours = "07:00 - 21:00 hằng ngày", Description = "Gần chợ Bến Thành, có kho điều hòa.", Status = "Active", CreatedAt = DateTime.UtcNow },
             new Facility { FacilityID = 2, ManagerID = 2, FacilityName = "Cơ sở Lưu trữ Tân Bình", UnitCodePrefix = "TB", StreetAddress = "456 Cộng Hòa", Ward = "Phường 13", District = "Tân Bình", City = "TP. Hồ Chí Minh", Latitude = 10.801500m, Longitude = 106.652000m, ContactPhone = "0812345679", OpeningHours = "07:00 - 21:00 hằng ngày", Description = "Gần sân bay Tân Sơn Nhất.", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new Facility { FacilityID = 3, ManagerID = 1, FacilityName = "Cơ sở Lưu trữ Thủ Đức", UnitCodePrefix = "TD", StreetAddress = "123 Võ Văn Ngân", Ward = "Phường Linh Chiểu", District = "Thủ Đức", City = "TP. Hồ Chí Minh", Latitude = 10.850600m, Longitude = 106.771900m, ContactPhone = "0812345680", OpeningHours = "06:00 - 22:00 hằng ngày", Description = "Bãi xe rộng, phù hợp kho xe.", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new Facility { FacilityID = 4, ManagerID = 2, FacilityName = "Cơ sở Lưu trữ Quận 2", UnitCodePrefix = "Q2", StreetAddress = "456 Trần Não", Ward = "Phường Bình An", District = "Quận 2", City = "TP. Hồ Chí Minh", Latitude = 10.796000m, Longitude = 106.734000m, ContactPhone = "0812345681", OpeningHours = "07:00 - 21:00 hằng ngày", Status = "Active", CreatedAt = DateTime.UtcNow },
-            new Facility { FacilityID = 5, ManagerID = 1, FacilityName = "Cơ sở Lưu trữ Quận 3", UnitCodePrefix = "Q3", StreetAddress = "789 Cách Mạng Tháng 8", Ward = "Phường Võ Thị Sáu", District = "Quận 3", City = "TP. Hồ Chí Minh", Latitude = 10.784500m, Longitude = 106.684000m, ContactPhone = "0812345682", OpeningHours = "07:00 - 21:00 hằng ngày", Status = "Active", CreatedAt = DateTime.UtcNow }
+            new Facility { FacilityID = 3, ManagerID = 14, FacilityName = "Cơ sở Lưu trữ Thủ Đức", UnitCodePrefix = "TD", StreetAddress = "123 Võ Văn Ngân", Ward = "Phường Linh Chiểu", District = "Thủ Đức", City = "TP. Hồ Chí Minh", Latitude = 10.850600m, Longitude = 106.771900m, ContactPhone = "0812345680", OpeningHours = "06:00 - 22:00 hằng ngày", Description = "Bãi xe rộng, phù hợp kho xe.", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new Facility { FacilityID = 4, ManagerID = 15, FacilityName = "Cơ sở Lưu trữ Quận 2", UnitCodePrefix = "Q2", StreetAddress = "456 Trần Não", Ward = "Phường Bình An", District = "Quận 2", City = "TP. Hồ Chí Minh", Latitude = 10.796000m, Longitude = 106.734000m, ContactPhone = "0812345681", OpeningHours = "07:00 - 21:00 hằng ngày", Status = "Active", CreatedAt = DateTime.UtcNow },
+            new Facility { FacilityID = 5, ManagerID = 16, FacilityName = "Cơ sở Lưu trữ Quận 3", UnitCodePrefix = "Q3", StreetAddress = "789 Cách Mạng Tháng 8", Ward = "Phường Võ Thị Sáu", District = "Quận 3", City = "TP. Hồ Chí Minh", Latitude = 10.784500m, Longitude = 106.684000m, ContactPhone = "0812345682", OpeningHours = "07:00 - 21:00 hằng ngày", Status = "Active", CreatedAt = DateTime.UtcNow }
         };
         context.Facilities.AddRange(facilities);
         context.SaveChanges();
@@ -159,11 +183,32 @@ public static class DatabaseSeeder
             context.SaveChanges();
         }
 
-        // 8. FacilityStaff
+        // 8. FacilityStaff (3 nhân viên / cơ sở x 5 cơ sở = 15 phân công)
         context.FacilityStaffs.AddRange(
+            // Cơ sở 1 (Q1)
             new FacilityStaff { AssignmentID = 1, FacilityID = 1, UserID = 3, AssignedDate = new DateTime(2026, 1, 1), Status = "Active" },
             new FacilityStaff { AssignmentID = 2, FacilityID = 1, UserID = 4, AssignedDate = new DateTime(2026, 1, 15), Status = "Active" },
-            new FacilityStaff { AssignmentID = 3, FacilityID = 2, UserID = 5, AssignedDate = new DateTime(2026, 2, 1), Status = "Active" }
+            new FacilityStaff { AssignmentID = 4, FacilityID = 1, UserID = 17, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+
+            // Cơ sở 2 (TB)
+            new FacilityStaff { AssignmentID = 3, FacilityID = 2, UserID = 5, AssignedDate = new DateTime(2026, 2, 1), Status = "Active" },
+            new FacilityStaff { AssignmentID = 5, FacilityID = 2, UserID = 18, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+            new FacilityStaff { AssignmentID = 6, FacilityID = 2, UserID = 19, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+
+            // Cơ sở 3 (TD)
+            new FacilityStaff { AssignmentID = 7, FacilityID = 3, UserID = 20, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+            new FacilityStaff { AssignmentID = 8, FacilityID = 3, UserID = 21, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+            new FacilityStaff { AssignmentID = 9, FacilityID = 3, UserID = 22, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+
+            // Cơ sở 4 (Q2)
+            new FacilityStaff { AssignmentID = 10, FacilityID = 4, UserID = 23, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+            new FacilityStaff { AssignmentID = 11, FacilityID = 4, UserID = 24, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+            new FacilityStaff { AssignmentID = 12, FacilityID = 4, UserID = 25, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+
+            // Cơ sở 5 (Q3)
+            new FacilityStaff { AssignmentID = 13, FacilityID = 5, UserID = 26, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+            new FacilityStaff { AssignmentID = 14, FacilityID = 5, UserID = 27, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" },
+            new FacilityStaff { AssignmentID = 15, FacilityID = 5, UserID = 28, AssignedDate = new DateTime(2026, 3, 1), Status = "Active" }
         );
         context.SaveChanges();
 
@@ -388,10 +433,12 @@ public static class DatabaseSeeder
         context.Contracts.AddRange(contract1, contract2);
         context.SaveChanges();
 
-        // 19. UnitAccess
+        // 19. UnitAccess (chuẩn hóa: chìa khóa vật lý KEY-{UnitNumber} + mã mở cổng Access Code 6 số)
         context.UnitAccesses.AddRange(
-            new UnitAccess { AccessID = 1, ReservationUnitID = 1, ReservationID = 1, UnitID = 4, UserID = 6, AccessType = "Smart Lock", AccessValue = "123456", IssuedAt = ru1.HandedOverAt!.Value, IssuedByUserID = 3, Status = "Active" },
-            new UnitAccess { AccessID = 2, ReservationUnitID = 2, ReservationID = 2, UnitID = 13, UserID = 7, AccessType = "Smart Lock", AccessValue = "654321", IssuedAt = ru2.HandedOverAt!.Value, IssuedByUserID = 5, Status = "Active" }
+            new UnitAccess { AccessID = 1, ReservationUnitID = 1, ReservationID = 1, UnitID = 4, UserID = 6, AccessType = "Key", AccessValue = "KEY-Q1-U04", IssuedAt = ru1.HandedOverAt!.Value, IssuedByUserID = 3, Status = "Active" },
+            new UnitAccess { AccessID = 2, ReservationUnitID = 2, ReservationID = 2, UnitID = 13, UserID = 7, AccessType = "Key", AccessValue = "KEY-TB-U03", IssuedAt = ru2.HandedOverAt!.Value, IssuedByUserID = 5, Status = "Active" },
+            new UnitAccess { AccessID = 3, ReservationUnitID = 1, ReservationID = 1, UnitID = 4, UserID = 6, AccessType = "Access Code", AccessValue = "612345", IssuedAt = ru1.HandedOverAt!.Value, IssuedByUserID = 3, Status = "Active" },
+            new UnitAccess { AccessID = 4, ReservationUnitID = 2, ReservationID = 2, UnitID = 13, UserID = 7, AccessType = "Access Code", AccessValue = "623456", IssuedAt = ru2.HandedOverAt!.Value, IssuedByUserID = 5, Status = "Active" }
         );
         context.SaveChanges();
 
@@ -454,6 +501,41 @@ public static class DatabaseSeeder
                 ");
             }
             catch { }
+        }
+    }
+
+    /// <summary>
+    /// Đảm bảo bảng Users có cột AccessCode và AccessCodeStatus để lưu mã ra vào cơ sở 6 số của khách hàng.
+    /// </summary>
+    public static void EnsureUserAccessCodeColumns(SelfStorageDbContext context)
+    {
+        bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+        try
+        {
+            if (isNpgsql)
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""AccessCode"" VARCHAR(10) NULL;
+                    ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""AccessCodeStatus"" VARCHAR(20) DEFAULT 'Active';
+                ");
+            }
+            else
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'AccessCode')
+                    BEGIN
+                        ALTER TABLE Users ADD AccessCode NVARCHAR(10) NULL;
+                    END
+                    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'AccessCodeStatus')
+                    BEGIN
+                        ALTER TABLE Users ADD AccessCodeStatus NVARCHAR(20) DEFAULT 'Active';
+                    END
+                ");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[EnsureUserAccessCodeColumns] Error: {ex.Message}");
         }
     }
 

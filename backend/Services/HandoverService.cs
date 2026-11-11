@@ -25,7 +25,7 @@ namespace SelfStorageAPI.Services;
 /// </summary>
 public class HandoverService : IHandoverService
 {
-    private static readonly string[] ValidAccessTypes = { "Smart Lock", "PIN Code", "Key", "Access Card", "QR" };
+    private static readonly string[] ValidAccessTypes = { "Smart Lock", "PIN Code", "Key", "Access Card", "QR", "Access Code" };
 
     // Trạng thái kho cho phép bàn giao. In Use (người khác đang dùng), Pending Inspection (vừa trả, chưa kiểm),
     // Maintenance, Inactive đều KHÔNG được bàn giao.
@@ -49,15 +49,7 @@ public class HandoverService : IHandoverService
         if (string.IsNullOrWhiteSpace(staffEmail))
             return Fail(401, "Phiên đăng nhập đã hết. Vui lòng đăng nhập lại.");
 
-        // 8. Thông tin truy cập: kiểm tra trước, không cần chạm DB
-        var accessType = ValidAccessTypes.FirstOrDefault(t => string.Equals(t, request.AccessType?.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (accessType is null)
-            return Fail(400, "Loại quyền truy cập không hợp lệ (chỉ Smart Lock, PIN Code, Key, Access Card, QR).");
-        var accessValue = request.AccessValue?.Trim() ?? string.Empty;
-        if (accessValue.Length == 0)
-            return Fail(400, "Vui lòng nhập mã khóa / số thẻ / mã PIN giao cho khách.");
-        if (accessValue.Length > 255)
-            return Fail(400, "Mã truy cập tối đa 255 ký tự.");
+        // 8. Thông tin truy cập: hệ thống tự sinh mã Access Code 6 số và Chìa khóa KEY-{UnitNumber}
         var notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         if (notes is { Length: > 1000 })
             return Fail(400, "Ghi chú tối đa 1000 ký tự.");
@@ -158,29 +150,72 @@ public class HandoverService : IHandoverService
 
             contract.ContractStatus = "Active";
 
+            var evidenceJson = request.EvidenceImages != null && request.EvidenceImages.Count > 0
+                ? System.Text.Json.JsonSerializer.Serialize(request.EvidenceImages.Take(5).ToList())
+                : null;
+
             foreach (var task in myTasks)
             {
                 // Không đổi AssignedStaffID: người làm chính là người được giao (đã kiểm tra ở bước 6)
                 task.Status = "Completed";
                 task.ActualAt = now;
-                task.ConditionResult = "Good";
+                task.ConditionResult = string.IsNullOrWhiteSpace(request.ConditionResult) ? "Good" : request.ConditionResult.Trim();
                 if (notes is not null) task.UnitConditionNotes = notes;
+                if (evidenceJson is not null) task.EvidenceImages = evidenceJson;
+            }
+
+            // Cấp mã Access Code 6 số cho khách nếu chưa có (duy nhất trong toàn hệ thống)
+            if (reservation.Customer != null)
+            {
+                if (string.IsNullOrWhiteSpace(reservation.Customer.AccessCode))
+                {
+                    string code;
+                    do
+                    {
+                        code = Random.Shared.Next(100000, 999999).ToString();
+                    } while (await _handoverRepository.IsAccessCodeTakenAsync(code, reservation.Customer.UserID, cancellationToken));
+
+                    reservation.Customer.AccessCode = code;
+                }
+                reservation.Customer.AccessCodeStatus = "Active";
             }
 
             foreach (var ru in heldUnits)
             {
+                // 1. Chìa khóa vật lý: tự sinh KEY-{UnitNumber}
+                var keyVal = !string.IsNullOrWhiteSpace(request.AccessValue) && string.Equals(request.AccessType, "Key", StringComparison.OrdinalIgnoreCase)
+                    ? request.AccessValue.Trim()
+                    : $"KEY-{ru.Unit.UnitNumber}";
+
                 _handoverRepository.AddUnitAccess(new UnitAccess
                 {
                     ReservationUnitID = ru.ReservationUnitID,
                     ReservationID = reservation.ReservationID,
                     UnitID = ru.UnitID,
                     UserID = reservation.CustomerID,
-                    AccessType = accessType,
-                    AccessValue = accessValue,
+                    AccessType = "Key",
+                    AccessValue = keyVal,
                     IssuedAt = now,
                     IssuedByUserID = staff.UserID,
                     Status = "Active"
                 });
+
+                // 2. Mã ra vào cơ sở 6 số
+                if (!string.IsNullOrWhiteSpace(reservation.Customer?.AccessCode))
+                {
+                    _handoverRepository.AddUnitAccess(new UnitAccess
+                    {
+                        ReservationUnitID = ru.ReservationUnitID,
+                        ReservationID = reservation.ReservationID,
+                        UnitID = ru.UnitID,
+                        UserID = reservation.CustomerID,
+                        AccessType = "Access Code",
+                        AccessValue = reservation.Customer.AccessCode,
+                        IssuedAt = now,
+                        IssuedByUserID = staff.UserID,
+                        Status = "Active"
+                    });
+                }
             }
 
             await _handoverRepository.SaveChangesAsync(cancellationToken);

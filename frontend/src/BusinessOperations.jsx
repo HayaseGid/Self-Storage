@@ -305,12 +305,6 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                     </div>
 
                     <div className="business-header-right">
-
-                        <button className="business-notification">
-                            🔔
-                            <span className="notification-dot"></span>
-                        </button>
-
                         <div className="business-user">
 
                             <div className="business-avatar">

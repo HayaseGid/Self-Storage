@@ -63,6 +63,12 @@ public class HandoverRepository : IHandoverRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<bool> IsAccessCodeTakenAsync(string accessCode, int excludeUserId, CancellationToken cancellationToken)
+    {
+        return await _context.Users
+            .AnyAsync(u => u.AccessCode == accessCode && u.UserID != excludeUserId, cancellationToken);
+    }
+
     public void AddUnitAccess(UnitAccess access) => _context.UnitAccesses.Add(access);
 
     public async Task<T> ExecuteInTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)

@@ -3,24 +3,53 @@
 Tất cả các tài khoản mặc định dùng chung mật khẩu: 123456
 
 1. Khách Hàng (Storage Customer)
-- Username: customer1 (Tên: Đinh Khách Hàng, Email: cust1@test.com)
-- Username: customer2 (Tên: Vũ Khách Hàng, Email: cust2@test.com)
-- Username: customer3 (Tên: Bùi Khách Hàng, Email: cust3@test.com)
-- Username: customer4 (Tên: Đỗ Khách Hàng, Email: cust4@test.com)
+- Username: customer1 (Tên: Đinh Khách Hàng, Email: cust1@test.com
+- Username: customer2 (Tên: Vũ Khách Hàng, Email: cust2@test.com
+- Username: customer3 (Tên: Bùi Khách Hàng, Email: cust3@test.com
+- Username: customer4 (Tên: Đỗ Khách Hàng, Email: cust4@test.com
 
-2. Nhân Viên (Staff)
-- Username: staff1 (Tên: Lê Nhân Viên Một, Email: staff1@test.com)
-- Username: staff2 (Tên: Phạm Nhân Viên Hai, Email: staff2@test.com)
-- Username: staff3 (Tên: Hoàng Nhân Viên Ba, Email: staff3@test.com)
+2. Quản Lý Cơ Sở (Facility Manager - 5 cơ sở)
+- Cơ sở 1 - Quận 1 (Q1):
+  + Username: fac_manager1 (Tên: Nguyễn Quản Lý Cơ Sở 1, Email: fm1@test.com
+- Cơ sở 2 - Tân Bình (TB):
+  + Username: fac_manager2 (Tên: Trần Quản Lý Cơ Sở 2, Email: fm2@test.com
+- Cơ sở 3 - Thủ Đức (TD):
+  + Username: fac_manager3 (Tên: Lê Quản Lý Thủ Đức, Email: fm3@test.com
+- Cơ sở 4 - Quận 2 (Q2):
+  + Username: fac_manager4 (Tên: Phạm Quản Lý Quận 2, Email: fm4@test.com
+- Cơ sở 5 - Quận 3 (Q3):
+  + Username: fac_manager5 (Tên: Hoàng Quản Lý Quận 3, Email: fm5@test.com
 
-3. Quản Lý Cơ Sở (Facility Manager)
-- Username: fac_manager1 (Tên: Nguyễn Quản Lý Cơ Sở 1, Email: fm1@test.com)
-- Username: fac_manager2 (Tên: Trần Quản Lý Cơ Sở 2, Email: fm2@test.com)
+3. Nhân Viên Làm Việc Tại Cơ Sở (Staff - 3 nhân viên / cơ sở, tổng 15 nhân viên)
+- Cơ sở 1 - Quận 1 (Q1):
+  + Username: staff1 (Tên: Lê Nhân Viên Một, Email: staff1@test.com
+  + Username: staff2 (Tên: Phạm Nhân Viên Hai, Email: staff2@test.com
+  + Username: staff_q1_3 (Tên: Đặng Nhân Viên Ba (Q1), Email: staff_q1_3@test.com
+- Cơ sở 2 - Tân Bình (TB):
+  + Username: staff3 (Tên: Hoàng Nhân Viên Ba, Email: staff3@test.com
+  + Username: staff_tb_2 (Tên: Ngô Nhân Viên Hai (Tân Bình), Email: staff_tb_2@test.com
+  + Username: staff_tb_3 (Tên: Dương Nhân Viên Ba (Tân Bình), Email: staff_tb_3@test.com
+- Cơ sở 3 - Thủ Đức (TD):
+  + Username: staff_td_1 (Tên: Phan Nhân Viên Một (Thủ Đức), Email: staff_td_1@test.com
+  + Username: staff_td_2 (Tên: Trịnh Nhân Viên Hai (Thủ Đức), Email: staff_td_2@test.com
+  + Username: staff_td_3 (Tên: Mai Nhân Viên Ba (Thủ Đức), Email: staff_td_3@test.com
+- Cơ sở 4 - Quận 2 (Q2):
+  + Username: staff_q2_1 (Tên: Đoàn Nhân Viên Một (Quận 2), Email: staff_q2_1@test.com
+  + Username: staff_q2_2 (Tên: Lâm Nhân Viên Hai (Quận 2), Email: staff_q2_2@test.com
+  + Username: staff_q2_3 (Tên: Hà Nhân Viên Ba (Quận 2), Email: staff_q2_3@test.com
+- Cơ sở 5 - Quận 3 (Q3):
+  + Username: staff_q3_1 (Tên: Vũ Nhân Viên Một (Quận 3), Email: staff_q3_1@test.com
+  + Username: staff_q3_2 (Tên: Bùi Nhân Viên Hai (Quận 3), Email: staff_q3_2@test.com
+  + Username: staff_q3_3 (Tên: Đỗ Nhân Viên Ba (Quận 3), Email: staff_q3_3@test.com
 
 4. Vận Hành Tổng (Business Ops Manager)
-- Username: biz_ops_mgr (Tên: Lý Vận Hành Tổng, Email: ops@test.com)
+- Username: biz_ops_mgr (Tên: Lý Vận Hành Tổng, Email: ops@test.com
 
 5. Quản Trị Viên (System Admin)
-- Username: sys_admin (Tên: Quản Trị Viên, Email: admin@test.com)
+- Username: sys_admin (Tên: Quản Trị Viên, Email: admin@test.com
 
--6. VNPay: 9704198526191432198     Nguyen Van A   07/15   123456
+6. Tài khoản thẻ test VNPay:
+- Số thẻ: 9704198526191432198
+- Tên chủ thẻ: Nguyen Van A
+- Ngày phát hành: 07/15
+- Mật khẩu OTP: 123456

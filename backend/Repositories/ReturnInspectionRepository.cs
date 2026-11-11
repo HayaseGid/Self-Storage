@@ -74,7 +74,7 @@ SELECT ri.""InspectionID"", ri.""ReservationID"", ri.""ConditionResult"", ri.""S
        ri.""Status"", ri.""RespondedAt"", ri.""DisputeReason"",
        {(includeImages ? "ri.\"CustomerImages\"" : "CAST(NULL AS TEXT)")} AS ""CustomerImages"",
        (LENGTH(COALESCE(ri.""CustomerImages"", '')) - LENGTH(REPLACE(COALESCE(ri.""CustomerImages"", ''), 'data:image', ''))) / 10 AS ""CustomerImageCount"",
-       ri.""ResolvedByUserID"", mu.""FullName"" AS ""ResolvedByName"", ri.""ResolvedAt"", ri.""ResolutionNotes"", ri.""SettledAt"", ri.""SettledBy"",
+       ri.""ResolvedByUserID"", mu.""FullName"" AS ""ResolvedByName"", mu.""Email"" AS ""ResolvedByEmail"", mu.""PhoneNumber"" AS ""ResolvedByPhone"", ri.""ResolvedAt"", ri.""ResolutionNotes"", ri.""SettledAt"", ri.""SettledBy"",
        r.""ReservationCode"", c.""ContractNumber"", r.""CustomerID"", cu.""FullName"" AS ""CustomerName"", cu.""Email"" AS ""CustomerEmail"",
        cu.""PhoneNumber"" AS ""CustomerPhone"", r.""FacilityID"", f.""FacilityName""
 FROM ""ReturnInspection"" AS ri
@@ -94,7 +94,7 @@ SELECT ri.InspectionID, ri.ReservationID, ri.ConditionResult, ri.StaffNotes,
        ri.Status, ri.RespondedAt, ri.DisputeReason,
        {(includeImages ? "ri.CustomerImages" : "CAST(NULL AS NVARCHAR(MAX))")} AS CustomerImages,
        (LEN(ISNULL(ri.CustomerImages, N'')) - LEN(REPLACE(ISNULL(ri.CustomerImages, N''), N'data:image', N''))) / 10 AS CustomerImageCount,
-       ri.ResolvedByUserID, mu.FullName AS ResolvedByName, ri.ResolvedAt, ri.ResolutionNotes, ri.SettledAt, ri.SettledBy,
+       ri.ResolvedByUserID, mu.FullName AS ResolvedByName, mu.Email AS ResolvedByEmail, mu.PhoneNumber AS ResolvedByPhone, ri.ResolvedAt, ri.ResolutionNotes, ri.SettledAt, ri.SettledBy,
        r.ReservationCode, c.ContractNumber, r.CustomerID, cu.FullName AS CustomerName, cu.Email AS CustomerEmail,
        cu.PhoneNumber AS CustomerPhone, r.FacilityID, f.FacilityName
 FROM dbo.ReturnInspection AS ri
@@ -261,6 +261,8 @@ LEFT JOIN dbo.Contract AS c ON c.ReservationID = r.ReservationID";
             CustomerImageCount = I("CustomerImageCount") ?? 0,
             ResolvedByUserID = I("ResolvedByUserID"),
             ResolvedByName = S("ResolvedByName"),
+            ResolvedByEmail = S("ResolvedByEmail"),
+            ResolvedByPhone = S("ResolvedByPhone"),
             ResolvedAt = D("ResolvedAt"),
             ResolutionNotes = S("ResolutionNotes"),
             SettledAt = D("SettledAt"),
