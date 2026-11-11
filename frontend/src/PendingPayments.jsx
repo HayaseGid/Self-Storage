@@ -170,26 +170,9 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
     if (!ok) return
     setPayingRentId(rental.reservationId)
     try {
-      const demo = SIMULATED_PAYMENT_ENABLED && await dialog.confirm({
-        tone: 'info',
-        title: 'Chọn phương thức thanh toán',
-        message: 'Đang bật chế độ demo. Bạn muốn thanh toán mô phỏng nhanh hay chuyển sang cổng VNPay?',
-        confirmLabel: 'Thanh toán mô phỏng',
-        cancelLabel: 'Cổng VNPay'
-      })
-      if (!demo) {
-        await startVnPayPayment([rental.reservationId], { amount, count: 1, label: rental.contractNumber, kind: 'rent' })
-        return
-      }
-      const messages = []
-      if (rentAmount > 0) messages.push((await apiPost(`/api/rent-payments/${rental.reservationId}/pay-demo`, {})).message)
-      if (lateAmount > 0) messages.push((await payLateFeesDemo(rental.reservationId)).message)
-      onChanged?.()
-      lateFees.reload()
-      await dialog.alert({ tone: 'success', title: 'Đã thanh toán thành công', message: messages.join(' ') })
+      await startVnPayPayment([rental.reservationId], { amount, count: 1, label: rental.contractNumber, kind: 'rent' })
     } catch (error) {
       await dialog.alert({ tone: 'danger', title: 'Chưa đóng được tiền thuê', message: error.message })
-    } finally {
       setPayingRentId(null)
     }
   }

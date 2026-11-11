@@ -806,23 +806,9 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     if (!ok) return
     setPayingRent(rental.reservationId)
     try {
-      const demo = SIMULATED_PAYMENT_ENABLED && await dialog.confirm({
-        tone: 'info', title: 'Chọn cách thanh toán', message: 'Đang bật chế độ demo. Thanh toán mô phỏng (không qua VNPay)?',
-        confirmLabel: 'Mô phỏng', cancelLabel: 'Qua VNPay'
-      })
-      if (!demo) {
-        await startVnPayPayment([rental.reservationId], { amount, count: 1, label: rental.contractNumber, kind: 'rent' })
-        return
-      }
-      const messages = []
-      if (rentAmount > 0) messages.push((await apiPost(`/api/rent-payments/${rental.reservationId}/pay-demo`, {})).message)
-      if (lateAmount > 0) messages.push((await payLateFeesDemo(rental.reservationId)).message)
-      onRentalsChanged?.()
-      lateFees.reload()
-      await dialog.alert({ tone: 'success', title: 'Đã thanh toán', message: messages.join(' ') })
+      await startVnPayPayment([rental.reservationId], { amount, count: 1, label: rental.contractNumber, kind: 'rent' })
     } catch (error) {
       await dialog.alert({ tone: 'danger', title: 'Chưa đóng được tiền thuê', message: error.message })
-    } finally {
       setPayingRent(null)
     }
   }
