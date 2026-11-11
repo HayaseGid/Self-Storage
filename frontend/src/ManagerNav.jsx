@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet } from './api'
 import './ManagerNav.css'
 
@@ -127,8 +127,28 @@ export default function ManagerNav({ activeTab, onSelect, facilityId, freshUnits
     return !v
   })
 
+  // [SỬA] Menu cuộn được (ManagerNav.css). Vừa mở nhóm "Thiết lập" thì tự cuộn xuống để thấy các mục mới hiện
+  const navRef = useRef(null)
+  const firstRender = useRef(true)
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return }
+    if (!setupOpen || !navRef.current) return
+    const nav = navRef.current
+    window.requestAnimationFrame(() => nav.scrollTo({ top: nav.scrollHeight, behavior: 'smooth' }))
+  }, [setupOpen])
+  // Đổi mục: nếu mục đang chọn bị khuất trong vùng cuộn thì cuộn tới
+  // (chỉ cuộn trong menu, không kéo cả trang; màn hình hẹp menu không cuộn riêng nên bỏ qua)
+  useEffect(() => {
+    const nav = navRef.current
+    const item = nav?.querySelector('.mnav-item.active')
+    if (!nav || !item || nav.scrollHeight <= nav.clientHeight) return
+    const top = item.offsetTop // nav có position: relative (ManagerNav.css) nên offsetTop tính theo đầu menu
+    if (top < nav.scrollTop) nav.scrollTop = top - 8
+    else if (top + item.offsetHeight > nav.scrollTop + nav.clientHeight) nav.scrollTop = top + item.offsetHeight - nav.clientHeight + 8
+  }, [activeTab])
+
   return (
-    <nav className="customer-nav mnav" aria-label="Menu Facility Manager">
+    <nav ref={navRef} className="customer-nav mnav" aria-label="Menu Facility Manager">
       {GROUPS.map(group => {
         const hasActive = group.items.some(i => i.key === activeTab)
         const open = !group.collapsible || setupOpen || hasActive
