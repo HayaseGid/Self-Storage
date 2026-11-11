@@ -68,10 +68,12 @@ public sealed class CustomerReservationsController(
         var today = BusinessClock.Today;
 
         // Tự động kiểm tra điều kiện Access Code 6 số:
-        // 1. Kiểm tra nợ quá hạn 30 ngày: nếu có khoản Unpaid trễ hạn > 30 ngày => Tạm khóa (Locked).
+        // 1. Kiểm tra nợ quá hạn 30 ngày: chỉ xét các kho ĐANG THUÊ (Handed Over) có khoản Unpaid trễ hạn > 30 ngày => Tạm khóa (Locked).
+        //    (Không tính các đơn chưa nhận kho / đã trả kho / đã hủy).
         // 2. Nếu khách có kho đang bàn giao (Handed Over) mà chưa có AccessCode => tự sinh 6 số duy nhất.
         var hasOverdue30Days = await context.Charges
             .AnyAsync(c => c.Reservation.CustomerID == customerId
+                           && c.Reservation.Status == ReservationStatus.HandedOver
                            && c.Status == "Unpaid"
                            && c.DueDate.Date.AddDays(30) < today, ct);
 
