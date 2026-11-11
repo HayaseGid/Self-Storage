@@ -46,3 +46,6 @@
   .facility-map-layout, .facility-location-card { grid-template-columns: 1fr; }
   .facility-map-list { max-height: none; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 }
+.facility-location-card.no-map { grid-template-columns: 1fr; }
+.facility-location-card.no-map .facility-location-info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
+.facility-location-card.no-map .facility-location-info h3 { width: 100%; }

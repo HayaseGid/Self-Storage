@@ -19,6 +19,82 @@ import ContractDetailModal from './ContractDetailModal'
 import { sendContractEmail } from './contractEmail'
 import { usePolicies } from './policies'
 import { useDialog } from './Dialog'
+import { useContractRenewals, RenewalSection, RenewalModal, fmtIsoDate } from './ContractRenewal'
+import { focusContract, takePendingContractFocus } from './afterDeposit'
+import { OPEN_SECTION_EVENT, RENEW_REQUEST_KEY, clearContractSignRequest, confirmAfterDeposit, peekContractSignRequest, requestContractSign, requestRenewal, takeCustomerSection, takeRenewalRequest } from './afterDeposit'
+import { useCustomerNotifications } from './customerNoticeData'
+import CustomerNotificationsPage, { NotificationsPreview } from './CustomerNotifications'
+import CancelReservationModal, { retryRefund } from './CancelReservation'
+import ContractCard from './ContractCard'
+import { ReturnRequestModal, ReturnSection, useUnitReturns } from './UnitReturn'
+import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
+import { payLateFeesDemo, useLateFees } from './lateFees'
+import { CustomerPaymentCenter, PendingDepositBar, pendingDepositsOf } from './PendingPayments' // [THÊM] trang Thanh toán mới + nhắc đơn chưa đặt cọc
+import { useMyInspections } from './ReturnInspection' // [THÊM 14] thông báo kết quả kiểm kho chờ xác nhận
+import { Code, FilterChips, Pager, UnitCodes, newestFirst, useClientPaging } from './listKit' // [THÊM] phân trang + mã nổi bật + mới nhất lên đầu
+import './CustomerAccount.css'
+
+function NavIcon({ name }) {
+  switch (name) {
+    case 'overview':
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="7" height="9" rx="1.5" />
+          <rect x="14" y="3" width="7" height="5" rx="1.5" />
+          <rect x="14" y="12" width="7" height="9" rx="1.5" />
+          <rect x="3" y="16" width="7" height="5" rx="1.5" />
+        </svg>
+      )
+    case 'storage':
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 9.5L12 4l9 5.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z" />
+          <path d="M9 21V13h6v8" />
+        </svg>
+      )
+    case 'contract':
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="8" y1="13" x2="16" y2="13" />
+          <line x1="8" y1="17" x2="13" y2="17" />
+        </svg>
+      )
+    case 'payment':
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="2" y="5" width="20" height="14" rx="2" />
+          <line x1="2" y1="10" x2="22" y2="10" />
+        </svg>
+      )
+    case 'notifications':
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </svg>
+      )
+    case 'profile':
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+      )
+    case 'search':
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          <line x1="11" y1="8" x2="11" y2="14" />
+          <line x1="8" y1="11" x2="14" y2="11" />
+        </svg>
+      )
+    default:
+      return null
+  }
+}
 
 /* Chuyển 'dd/mm/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày. */
 const dateSortValue = value => {
@@ -37,8 +113,8 @@ const RENTAL_STATUS_TONES = {
 
 const RENTAL_STATUS_FILTERS = [
   { value: 'Pending Deposit', label: 'Chờ thanh toán cọc' },
-  { value: 'Paid', label: 'Đã cọc · Chờ phân kho' },
-  { value: 'Confirmed', label: 'Chờ bàn giao' },
+  { value: 'Paid', label: 'Đã cọc · Đang tạo hợp đồng' },
+  { value: 'Confirmed', label: 'Chờ ký hợp đồng / nhận kho' },
   { value: 'Handed Over', label: 'Đang thuê' },
   { value: 'Expired', label: 'Hết hạn giữ kho' },
   { value: 'Cancelled', label: 'Đã hủy' }
@@ -46,8 +122,15 @@ const RENTAL_STATUS_FILTERS = [
 
 const STORAGE_VIEW_KEY = 'storespace_my_storage_view'
 
-function MyStoragePage({ customerRental, customerRentals, facilities }) {
+function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsChanged, onOpenPayment, onOpenContract, onSignContract }) {
   const [selectedRental, setSelectedRental] = useState(null)
+  const renewals = useContractRenewals()
+  const returns = useUnitReturns()
+  const lateFees = useLateFees()
+  const dialog = useDialog()
+  const [renewItem, setRenewItem] = useState(null)
+  const [returnItem, setReturnItem] = useState(null)
+  const [copiedId, setCopiedId] = useState(null)
   const [view, setView] = useState(() => {
     try { return localStorage.getItem(STORAGE_VIEW_KEY) === 'cards' ? 'cards' : 'grid' } catch { return 'grid' }
   })
@@ -62,26 +145,205 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
     : customerRental
       ? [customerRental]
       : []
-  //Đã thêm: 05/10/2026
+  const activeRentals = rentals.filter(rental => rental.status === 'Handed Over')
+  // [THÊM] Kiểu thẻ: mới nhất lên đầu, chia trang 5 thẻ / trang
+  const cardPaging = useClientPaging(newestFirst(rentals, { id: r => r.reservationId }), { pageSize: 5 })
+
+  const lateUnpaidOf = rental => (lateFees.byReservation(rental.reservationId)?.lateFees || [])
+    .filter(f => f.status === 'Unpaid' && !f.pendingPayment)
+    .reduce((n, f) => n + Number(f.amount || 0), 0)
+
+  const copyPin = (id, text) => {
+    if (!text) return
+    try {
+      navigator.clipboard?.writeText(String(text))
+      setCopiedId(id)
+      window.setTimeout(() => setCopiedId(curr => (curr === id ? null : curr)), 1800)
+    } catch { /* bỏ qua */ }
+  }
+
+  const openReturnFor = rental => {
+    const info = returns.byReservation(rental.reservationId)
+    if (info?.eligible) {
+      setReturnItem(info)
+    } else {
+      dialog.alert({
+        tone: 'warning',
+        title: 'Chưa thể đăng ký trả kho',
+        message: returns.error
+          ? `Không tải được thông tin trả kho: ${returns.error}`
+          : info?.reason || (returns.loading ? 'Đang tải thông tin trả kho, vui lòng thử lại sau giây lát.' : 'Kho này hiện chưa đủ điều kiện báo trả kho hoặc đã có yêu cầu trả kho đang xử lý.')
+      })
+    }
+  }
+
+  /* Tác vụ nhanh theo trạng thái thực tế của từng kho:
+     - Chưa đặt cọc -> Đóng tiền cọc (trỏ sang Thanh toán)
+     - Có hợp đồng chưa ký -> Ký hợp đồng (trỏ sang Hợp đồng & mở luồng ký)
+     - Có tiền thuê / phí trễ đến hạn -> Đóng tiền thuê (trỏ sang Thanh toán)
+     - Đang thuê -> Xem hợp đồng, Gia hạn, Báo trả kho */
+  const renderUnitActions = (rental, { stopProp = false, closeDetail = false } = {}) => {
+    const wrap = fn => event => {
+      if (stopProp) event.stopPropagation()
+      if (closeDetail) setSelectedRental(null)
+      fn()
+    }
+    const needDeposit = rental.status === 'Pending Deposit' && rental.paymentStatus !== 'Completed'
+    const isSigned = rental.contractStatus === 'Signed' || rental.contractStatus === 'Active'
+    const needSign = Boolean(rental.contractId && !isSigned && (rental.status === 'Confirmed' || rental.isRenewal))
+    const rentDue = Number(rental.rentPayableNow || 0) + lateUnpaidOf(rental)
+    const renewal = renewals.byReservation(rental.reservationId)
+    const returnInfo = returns.byReservation(rental.reservationId)
+
+    return (
+      <div className="cportal-unit-actions" onClick={stopProp ? e => e.stopPropagation() : undefined}>
+        {needDeposit && onOpenPayment && (
+          <button type="button" className="cportal-action-chip warn" onClick={wrap(() => onOpenPayment())}>
+            💳 Đóng tiền cọc
+          </button>
+        )}
+        {needSign && onSignContract && (
+          <button type="button" className="cportal-action-chip accent" onClick={wrap(() => onSignContract(rental))}>
+            ✍️ Ký hợp đồng
+          </button>
+        )}
+        {rentDue > 0 && onOpenPayment && (
+          <button type="button" className="cportal-action-chip warn" onClick={wrap(() => onOpenPayment())}>
+            💰 Đóng phí ({new Intl.NumberFormat('vi-VN').format(rentDue)}đ)
+          </button>
+        )}
+        {rental.contractId && onOpenContract && (
+          <button type="button" className="cportal-action-chip" onClick={wrap(() => onOpenContract(rental.reservationId))}>
+            📄 Hợp đồng
+          </button>
+        )}
+        {rental.status === 'Handed Over' && !renewal?.renewedBy && (
+          <button
+            type="button"
+            className="cportal-action-chip"
+            disabled={!renewal?.eligible}
+            title={renewal && !renewal.eligible ? renewal.reason || '' : 'Gia hạn thêm kỳ thuê mới'}
+            onClick={wrap(() => setRenewItem(renewal))}
+          >
+            ↻ Gia hạn
+          </button>
+        )}
+        {rental.status === 'Handed Over' && (
+          returnInfo?.request ? (
+            <button type="button" className="cportal-action-chip" onClick={wrap(() => onOpenContract?.(rental.reservationId))}>
+              ⇦ Đang trả kho
+            </button>
+          ) : (
+            <button type="button" className="cportal-action-chip" onClick={wrap(() => openReturnFor(rental))}>
+              ⇦ Báo trả kho
+            </button>
+          )
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="customer-content-page">
+      {renewItem && (
+        <RenewalModal
+          key={renewItem.reservationId}
+          item={renewItem}
+          onClose={() => setRenewItem(null)}
+          onDone={() => { renewals.reload(); onRentalsChanged?.() }}
+        />
+      )}
+      {returnItem && (
+        <ReturnRequestModal
+          item={returnItem}
+          rules={returns.rules}
+          fees={returns.fees}
+          onClose={() => setReturnItem(null)}
+          onDone={() => { returns.reload(); onRentalsChanged?.() }}
+        />
+      )}
 
       <div className="customer-page-heading">
         <div>
-          <span className="customer-eyebrow">
-            MY STORAGE
-          </span>
-
+          <span className="customer-eyebrow">KHO LƯU TRỮ CỦA BẠN</span>
           <h1>Kho của tôi</h1>
-
-          <p>Thông tin đặt chỗ và kho của bạn từ hệ thống StoreSpace.</p>
+          <p>Mã PIN ra vào cổng, vị trí ô kho và thao tác nhanh theo từng kho.</p>
         </div>
 
         <span className="page-count">
-          {rentals.filter(rental => rental.status === 'Handed Over').length} kho đang thuê
+          {activeRentals.length} đang thuê · {rentals.length} đơn
         </span>
       </div>
+
+      {/* THẺ RA VÀO NHANH CHO CÁC KHO ĐANG SỬ DỤNG */}
+      {activeRentals.length > 0 && (
+        <section className="cportal-access-section" aria-label="Thẻ ra vào kho đang thuê">
+          <div className="cportal-access-grid">
+            {activeRentals.slice(0, 3).map(item => {
+              const fac = facilities.find(f => f.name === item.facility)
+              const pinValue = item.accessValue || `PIN-${String(item.reservationId || '100').padStart(4, '0')}`
+              const keyId = item.reservationId || item.unitId
+              const rentDue = Number(item.rentPayableNow || 0) + lateUnpaidOf(item)
+              const renewal = renewals.byReservation(item.reservationId)
+              return (
+                <article key={keyId} className="cportal-access-card">
+                  <div className="cportal-access-top">
+                    <div>
+                      <span className="cportal-access-kicker">THẺ RA VÀO KHO · {item.facility}</span>
+                      <h3>Ô kho {item.unitId || (item.unitNumbers || []).join(', ') || 'Đang sử dụng'}</h3>
+                      <p>{item.type} · {item.size} {item.location ? `· ${item.location}` : '· Tầng 1 · Khu A'}</p>
+                    </div>
+                    <span className="cportal-access-status">● Đang hoạt động</span>
+                  </div>
+
+                  <div className="cportal-access-pin-box">
+                    <div>
+                      <small>{item.accessType || 'Mã PIN cổng & khóa điện tử'}</small>
+                      <span className="cportal-access-pin-code">{pinValue}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="cportal-copy-btn"
+                      onClick={() => copyPin(keyId, pinValue)}
+                    >
+                      {copiedId === keyId ? '✓ Đã sao chép' : 'Sao chép mã'}
+                    </button>
+                  </div>
+
+                  <div className="cportal-access-actions">
+                    {rentDue > 0 && onOpenPayment && (
+                      <button type="button" className="cportal-access-btn primary" onClick={() => onOpenPayment()}>
+                        💰 Đóng tiền thuê ({new Intl.NumberFormat('vi-VN').format(rentDue)}đ)
+                      </button>
+                    )}
+                    {onOpenContract && (
+                      <button type="button" className="cportal-access-btn" onClick={() => onOpenContract(item.reservationId)}>
+                        📄 Hợp đồng
+                      </button>
+                    )}
+                    {renewal?.eligible && !renewal?.renewedBy && (
+                      <button type="button" className="cportal-access-btn" onClick={() => setRenewItem(renewal)}>
+                        ↻ Gia hạn
+                      </button>
+                    )}
+                    <button type="button" className="cportal-access-btn" onClick={() => openReturnFor(item)}>
+                      ⇦ Báo trả kho
+                    </button>
+                    <button type="button" className="cportal-access-btn" onClick={() => setSelectedRental(item)}>
+                      Chi tiết kho
+                    </button>
+                  </div>
+
+                  <div className="cportal-access-meta">
+                    <span>📍 {fac?.location || 'Mở cửa 24/7 (06:00 – 22:00 hỗ trợ trực tiếp)'}</span>
+                    <strong>Còn {item.remainingDays} ngày</strong>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {rentals.length === 0 && <div className="empty-state">Bạn chưa có đặt chỗ hoặc kho thuê nào.</div>}
 
@@ -105,9 +367,9 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
               match: (rental, value) => rental.facility === value
             }
           ]}
-          initialSort={{ key: 'startDate', dir: 'desc' }}
+          getCreatedAt={rental => rental.createdAt}
           onRowClick={rental => setSelectedRental(rental)}
-          caption="Bấm vào một dòng (hoặc chọn dòng rồi nhấn Enter) để xem chi tiết kho."
+          caption="Bấm vào một dòng để xem chi tiết kho và thực hiện các tác vụ (ký hợp đồng, gia hạn, trả kho, đóng phí)."
           toolbarExtra={(
             <div className="dg-view-toggle" role="group" aria-label="Kiểu hiển thị">
               <button type="button" className="active" aria-pressed="true">Bảng</button>
@@ -119,15 +381,13 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
               key: 'reservationId',
               label: 'Mã đơn',
               sortValue: rental => Number(rental.reservationId) || 0,
-              render: rental => <span className="dg-cell-strong dg-nowrap">{formatReservationCode(rental.reservationId)}</span>
+              render: rental => <Code kind="order">{rental.reservationCode || formatReservationCode(rental.reservationId)}</Code>
             },
             { key: 'facility', label: 'Cơ sở' },
             {
               key: 'unitId',
               label: 'Kho',
-              render: rental => rental.unitId
-                ? <span className="dg-cell-strong dg-nowrap">{rental.unitId}</span>
-                : <span className="dg-cell-sub dg-nowrap">Chưa phân kho</span>
+              render: rental => <UnitCodes units={rental.unitNumbers?.length ? rental.unitNumbers : rental.unitId} max={3} />
             },
             {
               key: 'type',
@@ -158,18 +418,11 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
               render: rental => <span className="dg-nowrap">{new Intl.NumberFormat('vi-VN').format(Number(rental.monthlyPrice) || 0)}đ</span>
             },
             {
-              key: 'paymentStatus',
-              label: 'Tiền cọc',
-              render: rental => rental.paymentStatus === 'Completed'
-                ? <span className="dg-pill ok">Đã trả</span>
-                : <span className="dg-pill warn">Chưa trả</span>
-            },
-            {
               key: 'status',
               label: 'Trạng thái',
               sortValue: rental => rental.statusLabel,
               render: rental => <span className={`dg-pill dg-pill-wrap ${RENTAL_STATUS_TONES[rental.status] || 'info'}`}>{rental.statusLabel}</span>
-            },
+            }
           ]}
         />
       )}
@@ -183,7 +436,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
         </div>
       )}
 
-      {view === 'cards' && rentals.map(rental => ( //Map duyệt qua tất cả các kho trong mảng rentals
+      {view === 'cards' && cardPaging.pageRows.map(rental => ( //Map duyệt qua các kho của trang đang xem
         <div key={rental.reservationId || rental.contractId || rental.unitId} style={{ marginBottom: 28 }}>
           <div className="my-storage-card">
 
@@ -262,19 +515,13 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
               </div>
 
               <div className="storage-actions">
-
                 <button
                   type="button"
                   className="dashboard-primary-btn"
                   onClick={() => setSelectedRental(rental)}
                 >
-                  Xem chi tiết
+                  Xem chi tiết kho
                 </button>
-
-                <button className="dashboard-secondary-btn" type="button" disabled>
-                  Gia hạn (chưa hỗ trợ)
-                </button>
-
               </div>
 
             </div>
@@ -285,7 +532,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
 
             <div className="customer-info-card">
               <span className="customer-eyebrow">
-                ACCESS
+                QUYỀN TRUY CẬP & MÃ PIN
               </span>
 
               <h2>Quyền truy cập</h2>
@@ -296,14 +543,14 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
               </div>
 
               <p>
-                Mã truy cập được dùng để vào khu vực kho
+                Mã truy cập được dùng để mở cổng và vào khu vực kho
                 của bạn.
               </p>
             </div>
 
             <div className="customer-info-card">
               <span className="customer-eyebrow">
-                LOCATION
+                ĐỊA CHỈ & VỊ TRÍ Ô KHO
               </span>
 
               <h2>Vị trí kho</h2>
@@ -319,6 +566,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
 
         </div>
       ))}
+      {view === 'cards' && <Pager {...cardPaging.pagerProps} unit="kho" />}
 
       {selectedRental && (
         <div
@@ -352,13 +600,13 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
             <div className="overview-panel-heading">
               <div>
                 <span className="customer-eyebrow">
-                  STORAGE DETAILS
+                  THÔNG TIN VẬN HÀNH Ô KHO
                 </span>
 
                 <h2>Chi tiết kho lưu trữ</h2>
 
                 <p>
-                  Thông tin chi tiết về kho bạn đang thuê tại StoreSpace.
+                  Thông tin kỹ thuật, mã ra vào và tác vụ nhanh cho kho của bạn tại StoreSpace.
                 </p>
               </div>
 
@@ -381,7 +629,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
               }}
             >
               <span className="customer-eyebrow">
-                FACILITY INFORMATION
+                CƠ SỞ LƯU TRỮ & SƠ ĐỒ VỊ TRÍ
               </span>
 
               <h2 style={{ margin: '10px 0' }}>
@@ -397,7 +645,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
               </p>
 
               <p>
-                Vị trí kho: Tầng 1 · Khu A
+                Vị trí ô kho: {selectedRental.location || 'Tầng 1 · Khu A'}
               </p>
             </div>
 
@@ -414,8 +662,8 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
                 }}
               >
                 {[
-                  ['Mã đơn', formatReservationCode(selectedRental.reservationId)],
-                  ['Mã kho', selectedRental.unitId || 'Chưa phân kho'],
+                  ['Mã đơn', <Code kind="order">{selectedRental.reservationCode || formatReservationCode(selectedRental.reservationId)}</Code>],
+                  ['Mã kho', <UnitCodes units={selectedRental.unitNumbers?.length ? selectedRental.unitNumbers : selectedRental.unitId} max={8} />],
                   ['Loại kho', selectedRental.type],
                   ['Diện tích / kích thước', selectedRental.size],
                   ['Giá thuê', selectedRental.price],
@@ -480,35 +728,11 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
               </div>
             </section>
 
-            {/* THÔNG TIN HỢP ĐỒNG */}
+            {/* TÁC VỤ NHANH TRÊN KHO NÀY */}
             <section style={{ marginTop: 24 }}>
-              <h3>Thông tin hợp đồng</h3>
-
-              <div
-                style={{
-                  padding: 18,
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 12,
-                  marginTop: 12
-                }}
-              >
-                <p>
-                  <strong>Mã hợp đồng: </strong>
-                  {selectedRental.contractId ||
-                    `SS-${selectedRental.unitId || 'N/A'}`}
-                </p>
-
-                <p>
-                  <strong>Trạng thái: </strong>
-                  <span style={{ fontWeight: 700 }}>
-                    {selectedRental.contractStatus || selectedRental.statusLabel}
-                  </span>
-                </p>
-
-                <p>
-                  <strong>Ngày kết thúc hợp đồng: </strong>
-                  {selectedRental.endDate || 'Chưa cập nhật'}
-                </p>
+              <h3>Tác vụ liên quan đến kho này</h3>
+              <div style={{ marginTop: 12 }}>
+                {renderUnitActions(selectedRental, { closeDetail: true })}
               </div>
             </section>
 
@@ -518,7 +742,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
               style={{ marginTop: 24 }}
               onClick={() => setSelectedRental(null)}
             >
-              Hoàn tất
+              Đóng cửa sổ
             </button>
           </div>
         </div>
@@ -528,7 +752,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities }) {
   )
 }
 
-function ContractPage({ customerRental, customerRentals, getCurrentUser, facilities = [] }) {
+function ContractPage({ customerRental, customerRentals, getCurrentUser, facilities = [], onRentalsChanged, onOpenPayment }) {
   // Danh sách hợp đồng đã bàn giao. Hợp đồng chờ ký trước bàn giao (đơn "Confirmed") được ký ở khu
   // "Hợp đồng chờ ký" phía trên, theo nhóm (một hợp đồng có thể gồm nhiều kho).
   const rentals = Array.isArray(customerRentals)
@@ -542,32 +766,219 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const [openRental, setOpenRental] = useState(null)
   const [signGroup, setSignGroup] = useState(null)
   const [detail, setDetail] = useState(null) // { group, signature?, mail? }
+  const renewals = useContractRenewals()
+  const [renewItem, setRenewItem] = useState(null)
+  const [cancelRental, setCancelRental] = useState(null)
+  const returns = useUnitReturns()
+  const inspections = useMyInspections() // [14] kết quả kiểm kho
+  const lateFees = useLateFees() // [7a] phí trễ hạn tiền thuê
+  const lateFeeOf = rental => {
+    const item = lateFees.byReservation(rental.reservationId)
+    return item ? { ...item, policy: lateFees.policy } : null
+  }
+  const lateUnpaidOf = rental => (lateFeeOf(rental)?.lateFees || [])
+    .filter(f => f.status === 'Unpaid' && !f.pendingPayment)
+    .reduce((n, f) => n + Number(f.amount || 0), 0)
+  const [returnItem, setReturnItem] = useState(null)
+  const [creatingContracts, setCreatingContracts] = useState(false)
   const policies = usePolicies()
   const dialog = useDialog()
   const customer = getCurrentUser()
   const customerName = customer?.name
 
+  /* Đóng tiền thuê: sau khi nhận kho (toàn bộ hoặc tháng đầu) / từng kỳ khi đang thuê.
+     Backend quyết định đóng được bao nhiêu (GET/POST /api/rent-payments, POST /api/vnpay/create). */
+  const [payingRent, setPayingRent] = useState(null)
+  const payRent = async rental => {
+    // [7a] tiền thuê đóng được ngay + phí trễ hạn chưa đóng (VNPay thu chung 1 giao dịch)
+    const rentAmount = Number(rental.rentPayableNow || 0)
+    const lateAmount = lateUnpaidOf(rental)
+    const amount = rentAmount + lateAmount
+    if (!amount) return
+    const vnd = n => new Intl.NumberFormat('vi-VN').format(n)
+    const ok = await dialog.confirm({
+      tone: 'info',
+      title: `Đóng ${vnd(amount)}đ${lateAmount > 0 ? (rentAmount > 0 ? ' (tiền thuê + phí trễ hạn)' : ' phí trễ hạn') : ' tiền thuê'}?`,
+      message: `Hợp đồng ${rental.contractNumber || rental.reservationCode} · ${rental.paymentPlan === 'Upfront' ? 'trả 1 lần (toàn bộ kỳ thuê)' : 'trả theo tháng'}.` +
+        (lateAmount > 0 ? `\nGồm ${rentAmount > 0 ? `${vnd(rentAmount)}đ tiền thuê và ` : ''}${vnd(lateAmount)}đ phí trễ hạn.` : ''),
+      confirmLabel: 'Đóng tiền'
+    })
+    if (!ok) return
+    setPayingRent(rental.reservationId)
+    try {
+      const demo = SIMULATED_PAYMENT_ENABLED && await dialog.confirm({
+        tone: 'info', title: 'Chọn cách thanh toán', message: 'Đang bật chế độ demo. Thanh toán mô phỏng (không qua VNPay)?',
+        confirmLabel: 'Mô phỏng', cancelLabel: 'Qua VNPay'
+      })
+      if (!demo) {
+        await startVnPayPayment([rental.reservationId], { amount, count: 1, label: rental.contractNumber, kind: 'rent' })
+        return
+      }
+      const messages = []
+      if (rentAmount > 0) messages.push((await apiPost(`/api/rent-payments/${rental.reservationId}/pay-demo`, {})).message)
+      if (lateAmount > 0) messages.push((await payLateFeesDemo(rental.reservationId)).message)
+      onRentalsChanged?.()
+      lateFees.reload()
+      await dialog.alert({ tone: 'success', title: 'Đã thanh toán', message: messages.join(' ') })
+    } catch (error) {
+      await dialog.alert({ tone: 'danger', title: 'Chưa đóng được tiền thuê', message: error.message })
+    } finally {
+      setPayingRent(null)
+    }
+  }
+
   /*
-   * Hợp đồng ký online SAU KHI khách đã đặt cọc và Facility Manager đã duyệt.
+   * Hợp đồng ký online NGAY SAU KHI khách đặt cọc (không còn bước Facility Manager duyệt).
    * Backend: MỘT đơn đặt chỗ (có thể nhiều kho, đặt từ giỏ hàng) = MỘT hợp đồng (ContractNumber),
    * nên mỗi nhóm ở đây là một đơn; danh sách kho nằm trong rental.units (Phụ lục 01).
    */
   const allRentals = Array.isArray(customerRentals) ? customerRentals.filter(Boolean) : []
   const unitCountOf = r => (r.units?.length || r.unitCount || 1)
+  // Phụ lục gia hạn: lấy hợp đồng gốc từ API danh sách đặt chỗ, hoặc từ API gia hạn (nếu backend dùng API cũ).
+  const renewedFromOf = r => r.renewedFrom || renewals.byReservation(r.reservationId)?.renewedFrom || null
+  const isRenewalRental = r => Boolean(r.isRenewal || renewedFromOf(r))
   const buildGroups = list => list.map(r => ({
     key: String(r.reservationId),
     code: r.contractNumber || r.reservationCode || `HĐ-${r.contractId || r.reservationId}`,
-    title: unitCountOf(r) > 1
-      ? `Hợp đồng thuê ${unitCountOf(r)} kho · ${r.facility}`
-      : `Hợp đồng thuê kho ${r.unitId || ''}`.trim(),
+    title: isRenewalRental(r)
+      ? `Phụ lục gia hạn${renewedFromOf(r)?.contractNumber ? ` HĐ ${renewedFromOf(r).contractNumber}` : ''} · ${unitCountOf(r) > 1 ? `${unitCountOf(r)} kho` : `kho ${r.unitId || ''}`.trim()}`
+      : unitCountOf(r) > 1
+        ? `Hợp đồng thuê ${unitCountOf(r)} kho · ${r.facility}`
+        : `Hợp đồng thuê kho ${r.unitId || ''}`.trim(),
+    renewedFrom: renewedFromOf(r),
     rentals: [r]
   }))
   const facilityAddressOf = group => facilities.find(f => f.name === group.rentals[0].facility)?.location
   const isSignedRental = r => Boolean(signatures[String(r.contractId)]) || r.contractStatus === 'Signed' || r.contractStatus === 'Active'
-  const toSign = allRentals.filter(r => r.status === 'Confirmed' && r.contractId && !isSignedRental(r))
+  // Chờ ký: hợp đồng mới (đã cọc) + phụ lục gia hạn chưa ký (khách vẫn đang dùng kho nên đơn ở trạng thái "Handed Over").
+  const toSign = allRentals.filter(r => r.contractId && !isSignedRental(r) &&
+    (r.status === 'Confirmed' || (r.status === 'Handed Over' && isRenewalRental(r))))
   const preparing = allRentals.filter(r => r.status === 'Confirmed' && !r.contractId)
   const waitingApproval = allRentals.filter(r => r.status === 'Paid')
   const signedBeforeHandover = allRentals.filter(r => r.status === 'Confirmed' && r.contractId && isSignedRental(r))
+
+  /*
+   * [SỬA] Chia trang Hợp đồng thành các tab để khách thấy ngay mình đang ở đâu:
+   *   pending  - đã cọc: chờ ký / đang tạo hợp đồng / đã ký chờ nhận kho
+   *   active   - đang thuê (kèm gia hạn)
+   *   returns  - đang trả kho / chờ quyết toán, hoàn cọc
+   *   ended    - đã kết thúc
+   */
+  const activeRentals = rentals.filter(r => r.status === 'Handed Over')
+  const endedRentals = rentals.filter(r => r.status !== 'Handed Over')
+  const pendingCountAll = toSign.length + preparing.length + waitingApproval.length + signedBeforeHandover.length
+  const returnsInProgress = returns.items.filter(i => {
+    if (!i.request) return false
+    const insp = inspections.byReservation(i.reservationId)
+    if (insp && insp.status !== 'Settled') return true
+    return i.request.status !== 'Completed' ||
+      Number(i.request.amountOwed) > 0 ||
+      (Number(i.request.refundAmount) > 0 && i.request.refundStatus !== 'Completed')
+  }).length
+  const [contractTab, setContractTab] = useState(() => (pendingCountAll > 0 ? 'pending' : 'active'))
+  const tabOfReservation = id => {
+    const r = allRentals.find(x => String(x.reservationId) === String(id))
+    if (!r) return null
+    if (r.status === 'Handed Over') return 'active'
+    if (r.status === 'Confirmed' || r.status === 'Paid') return 'pending'
+    return 'ended'
+  }
+
+  /*
+   * Không còn bước Manager duyệt: đơn đã cọc ("Paid") được xác nhận + tạo hợp đồng ngay.
+   * Thường đã làm lúc thanh toán; ở đây tự thử lại nếu lần đó lỗi mạng.
+   */
+  const createPendingContracts = async (ids, showResult = false) => {
+    setCreatingContracts(true)
+    const result = await confirmAfterDeposit(ids)
+    setCreatingContracts(false)
+    if (result.confirmed?.length) onRentalsChanged?.()
+    if (showResult && (result.error || result.failed?.length)) {
+      await dialog.alert({
+        tone: 'danger',
+        title: 'Chưa tạo được hợp đồng',
+        message: result.error?.message || result.failed.map(f => f.message).join('\n')
+      })
+    }
+  }
+  const waitingKey = waitingApproval.map(r => r.reservationId).join(',')
+  useEffect(() => {
+    if (waitingKey) createPendingContracts(waitingKey.split(','))
+  }, [waitingKey])
+
+  // Mở từ thông báo / chỗ khác: cuộn tới đúng thẻ hợp đồng khi danh sách đã hiển thị.
+  const [focusTick, setFocusTick] = useState(0)
+  useEffect(() => {
+    const onOpen = () => setFocusTick(t => t + 1)
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
+  }, [])
+  useEffect(() => {
+    // [SỬA] Thẻ hợp đồng cần mở nằm ở tab khác -> chuyển tab trước rồi mới cuộn tới
+    let pending = null
+    try { pending = sessionStorage.getItem('storespace_focus_contract') } catch { /* bỏ qua */ }
+    const targetTab = pending ? tabOfReservation(pending) : null
+    if (targetTab && targetTab !== 'pending') setContractTab(targetTab)
+    const timer = window.setTimeout(() => {
+      let wanted = null
+      try { wanted = sessionStorage.getItem('storespace_focus_contract') } catch { /* bỏ qua */ }
+      if (wanted && document.getElementById(`contract-${wanted}`)) {
+        takePendingContractFocus()
+        focusContract(wanted)
+      } else if (wanted && (targetTab === 'active' || targetTab === 'ended')) {
+        // Thẻ nằm ở trang khác của danh sách -> bỏ ô tìm, mở đúng trang rồi cuộn tới
+        const list = newestFirst(targetTab === 'ended' ? endedRentals : activeRentals, { id: r => r.reservationId })
+        const index = list.findIndex(r => String(r.reservationId) === String(wanted))
+        if (index >= 0) {
+          setContractQuery('')
+          contractPaging.setPage(Math.floor(index / contractPaging.pageSize) + 1)
+          retry = window.setTimeout(() => {
+            if (document.getElementById(`contract-${wanted}`)) { takePendingContractFocus(); focusContract(wanted) }
+          }, 200)
+        }
+      }
+    }, 350)
+    let retry = null
+    return () => { window.clearTimeout(timer); window.clearTimeout(retry) }
+  }, [focusTick, rentals.map(r => r.reservationId).join(',')])
+
+  // Thông báo "Kho sắp hết hạn" -> "Gia hạn ngay": mở hộp thoại gia hạn của đúng hợp đồng.
+  const [renewTick, setRenewTick] = useState(0)
+  useEffect(() => {
+    const onOpen = () => setRenewTick(t => t + 1)
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
+  }, [])
+  useEffect(() => {
+    let wanted = null
+    try { wanted = sessionStorage.getItem(RENEW_REQUEST_KEY) } catch { /* bỏ qua */ }
+    if (!wanted || !renewals.data) return
+    takeRenewalRequest()
+    const item = renewals.byReservation(wanted)
+    if (item?.eligible && !item.pendingRenewal) setRenewItem(item)
+  }, [renewals.data, renewTick])
+
+  // "Gia hạn thành công, vui lòng ký phụ lục gia hạn" -> OK: mở màn hình ký đúng hợp đồng khi dữ liệu đã có.
+  const [signRequest, setSignRequest] = useState(() => peekContractSignRequest())
+  useEffect(() => {
+    const onOpen = () => setSignRequest(peekContractSignRequest())
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
+  }, [])
+  useEffect(() => {
+    if (!signRequest) return
+    const target = allRentals.find(r => String(r.contractId) === String(signRequest))
+    if (!target) {
+      onRentalsChanged?.() // hợp đồng vừa tạo chưa có trong danh sách -> tải lại
+      return
+    }
+    clearContractSignRequest()
+    setSignRequest(null)
+    if (!isSignedRental(target)) {
+      setDetail(null)
+      setSignGroup(buildGroups([target])[0])
+    }
+  }, [signRequest, allRentals.map(r => `${r.contractId}:${r.contractStatus}`).join(',')])
 
   const signGroupContracts = async ({ image, termsVersion }) => {
     const done = []
@@ -595,6 +1006,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     }
     if (errors.length) throw new Error(`Chưa ký được: ${errors.join('; ')}`)
     const signedGroup = signGroup
+    const remainingToSign = toSign.filter(r => !signedGroup.rentals.some(x => x.reservationId === r.reservationId)).length
     setSignGroup(null)
     const first = done[0]?.result
     const signature = first ? { image: first.signatureImage, signerName: first.signerName, signedAt: first.signedAt } : null
@@ -609,9 +1021,13 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     setDetail({ group: signedGroup, signature, mail })
     await dialog.alert({
       tone: 'success',
-      title: 'Đã ký hợp đồng',
-      message: `Bạn đã ký hợp đồng ${signedGroup.code} (${unitCountOf(signedGroup.rentals[0])} kho). Hãy đến cơ sở vào ngày ${signedGroup.rentals[0].startDate} để nhận kho, mang theo CCCD.\n${mail.text}`
+      title: signedGroup.renewedFrom ? 'Đã ký phụ lục gia hạn' : 'Đã ký hợp đồng',
+      message: signedGroup.renewedFrom
+        ? `Bạn đã ký phụ lục gia hạn ${signedGroup.code} của hợp đồng ${signedGroup.renewedFrom.contractNumber}, thời hạn ${signedGroup.rentals[0].startDate} → ${signedGroup.rentals[0].endDate}. Bạn tiếp tục sử dụng kho như hiện tại, không cần đến cơ sở.\n${mail.text}${remainingToSign > 0 ? `\nBạn còn ${remainingToSign} hợp đồng chờ ký.` : ''}`
+        : `Bạn đã ký hợp đồng ${signedGroup.code} (${unitCountOf(signedGroup.rentals[0])} kho). Hãy đến cơ sở vào ngày ${signedGroup.rentals[0].startDate} để nhận kho, mang theo CCCD.\n${mail.text}${remainingToSign > 0 ? `\nBạn còn ${remainingToSign} hợp đồng chờ ký.` : ''}`
     })
+    renewals.reload()
+    onRentalsChanged?.()
   }
 
   const keyOf = rental => String(rental.contractId)
@@ -674,7 +1090,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
       setLoadedSignatures(nextLoaded)
     })
     return () => { cancelled = true }
-  }, [customerName])
+  }, [customerName, rentals.map(keyOf).join(',')])
 
   const handleSign = async (rental, record) => {
     const contractId = keyOf(rental)
@@ -699,42 +1115,103 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
 
   const pendingCount = rentals.filter(r => loadedSignatures[keyOf(r)] && !signatures[keyOf(r)]).length
 
+  // [SỬA] Danh sách hợp đồng của tab đang mở: tìm + mới nhất lên đầu + chia trang
+  const [contractQuery, setContractQuery] = useState('')
+  const tabRentals = contractTab === 'ended' ? endedRentals : activeRentals
+  const listedContracts = newestFirst(tabRentals.filter(r => {
+    const q = contractQuery.trim().toLowerCase()
+    return !q || [r.contractNumber, r.reservationCode, r.facility, ...(r.unitNumbers || [r.unitId])].some(v => String(v ?? '').toLowerCase().includes(q))
+  }), { id: r => r.reservationId })
+  const contractPaging = useClientPaging(listedContracts, { pageSize: 5, resetKey: `${contractTab}|${contractQuery}` })
+
   return (
     <div className="customer-content-page">
 
       <div className="customer-page-heading">
         <div>
-          <span className="customer-eyebrow">
-            MY CONTRACT
-          </span>
-
-          <h1>Hợp đồng</h1>
-
-          <p>
-            Quản lý và ký hợp đồng thuê kho của bạn.
-          </p>
+          <span className="customer-eyebrow">HỢP ĐỒNG & THỦ TỤC</span>
+          <h1>Hợp đồng thuê kho</h1>
+          <p>Ký hợp đồng trực tuyến, gia hạn kỳ mới và đăng ký trả kho.</p>
         </div>
 
-        {pendingCount > 0 && (
+        {(pendingCount > 0 || toSign.length > 0) && (
           <span className="page-count">
-            {pendingCount} hợp đồng chờ ký
+            {toSign.length || pendingCount} hợp đồng chờ ký
           </span>
         )}
       </div>
 
-      {(toSign.length > 0 || preparing.length > 0 || waitingApproval.length > 0 || signedBeforeHandover.length > 0) && (
+      <FilterChips
+        options={[
+          ['pending', 'Đã cọc · chờ nhận kho'],
+          ['active', 'Đang thuê'],
+          ['returns', 'Trả kho'],
+          ['ended', 'Đã kết thúc']
+        ]}
+        value={contractTab}
+        onChange={setContractTab}
+        counts={{ pending: pendingCountAll, active: activeRentals.length, returns: returnsInProgress, ended: endedRentals.length }}
+        className="cc-tabs"
+      />
+
+      {contractTab === 'returns' && (
+        <>
+          <p className="cc-tab-hint">Kho bạn đã báo trả: theo dõi từng bước từ hẹn trả kho đến khi nhận lại tiền cọc.</p>
+          <ReturnSection returns={returns} onChanged={onRentalsChanged} />
+          {!returns.loading && !returns.items.some(i => i.request) && <div className="empty-state">Bạn không có kho nào đang trả. Muốn trả kho, mở tab "Đang thuê" và bấm "Trả kho" trên hợp đồng.</div>}
+        </>
+      )}
+
+      {contractTab === 'active' && (
+        <RenewalSection renewals={renewals} onRenew={setRenewItem} onChanged={onRentalsChanged} />
+      )}
+
+      {returnItem && (
+        <ReturnRequestModal
+          item={returnItem}
+          rules={returns.rules}
+          fees={returns.fees}
+          onClose={() => setReturnItem(null)}
+          onDone={() => { returns.reload(); onRentalsChanged?.() }}
+        />
+      )}
+
+      {cancelRental && (
+        <CancelReservationModal
+          rental={cancelRental}
+          onClose={() => setCancelRental(null)}
+          onDone={() => { onRentalsChanged?.(); renewals.reload() }}
+        />
+      )}
+
+      {renewItem && (
+        <RenewalModal
+          key={renewItem.reservationId}
+          item={renewItem}
+          onClose={() => setRenewItem(null)}
+          onDone={() => { renewals.reload(); onRentalsChanged?.() }}
+        />
+      )}
+
+      {contractTab === 'pending' && pendingCountAll === 0 && (
+        <div className="empty-state">Không có đơn nào đang chờ. Đơn đã đặt cọc sẽ hiện ở đây để bạn ký hợp đồng và xem lịch nhận kho.</div>
+      )}
+      {contractTab === 'pending' && pendingCountAll > 0 && (
         <section className="sign-queue" aria-label="Hợp đồng đang xử lý">
           {buildGroups(toSign).map(group => (
             <article key={group.key} className="sign-card">
               <div>
-                <span className="sign-badge todo">Chờ bạn ký</span>
+                <span className="sign-badge todo">{group.renewedFrom ? 'Chờ ký phụ lục gia hạn' : 'Chờ bạn ký'}</span>
                 <h3>{group.title}</h3>
-                <p>Mã {group.code} · {group.rentals[0].startDate} → {group.rentals[0].endDate} · Đã đặt cọc, Manager đã duyệt.</p>
+                <p>Mã {group.code} · {group.rentals[0].startDate} → {group.rentals[0].endDate} · {group.renewedFrom
+                  ? `Đã thanh toán gia hạn hợp đồng ${group.renewedFrom.contractNumber}. Bạn tiếp tục dùng kho, chỉ cần ký phụ lục.`
+                  : 'Đã đặt cọc, kho đã được giữ cho bạn.'}</p>
                 <div className="sign-units">{group.rentals.flatMap(r => r.units || []).map(u => <span key={u.number}>{u.number}</span>)}</div>
               </div>
               <div className="sign-actions">
+                {!group.renewedFrom && <button type="button" className="cr-link-btn" onClick={() => setCancelRental(group.rentals[0])}>Hủy đặt kho</button>}
                 <button type="button" className="dashboard-secondary-btn" onClick={() => setDetail({ group })}>Xem chi tiết</button>
-                <button type="button" className="dashboard-primary-btn" onClick={() => setSignGroup(group)}>Xem & ký hợp đồng</button>
+                <button type="button" className="dashboard-primary-btn" onClick={() => setSignGroup(group)}>{group.renewedFrom ? 'Xem & ký phụ lục' : 'Xem & ký hợp đồng'}</button>
               </div>
             </article>
           ))}
@@ -743,20 +1220,24 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
               <div>
                 <span className="sign-badge wait">Đang tạo hợp đồng</span>
                 <h3>{group.title}</h3>
-                <p>Manager đã duyệt. Hợp đồng sẽ sẵn sàng để ký ngay khi hệ thống tạo xong.</p>
+                <p>Đã nhận tiền cọc. Hợp đồng sẽ sẵn sàng để ký ngay khi hệ thống tạo xong.</p>
               </div>
             </article>
           ))}
           {buildGroups(waitingApproval).map(group => (
             <article key={group.key} className="sign-card waiting">
               <div>
-                <span className="sign-badge wait">Chờ Manager duyệt</span>
+                <span className="sign-badge wait">Đang tạo hợp đồng</span>
                 <h3>{group.title}</h3>
-                <p>Đã nhận tiền cọc. Bạn sẽ ký hợp đồng online sau khi Facility Manager duyệt và phân kho.</p>
+                <p>Đã nhận tiền cọc, hệ thống đang tạo hợp đồng để bạn ký. Nếu chờ lâu, bấm "Tạo hợp đồng ngay".</p>
                 <div className="sign-units">{group.rentals.flatMap(r => r.units || []).map(u => <span key={u.number}>{u.number}</span>)}</div>
               </div>
               <div className="sign-actions">
+                <button type="button" className="cr-link-btn" onClick={() => setCancelRental(group.rentals[0])}>Hủy đặt kho</button>
                 <button type="button" className="dashboard-secondary-btn" onClick={() => setDetail({ group })}>Xem bản xem trước</button>
+                <button type="button" className="dashboard-primary-btn" disabled={creatingContracts} onClick={() => createPendingContracts(group.rentals.map(r => r.reservationId), true)}>
+                  {creatingContracts ? 'Đang tạo...' : 'Tạo hợp đồng ngay'}
+                </button>
               </div>
             </article>
           ))}
@@ -766,9 +1247,13 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
                 <span className="sign-badge done">Đã ký · Chờ nhận kho</span>
                 <h3>{group.title}</h3>
                 <p>Đến cơ sở vào ngày {group.rentals[0].startDate} để nhận kho, mang theo CCCD.</p>
+                {group.rentals[0].paymentPlan && Number(group.rentals[0].rentDueAtStart) > 0 && (
+                  <p>Sau khi nhận kho, bạn đóng {new Intl.NumberFormat('vi-VN').format(Number(group.rentals[0].rentDueAtStart))}đ tiền thuê ({group.rentals[0].paymentPlan === 'Upfront' ? 'trả 1 lần, toàn bộ kỳ thuê' : 'trả theo tháng, tháng đầu'}) tại mục <strong>Thanh toán & Hóa đơn</strong>.</p>
+                )}
                 <div className="sign-units">{group.rentals.flatMap(r => r.units || []).map(u => <span key={u.number}>{u.number}</span>)}</div>
               </div>
               <div className="sign-actions">
+                <button type="button" className="cr-link-btn" onClick={() => setCancelRental(group.rentals[0])}>Hủy đặt kho</button>
                 <button type="button" className="dashboard-primary-btn" onClick={() => setDetail({ group })}>Xem chi tiết hợp đồng</button>
               </div>
             </article>
@@ -790,156 +1275,73 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
           autoMailResult={detail.mail}
           onClose={() => setDetail(null)}
           onSign={group => { setDetail(null); setSignGroup(group) }}
+          onCancel={['Paid', 'Confirmed'].includes(detail.group.rentals[0]?.status) && !detail.group.renewedFrom && !detail.group.rentals[0]?.isRenewal
+            ? () => { const r = detail.group.rentals[0]; setDetail(null); setCancelRental(r) }
+            : undefined}
+          onRenew={(() => {
+            const renewal = renewals.byReservation(detail.group.rentals[0]?.reservationId)
+            return renewal?.eligible && !renewal.pendingRenewal ? () => { setDetail(null); setRenewItem(renewal) } : undefined
+          })()}
         />
       )}
 
-      {rentals.length === 0 && <div className="empty-state">Chưa có hợp đồng trong database.</div>}
-      {rentals.map(rental => {
+      {(contractTab === 'active' || contractTab === 'ended') && (
+        <div className="cc-list-head">
+          <div>
+            <h2>{contractTab === 'active' ? 'Hợp đồng đang thuê' : 'Hợp đồng đã kết thúc'} <span>{tabRentals.length}</span></h2>
+            <p>{contractTab === 'active' ? 'Kho bạn đang sử dụng. Hợp đồng mới nhất nằm trên cùng.' : 'Hợp đồng đã trả kho hoặc đã đóng.'}</p>
+          </div>
+          {tabRentals.length > 0 && (
+            <input className="ss-search" type="search" value={contractQuery} onChange={e => setContractQuery(e.target.value)} placeholder="Tìm mã HĐ, mã đơn, cơ sở, mã kho..." aria-label="Tìm hợp đồng" />
+          )}
+        </div>
+      )}
+      {(contractTab === 'active' || contractTab === 'ended') && tabRentals.length === 0 && (
+        <div className="empty-state">{contractTab === 'active' ? 'Bạn chưa có kho nào đang thuê.' : 'Chưa có hợp đồng nào kết thúc.'}</div>
+      )}
+      {(contractTab === 'active' || contractTab === 'ended') && tabRentals.length > 0 && listedContracts.length === 0 && <div className="empty-state">Không có hợp đồng phù hợp.</div>}
+      {(contractTab === 'active' || contractTab === 'ended') && contractPaging.pageRows.map(rental => {
         const signature = signatures[keyOf(rental)]
-        const isSigned = !!signature
         const signatureError = signatureErrors[keyOf(rental)]
         const signatureLoaded = loadedSignatures[keyOf(rental)]
+        const renewal = renewals.byReservation(rental.reservationId)
 
         return (
-          <div key={keyOf(rental)} style={{ marginBottom: 28 }}>
-            <div className="contract-card">
-
-              <div className="contract-header">
-
-                <div>
-                  <span>HỢP ĐỒNG THUÊ KHO</span>
-
-                  <h2>
-                    Hợp đồng {rental.contractNumber || `#${keyOf(rental)}`}
-                  </h2>
-
-                  <p>
-                    StoreSpace · {rental.facility}
-                  </p>
-                </div>
-
-                <span
-                  className="contract-status"
-                  style={isSigned ? undefined : { background: '#fff3d6', color: '#9a6700' }}
-                >
-                  {isSigned ? 'Đã ký' : rental.contractStatus || 'Chưa ký'}
-                </span>
-
-              </div>
-
-              {signatureError && (
-                <div className="auth-message error">
-                  Không tải được trạng thái chữ ký: {signatureError}
-                  <button type="button" onClick={() => reloadSignature(rental)} style={{ marginLeft: 12 }}>
-                    Thử lại
-                  </button>
-                </div>
-              )}
-              {!isSigned && !signatureError && (
-                <div style={{ margin: '0 0 16px', padding: '12px 16px', borderRadius: 12, background: '#fff8e6', border: '1px solid #f3d98b', color: '#7a5600' }}>
-                  {signatureLoaded ? 'Hợp đồng chưa có chữ ký điện tử.' : 'Đang tải trạng thái chữ ký từ backend...'}
-                </div>
-              )}
-
-              <div className="contract-details">
-
-                <div>
-                  <small>Khách hàng</small>
-                  <strong>
-                    {customerName}
-                  </strong>
-                </div>
-
-                <div>
-                  <small>Mã kho</small>
-                  <strong>{rental.unitId}</strong>
-                </div>
-
-                <div>
-                  <small>Loại kho</small>
-                  <strong>{rental.type}</strong>
-                </div>
-
-                <div>
-                  <small>Diện tích</small>
-                  <strong>{rental.size}</strong>
-                </div>
-
-                <div>
-                  <small>Ngày bắt đầu</small>
-                  <strong>{rental.startDate}</strong>
-                </div>
-
-                <div>
-                  <small>Ngày kết thúc</small>
-                  <strong>{rental.endDate}</strong>
-                </div>
-
-                <div>
-                  <small>Tiền thuê</small>
-                  <strong>{rental.price}</strong>
-                </div>
-
-                <div>
-                  <small>Trạng thái ký</small>
-                  <strong className={isSigned ? 'status-text' : undefined}>
-                    {isSigned ? `Đã ký ${formatSignedAt(signature.signedAt)}` : 'Chưa ký'}
-                  </strong>
-                </div>
-
-              </div>
-
-              <div className="contract-progress">
-
-                <div>
-                  <span>Tiến độ thời hạn hợp đồng</span>
-                  <strong>
-                    {rental.progress}%
-                  </strong>
-                </div>
-
-                <div className="rental-progress">
-                  <div
-                    style={{
-                      width: `${rental.progress}%`
-                    }}
-                  />
-                </div>
-
-                <small>
-                  Còn {rental.remainingDays} ngày
-                  trước khi hợp đồng kết thúc.
-                </small>
-
-              </div>
-
-              <div className="contract-actions">
-
-                {!isSigned && signatureLoaded && (
-                  <button
-                    type="button"
-                    className="dashboard-primary-btn"
-                    onClick={() => setOpenRental(rental)}
-                  >
-                    ✍ Ký hợp đồng
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  className={isSigned ? 'dashboard-primary-btn' : 'dashboard-secondary-btn'}
-                  onClick={() => setDetail({ group: buildGroups([rental])[0], signature: signature || undefined })}
-                >
-                  Xem chi tiết hợp đồng
-                </button>
-
-              </div>
-
-            </div>
-
-          </div>
+          <ContractCard
+            key={keyOf(rental)}
+            rental={rental}
+            facility={facilities.find(f => f.name === rental.facility)}
+            customerName={customerName}
+            signature={signature}
+            signatureLoaded={signatureLoaded}
+            signatureError={signatureError}
+            renewal={renewal}
+            onReloadSignature={() => reloadSignature(rental)}
+            onSign={() => setOpenRental(rental)}
+            onDetail={() => setDetail({ group: buildGroups([rental])[0], signature: signature || undefined })}
+            onRenew={renewal?.eligible ? () => setRenewItem(renewal) : undefined}
+            returnInfo={returns.byReservation(rental.reservationId)}
+            inspection={inspections.byReservation(rental.reservationId)}
+            onPayRent={() => payRent(rental)}
+            onOpenPayment={onOpenPayment}
+            payingRent={payingRent === rental.reservationId}
+            lateFee={lateFeeOf(rental)}
+            onReturn={rental.status === 'Handed Over' ? () => {
+              const info = returns.byReservation(rental.reservationId)
+              if (info?.eligible) setReturnItem(info)
+              else dialog.alert({
+                tone: 'warning',
+                title: 'Chưa trả kho được',
+                message: returns.error
+                  ? `Không tải được thông tin trả kho: ${returns.error}`
+                  : info?.reason || (returns.loading ? 'Đang tải thông tin trả kho, thử lại sau giây lát.' : 'Hợp đồng này hiện chưa thể báo trả kho.')
+              })
+            } : undefined}
+          />
         )
       })}
+
+      {(contractTab === 'active' || contractTab === 'ended') && <Pager {...contractPaging.pagerProps} unit="hợp đồng" />}
 
       {openRental && (
         <ContractModal
@@ -954,86 +1356,92 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   )
 }
 
-function CustomerPaymentPage({ reservations }) {
-  const pending = reservations.filter(item =>
-    item.status === 'Pending Deposit' && item.paymentStatus !== 'Completed'
-  )
-  const paid = reservations.filter(item => item.paymentStatus === 'Completed')
-  const pendingAmount = pending.reduce(
-    (total, item) => total + Number(item.depositAmount || 0),
-    0
-  )
-  const formatMoney = amount => `${new Intl.NumberFormat('vi-VN').format(amount || 0)}đ`
-
+/* Tiến trình hoàn cọc khi khách hủy: tạo yêu cầu -> gửi cổng thanh toán -> cổng xác nhận đã hoàn. */
+const fmtUtc = iso => {
+  if (!iso) return ''
+  const text = String(iso)
+  const d = new Date(/Z|[+-]\d{2}:?\d{2}$/.test(text) ? text : `${text}Z`)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+function RefundTimeline({ item, formatMoney }) {
+  const done = item.refundStatus === 'Completed'
+  const viaVnPay = item.refundProvider === 'VNPay'
+  // VNPay sandbox hạn chế API hoàn tiền -> backend có thể ghi nhận hoàn mô phỏng (mã hoàn bắt đầu bằng SIM-).
+  const simulatedFallback = viaVnPay && done && String(item.refundReference || '').startsWith('SIM-')
+  const steps = [
+    { label: 'Đã hủy đơn, tạo yêu cầu hoàn', note: fmtUtc(item.refundRequestedAt || item.cancelledAt), state: 'done' },
+    viaVnPay && {
+      label: 'Gửi yêu cầu hoàn sang VNPay',
+      note: item.refundLastAttempt ? `${fmtUtc(item.refundLastAttemptAt)} · ${item.refundLastAttempt}` : (done ? '' : 'Chưa gửi được'),
+      state: done ? 'done' : item.refundLastAttempt ? 'error' : 'todo'
+    },
+    {
+      label: simulatedFallback ? 'Ghi nhận hoàn (mô phỏng)' : viaVnPay ? 'VNPay xác nhận đã hoàn' : 'Đã hoàn tiền (thanh toán mô phỏng)',
+      note: done ? `${fmtUtc(item.refundCompletedAt)}${item.refundReference ? ` · Mã hoàn ${item.refundReference}` : ''}` : 'Đang chờ',
+      state: done ? 'done' : 'todo'
+    }
+  ].filter(Boolean)
   return (
-    <div className="customer-content-page">
-      <div className="customer-page-heading">
-        <div>
-          <span className="customer-eyebrow">PAYMENT CENTER</span>
-          <h1>Thanh toán</h1>
-          <p>Trạng thái và giao dịch tiền cọc đã lưu trong database.</p>
-        </div>
+    <div className={`refund-box ${done ? 'ok' : 'pending'}`}>
+      <div className="refund-box-head">
+        <strong>Hoàn cọc {formatMoney(item.refundAmount)}</strong>
+        <span>{done ? 'Đã hoàn' : 'Đang hoàn'}</span>
       </div>
-      <section className="customer-stats">
-        <div className="customer-stat-card">
-          <small>Tiền cọc đang chờ</small>
-          <strong>{formatMoney(pendingAmount)}</strong>
-          <span className="stat-note">{pending.length} đặt chỗ</span>
-        </div>
-        <div className="customer-stat-card">
-          <small>Giao dịch đã ghi nhận</small>
-          <strong>{paid.length}</strong>
-          <span className="stat-note">Theo dữ liệu backend</span>
-        </div>
-      </section>
-      {reservations.length === 0 && <div className="empty-state">Chưa có giao dịch hoặc đặt chỗ.</div>}
-      {reservations.map(item => (
-        <section className="customer-section" key={item.reservationId}>
-          <div className="overview-panel">
-            <div className="overview-panel-heading">
-              <div>
-                <h2>{item.facility}</h2>
-                <p>{item.unitId || 'Chưa phân kho'} · Mã đơn {formatReservationCode(item.reservationId)}</p>
-              </div>
-              <span className="rental-status">
-                {item.paymentStatus === 'Completed' ? '● Đã thanh toán' : '● Chưa thanh toán'}
-              </span>
-            </div>
-            <div className="contract-summary">
-              <div><span>Tiền cọc yêu cầu</span><strong>{formatMoney(item.depositAmount)}</strong></div>
-              <div><span>Đã thanh toán</span><strong>{item.paymentAmount == null ? '—' : formatMoney(item.paymentAmount)}</strong></div>
-              <div><span>Trạng thái đặt chỗ</span><strong>{item.statusLabel}</strong></div>
-              <div><span>Mã giao dịch</span><strong>{item.paymentReference || '—'}</strong></div>
-              <div><span>Ngày giao dịch</span><strong>{item.paymentDate ? item.paymentDate.slice(0, 10) : '—'}</strong></div>
-            </div>
-          </div>
-        </section>
-      ))}
-      <div className="payment-warning">
-        Backend hiện chưa kết nối ngân hàng. Trạng thái giao dịch được hiển thị theo database, không xác minh thanh toán ngoài hệ thống.
-      </div>
+      <ol className="refund-steps">
+        {steps.map(step => (
+          <li key={step.label} className={step.state}>
+            <b>{step.label}</b>
+            {step.note && <small>{step.note}</small>}
+          </li>
+        ))}
+      </ol>
+      <p className="refund-help">
+        {viaVnPay
+          ? simulatedFallback
+            ? 'VNPay sandbox không cho dùng API hoàn tiền (trả lỗi 99), nên hệ thống ghi nhận hoàn MÔ PHỎNG để hoàn tất luồng. Ở môi trường thật, lệnh hoàn sẽ được gửi sang VNPay và tiền về thẻ / tài khoản của khách.'
+            : done
+            ? 'VNPay đã nhận lệnh hoàn. Tiền về đúng thẻ / tài khoản đã thanh toán, thường trong 1–3 ngày làm việc tùy ngân hàng. Môi trường thử nghiệm (sandbox) không có tiền thật: xem giao dịch hoàn trong trang quản trị merchant của VNPay.'
+            : 'VNPay chưa xác nhận lệnh hoàn. Xem lý do ở bước 2, sau đó bấm "Gửi lại yêu cầu hoàn tiền".'
+          : 'Đơn được thanh toán mô phỏng nên hoàn tiền cũng là mô phỏng.'}
+      </p>
     </div>
   )
 }
 
+/* [SỬA] Trang Thanh toán cũ (CustomerPaymentPage) đã thay bằng CustomerPaymentCenter trong PendingPayments.jsx */
+
 /* Hồ sơ tài khoản (chỉ xem). Backend hiện chưa có API sửa hồ sơ / đổi mật khẩu. */
 function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
+  const [copied, setCopied] = useState(false)
   const activeCount = rentals.filter(item => item.status === 'Handed Over').length
   const pendingCount = rentals.filter(item => item.status === 'Pending Deposit').length
   const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase()
+
+  const accessCode = user?.accessCode || rentals.find(r => r.customerAccessCode)?.customerAccessCode || rentals.flatMap(r => r.accesses || []).find(a => a.accessType === 'Access Code')?.accessValue || null
+  const accessStatus = user?.accessCodeStatus || rentals.find(r => r.customerAccessCodeStatus)?.customerAccessCodeStatus || (accessCode ? 'Active' : 'Unissued')
+
+  const handleCopyCode = () => {
+    if (!accessCode) return
+    navigator.clipboard.writeText(accessCode)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   const rows = [
     ['Họ và tên', user?.name || '—'],
     ['Email', user?.email || '—'],
     ['Loại tài khoản', 'Khách hàng thuê kho'],
-    ['Mã khách hàng', user?.userId ? `KH-${user.userId}` : '—']
+    ['Mã khách hàng', user?.userId ? `KH-${user.userId}` : '—'],
+    ['Mã ra vào cơ sở', accessCode || 'Chưa cấp (Cấp khi nhận bàn giao kho)'],
+    ['Trạng thái mã', accessCode ? (accessStatus === 'Active' ? '✓ Đang hoạt động' : '⚠️ Tạm khóa (Quá hạn thanh toán > 30 ngày)') : 'Chưa cấp']
   ]
   return (
     <div className="customer-content-page">
       <div className="customer-page-heading">
         <div>
-          <span className="customer-eyebrow">MY PROFILE</span>
-          <h1>Hồ sơ của tôi</h1>
-          <p>Thông tin tài khoản dùng để đặt kho và nhận thông báo từ StoreSpace.</p>
+          <span className="customer-eyebrow">HỒ SƠ CHỦ HỢP ĐỒNG & ĐỊNH DANH</span>
+          <h1>Hồ sơ cá nhân</h1>
+          <p>Thông tin pháp lý dùng để đứng tên hợp đồng thuê kho, đối chiếu CCCD khi nhận kho và nhận thông báo từ StoreSpace.</p>
         </div>
       </div>
 
@@ -1050,7 +1458,90 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
             <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
           ))}
         </dl>
-        <div className="profile-stats">
+
+        <div style={{
+          marginTop: '20px',
+          padding: '18px 20px',
+          background: accessStatus === 'Locked' ? '#fff1f2' : '#f0fdf4',
+          borderRadius: '14px',
+          border: `1px solid ${accessStatus === 'Locked' ? '#fecdd3' : '#bbf7d0'}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '24px' }}>🔢</span>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15px', color: accessStatus === 'Locked' ? '#9f1239' : '#14532d', fontWeight: 700 }}>
+                  MÃ RA VÀO CƠ SỞ (ACCESS CODE)
+                </h3>
+                <small style={{ color: accessStatus === 'Locked' ? '#be123c' : '#166534', fontSize: '12px' }}>
+                  Dùng mở cổng &amp; cửa an ninh cơ sở StoreSpace
+                </small>
+              </div>
+            </div>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              borderRadius: '999px',
+              fontSize: '12px',
+              fontWeight: 600,
+              background: accessStatus === 'Locked' ? '#ffe4e6' : '#dcfce7',
+              color: accessStatus === 'Locked' ? '#e11d48' : '#15803d'
+            }}>
+              {accessStatus === 'Locked' ? '● Tạm khóa do nợ quá hạn' : '● Đang hoạt động'}
+            </span>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#ffffff',
+            padding: '12px 18px',
+            borderRadius: '10px',
+            border: `1px dashed ${accessStatus === 'Locked' ? '#f43f5e' : '#22c55e'}`
+          }}>
+            <div>
+              <span style={{ display: 'block', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, letterSpacing: '0.5px' }}>
+                Mã 6 chữ số cá nhân của bạn
+              </span>
+              <strong style={{ fontSize: '24px', letterSpacing: '4px', color: accessStatus === 'Locked' ? '#9f1239' : '#0f172a', fontFamily: 'monospace' }}>
+                {accessCode || 'Chưa cấp'}
+              </strong>
+            </div>
+            {accessCode && (
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#334155',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                {copied ? '✓ Đã sao chép' : 'Sao chép mã'}
+              </button>
+            )}
+          </div>
+
+          <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12.5px', color: '#475569', lineHeight: 1.6 }}>
+            <li>Mã 6 chữ số này là định danh cá nhân duy nhất để mở cổng và cửa an ninh cơ sở.</li>
+            <li><strong>Chìa khóa ô kho:</strong> Mỗi ô kho được cấp chìa khóa vật lý riêng, nhân viên bàn giao trực tiếp tại cơ sở.</li>
+            <li><strong>Thời hạn hiệu lực:</strong> Mã hoạt động liên tục trong suốt thời gian có hợp đồng thuê kho hợp lệ.</li>
+            <li><strong>Quy định bảo mật &amp; tạm khóa:</strong> Nếu chậm thanh toán tiền thuê hoặc chi phí phát sinh quá 30 ngày, hệ thống sẽ tự động tạm khóa mã ra vào cơ sở.</li>
+          </ul>
+        </div>
+
+        <div className="profile-stats" style={{ marginTop: '20px' }}>
           <button type="button" onClick={onOpenStorage}><strong>{rentals.length}</strong><span>Tổng đơn đặt kho</span></button>
           <button type="button" onClick={onOpenStorage}><strong>{activeCount}</strong><span>Kho đang thuê</span></button>
           <button type="button" onClick={onOpenStorage}><strong>{pendingCount}</strong><span>Chờ thanh toán cọc</span></button>
@@ -1064,7 +1555,7 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
   )
 }
 
-function CustomerDashboard({ facilities, storageUnits, customerRental, customerRentals, getCurrentUser, navigate, currentUserKey }) {
+function CustomerDashboard({ facilities, storageUnits, customerRental, customerRentals, getCurrentUser, navigate, currentUserKey, onReloadRentals }) {
   const user = getCurrentUser()
   // Đã cập nhật: Danh sách kho đang thuê, kho Staff vừa bàn giao đứng đầu (05/10/2026)
   const rentals = Array.isArray(customerRentals)
@@ -1081,125 +1572,223 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
     (total, item) => total + Number(item.depositAmount || 0),
     0
   )
+  const rentDueRentals = rentals.filter(item =>
+    !['Completed', 'Cancelled', 'Expired'].includes(item.status) && Number(item.rentPayableNow || 0) > 0
+  )
+  const rentDueAmount = rentDueRentals.reduce(
+    (total, item) => total + Number(item.rentPayableNow || 0),
+    0
+  )
+  const totalPayableNow = pendingAmount + rentDueAmount
+  const unsignedContracts = rentals.filter(item =>
+    item.contractId && item.contractStatus !== 'Signed' && item.contractStatus !== 'Active' &&
+    (item.status === 'Confirmed' || item.status === 'Paid')
+  )
   const expiringRentals = activeRentals.filter(item => item.remainingDays <= 30)
-  const [activeSection, setActiveSection] = useState('overview')
+  const [activeSection, setActiveSection] = useState(() => takeCustomerSection('overview'))
+
+  // Thông báo: tính từ đơn thuê + gia hạn + chính sách; mở mục nào thì thông báo của mục đó được tính là đã xem.
+  const renewalsForNotices = useContractRenewals()
+  const policiesForNotices = usePolicies()
+  const returnsForNotices = useUnitReturns()
+  const inspectionsForNotices = useMyInspections() // [THÊM 14]
+  const notices = useCustomerNotifications({
+    email: user?.email,
+    rentals,
+    renewals: renewalsForNotices.data,
+    policies: policiesForNotices,
+    returns: returnsForNotices.data,
+    inspections: inspectionsForNotices.data // [THÊM 14]
+  })
+  const noticeIdsKey = notices.notifications.map(n => n.id).join('|')
+  useEffect(() => {
+    if (['contract', 'payment', 'storage'].includes(activeSection)) notices.markSection(activeSection)
+  }, [activeSection, noticeIdsKey])
+  // Dữ liệu đặt chỗ thay đổi (gia hạn, ký, thanh toán) -> tải lại thông tin gia hạn cho thông báo.
+  const rentalsKey = rentals.map(r => `${r.reservationId}:${r.status}:${r.contractStatus}`).join(',')
+  const firstRentalsKey = React.useRef(rentalsKey)
+  useEffect(() => { if (rentalsKey !== firstRentalsKey.current) { renewalsForNotices.reload(); returnsForNotices.reload(); inspectionsForNotices.reload() } }, [rentalsKey])
+  const openNotice = item => {
+    const action = item.action || {}
+    if (action.signContractId) requestContractSign(action.signContractId)
+    if (action.renewReservationId) requestRenewal(action.renewReservationId)
+    if (action.section) setActiveSection(action.section)
+    if (action.focusReservationId && !action.renewReservationId && !action.signContractId) focusContract(action.focusReservationId)
+  }
+  // [THÊM] Đơn chưa đặt cọc + Hóa đơn tiền thuê đến hạn đều hiện badge ở mục Thanh toán
+  const paymentBadgeIds = new Set([
+    ...notices.notifications.filter(n => n.section === 'payment' && !notices.isSeen(n.id)).map(n => n.id),
+    ...pendingDepositsOf(rentals).filter(r => !r.isRenewal).map(r => `deposit:${r.reservationId}`),
+    ...rentDueRentals.map(r => `rent:${r.reservationId}`)
+  ])
+  const navBadge = section => {
+    const count = section === 'notifications' ? notices.unseenCount : section === 'payment' ? paymentBadgeIds.size : notices.countBySection[section] || 0
+    return count > 0 && activeSection !== section
+      ? <span className="cnav-badge" aria-label={`${count} thông báo mới`}>{count > 9 ? '9+' : count}</span>
+      : null
+  }
+  // Mở tab theo yêu cầu (vd sau khi gia hạn: tab Hợp đồng để ký phụ lục).
+  useEffect(() => {
+    const onOpen = event => { if (event.detail) setActiveSection(event.detail) }
+    window.addEventListener(OPEN_SECTION_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
+  }, [])
+
+  const openContractForReservation = reservationId => {
+    if (reservationId) focusContract(reservationId)
+    setActiveSection('contract')
+  }
+
+  const signContractForRental = targetRental => {
+    if (targetRental?.contractId) requestContractSign(targetRental.contractId)
+    setActiveSection('contract')
+  }
 
   const logout = () => {
     localStorage.removeItem(currentUserKey)
     navigate('/')
   }
 
-  // if (!rental) {
-  //   return (
-  //     <div className="customer-layout">
-  //       <main className="customer-main">
-  //         <div className="customer-page-heading">
-  //           <div>
-  //             <span className="customer-eyebrow">CUSTOMER DASHBOARD</span>
-  //             <h1>Xin chào, {user?.name || 'Customer'}!</h1>
-  //             <p>Tài khoản hiện chưa có kho thuê hoặc đặt chỗ.</p>
-  //           </div>
-  //         </div>
-  //         <div className="empty-state">
-  //           <p>Dữ liệu đặt thuê sẽ hiển thị tại đây sau khi được tải từ hệ thống.</p>
-  //           <button className="dashboard-primary-btn" type="button" onClick={() => navigate('/facilities')}>
-  //             Tìm kho
-  //           </button>
-  //           <button className="dashboard-secondary-btn" type="button" onClick={logout}>
-  //             Đăng xuất
-  //           </button>
-  //         </div>
-  //       </main>
-  //     </div>
-  //   )
-  // }
+  // Danh sách việc cần xử lý ngay trong trang Tổng quan
+  const urgentTasks = [
+    ...unpaidReservations.map(item => ({
+      id: `dep-${item.reservationId}`,
+      tone: 'danger',
+      title: `Đơn ${formatReservationCode(item.reservationId)} (${item.facility} · Kho ${item.unitId || 'đặt mới'}) chờ thanh toán cọc`,
+      sub: `Cần đóng ${new Intl.NumberFormat('vi-VN').format(Number(item.depositAmount || 0))}đ tiền cọc giữ kho trước khi hết giờ giữ chỗ.`,
+      btnLabel: 'Đóng tiền cọc',
+      onClick: () => setActiveSection('payment')
+    })),
+    ...unsignedContracts.map(item => ({
+      id: `sign-${item.reservationId}`,
+      tone: 'warn',
+      title: `Hợp đồng ${item.contractNumber || formatReservationCode(item.reservationId)} chờ chữ ký điện tử của bạn`,
+      sub: `${item.facility} · Kho ${item.unitId || 'đã đặt'} · Ký trực tuyến để sẵn sàng nhận bàn giao kho.`,
+      btnLabel: 'Ký hợp đồng ngay',
+      onClick: () => signContractForRental(item)
+    })),
+    ...rentDueRentals.map(item => ({
+      id: `rent-${item.reservationId}`,
+      tone: 'danger',
+      title: `Kho ${item.unitId || formatReservationCode(item.reservationId)} đến hạn đóng tiền thuê kỳ này`,
+      sub: `Số tiền cần đóng: ${new Intl.NumberFormat('vi-VN').format(Number(item.rentPayableNow || 0))}đ (${item.facility}).`,
+      btnLabel: 'Thanh toán hóa đơn',
+      onClick: () => setActiveSection('payment')
+    })),
+    ...expiringRentals.map(item => ({
+      id: `exp-${item.reservationId}`,
+      tone: 'warn',
+      title: `Kho ${item.unitId} (${item.facility}) còn ${item.remainingDays} ngày sử dụng`,
+      sub: `Ngày hết hạn: ${item.endDate}. Bạn có thể gia hạn trực tuyến hoặc đăng ký lịch trả kho.`,
+      btnLabel: 'Gia hạn / Xem HĐ',
+      onClick: () => openContractForReservation(item.reservationId)
+    }))
+  ]
 
   return (
-    // <div className="customer-page">
-    //   <SiteHeader />
-
     <div className="customer-layout">
 
-      <aside className="customer-sidebar">
+      <aside className="customer-sidebar cportal-sidebar">
 
-        <div className="customer-brand" type="button" onClick={() => navigate('/')}>
+        <div className="customer-brand" role="button" tabIndex={0} onClick={() => navigate('/')} onKeyDown={e => e.key === 'Enter' && navigate('/')}>
           <span className="brand-mark">S</span>
-
           <div>
             <strong>StoreSpace</strong>
-            <small>Customer Portal</small>
+            <small>Khách hàng</small>
           </div>
         </div>
 
         <div className="customer-profile-mini">
           <div className="customer-avatar">
-            {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+            {user?.name?.charAt(0)?.toUpperCase() || 'K'}
           </div>
-
           <div>
-            <strong>{user?.name || 'Customer'}</strong>
-            <small>Customer</small>
+            <strong>{user?.name || 'Khách hàng'}</strong>
+            <small>{activeRentals.length} kho đang thuê</small>
           </div>
         </div>
 
-        <nav className="customer-nav">
+        <div className="cportal-nav-group">
+          <span className="cportal-nav-group-label">Quản lý kho</span>
 
           <button
-            className={activeSection === 'overview' ? 'active' : ''}
+            type="button"
+            className={`cportal-nav-btn ${activeSection === 'overview' ? 'active' : ''}`}
             onClick={() => setActiveSection('overview')}
           >
-            <span>⌂</span>
-            Tổng quan
+            <span className="cportal-nav-icon"><NavIcon name="overview" /></span>
+            <span className="cportal-nav-label">Tổng quan</span>
           </button>
 
           <button
-            className={activeSection === 'storage' ? 'active' : ''}
+            type="button"
+            className={`cportal-nav-btn ${activeSection === 'storage' ? 'active' : ''}`}
             onClick={() => setActiveSection('storage')}
           >
-            <span>▣</span>
-            Kho của tôi
+            <span className="cportal-nav-icon"><NavIcon name="storage" /></span>
+            <span className="cportal-nav-label">Kho của tôi</span>
+            {navBadge('storage')}
           </button>
 
           <button
-            className={activeSection === 'booking' ? 'active' : ''}
-            onClick={() => {
-              navigate('/search')
-            }}
+            type="button"
+            className="cportal-nav-btn cportal-book-cta"
+            onClick={() => navigate('/search')}
           >
-            <span>◷</span>
-            Đặt kho
+            <span className="cportal-nav-icon"><NavIcon name="search" /></span>
+            <span className="cportal-nav-label">Thuê thêm kho ↗</span>
           </button>
+        </div>
+
+        <div className="cportal-nav-group">
+          <span className="cportal-nav-group-label">Pháp lý & Phí</span>
 
           <button
-            className={activeSection === 'contract' ? 'active' : ''}
+            type="button"
+            className={`cportal-nav-btn ${activeSection === 'contract' ? 'active' : ''}`}
             onClick={() => setActiveSection('contract')}
           >
-            <span>▤</span>
-            Hợp đồng
+            <span className="cportal-nav-icon"><NavIcon name="contract" /></span>
+            <span className="cportal-nav-label">Hợp đồng</span>
+            {navBadge('contract')}
           </button>
 
           <button
             type="button"
-            className={activeSection === 'payment' ? 'active' : ''}
+            className={`cportal-nav-btn ${activeSection === 'payment' ? 'active' : ''}`}
             onClick={() => setActiveSection('payment')}
           >
-            <span>◫</span>
-            Thanh toán
+            <span className="cportal-nav-icon"><NavIcon name="payment" /></span>
+            <span className="cportal-nav-label">Thanh toán</span>
+            {navBadge('payment')}
+          </button>
+        </div>
+
+        <div className="cportal-nav-group">
+          <span className="cportal-nav-group-label">Tài khoản</span>
+
+          <button
+            type="button"
+            className={`cportal-nav-btn ${activeSection === 'notifications' ? 'active' : ''}`}
+            onClick={() => setActiveSection('notifications')}
+          >
+            <span className="cportal-nav-icon"><NavIcon name="notifications" /></span>
+            <span className="cportal-nav-label">Thông báo</span>
+            {navBadge('notifications')}
           </button>
 
           <button
             type="button"
-            className={activeSection === 'profile' ? 'active' : ''}
+            className={`cportal-nav-btn ${activeSection === 'profile' ? 'active' : ''}`}
             onClick={() => setActiveSection('profile')}
           >
-            <span>♙</span>
-            Hồ sơ
+            <span className="cportal-nav-icon"><NavIcon name="profile" /></span>
+            <span className="cportal-nav-label">Hồ sơ</span>
           </button>
-
-        </nav>
+        </div>
 
         <div className="customer-sidebar-bottom">
-          <button onClick={logout}>
+          <button type="button" onClick={logout}>
             <span>↪</span>
             Đăng xuất
           </button>
@@ -1209,64 +1798,112 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
       <main className="customer-main">
 
-        <div className="customer-topbar">
-          <div>
-            <span className="customer-eyebrow">
-              CUSTOMER DASHBOARD
-            </span>
+        {/* HEADER GỌN GÀNG */}
+        <div className="cportal-header-bar">
+          {activeSection === 'overview' ? (
+            <div className="cportal-welcome">
+              <h1>Xin chào, {user?.name || 'Khách hàng'}!</h1>
+              <p>Tóm tắt kho đang thuê, hợp đồng và các khoản thanh toán của bạn.</p>
+            </div>
+          ) : <div />}
 
-            <h1>
-              Xin chào, {user?.name || 'Customer'}!
-            </h1>
-
-            <p>
-              Quản lý kho thuê và thông tin tài khoản của bạn.
-            </p>
+          <div className="customer-topbar-actions">
+            <button
+              type="button"
+              className="customer-bell"
+              onClick={() => setActiveSection('notifications')}
+              aria-label={notices.unseenCount ? `Thông báo, ${notices.unseenCount} chưa xem` : 'Thông báo'}
+              title="Thông báo"
+            >
+              🔔
+              {notices.unseenCount > 0 && <span className="cnav-badge">{notices.unseenCount > 9 ? '9+' : notices.unseenCount}</span>}
+            </button>
+            <button
+              type="button"
+              className="customer-profile-button"
+              onClick={() => setActiveSection('profile')}
+              title="Hồ sơ cá nhân"
+            >
+              {user?.name?.charAt(0)?.toUpperCase() || 'K'}
+            </button>
           </div>
-
-          <button className="customer-profile-button">
-            {user?.name?.charAt(0)?.toUpperCase() || 'U'}
-          </button>
         </div>
+
+        {/* [THÊM] Đơn chưa đặt cọc: nhắc ở đầu mọi mục (trừ mục Thanh toán vì ở đó đã có khối "Cần thanh toán") */}
+        {activeSection !== 'payment' && (
+          <PendingDepositBar rentals={rentals} variant="inline" onPay={() => setActiveSection('payment')} actionLabel="Thanh toán ngay" />
+        )}
 
         {activeSection === 'overview' && (
           <div className="overview-page">
+
+            {/* KHỐI VIỆC CẦN XỬ LÝ NGAY */}
+            {urgentTasks.length > 0 && (
+              <section className="cportal-urgent-box" aria-label="Việc cần xử lý ngay">
+                <div className="cportal-urgent-head">
+                  <h2>
+                    <span>⚡ Việc bạn cần xử lý ngay</span>
+                    <span className="cportal-urgent-count">{urgentTasks.length} tác vụ</span>
+                  </h2>
+                </div>
+                <div className="cportal-urgent-list">
+                  {urgentTasks.slice(0, 4).map(task => (
+                    <div key={task.id} className="cportal-urgent-item">
+                      <div className="cportal-urgent-item-info">
+                        <span className={`cportal-urgent-dot ${task.tone === 'danger' ? 'danger' : ''}`} />
+                        <div>
+                          <strong>{task.title}</strong>
+                          <span>{task.sub}</span>
+                        </div>
+                      </div>
+                      <button type="button" className="dashboard-primary-btn" onClick={task.onClick}>
+                        {task.btnLabel} →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <NotificationsPreview center={notices} onAction={openNotice} onOpenAll={() => setActiveSection('notifications')} />
 
             {/* ===== STATS ===== */}
 
             <section className="customer-stats">
 
-              <div className="customer-stat-card">
+              <div className="customer-stat-card" onClick={() => setActiveSection('storage')} style={{ cursor: 'pointer' }}>
                 <span className="stat-icon">▣</span>
-                <small>Kho đang thuê</small>
+                <small>Kho đang sử dụng</small>
                 <strong>{activeRentals.length}</strong>
-                <span className="stat-note">Đang hoạt động</span>
+                <span className="stat-note">Xem mã PIN & tác vụ kho →</span>
               </div>
 
-              <div className="customer-stat-card">
+              <div className="customer-stat-card" onClick={() => setActiveSection('contract')} style={{ cursor: 'pointer' }}>
                 <span className="stat-icon yellow">◷</span>
-                <small>Kho sắp hết hạn</small>
+                <small>Kho sắp hết hạn (≤ 30 ngày)</small>
                 <strong>{expiringRentals.length}</strong>
                 <span className="stat-note warning">
-                  Cần chú ý
+                  {expiringRentals.length > 0 ? 'Bấm để gia hạn ngay →' : 'Chưa có kho sắp hết hạn'}
                 </span>
               </div>
 
-              <div className="customer-stat-card">
+              <div className="customer-stat-card" onClick={() => setActiveSection('payment')} style={{ cursor: 'pointer' }}>
                 <span className="stat-icon blue">₫</span>
-                <small>Thanh toán sắp tới</small>
-                <strong>{new Intl.NumberFormat('vi-VN').format(pendingAmount)}đ</strong>
+                <small>Cần thanh toán hiện tại</small>
+                <strong>{new Intl.NumberFormat('vi-VN').format(totalPayableNow)}đ</strong>
                 <span className="stat-note">
-                  {unpaidReservations.length} khoản cọc chưa thanh toán
+                  {unpaidReservations.length + rentDueRentals.length > 0
+                    ? `${unpaidReservations.length} đơn cọc · ${rentDueRentals.length} hóa đơn thuê →`
+                    : 'Không có khoản nợ chờ đóng'}
                 </span>
               </div>
 
               <div className="customer-stat-card">
                 <span className="stat-icon">◴</span>
-                <small>Ngày còn lại</small>
-                <strong>{rental?.remainingDays ?? '—'}</strong>
+                <small>Thời hạn kho chính</small>
+                <strong>{rental?.remainingDays != null ? `${rental.remainingDays} ngày` : '—'}</strong>
                 <span className="stat-note">
-                  Ngày thuê hiện tại
+                  {rental?.unitId ? `Ô kho ${rental.unitId}` : 'Chưa có kho đang thuê'}
                 </span>
               </div>
 
@@ -1280,10 +1917,10 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
               <div className="customer-section-heading">
                 <div>
                   <span className="customer-eyebrow">
-                    CURRENT RENTAL
+                    KHO ĐANG THUÊ & MÃ RA VÀO
                   </span>
 
-                  <h2>Kho đang thuê</h2>
+                  <h2>Kho lưu trữ hiện tại của bạn</h2>
                 </div>
 
                 <button
@@ -1291,86 +1928,9 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
                   className="overview-text-button"
                   onClick={() => setActiveSection('storage')}
                 >
-                  Xem tất cả →
+                  Mở trang Kho của tôi →
                 </button>
               </div>
-
-
-              {/* <div className="overview-rental-card">
-
-                <div className="overview-rental-left">
-
-                  <div className="overview-rental-top">
-                    <div>
-
-                      <span className="rental-facility">
-                        {rental.facility}
-                      </span>
-
-                      <h3>{rental.unitId || 'Chưa phân kho'}</h3>
-
-                      <p>
-                        {rental.type} · {rental.size}
-                      </p>
-
-                    </div>
-
-                    <span className="rental-status">
-                      ● {rental.statusLabel}
-                    </span>
-                  </div>
-
-
-                  <div className="overview-rental-info">
-
-                    <div>
-                      <small>Ngày bắt đầu</small>
-                      <strong>{rental.startDate}</strong>
-                    </div>
-
-                    <div>
-                      <small>Ngày kết thúc</small>
-                      <strong>{rental.endDate}</strong>
-                    </div>
-
-                    <div>
-                      <small>Giá thuê</small>
-                      <strong>{rental.price}</strong>
-                    </div>
-
-                  </div>
-
-                </div>
-
-
-                <div className="overview-rental-progress">
-
-                  <div className="overview-progress-heading">
-                    <span>Tiến độ thời hạn</span>
-                    <strong>{rental.progress ?? 0}%</strong>
-                  </div>
-
-                  <div className="rental-progress">
-                    <div
-                      style={{
-                        width: `${rental.progress ?? 0}%`
-                      }}
-                    />
-                  </div>
-
-                  <div className="overview-progress-bottom">
-                    <span>
-                      Đã sử dụng {rental.progress ?? 0}%
-                    </span>
-
-                    <strong>
-                      Còn {rental.remainingDays ?? '—'} ngày
-                    </strong>
-                  </div>
-
-                </div>
-
-              </div> */}
 
               {rental ? (
                 <div className="overview-rental-card">
@@ -1384,10 +1944,10 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
                           {rental.facility}
                         </span>
 
-                        <h3>{rental.unitId || 'Chưa phân kho'}</h3>
+                        <h3>Ô kho {rental.unitId || 'Chưa phân kho'}</h3>
 
                         <p>
-                          {rental.type} · {rental.size}
+                          {rental.type} · {rental.size} · Mã ra vào: <strong>{rental.accessValue || 'Xem tại Kho của tôi'}</strong>
                         </p>
 
                       </div>
@@ -1416,12 +1976,24 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
                     </div>
 
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+                      <button type="button" className="cportal-action-chip primary" onClick={() => setActiveSection('storage')}>
+                        🔑 Vào Kho của tôi & Mã PIN
+                      </button>
+                      <button type="button" className="cportal-action-chip" onClick={() => openContractForReservation(rental.reservationId)}>
+                        📄 Xem hợp đồng & Gia hạn
+                      </button>
+                      <button type="button" className="cportal-action-chip" onClick={() => setActiveSection('payment')}>
+                        💳 Thanh toán & Hóa đơn
+                      </button>
+                    </div>
+
                   </div>
 
                   <div className="overview-rental-progress">
 
                     <div className="overview-progress-heading">
-                      <span>Tiến độ thời hạn</span>
+                      <span>Tiến độ kỳ thuê</span>
                       <strong>{rental.progress ?? 0}%</strong>
                     </div>
 
@@ -1455,7 +2027,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
                     type="button"
                     onClick={() => navigate('/facilities')}
                   >
-                    Tìm kho
+                    Tìm & đặt kho ngay
                   </button>
                 </div>
               )}
@@ -1476,10 +2048,10 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
                   <div>
                     <span className="customer-eyebrow">
-                      NEXT PAYMENT
+                      TÀI CHÍNH & HÓA ĐƠN
                     </span>
 
-                    <h2>Thanh toán</h2>
+                    <h2>Thanh toán & Công nợ</h2>
                   </div>
 
                   <span className="overview-panel-icon yellow">
@@ -1491,31 +2063,34 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
                 <div className="payment-main">
 
-                  <small>Khoản thanh toán tiếp theo</small>
+                  <small>Tổng số tiền cần thanh toán ngay</small>
 
-                  <strong>{new Intl.NumberFormat('vi-VN').format(pendingAmount)}đ</strong>
+                  <strong>{new Intl.NumberFormat('vi-VN').format(totalPayableNow)}đ</strong>
 
                   <span>
-                    Tiền cọc chưa thanh toán theo các đặt chỗ trong database
+                    {totalPayableNow > 0
+                      ? `Gồm ${unpaidReservations.length} đơn cọc giữ kho và ${rentDueRentals.length} hóa đơn tiền thuê đến kỳ.`
+                      : 'Tất cả tiền cọc và tiền thuê định kỳ hiện tại đã hoàn tất.'}
                   </span>
 
                 </div>
 
 
                 <div className="payment-status">
-                  <span>Trạng thái</span>
+                  <span>Trạng thái tài chính</span>
 
                   <strong>
-                    ● {unpaidReservations.length ? 'Chưa hoàn tất' : 'Không có khoản chờ'}
+                    ● {totalPayableNow > 0 ? 'Có khoản chờ thanh toán' : 'Đã thanh toán đầy đủ'}
                   </strong>
                 </div>
 
 
                 <button
+                  type="button"
                   className="dashboard-primary-btn full"
                   onClick={() => setActiveSection('payment')}
                 >
-                  Thanh toán ngay
+                  {totalPayableNow > 0 ? 'Đến Trung tâm Thanh toán ngay' : 'Xem hóa đơn & lịch sử giao dịch'}
                 </button>
 
               </section>
@@ -1529,10 +2104,10 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
                   <div>
                     <span className="customer-eyebrow">
-                      CONTRACT
+                      PHÁP LÝ & VĂN BẢN
                     </span>
 
-                    <h2>Hợp đồng</h2>
+                    <h2>Hợp đồng thuê kho</h2>
                   </div>
 
                   <span className="overview-panel-icon">
@@ -1547,32 +2122,33 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
                   <div>
                     <span>Mã hợp đồng</span>
                     <strong>
-                      #{rental?.contractId || rental?.reservationId}
+                      {rental?.contractNumber || `#${rental?.contractId || rental?.reservationId || '—'}`}
                     </strong>
                   </div>
 
                   <div>
-                    <span>Trạng thái</span>
+                    <span>Trạng thái pháp lý</span>
                     <strong className="contract-active">
-                      {rental?.contractStatus || rental?.statusLabel}
+                      {unsignedContracts.length > 0
+                        ? `${unsignedContracts.length} hợp đồng chờ ký`
+                        : (rental?.contractStatus || rental?.statusLabel || '—')}
                     </strong>
                   </div>
 
                   <div>
                     <span>Ngày hết hạn</span>
-                    <strong>{rental?.endDate}</strong>
+                    <strong>{rental?.endDate || '—'}</strong>
                   </div>
 
                 </div>
 
 
                 <button
+                  type="button"
                   className="dashboard-secondary-btn full"
-                  onClick={() =>
-                    setActiveSection('contract')
-                  }
+                  onClick={() => setActiveSection('contract')}
                 >
-                  Xem hợp đồng
+                  {unsignedContracts.length > 0 ? 'Ký hợp đồng trực tuyến ngay' : 'Mở trang Hợp đồng & Gia hạn'}
                 </button>
 
               </section>
@@ -1588,10 +2164,10 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
                 <div>
                   <span className="customer-eyebrow">
-                    QUICK ACTIONS
+                    ĐIỀU HƯỚNG NHANH
                   </span>
 
-                  <h2>Thao tác nhanh</h2>
+                  <h2>Bạn muốn thực hiện tác vụ gì?</h2>
                 </div>
 
               </div>
@@ -1600,6 +2176,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
               <div className="quick-actions-grid">
 
                 <button
+                  type="button"
                   className="quick-action"
                   onClick={() => navigate('/facilities')}
                 >
@@ -1608,9 +2185,9 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
                   </span>
 
                   <div>
-                    <strong>Đặt kho mới</strong>
+                    <strong>Thuê thêm kho mới</strong>
                     <small>
-                      Tìm và thuê thêm một kho
+                      Chọn cơ sở, diện tích và đặt giữ chỗ
                     </small>
                   </div>
 
@@ -1619,19 +2196,18 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
 
                 <button
+                  type="button"
                   className="quick-action"
-                  onClick={() =>
-                    setActiveSection('storage')
-                  }
+                  onClick={() => setActiveSection('storage')}
                 >
                   <span className="quick-action-icon">
                     ▣
                   </span>
 
                   <div>
-                    <strong>Kho của tôi</strong>
+                    <strong>Lấy mã PIN & Thao tác kho</strong>
                     <small>
-                      Xem các kho đang thuê
+                      Xem thẻ ra vào, đóng phí, gia hạn, trả kho
                     </small>
                   </div>
 
@@ -1640,19 +2216,18 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
 
                 <button
+                  type="button"
                   className="quick-action"
-                  onClick={() =>
-                    setActiveSection('contract')
-                  }
+                  onClick={() => setActiveSection('contract')}
                 >
                   <span className="quick-action-icon yellow">
                     ▤
                   </span>
 
                   <div>
-                    <strong>Hợp đồng</strong>
+                    <strong>Ký HĐ, Gia hạn & Trả kho</strong>
                     <small>
-                      Xem thông tin hợp đồng
+                      Thủ tục pháp lý & biên bản bàn giao
                     </small>
                   </div>
 
@@ -1672,10 +2247,10 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
                 <div>
                   <span className="customer-eyebrow">
-                    RECENT ACTIVITY
+                    NHẬT KÝ ĐƠN THUÊ
                   </span>
 
-                  <h2>Hoạt động gần đây</h2>
+                  <h2>Hoạt động đặt thuê gần đây</h2>
                 </div>
 
               </div>
@@ -1687,12 +2262,12 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
                     <span className={`activity-dot ${item.paymentStatus === 'Completed' ? 'green' : 'yellow'}`} />
                     <div>
                       <strong>Đơn {formatReservationCode(item.reservationId)} · {item.statusLabel}</strong>
-                      <small>{item.facility} · {item.unitId || 'Chưa phân kho'} · {item.startDate}</small>
+                      <small>{item.facility} · {item.unitId || 'Chưa phân kho'} · {item.startDate} → {item.endDate}</small>
                     </div>
-                    <span className="activity-time">{item.paymentStatus || 'Chưa thanh toán'}</span>
+                    <span className="activity-time">{item.paymentStatus === 'Completed' ? 'Đã đặt cọc' : 'Chờ đặt cọc'}</span>
                   </div>
                 ))}
-                {rentals.length === 0 && <p>Chưa có hoạt động.</p>}
+                {rentals.length === 0 && <p>Chưa có hoạt động đặt thuê kho nào.</p>}
               </div>
 
             </section>
@@ -1701,32 +2276,50 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
         )}
 
         {activeSection === 'storage' && (
-          <MyStoragePage customerRental={customerRental} customerRentals={rentals} facilities={facilities} />
+          <MyStoragePage
+            customerRental={customerRental}
+            customerRentals={rentals}
+            facilities={facilities}
+            onRentalsChanged={onReloadRentals}
+            onOpenPayment={() => setActiveSection('payment')}
+            onOpenContract={openContractForReservation}
+            onSignContract={signContractForRental}
+          />
         )}
 
         {activeSection === 'contract' && (
-          <ContractPage customerRental={customerRental} customerRentals={rentals} getCurrentUser={getCurrentUser} facilities={facilities} />
+          <ContractPage
+            customerRental={customerRental}
+            customerRentals={rentals}
+            getCurrentUser={getCurrentUser}
+            facilities={facilities}
+            onRentalsChanged={onReloadRentals}
+            onOpenPayment={() => setActiveSection('payment')}
+          />
         )}
 
-
         {activeSection === 'payment' && (
-          <CustomerPaymentPage reservations={rentals} />
+          <CustomerPaymentCenter
+            reservations={rentals}
+            onChanged={onReloadRentals}
+            onOpenContract={openContractForReservation}
+            renderRefund={item => <RefundTimeline item={item} formatMoney={n => `${new Intl.NumberFormat('vi-VN').format(n || 0)}đ`} />}
+          />
+        )}
+
+        {activeSection === 'notifications' && (
+          <CustomerNotificationsPage center={notices} onAction={openNotice} />
         )}
 
         {activeSection === 'profile' && (
           <ProfilePage user={user} rentals={rentals} onLogout={logout} onOpenStorage={() => setActiveSection('storage')} />
         )}
 
-
-
       </main>
 
     </div>
-    // {/* </div> */}
   )
 }
-
-
 
 // Export only the main customer dashboard to App.jsx.
 export default CustomerDashboard

@@ -1,0 +1,29 @@
+CHUÔNG THÔNG BÁO + NHẮC ĐƠN CHƯA ĐẶT CỌC + TRANG THANH TOÁN MỚI (chỉ FRONTEND, frontend/src)
+=============================================================================================
+
+FILE MỚI:
+  HeaderNotificationBell.jsx / .css   chuông trên header + popup
+  PendingPayments.jsx / .css          thanh nhắc đơn chưa đặt cọc + trang Thanh toán mới
+CHÉP ĐÈ:
+  App.jsx             (FILE CỦA NHÓM - báo nhóm, chỉ thêm, đánh dấu [THÊM]):
+                       import, hàm fetchCustomerRentals, nút chuông, dòng chuông trong menu điện thoại,
+                       thanh nhắc ngay dưới </header>.
+  CustomerAccount.jsx (trang khách, bản đã có 7a; đánh dấu [THÊM] / [SỬA]):
+                       trang Thanh toán cũ -> CustomerPaymentCenter; thanh nhắc ở đầu các mục; badge mục Thanh toán.
+
+KHÁCH SẼ THẤY GÌ khi bỏ dở thanh toán cọc (thoát VNPay, đóng tab...):
+  1. Trang chủ / tìm kho / cơ sở: thanh vàng ngay dưới header
+     "Đơn RS-... (kho Q1-U01) chưa đặt cọc · 760.000đ - Kho chỉ được giữ đến 16:16 (còn 12:00)"
+     + nút "Xem & thanh toán". Còn dưới 5 phút thì chuyển đỏ. Hết giờ giữ kho thì tự biến mất.
+     (Không hiện ở giỏ hàng / trang đặt kho / trang kết quả thanh toán vì ở đó đã có đồng hồ riêng.)
+  2. Chuông header: đơn chưa cọc cộng vào số đỏ và được ghim đầu popup ("Cần làm ngay"), bấm là tới trang Thanh toán.
+  3. Trong trang tài khoản: thanh nhắc ở đầu mọi mục + số trên mục "Thanh toán".
+  4. Trang Thanh toán mới:
+     - "Cần thanh toán": từng đơn có đồng hồ giữ kho, lý do lần trước chưa xong
+       ("Bạn đã mở trang VNPay nhưng chưa hoàn tất..."), nút Thanh toán / Hủy đặt chỗ, nút thanh toán tất cả.
+     - 3 ô tóm tắt: Cần thanh toán / Đã thanh toán / Hoàn tiền.
+     - "Lịch sử giao dịch" dạng bảng (điện thoại thành thẻ), tiến trình hoàn tiền bấm để xem.
+     - Sửa lỗi cũ: đơn CHƯA cọc không còn ghi "Đã thanh toán 760.000đ" nữa.
+
+TEST: đặt 1 kho -> sang VNPay -> bấm Hủy / đóng tab -> quay lại trang chủ: thấy thanh vàng + chuông có số.
+      Bấm chuông -> "Cần làm ngay". Vào tài khoản -> mục Thanh toán.

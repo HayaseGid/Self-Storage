@@ -1,0 +1,21 @@
+SỬA THEO GÓP Ý CỦA CÔ - PHẦN FE LÀM ĐƯỢC (không đụng backend, không đụng giảm giá)
+Làm trên bản main-11-Payment ĐÃ DÁN các gói trước (doi-luat-dong-tien-thue, sua-gia-han, huy-dat-kho-buoc-coc).
+
+CÁCH DÁN: chép đè 4 file vào frontend/src, tải lại trang. Không cần chạy lại backend.
+
+frontend/src/FacilityManagerAccount.jsx  (FILE CỦA BẠN)
+  - Mục 3: kích thước kho bắt Dài >= Rộng (ô Dài đưa lên trước, báo lỗi + cảnh báo ngay khi nhập)
+  - Mục 4: diện tích lớn hơn mọi nhóm size chuẩn -> không cho tạo size, báo "nhận theo đơn đặt riêng (order)"
+frontend/src/CartPage.jsx
+  - Mục 19: đặt từ 2 kho -> hiện thông báo "các kho trong lần đặt dùng chung một hình thức trả tiền thuê"
+  - Mục 8: tóm tắt đơn xếp lại: giá thuê/tháng -> tổng tiền thuê (giá x số tháng) -> tiền cọc -> dòng cuối in đậm
+           "Cần thanh toán khi đặt kho"
+frontend/src/App.jsx
+  - Mục 8: trang đặt 1 kho: giá/tháng ở trên, "Tổng tiền thuê (giá x số tháng)", "Đóng sau khi nhận kho",
+           dòng cuối "Cần thanh toán khi đặt kho: tiền cọc"
+  - Mục 4: trang chi tiết cơ sở có khung "Cần kho lớn hơn / kích thước đặc biệt? Liên hệ đặt theo yêu cầu"
+  - Sửa chữ còn sót "Ngày nhận kho đóng tiền tháng đầu" -> "Sau khi nhận kho ..."
+frontend/src/ContractDocument.jsx
+  - Mục 8: Phụ lục 01 lấy đúng giá/tháng và tiền cọc của từng hợp đồng -> từng dòng khớp dòng "Tổng cộng"
+
+3 file sau là của nhóm (CartPage, App, ContractDocument) -> báo nhóm.

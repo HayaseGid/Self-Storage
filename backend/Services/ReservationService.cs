@@ -19,6 +19,10 @@ public class ReservationService : IReservationService
         if (request.Months is not (1 or 3 or 6 or 12))
             return new ReservationServiceResponse(false, "Thời hạn thuê chỉ được chọn 1, 3, 6 hoặc 12 tháng.", 400, null);
 
+        var paymentPlan = PaymentPlan.Normalize(request.PaymentPlan);
+        if (paymentPlan is null)
+            return new ReservationServiceResponse(false, "Vui lòng chọn hình thức trả tiền thuê: trả theo tháng hoặc trả 1 lần.", 400, null);
+
         if (string.IsNullOrWhiteSpace(userEmail))
             return new ReservationServiceResponse(false, null, 401, null);
 
@@ -27,8 +31,26 @@ public class ReservationService : IReservationService
             return new ReservationServiceResponse(false, "Không tìm thấy tài khoản khách hàng.", 404, null);
 
         var startDate = request.StartDate.Date;
-        if (startDate < DateTime.Today)
+        if (startDate < BusinessClock.Today)
             return new ReservationServiceResponse(false, "Ngày bắt đầu thuê không được ở trong quá khứ.", 400, null);
+
+        // Cách nhận kho + khung giờ (4.1): nhận trực tiếp phải chọn 1 trong 4 khung 2 tiếng; online không hẹn giờ.
+        var handoverMethod = HandoverMethod.Normalize(request.HandoverMethod);
+        if (handoverMethod is null)
+            return new ReservationServiceResponse(false, "Cách nhận kho chỉ được chọn: nhận trực tiếp hoặc bàn giao online.", 400, null);
+
+        TimeSpan? appointmentTime = null;
+        if (handoverMethod == HandoverMethod.InPerson)
+        {
+            appointmentTime = StaffAssignmentPolicy.ParseMoveInSlot(request.AppointmentSlot);
+            if (appointmentTime is null)
+                return new ReservationServiceResponse(false, "Vui lòng chọn khung giờ nhận kho: 08:00–10:00, 10:00–12:00, 12:00–14:00 hoặc 14:00–16:00.", 400, null);
+
+            // Nhận ngay hôm nay: khung giờ phải còn chưa kết thúc (giờ VN)
+            var vnNow = DateTime.UtcNow.AddHours(7);
+            if (startDate == vnNow.Date && appointmentTime.Value.Add(StaffAssignmentPolicy.MoveInSlotLength) <= vnNow.TimeOfDay)
+                return new ReservationServiceResponse(false, "Khung giờ này hôm nay đã qua. Vui lòng chọn khung giờ khác hoặc ngày bắt đầu khác.", 400, null);
+        }
 
         var requestedItems = request.Units is { Count: > 0 }
             ? request.Units
@@ -94,9 +116,11 @@ public class ReservationService : IReservationService
                 RentalPeriod = request.Months,
                 EndDate = endDate,
                 DepositMonths = depositMonths,
+                PaymentPlan = paymentPlan,
                 HoldExpiresAt = now.AddMinutes(holdMinutes),
                 AppointmentDate = startDate,
-                AppointmentTime = new TimeSpan(9, 0, 0),
+                AppointmentTime = appointmentTime, // khung giờ khách chọn; online = null (không hẹn giờ)
+                HandoverMethod = handoverMethod,
                 Status = ReservationStatus.PendingPayment,
                 CreatedAt = now
             };
@@ -110,7 +134,7 @@ public class ReservationService : IReservationService
             {
                 var firstUnitInGroup = group.First();
                 var monthlyPrice = firstUnitInGroup.RentalRate!.MonthlyPrice;
-                var effectiveMonthlyPrice = decimal.Round(monthlyPrice * (100m - discountRate) / 100m, 0, MidpointRounding.AwayFromZero);
+                var effectiveMonthlyPrice = monthlyPrice;
 
                 var reservationItem = new ReservationItem
                 {
@@ -120,7 +144,7 @@ public class ReservationService : IReservationService
                     UnitSizeID = group.Key.UnitSizeID,
                     Quantity = (byte)group.Count(),
                     MonthlyPrice = monthlyPrice,
-                    DiscountPercent = discountRate,
+                    DiscountPercent = 0m,
                     CreatedAt = now
                 };
                 reservation.ReservationItems.Add(reservationItem);
@@ -173,7 +197,8 @@ public class ReservationService : IReservationService
                             PeriodStart = periodStart,
                             PeriodEnd = periodEnd,
                             Amount = effectiveMonthlyPrice,
-                            DueDate = m == 0 ? now.Date : periodStart,
+                            // Hạn đóng theo RentPaymentRules: trả 1 lần -> tất cả đến hạn ngày nhận kho; theo tháng -> ngày đầu mỗi kỳ
+                            DueDate = RentPaymentRules.DueDateFor(paymentPlan, startDate, periodStart),
                             Status = "Unpaid",
                             CreatedAt = now
                         });
@@ -189,6 +214,11 @@ public class ReservationService : IReservationService
             {
                 message = "Đặt kho thành công, đang chờ thanh toán tiền cọc.",
                 reservationId = reservation.ReservationID,
+                paymentPlan = reservation.PaymentPlan,
+                handoverMethod = reservation.HandoverMethod,
+                appointmentSlot = StaffAssignmentPolicy.SlotLabel(reservation.AppointmentTime),
+                // Số tiền thuê phải đóng ngày nhận kho: trả 1 lần = toàn bộ, theo tháng = tháng đầu
+                rentDueAtHandover = paymentPlan == PaymentPlan.Upfront ? totalRent : totalMonthlyPrice,
                 reservationCode = reservation.ReservationCode,
                 unitNumber = string.Join(", ", unitNumbers),
                 unitNumbers,

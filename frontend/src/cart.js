@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { apiPost } from './api'
 
 /*
  * Giỏ hàng thuê kho (lưu trên trình duyệt, giữ được khi chưa đăng nhập).
@@ -79,6 +80,49 @@ export function removeManyFromCart(keys) {
 
 export function clearCart() {
   saveCart([])
+}
+
+/* Hủy đơn giữ kho ở bước đặt cọc -> trả các kho về giỏ (bỏ qua kho đã có trong giỏ). */
+const CART_FIELDS = ['facilityId', 'facilityName', 'unitId', 'unitDbId', 'unitTypeId', 'type', 'size', 'price', 'addedAt']
+export function toCartItem(item) {
+  return Object.fromEntries(CART_FIELDS.filter(key => item?.[key] !== undefined).map(key => [key, item[key]]))
+}
+export function restoreToCart(items) {
+  const cart = getCart()
+  ;(items || []).map(toCartItem).forEach(item => {
+    if (!item.facilityId || !item.unitId) return
+    if (cart.some(c => String(c.facilityId) === String(item.facilityId) && c.unitId === item.unitId)) return
+    if (cart.length < CART_LIMIT) cart.push(item)
+  })
+  saveCart(cart)
+}
+
+/* Kho của lần đặt cọc đang chuyển sang VNPay: để trang kết quả trả lại giỏ nếu khách hủy giao dịch. */
+const VNPAY_CART_KEY = 'storespace_vnpay_cart_items'
+export function rememberVnPayCartItems(items) {
+  try { sessionStorage.setItem(VNPAY_CART_KEY, JSON.stringify((items || []).map(toCartItem))) } catch { /* bỏ qua */ }
+}
+export function takeVnPayCartItems() {
+  try {
+    const items = JSON.parse(sessionStorage.getItem(VNPAY_CART_KEY) || '[]')
+    sessionStorage.removeItem(VNPAY_CART_KEY)
+    return Array.isArray(items) ? items : []
+  } catch {
+    return []
+  }
+}
+
+/* Hủy các đơn còn "chờ thanh toán cọc" (POST /api/reservation-cancellations/{id}, đơn chưa cọc nên không hoàn tiền).
+   Đơn đã hết hạn giữ / đã hủy thì backend báo lỗi -> bỏ qua. Trả về số đơn hủy được. */
+export async function cancelHeldReservations(reservationIds, reason = 'Khách hủy ở bước thanh toán cọc') {
+  let cancelled = 0
+  for (const id of (reservationIds || []).map(Number).filter(Boolean)) {
+    try {
+      await apiPost(`/api/reservation-cancellations/${id}`, { reason })
+      cancelled += 1
+    } catch { /* đã hết hạn giữ hoặc đã hủy */ }
+  }
+  return cancelled
 }
 
 /* Hook: số lượng / danh sách giỏ hàng, tự cập nhật khi giỏ thay đổi (kể cả ở tab khác). */

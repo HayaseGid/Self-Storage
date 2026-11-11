@@ -4154,3 +4154,10 @@ img { display: block; width: 100%; }
 /* Giảm giá theo gói thuê (pricing.js) */
 .duration-package-saving { display: block; margin-top: 2px; color: #2b8b55; font-size: 11.5px; font-weight: 800; }
 .discount-row { display: flex; justify-content: space-between; gap: 10px; color: #2b8b55; font-size: 13.5px; font-weight: 700; }
+
+/* Các bước thanh toán VNPay (trang đặt kho) */
+.vnpay-steps { width: 100%; margin: 14px 0 6px; padding: 0; list-style: none; counter-reset: vnp; display: grid; gap: 10px; text-align: left; }
+.vnpay-steps li { counter-increment: vnp; display: grid; grid-template-columns: 28px 1fr; column-gap: 10px; padding: 10px 12px; border-radius: 12px; background: #f5faff; border: 1px solid #e1edf7; }
+.vnpay-steps li::before { content: counter(vnp); grid-row: span 2; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: #075a9f; color: #fff; font-size: 13px; font-weight: 800; }
+.vnpay-steps strong { color: #073d70; font-size: 14px; }
+.vnpay-steps span { color: #6d849b; font-size: 12.5px; line-height: 1.5; }

@@ -14,9 +14,13 @@ public class Reservation
     public int RentalPeriod { get; set; }
     public DateTime EndDate { get; set; }
     public byte DepositMonths { get; set; } = 2;
+    /// <summary>Hình thức trả tiền thuê: "Monthly" (theo tháng) hoặc "Upfront" (1 lần) — xem Constants/PaymentPlan.</summary>
+    public string PaymentPlan { get; set; } = SelfStorageAPI.Constants.PaymentPlan.Monthly;
     public DateTime HoldExpiresAt { get; set; }
     public DateTime? AppointmentDate { get; set; }
     public TimeSpan? AppointmentTime { get; set; }
+    /// <summary>Cách nhận kho: "InPerson" (đến trong khung giờ đã chọn) hoặc "Online" (mã trên tài khoản, chìa ở lễ tân) — xem Constants/HandoverMethod.</summary>
+    public string HandoverMethod { get; set; } = SelfStorageAPI.Constants.HandoverMethod.InPerson;
     public string Status { get; set; } = "Pending Payment";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? PaidAt { get; set; }

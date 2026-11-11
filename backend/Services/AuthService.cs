@@ -39,6 +39,8 @@ public class AuthService : IAuthService
                 Email = user.Email!,
                 RoleName = user.Role.RoleName,
                 Status = user.Status,
+                AccessCode = user.AccessCode,
+                AccessCodeStatus = user.AccessCodeStatus,
                 PhoneNumber = user.PhoneNumber
             }
         };

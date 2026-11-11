@@ -1,3 +1,4 @@
+using SelfStorageAPI.Constants;
 using SelfStorageAPI.Interfaces;
 
 namespace SelfStorageAPI.Services;
@@ -70,7 +71,7 @@ public class CatalogService : ICatalogService
 
     public async Task<CatalogServiceResponse> GetAvailabilityAsync(int facilityId, int unitTypeId, DateTime startDate, int months, CancellationToken cancellationToken)
     {
-        if (months is not (1 or 3 or 6 or 12) || startDate.Date < DateTime.Today)
+        if (months is not (1 or 3 or 6 or 12) || startDate.Date < BusinessClock.Today)
             return new CatalogServiceResponse(false, "Ngày bắt đầu hoặc thời hạn thuê không hợp lệ (chỉ hỗ trợ 1, 3, 6 hoặc 12 tháng).", 400, null);
 
         var now = DateTime.UtcNow;

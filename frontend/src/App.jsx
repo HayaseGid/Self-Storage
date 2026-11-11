@@ -21,7 +21,16 @@ import { RENTAL_TERMS } from './storageRules'
 import { effectiveMonthly, holdMinutesFor, quote, setCatalogPricing } from './pricing'
 import FacilityMap, { directionsUrl, useFacilityLocations } from './FacilityMap'
 import CartPage from './CartPage'
+import { announceDepositSuccess, confirmAfterDeposit, openCustomerSection } from './afterDeposit'
+import PaymentResultPage from './PaymentResultPage'
+import DepositConfirm from './DepositConfirm'
+import FacilityFloorPlan from './FacilityFloorPlan'
+import Unit3DViewer from './Unit3DViewer'
+import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './vnpay'
+import DemoClockWidget from './demoClock/DemoClockWidget'
+import { getTodayDate } from './demoClock/demoClock'
 import { CART_LIMIT, addToCart, isInCart, useCart } from './cart'
+import HeaderNotificationBell, { HeaderPendingDepositBar } from './HeaderNotificationBell' // [THÊM] chuông thông báo + nhắc đơn chưa đặt cọc
 import {
   clearBookingDraft,
   draftMatchesUnit,
@@ -31,7 +40,8 @@ import {
   withNext
 } from './bookingDraft'
 import CustomerDashboard from './CustomerAccount'
-import { generateOTP, sendOTPEmail, OTP_EXPIRES_MS, OTP_RESEND_MS, OTP_MAX_ATTEMPTS } from './otpService'
+import { startRegistration, resendRegistrationOtp, verifyRegistrationOtp } from './otpService'
+import HandoverChoice, { HANDOVER_METHODS, ONLINE_HANDOVER_NOTE, handoverChoiceError, slotLabel } from './HandoverChoice'
 
 import StaffPortal from './FacilityStaffAccount'
 //Đã thêm: 04/10/2026
@@ -177,7 +187,7 @@ async function handleAddToCart(dialog, facility, unit) {
   const choice = await dialog.open({
     tone: result.ok ? 'success' : 'info',
     title: result.ok ? `Đã thêm ${unit.id} vào giỏ hàng` : `${unit.id} đã có trong giỏ hàng`,
-    message: `${getUnitTypeStyle(unit.type).label} · ${unit.size} · ${formatMoney(unit.price)}/tháng tại ${facility.name}.\nCác kho cùng cơ sở có thể đặt chung một hợp đồng.`,
+    message: `${getUnitTypeStyle(unit.type).label} · ${unit.size} · ${formatMoney(unit.price)}/tháng tại ${facility.name}.\nCác kho cùng cơ sở có thể đặt cùng lúc (mỗi kho một hợp đồng riêng).`,
     dismissValue: null,
     actions: [
       { label: 'Tiếp tục xem kho', value: null, variant: 'secondary' },
@@ -301,6 +311,23 @@ function HomeIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 10 8-7 8 7" /><path d="M6 9v11h12V9" /><path d="M10 20v-6h4v6" /></svg>
 }
 
+/* [THÊM] Danh sách đơn của khách cho chuông thông báo trên header: cùng API + cùng cách lọc / đổi dữ liệu với trang khách (CustomerPage). */
+function fetchCustomerRentals() {
+  const user = getCurrentUser()
+  if (!user?.email) return Promise.resolve([])
+  return apiGet('/api/customer-reservations/mine')
+    .catch(fastError => {
+      if (fastError?.status !== 404) throw fastError
+      return apiGet(`/api/reservation/customer/${encodeURIComponent(user.email)}`)
+    })
+    .then(data => {
+      if (!Array.isArray(data)) return []
+      const abandoned = r => r.status === 'Expired' ||
+        (r.status === 'Cancelled' && !r.contractId && !(Number(r.refundAmount) > 0))
+      return data.filter(r => !abandoned(r)).map(mapCustomerReservation)
+    })
+}
+
 function SiteHeader() {
   const [storageOpen, setStorageOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -349,6 +376,7 @@ function SiteHeader() {
           )}
         </nav>
         <div className="header-actions">
+          {currentUser?.role === 'customer' && <HeaderNotificationBell user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />}
           {showCart && (
             <button className="header-cart" type="button" onClick={() => go('/cart')} aria-label={`Giỏ hàng (${cartItems.length} kho)`} title="Giỏ hàng">
               <CartIcon />
@@ -367,6 +395,10 @@ function SiteHeader() {
           <button className="menu-button" type="button" onClick={() => setMenuOpen(v => !v)} aria-label="Mở menu"><MenuIcon /></button>
         </div>
       </header>
+      {/* [THÊM] Nhắc đơn chưa đặt cọc (khách thoát VNPay giữa chừng) - ẩn ở giỏ hàng / trang đặt kho / kết quả thanh toán vì ở đó đã có đồng hồ riêng */}
+      {currentUser?.role === 'customer' && !['/cart', '/payment-result'].includes(window.location.pathname) && !window.location.pathname.includes('/unit/') && (
+        <HeaderPendingDepositBar user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />
+      )}
       {menuOpen && (
         <>
           <div className="mobile-menu-overlay" onClick={() => setMenuOpen(false)} />
@@ -379,6 +411,7 @@ function SiteHeader() {
               <div className="mobile-menu-section">
                 <div className="mobile-menu-title">KHÁM PHÁ</div>
                 {currentUser && <button className="mobile-menu-item" type="button" onClick={() => go(roleHome(currentUser.role))}>⌂ <span>{currentUser.role && currentUser.role !== 'customer' ? 'Trang làm việc' : 'Hồ sơ của tôi'}</span></button>}
+                {currentUser?.role === 'customer' && <HeaderNotificationBell variant="menu" user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />}
                 <button className="mobile-menu-item" type="button" onClick={() => go('/')}>⌂ <span>Trang chủ</span></button>
                 <button className="mobile-menu-item" type="button" onClick={() => go('/search')}>⌕ <span>Tìm kho</span></button>
                 <button className="mobile-menu-item mobile-menu-button" type="button" onClick={() => setMobileStorageOpen(v => !v)}>▣ <span>Loại kho</span><span>›</span></button>
@@ -542,13 +575,13 @@ function FacilitiesMapSection({ list }) {
   )
 }
 
-function FacilityLocationCard({ facility }) {
+function FacilityLocationCard({ facility, hideMap = false }) {
   const { error, locations } = useFacilityLocations()
   const [point] = toMapPoints([facility], locations)
   if (error || !point || point.latitude == null) return null
   return (
-    <div className="facility-location-card">
-      <FacilityMap points={[point]} single height={260} />
+    <div className={`facility-location-card${hideMap ? ' no-map' : ''}`}>
+      {!hideMap && <FacilityMap points={[point]} single height={260} />}
       <div className="facility-location-info">
         <h3>Vị trí cơ sở</h3>
         <p><PinIcon /> {point.address}</p>
@@ -648,6 +681,9 @@ function UnitCard({ facility, unit }) {
 
 function FacilityDetailPage({ facility }) {
   const units = getStorageUnits(facility.name)
+  const { locations: facilityLocations } = useFacilityLocations()
+  const [facilityPoint] = toMapPoints([facility], facilityLocations)
+  const hasUnitsMap = Boolean(units.length && facilityPoint && facilityPoint.latitude != null && facilityPoint.longitude != null)
   const typeKeys = getCatalogTypeKeys(units)
 
   const [query, setQuery] = useState('')
@@ -695,7 +731,21 @@ function FacilityDetailPage({ facility }) {
               <p>Hiện có <strong>{facility.available}</strong> kho đang sẵn sàng cho thuê.</p>
             </div>
           </div>
-          <FacilityLocationCard facility={facility} />
+          <FacilityLocationCard facility={facility} hideMap={hasUnitsMap} />
+          <FacilityFloorPlan
+            facility={facility}
+            units={units}
+            point={facilityPoint}
+            highlightIds={filteredUnits.length === units.length ? null : new Set(filteredUnits.map(unit => unit.id))}
+            onOpenDetail={unit => navigate(getUnitPath(facility, unit))}
+            onBook={unit => navigate(getBookingPath(facility, unit))}
+          />
+          <div className="cart-note" role="note" style={{ margin: '18px 0', padding: '14px 16px', borderRadius: 12, background: '#eef5ff', border: '1px solid #c9dcf7' }}>
+            <strong>Cần kho lớn hơn các kho đang có, hoặc kích thước đặc biệt?</strong>{' '}
+            Kho quá lớn không bán sẵn mà nhận theo đơn đặt riêng: liên hệ cơ sở để được báo giá
+            {facilityPoint?.phone ? <> qua số <a href={`tel:${String(facilityPoint.phone).replace(/\s/g, '')}`}>{facilityPoint.phone}</a> hoặc</> : ''}{' '}
+            qua email <a href={`mailto:support@storespace.vn?subject=${encodeURIComponent(`Đặt kho theo yêu cầu - ${facility.name}`)}`}>support@storespace.vn</a>.
+          </div>
           <div className="units-heading">
             <div><div className="eyebrow">AVAILABLE UNITS</div><h2>Các kho tại {facility.name}</h2></div>
             <span>{filteredUnits.length} / {units.length} kho phù hợp</span>
@@ -745,6 +795,7 @@ function FacilityDetailPage({ facility }) {
 function UnitDetailPage({ facility, unit }) {
   const dialog = useDialog()
   useCart()
+  const [show3D, setShow3D] = useState(false)
 
   const handleBookClick = async () => {
     const user = getCurrentUser()
@@ -792,10 +843,12 @@ function UnitDetailPage({ facility, unit }) {
                 <button className={`add-cart-btn${isInCart(facility.facilityId, unit.id) ? ' in-cart' : ''}`} type="button" onClick={() => handleAddToCart(dialog, facility, unit)}>
                   <CartIcon /> {isInCart(facility.facilityId, unit.id) ? 'Đã có trong giỏ' : 'Thêm vào giỏ'}
                 </button>
+                <button className="dashboard-secondary-btn" type="button" onClick={() => setShow3D(true)}>Xem kho 3D</button>
                 <button className="dashboard-secondary-btn" type="button" onClick={() => navigate(`/facilities/${createSlug(facility.name)}`)}>Xem các kho khác</button>
               </div>
             </div>
           </div>
+          {show3D && <Unit3DViewer unit={unit} facilityName={facility.name} onClose={() => setShow3D(false)} onBook={unit.available ? () => { setShow3D(false); handleBookClick() } : null} />}
           <section className="unit-detail-description"><span className="customer-eyebrow">ABOUT THIS UNIT</span><h2>Thông tin về kho</h2><p>{getUnitTypeStyle(unit.type).label} ({unit.type}) tại {facility.name} phù hợp cho nhu cầu lưu trữ cá nhân, hồ sơ, đồ gia dụng và các vật dụng cần không gian riêng biệt. Kho được quản lý và kiểm soát ra vào theo tiêu chuẩn của StoreSpace.</p></section>
         </div>
       </main>
@@ -816,7 +869,11 @@ function getRestoredBookingForm(facility, unit) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(draft.startDate || '')) {
     const [year, month, day] = draft.startDate.split('-').map(Number)
     const date = new Date(year, month - 1, day)
-    const today = new Date()
+    // [THỜI GIAN THỰC]:
+    // const today = new Date()
+    // today.setHours(0, 0, 0, 0)
+    // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+    const today = getTodayDate()
     today.setHours(0, 0, 0, 0)
     if (date.getTime() >= today.getTime()) {
       form.startDay = String(day)
@@ -851,12 +908,15 @@ function BookingPage({ facility, unit }) {
 
   const [duration, setDuration] = useState(restoredForm?.duration || RENTAL_TERMS[0])
   const [paymentMode, setPaymentMode] = useState(restoredForm?.paymentMode || 'cycle')
+  const [handoverMethod, setHandoverMethod] = useState(HANDOVER_METHODS.InPerson) // 'InPerson' | 'Online'
+  const [appointmentSlot, setAppointmentSlot] = useState('') // '08:00' | '10:00' | '12:00' | '14:00'
   const [paymentCycle, setPaymentCycle] = useState(restoredForm?.paymentCycle || 1)
   const [showRestoredNote, setShowRestoredNote] = useState(Boolean(restoredForm?.restored || restoredForm?.pastDate))
 
   const [error, setError] = useState('')
   const [booking, setBooking] = useState(null)
   const [depositPaid, setDepositPaid] = useState(false)
+  const [depositAgreed, setDepositAgreed] = useState(false)
   const [depositSecondsRemaining, setDepositSecondsRemaining] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -967,7 +1027,11 @@ function BookingPage({ facility, unit }) {
     return date
   }
 
-  const today = new Date()
+  // [THỜI GIAN THỰC]:
+  // const today = new Date()
+  // today.setHours(0, 0, 0, 0)
+  // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+  const today = getTodayDate()
   today.setHours(0, 0, 0, 0)
 
   const isValidStartDate =
@@ -1030,6 +1094,12 @@ function BookingPage({ facility, unit }) {
       return
     }
 
+    const handoverError = handoverChoiceError(handoverMethod, appointmentSlot, startDate)
+    if (handoverError) {
+      await showBookingError(handoverError, 'Chưa chọn khung giờ nhận kho', 'warning')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const startDateValue = toApiDate(startDate)
@@ -1065,7 +1135,11 @@ function BookingPage({ facility, unit }) {
         unitID: availableUnit.unitId,
         unitNumber: availableUnit.unitNumber,
         startDate: startDateValue,
-        months: totalMonths
+        months: totalMonths,
+        // Khớp CK_Reservation_PaymentPlan: trả theo tháng / trả 1 lần (tiền thuê đóng sau khi nhận kho)
+        paymentPlan: paymentMode === 'full' ? 'Upfront' : 'Monthly',
+        handoverMethod,
+        appointmentSlot: handoverMethod === HANDOVER_METHODS.Online ? null : appointmentSlot
       })
       const reservationId = reservation.reservationId
       const bookingData = {
@@ -1083,7 +1157,7 @@ function BookingPage({ facility, unit }) {
         monthlyPrice: reservation.monthlyPrice,
         totalRent: reservation.rentalAmount,
         paymentMode,
-        paymentCycle: paymentMode === 'cycle' ? Number(paymentCycle) : totalMonths,
+        paymentCycle: paymentMode === 'cycle' ? 1 : totalMonths,
         depositPercent: availability.depositPercent,
         deposit: reservation.depositAmount,
         depositExpiresAt: reservation.depositExpiresAt,
@@ -1110,7 +1184,7 @@ function BookingPage({ facility, unit }) {
   }
 
   const handleDepositPaid = async () => {
-    if (!booking) return
+    if (!booking || !depositAgreed) return
 
     if (Date.parse(booking.depositExpiresAt) <= Date.now()) {
       setDepositSecondsRemaining(0)
@@ -1119,6 +1193,24 @@ function BookingPage({ facility, unit }) {
         'Hết thời gian giữ kho',
         'warning'
       )
+      return
+    }
+
+    // Thanh toán thật qua VNPay (sandbox): chuyển sang trang VNPay, VNPay chuyển về /payment-result.
+    if (!SIMULATED_PAYMENT_ENABLED || !(await dialog.confirm({
+      tone: 'info',
+      title: 'Chọn cách thanh toán',
+      message: 'Đang bật chế độ demo. Thanh toán mô phỏng (không qua VNPay)?',
+      confirmLabel: 'Mô phỏng',
+      cancelLabel: 'Qua VNPay'
+    }))) {
+      setIsSubmitting(true)
+      try {
+        await startVnPayPayment([booking.reservationId], { amount: booking.deposit, count: 1, label: booking.id })
+      } catch (err) {
+        setIsSubmitting(false)
+        await showBookingError(err.message, 'Chưa mở được trang thanh toán VNPay')
+      }
       return
     }
 
@@ -1146,7 +1238,15 @@ function BookingPage({ facility, unit }) {
       }))
       setDepositPaid(true)
       sessionStorage.removeItem(ACTIVE_BOOKING_HOLD_KEY)
-      navigate('/customer')
+      // Không còn bước Manager duyệt: xác nhận đơn + tạo hợp đồng ngay, rồi mở tab Hợp đồng để ký.
+      const confirmation = await confirmAfterDeposit([booking.reservationId])
+      setIsSubmitting(false)
+      await announceDepositSuccess(dialog, {
+        count: 1,
+        amountText: formatPrice(booking.deposit),
+        failed: Boolean(confirmation.error) || confirmation.failed?.length > 0
+      })
+      openCustomerSection(navigate, 'contract')
     } catch (err) {
       await showBookingError(err.message, 'Chưa ghi nhận được tiền cọc')
     } finally {
@@ -1322,16 +1422,13 @@ function BookingPage({ facility, unit }) {
                         >
                           <span className="duration-package-months"><strong>{months}</strong> tháng</span>
                           <span className="duration-package-total">{formatPrice(quote(monthlyPrice, months, facility.facilityId).rent)}</span>
-                          {quote(monthlyPrice, months, facility.facilityId).discountPercent > 0 && (
-                            <span className="duration-package-saving">Giảm {quote(monthlyPrice, months, facility.facilityId).discountPercent}% · {formatPrice(effectiveMonthly(monthlyPrice, months))}/tháng</span>
-                          )}
                           <span className="duration-package-end">{packageEnd ? `Đến ${formatDate(packageEnd)}` : DURATION_PACKAGE_NOTES[months]}</span>
                         </button>
                       )
                     })}
                   </div>
                   <p className="duration-note">
-                    Hợp đồng thuê mới áp dụng gói <strong>6 tháng</strong> hoặc <strong>12 tháng</strong>. Tiền cọc <strong>{depositMonths} tháng tiền thuê</strong> ({formatPrice(priceQuote.deposit)}), hoàn lại khi trả kho. Gia hạn hợp đồng là chức năng riêng, sẽ có sau.
+                    Hợp đồng thuê mới áp dụng gói <strong>6 tháng</strong> hoặc <strong>12 tháng</strong>. Tiền cọc <strong>{depositMonths} tháng tiền thuê</strong> ({formatPrice(priceQuote.deposit)}), hoàn lại khi trả kho. Gia hạn hợp đồng trong mục Hợp đồng khi sắp hết hạn.
                   </p>
                 </div>
 
@@ -1362,8 +1459,8 @@ function BookingPage({ facility, unit }) {
                       onClick={() => setPaymentMode('cycle')}
                     >
                       <span className="payment-mode-icon">↻</span>
-                      <strong>Thanh toán theo chu kỳ</strong>
-                      <small>Thanh toán tiền thuê theo từng chu kỳ sau khi Manager phê duyệt.</small>
+                      <strong>Trả theo tháng</strong>
+                      <small>Sau khi nhận kho đóng tiền tháng đầu, các tháng sau đóng trước ngày đầu mỗi kỳ.</small>
                     </button>
 
                     <button
@@ -1372,27 +1469,19 @@ function BookingPage({ facility, unit }) {
                       onClick={() => setPaymentMode('full')}
                     >
                       <span className="payment-mode-icon">✓</span>
-                      <strong>Thanh toán toàn bộ</strong>
-                      <small>Thanh toán toàn bộ tiền thuê một lần sau khi Manager phê duyệt.</small>
+                      <strong>Trả 1 lần</strong>
+                      <small>Sau khi nhận kho đóng toàn bộ tiền thuê của cả kỳ thuê.</small>
                     </button>
                   </div>
                 </div>
 
-                {paymentMode === 'cycle' && (
-                  <div className="cycle-select-box">
-                    <label>Chu kỳ thanh toán</label>
-                    <select
-                      value={paymentCycle}
-                      onChange={e => setPaymentCycle(Number(e.target.value))}
-                    >
-                      {paymentCycleOptions.map(value => (
-                        <option key={value} value={value}>
-                          Mỗi {value} tháng
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <HandoverChoice
+                  method={handoverMethod}
+                  onMethodChange={setHandoverMethod}
+                  slot={appointmentSlot}
+                  onSlotChange={setAppointmentSlot}
+                  startDate={startDate}
+                />
 
                 <div className="booking-price-breakdown">
                   <div>
@@ -1408,16 +1497,14 @@ function BookingPage({ facility, unit }) {
                   <div>
                     <span>Hình thức thanh toán</span>
                     <strong>
-                      {paymentMode === 'cycle'
-                        ? `Theo chu kỳ ${paymentCycle} tháng`
-                        : 'Thanh toán toàn bộ'}
+                      {paymentMode === 'cycle' ? 'Trả theo tháng' : 'Trả 1 lần'}
                     </strong>
                   </div>
 
                   <div className="price-divider" />
 
                   <div>
-                    <span>Tổng tiền thuê</span>
+                    <span>Tổng tiền thuê ({formatPrice(monthlyPrice)} × {totalMonths} tháng)</span>
                     <strong className="main-price">{formatPrice(totalRent)}</strong>
                   </div>
                   {priceQuote.discountPercent > 0 && (
@@ -1426,13 +1513,19 @@ function BookingPage({ facility, unit }) {
                       <strong>−{formatPrice(priceQuote.saving)}</strong>
                     </div>
                   )}
+                  <div>
+                    <span>Đóng sau khi nhận kho</span>
+                    <strong>{formatPrice(paymentMode === 'full' ? totalRent : (priceQuote.monthly ?? monthlyPrice))}{paymentMode === 'full' ? ' (cả kỳ)' : ' (tháng đầu)'}</strong>
+                  </div>
+
+                  <div className="price-divider" />
 
                   <div className="deposit-row">
                     <div>
-                      <span>Tiền cọc bắt buộc</span>
+                      <span>Cần thanh toán khi đặt kho: tiền cọc</span>
                       <small>{depositMonths} tháng tiền thuê · hoàn lại khi trả kho</small>
                     </div>
-                    <strong className="deposit-price">{formatPrice(deposit)}</strong>
+                    <strong className="deposit-price main-price">{formatPrice(deposit)}</strong>
                   </div>
                 </div>
 
@@ -1444,13 +1537,15 @@ function BookingPage({ facility, unit }) {
                       Bước 1: thanh toán tiền cọc {formatPrice(deposit)}.
                     </p>
                     <p>
-                      Bước 2: hệ thống chuyển yêu cầu cho Facility Manager duyệt.
+                      Bước 2: đặt cọc xong, kho được giữ cho bạn và bạn ký hợp đồng online ngay.
                     </p>
                     <p>
-                      Bước 3: sau khi được duyệt, bạn ký hợp đồng online trong mục Hợp đồng.
+                      {handoverMethod === HANDOVER_METHODS.Online
+                        ? `Bước 3: ngày bắt đầu, nhân viên bàn giao online. ${ONLINE_HANDOVER_NOTE}`
+                        : `Bước 3: cơ sở phân nhân viên bàn giao, bạn đến nhận kho và chìa khóa vào ngày bắt đầu${appointmentSlot ? ` (khung ${slotLabel(appointmentSlot)})` : ''}.`}
                     </p>
                     <p>
-                      Bước 4: thanh toán tiền thuê theo hình thức đã chọn và nhận kho.
+                      Bước 4: thanh toán tiền thuê theo hình thức đã chọn.
                     </p>
                   </div>
                 </div>
@@ -1489,35 +1584,46 @@ function BookingPage({ facility, unit }) {
                 <div className="deposit-qr-card">
                   <div className="deposit-qr-title">
                     <strong>Xác nhận thanh toán tiền cọc</strong>
-                    <span>Số tiền lấy từ kết quả đặt chỗ backend</span>
+                    <span>Thanh toán an toàn qua cổng VNPay</span>
                   </div>
 
-                  <div className="qr-wrapper">
-                    <p>Chưa tích hợp cổng thanh toán ngân hàng. Hành động bên dưới chỉ ghi nhận giao dịch mô phỏng vào database.</p>
-                  </div>
+                  <ol className="vnpay-steps" aria-label="Các bước thanh toán qua VNPay">
+                    <li><strong>Bấm “Thanh toán cọc qua VNPay”</strong><span>Trình duyệt chuyển sang trang VNPay (môi trường thử nghiệm).</span></li>
+                    <li><strong>Chọn cách trả</strong><span>Quét mã QR, thẻ ATM nội địa hoặc ví điện tử. Mã QR hiện trên trang VNPay.</span></li>
+                    <li><strong>Tự quay lại StoreSpace</strong><span>Hệ thống xác nhận tiền cọc, bạn ký hợp đồng ngay.</span></li>
+                  </ol>
 
-                  <strong className="qr-amount">
-                    {formatPrice(booking.deposit)}
-                  </strong>
-
-                  <p className="qr-note">
-                    Mã đặt chỗ:
-                    <strong>{' '}{booking.id}</strong>
-                  </p>
+                  {!depositPaid && (
+                    <DepositConfirm
+                      rows={[
+                        ['Mã đặt chỗ', booking.id],
+                        ['Cơ sở', booking.facility],
+                        ['Kho', `${booking.unitId} · ${booking.size || ''}`],
+                        ['Thời gian thuê', `${booking.startDate} → ${booking.endDate} (${booking.durationMonths} tháng)`]
+                      ]}
+                      lines={[
+                        ['Giá thuê / tháng', Number(booking.monthlyPrice || 0)],
+                        [`Tổng tiền thuê (${booking.durationMonths} tháng, đóng sau khi nhận kho)`, Number(booking.totalRent || 0)],
+                        [`Tiền cọc (${depositMonths} tháng tiền thuê)`, Number(booking.deposit || 0)]
+                      ]}
+                      amount={booking.deposit}
+                      onChange={setDepositAgreed}
+                    />
+                  )}
 
                   <button
                     className="dashboard-primary-btn full"
                     type="button"
                     onClick={handleDepositPaid}
-                    disabled={depositPaid || isSubmitting || depositSecondsRemaining === 0}
+                    disabled={depositPaid || isSubmitting || depositSecondsRemaining === 0 || !depositAgreed}
                   >
                     {depositPaid
-                      ? 'Đã ghi nhận giao dịch mô phỏng'
+                      ? 'Đã ghi nhận tiền cọc'
                       : depositSecondsRemaining === 0
                         ? 'Đã hết thời gian giữ kho'
                         : isSubmitting
-                          ? 'Đang ghi nhận...'
-                          : 'Ghi nhận thanh toán mô phỏng'}
+                          ? 'Đang chuyển sang VNPay...'
+                          : 'Thanh toán cọc qua VNPay'}
                   </button>
                   {!depositPaid && depositSecondsRemaining !== null && (
                     <p role="status">
@@ -1572,9 +1678,7 @@ function BookingPage({ facility, unit }) {
                     <div>
                       <span>Phương thức thuê</span>
                       <strong>
-                        {booking.paymentMode === 'cycle'
-                          ? `Chu kỳ ${booking.paymentCycle} tháng`
-                          : 'Thanh toán toàn bộ'}
+                        {booking.paymentMode === 'cycle' ? 'Trả theo tháng' : 'Trả 1 lần'}
                       </strong>
                     </div>
                   </div>
@@ -1584,7 +1688,7 @@ function BookingPage({ facility, unit }) {
               <div className="payment-warning">
                 <strong>Lưu ý:</strong>
                 <span>
-                  Backend hiện chỉ hỗ trợ ghi nhận thanh toán mô phỏng, chưa xác minh giao dịch với ngân hàng. Trạng thái chỉ được cập nhật sau khi API xác nhận.
+                  Tiền cọc chỉ được ghi nhận khi VNPay xác nhận giao dịch và hệ thống kiểm tra đúng chữ ký, số tiền. Không đóng trình duyệt khi đang ở trang VNPay.
                 </span>
               </div>
 
@@ -1593,7 +1697,7 @@ function BookingPage({ facility, unit }) {
                 <div>
                   <strong>
                     {depositPaid
-                      ? 'API đã ghi nhận tiền cọc — đang chờ phân kho'
+                      ? 'Đã ghi nhận tiền cọc — vui lòng ký hợp đồng'
                       : 'Đang chờ thanh toán cọc'}
                   </strong>
                   <small>
@@ -1832,6 +1936,8 @@ async function loginAndStoreUser(email, password) {
     email: data.email,
     role: mapBackendRole(data.roleName),
     userId: data.userID,
+    accessCode: data.accessCode,
+    accessCodeStatus: data.accessCodeStatus,
     token: data.token,
     tokenExpiresAt: data.tokenExpiresAt
   }
@@ -1914,25 +2020,20 @@ function RegisterPage() {
         throw new Error('Mật khẩu xác nhận không khớp.')
       }
 
-      const newOtp = generateOTP()
-      await sendOTPEmail(trimmedEmail, newOtp, fullName)
-
-      const expiresAt = Date.now() + OTP_EXPIRES_MS
-      const resendAvailableAt = Date.now() + OTP_RESEND_MS
-
-      sessionStorage.setItem('storespace_register_pending', JSON.stringify({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+      // Backend lưu thông tin đăng ký (mật khẩu đã băm), tạo mã OTP và gửi email.
+      // Trình duyệt chỉ giữ email + thời hạn để đếm ngược, KHÔNG giữ mật khẩu hay mã OTP.
+      const { expiresAt, resendAvailableAt } = await startRegistration({
         fullName,
-        gender: gender || null,
-        dateOfBirth: birthDate || null,
-        phoneNumber: phoneNumber.trim() || null,
         email: trimmedEmail,
         password,
-        otp: newOtp,
+        phoneNumber: phoneNumber.trim() || null
+      })
+
+      sessionStorage.setItem('storespace_register_pending', JSON.stringify({
+        fullName,
+        email: trimmedEmail,
         expiresAt,
         resendAvailableAt,
-        attempts: 0,
         nextPath: nextPath || ''
       }))
 
@@ -2073,35 +2174,11 @@ function VerifyOtpPage() {
       setError('Mã OTP đã hết hạn. Vui lòng gửi lại mã mới.')
       return
     }
-    if (Number(pending.attempts || 0) >= OTP_MAX_ATTEMPTS) {
-      setError('Bạn đã nhập sai OTP quá số lần cho phép. Vui lòng gửi lại mã mới.')
-      return
-    }
-
-    if (normalizedOtp !== pending.otp) {
-      const attempts = Number(pending.attempts || 0) + 1
-      const updated = { ...pending, attempts }
-      sessionStorage.setItem('storespace_register_pending', JSON.stringify(updated))
-      setPending(updated)
-      setError(
-        attempts >= OTP_MAX_ATTEMPTS
-          ? 'OTP không đúng. Bạn đã hết số lần thử, hãy gửi lại mã mới.'
-          : `OTP không đúng. Bạn còn ${OTP_MAX_ATTEMPTS - attempts} lần thử.`
-      )
-      return
-    }
 
     setIsSubmitting(true)
     try {
-      await apiPost('/api/auth/register', {
-        fullName: pending.fullName,
-        email: pending.email,
-        password: pending.password,
-        phoneNumber: pending.phoneNumber,
-        gender: pending.gender,
-        dateOfBirth: pending.dateOfBirth,
-        roleName: 'Storage Customer'
-      })
+      // Backend so mã, đếm số lần sai và tạo tài khoản khi đúng mã.
+      await verifyRegistrationOtp(pending.email, normalizedOtp)
 
       clearPending()
       setSuccess('Xác thực email thành công. Tài khoản đã được tạo. Đang chuyển sang trang đăng nhập...')
@@ -2124,16 +2201,9 @@ function VerifyOtpPage() {
     setIsSubmitting(true)
 
     try {
-      const newOtp = generateOTP()
-      await sendOTPEmail(pending.email, newOtp, pending.fullName)
+      const { expiresAt, resendAvailableAt } = await resendRegistrationOtp(pending.email)
 
-      const updated = {
-        ...pending,
-        otp: newOtp,
-        expiresAt: Date.now() + OTP_EXPIRES_MS,
-        resendAvailableAt: Date.now() + OTP_RESEND_MS,
-        attempts: 0
-      }
+      const updated = { ...pending, expiresAt, resendAvailableAt }
 
       sessionStorage.setItem('storespace_register_pending', JSON.stringify(updated))
       setPending(updated)
@@ -2279,6 +2349,7 @@ function getRoute() {
   if (path === '/facilities') return { type: 'facilities' }
   if (path === '/customer') return { type: 'customer' }
   if (path === '/cart') return { type: 'cart' }
+  if (path === '/payment-result') return { type: 'payment-result' }
 
   //Đã cập nhật: Route /staff trong getRoute()
   if (path === '/staff') return { type: 'staff' }
@@ -2375,15 +2446,15 @@ function formatDashboardDate(value) {
 function mapCustomerReservation(reservation) {
   const start = new Date(`${String(reservation.startDate).slice(0, 10)}T00:00:00`)
   const end = new Date(`${String(reservation.endDate).slice(0, 10)}T00:00:00`)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const today = getTodayDate()
   const totalDays = Math.max(1, Math.floor((end - start) / 86400000) + 1)
   const elapsedDays = Math.max(0, Math.floor((today - start) / 86400000))
   const statusLabels = {
     'Pending Deposit': 'Chờ thanh toán cọc',
-    Paid: 'Đã thanh toán cọc · Chờ phân kho',
-    Confirmed: 'Đã phân kho · Chờ bàn giao',
+    Paid: 'Đã thanh toán cọc · Đang tạo hợp đồng',
+    Confirmed: 'Đã cọc · Chờ ký hợp đồng',
     'Handed Over': 'Đang thuê',
+    Completed: 'Đã trả kho',
     Cancelled: 'Đã hủy',
     Expired: 'Hết hạn giữ kho · Cần đặt lại'
   }
@@ -2406,8 +2477,13 @@ function mapCustomerReservation(reservation) {
     }
   })
 
+  // Đơn gia hạn (mã GH-...) đang chờ thanh toán: số tiền phải trả ngay là tiền thuê tháng đầu + cọc bổ sung, không phải tiền cọc.
+  const renewalPending = reservation.isRenewal && status === 'Pending Deposit' && reservation.amountDueNow != null
+  const renewalToSign = reservation.isRenewal && status === 'Handed Over' && reservation.contractStatus === 'Pending Signature'
+
   return {
     ...reservation,
+    ...(renewalPending ? { depositAmount: Number(reservation.amountDueNow) } : {}),
     status,
     units,
     unitId: reservation.unitNumber,
@@ -2419,8 +2495,16 @@ function mapCustomerReservation(reservation) {
     totalDays,
     remainingDays: Math.max(0, totalDays - elapsedDays),
     progress: Math.min(100, Math.round((Math.min(totalDays, elapsedDays) / totalDays) * 100)),
-    statusLabel: status === 'Confirmed' && reservation.contractStatus === 'Pending Signature'
-      ? 'Đã duyệt · Chờ ký hợp đồng'
+    statusLabel: status === 'Cancelled' && reservation.refundAmount > 0
+      ? `Đã hủy · ${reservation.refundStatus === 'Completed' ? 'Đã hoàn' : 'Đang hoàn'} ${new Intl.NumberFormat('vi-VN').format(reservation.refundAmount)}đ`
+      : renewalPending
+      ? 'Gia hạn · Chờ thanh toán'
+      : renewalToSign
+        ? 'Đang thuê · Chờ ký phụ lục gia hạn'
+        : status === 'Handed Over' && reservation.startRentPaid === false
+          ? 'Đang thuê · Cần đóng tiền thuê'
+        : status === 'Confirmed' && reservation.contractStatus === 'Pending Signature'
+      ? 'Đã cọc · Chờ ký hợp đồng'
       : status === 'Confirmed' && reservation.contractStatus === 'Signed'
         ? 'Đã ký hợp đồng · Chờ nhận kho'
         : statusLabels[status] || status
@@ -2432,22 +2516,31 @@ function CustomerPage() {
   const [error, setError] = useState('')
   const user = getCurrentUser()
 
-  const loadReservations = () => {
+  const loadReservations = ({ silent = false } = {}) => {
     if (!user?.email) {
       setError('Phiên đăng nhập không có email. Hãy đăng nhập lại.')
       setReservations([])
       return
     }
     setError('')
-    setReservations(null)
-    apiGet(`/api/reservation/customer/${encodeURIComponent(user.email)}`)
+    if (!silent) setReservations(null)
+    // API nhanh (CustomerReservationsController.cs). Backend chưa có file đó (404) thì dùng API cũ.
+    apiGet('/api/customer-reservations/mine')
+      .catch(fastError => {
+        if (fastError?.status !== 404) throw fastError
+        return apiGet(`/api/reservation/customer/${encodeURIComponent(user.email)}`)
+      })
       .then(data => {
         if (!Array.isArray(data)) {
           throw new Error('Backend trả về danh sách đặt chỗ không hợp lệ.')
         }
-        setReservations(data.map(mapCustomerReservation))
+        // Ẩn đơn bỏ dở ở bước đặt cọc: hết hạn giữ kho, hoặc đã hủy khi chưa cọc (không hợp đồng, không hoàn tiền)
+        const abandoned = r => r.status === 'Expired' ||
+          (r.status === 'Cancelled' && !r.contractId && !(Number(r.refundAmount) > 0))
+        setReservations(data.filter(r => !abandoned(r)).map(mapCustomerReservation))
       })
       .catch(loadError => {
+        if (silent) return // tải lại ngầm (vd sau khi gia hạn) lỗi thì giữ dữ liệu cũ
         setError(loadError.message)
         setReservations([])
       })
@@ -2467,7 +2560,7 @@ function CustomerPage() {
           <div className="empty-state">
             <h1>Không tải được dữ liệu khách hàng</h1>
             <p>{error}</p>
-            <button className="dashboard-primary-btn" type="button" onClick={loadReservations}>Thử lại</button>
+            <button className="dashboard-primary-btn" type="button" onClick={() => loadReservations()}>Thử lại</button>
           </div>
         </div>
       </main>
@@ -2483,6 +2576,7 @@ function CustomerPage() {
       getCurrentUser={getCurrentUser}
       navigate={navigate}
       currentUserKey={CURRENT_USER_KEY}
+      onReloadRentals={() => loadReservations({ silent: true })}
     />
   )
 }
@@ -2575,6 +2669,14 @@ function Router() {
   }
   //Đã thêm: 05/10/2026
 
+  if (route.type === 'payment-result') {
+    return (
+      <div className="app">
+        <SiteHeader />
+        <PaymentResultPage navigate={navigate} />
+      </div>
+    )
+  }
   if (route.type === 'customer') {
 
     //Đã cập nhật: Staff vào /customer thì chuyển sang /staff
@@ -2679,7 +2781,7 @@ function ApiStartupError({ error }) {
 
 const root = createRoot(document.getElementById('root'))
 loadDataFromApi()
-  .then(() => root.render(<DialogProvider><Router /></DialogProvider>))
+  .then(() => root.render(<DialogProvider><Router /><DemoClockWidget /></DialogProvider>))
   .catch(error => {
     console.error('Không tải được danh mục từ backend.', error)
     root.render(<ApiStartupError error={error} />)

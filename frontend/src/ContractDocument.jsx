@@ -9,8 +9,10 @@ import './ContractSignFlow.css'
  *        (rental.units: [{ number, type, size, monthlyPrice }]) và tương ứng MỘT hợp đồng (ContractNumber).
  * signature: { image, signerName, signedAt } nếu đã ký -> hiện khối chữ ký cuối văn bản.
  * showTerms: in kèm các nhóm điều khoản chi tiết (dùng ở màn hình chi tiết).
+ * group.renewedFrom = { contractNumber, startDate, endDate } -> văn bản là PHỤ LỤC GIA HẠN của hợp đồng đó.
  */
 const money = value => `${formatVnd(value || 0)}đ`
+const fmtIso = iso => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '')
 const fmtTime = iso => {
   if (!iso) return ''
   const d = new Date(iso)
@@ -19,8 +21,17 @@ const fmtTime = iso => {
 
 /* Danh sách kho trong hợp đồng (gộp các đơn của nhóm). */
 export function contractUnits(rentals) {
-  return rentals.flatMap(r => (r.units?.length ? r.units : [{ number: r.unitId, type: r.type, size: r.size, monthlyPrice: r.monthlyPrice }])
-    .map(u => ({ ...u, reservationCode: r.reservationCode, reservationId: r.reservationId, deposit: u.monthlyPrice != null ? Number(u.monthlyPrice) * Number(r.depositMonths || 2) : null })))
+  // Đơn 1 kho: lấy đúng giá / tháng và tiền cọc của hợp đồng (số backend đã tính), để từng dòng khớp dòng Tổng cộng
+  return rentals.flatMap(r => {
+    const list = r.units?.length ? r.units : [{ number: r.unitId, type: r.type, size: r.size, monthlyPrice: r.monthlyPrice }]
+    const single = list.length === 1
+    return list.map(u => {
+      const monthlyPrice = single && r.monthlyPrice != null ? Number(r.monthlyPrice) : u.monthlyPrice
+      const deposit = single && r.depositAmount != null ? Number(r.depositAmount)
+        : monthlyPrice != null ? Number(monthlyPrice) * Number(r.depositMonths || 2) : null
+      return { ...u, monthlyPrice, deposit, reservationCode: r.reservationCode, reservationId: r.reservationId }
+    })
+  })
 }
 
 export default function ContractDocument({ group, customer, facilityAddress, signature, showTerms = false, draft = false, id = 'csf-print' }) {
@@ -37,12 +48,16 @@ export default function ContractDocument({ group, customer, facilityAddress, sig
     .map(key => `${POLICY_TITLES[key]} v${policies.meta[key].version}`)
     .join(', ')
   const terms = showTerms ? buildContractTerms(policies.values) : []
+  const renewedFrom = group.renewedFrom || first.renewedFrom || null
+  const parentText = renewedFrom
+    ? `hợp đồng số ${renewedFrom.contractNumber}${renewedFrom.startDate ? ` (${fmtIso(renewedFrom.startDate)} → ${fmtIso(renewedFrom.endDate)})` : ''}`
+    : ''
 
   return (
     <article className={`csf-doc${draft ? ' draft' : ''}`} id={id}>
       {draft && <div className="csf-draft-mark">BẢN XEM TRƯỚC · CHƯA CÓ HIỆU LỰC</div>}
-      <h3>HỢP ĐỒNG THUÊ KHO LƯU TRỮ</h3>
-      <p className="csf-doc-meta">Số: {group.code}{first.reservationCode ? ` · Đơn ${first.reservationCode}` : ''} · Áp dụng chính sách hiện hành ngày {fmtDay(new Date().toISOString())}{versionText ? ` (${versionText})` : ' (mặc định hệ thống)'}</p>
+      <h3>{renewedFrom ? 'PHỤ LỤC GIA HẠN HỢP ĐỒNG THUÊ KHO LƯU TRỮ' : 'HỢP ĐỒNG THUÊ KHO LƯU TRỮ'}</h3>
+      <p className="csf-doc-meta">Số: {group.code}{renewedFrom ? ` · Gia hạn ${parentText}` : ''}{first.reservationCode ? ` · Đơn ${first.reservationCode}` : ''} · Áp dụng chính sách hiện hành ngày {fmtDay(new Date().toISOString())}{versionText ? ` (${versionText})` : ' (mặc định hệ thống)'}</p>
       <section>
         <h4>Điều 1. Các bên</h4>
         <p><strong>Bên cho thuê:</strong> StoreSpace, cơ sở {first.facility}{facilityAddress ? `, địa chỉ ${facilityAddress}` : ''}.</p>
@@ -50,21 +65,33 @@ export default function ContractDocument({ group, customer, facilityAddress, sig
       </section>
       <section>
         <h4>Điều 2. Đối tượng và thời hạn thuê</h4>
+        {renewedFrom ? (
+          <p>Hai bên đồng ý <strong>gia hạn {parentText}</strong> thêm {first.months} tháng, từ ngày <strong>{first.startDate}</strong> đến hết ngày <strong>{first.endDate}</strong>, cho {units.length} kho liệt kê tại Phụ lục 01. Bên thuê tiếp tục sử dụng các kho này, không cần bàn giao lại.</p>
+        ) : (
         <p>Bên thuê thuê {units.length} kho lưu trữ liệt kê tại Phụ lục 01, thời hạn {first.months} tháng, từ ngày <strong>{first.startDate}</strong> đến hết ngày <strong>{first.endDate}</strong>. Một tháng thuê tính từ ngày bắt đầu đến ngày liền trước cùng ngày của tháng tiếp theo.</p>
+        )}
       </section>
       <section>
         <h4>Điều 3. Giá thuê, tiền cọc và thanh toán</h4>
         <p>Tổng tiền thuê mỗi tháng: <strong>{money(monthlyTotal)}</strong>. Tổng tiền thuê cả kỳ: <strong>{money(rentTotal)}</strong>.</p>
-        <p>Tiền cọc: <strong>{money(depositTotal)}</strong> ({depositMonths} tháng tiền thuê mỗi kho), <strong>đã thanh toán khi đặt chỗ</strong>. Tiền cọc dùng để bảo đảm nghĩa vụ, không mặc nhiên là tiền thuê tháng cuối, và được hoàn trong {policies.values.renewal_return?.depositRefundWorkingDays ?? 7} ngày làm việc sau khi trả kho nếu không phát sinh khấu trừ.</p>
+        {renewedFrom && <p>Tiền thuê tháng đầu của kỳ gia hạn <strong>đã thanh toán khi gia hạn</strong>; các tháng tiếp theo thanh toán trước ngày bắt đầu của mỗi tháng.</p>}
+        <p>Tiền cọc: <strong>{money(depositTotal)}</strong> ({depositMonths} tháng tiền thuê mỗi kho), <strong>{renewedFrom ? `được chuyển từ ${parentText} (bổ sung phần chênh lệch nếu giá thuê thay đổi)` : 'đã thanh toán khi đặt chỗ'}</strong>. Tiền cọc dùng để bảo đảm nghĩa vụ, không mặc nhiên là tiền thuê tháng cuối, và được hoàn trong {policies.values.renewal_return?.depositRefundWorkingDays ?? 7} ngày làm việc sau khi trả kho nếu không phát sinh khấu trừ.</p>
         <p>Giá thuê đã xác nhận không thay đổi trong suốt thời hạn hợp đồng.</p>
       </section>
       <section>
-        <h4>Điều 4. Quyền và nghĩa vụ</h4>
-        <p>Bên thuê sử dụng kho đúng mục đích, không lưu trữ hàng cấm, hàng dễ cháy nổ; bảo quản khóa/thẻ ra vào; báo trả kho trước ít nhất {policies.values.renewal_return?.returnNoticeDays ?? 7} ngày. Bên cho thuê bàn giao kho đúng hiện trạng, bảo đảm an ninh khu vực chung và hoàn cọc đúng hạn.</p>
+        <h4>Điều 4. Quyền và nghĩa vụ, mã ra vào & chìa khóa</h4>
+        <p>Bên thuê sử dụng kho đúng mục đích, không lưu trữ hàng cấm, hàng dễ cháy nổ, chất nguy hiểm.</p>
+        <p><strong>Mã ra vào cơ sở:</strong> Khách hàng được cấp 01 mã Access Code 6 số duy nhất để ra vào cổng và cửa an ninh cơ sở. Mã có hiệu lực trong suốt thời gian thuê, tự động tạm khóa nếu chậm thanh toán quá 30 ngày.</p>
+        <p><strong>Chìa khóa ô kho:</strong> Mỗi ô kho được cấp chìa khóa vật lý riêng, nhân viên bàn giao tại quầy lễ tân khi nhận kho. Bên thuê có trách nhiệm tự bảo quản chìa khóa; trường hợp làm mất chìa sẽ chịu phí làm lại/thay ổ khóa theo quy định.</p>
+        <p>Bên thuê có trách nhiệm báo trả kho trước ít nhất {policies.values.renewal_return?.returnNoticeDays ?? 7} ngày, hoàn trả chìa khóa vật lý và dọn trống kho khi kết thúc hợp đồng.</p>
       </section>
       <section>
         <h4>Điều 5. Hiệu lực</h4>
+        {renewedFrom ? (
+          <p>Phụ lục có hiệu lực khi Bên thuê ký điện tử trên hệ thống StoreSpace và là một phần không tách rời của {parentText}. Các điều khoản khác của hợp đồng gốc không được sửa đổi trong phụ lục này giữ nguyên hiệu lực.</p>
+        ) : (
         <p>Hợp đồng có hiệu lực khi Bên thuê ký điện tử trên hệ thống StoreSpace và kho được bàn giao. Khi nhận kho, Bên thuê xuất trình CCCD để nhân viên đối chiếu.</p>
+        )}
       </section>
       {terms.length > 0 && (
         <section>

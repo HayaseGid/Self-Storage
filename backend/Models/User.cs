@@ -14,6 +14,8 @@ public class User
     public bool EmailVerified { get; set; }
     public string? PhoneNumber { get; set; }
     public string Status { get; set; } = null!;
+    public string? AccessCode { get; set; }
+    public string AccessCodeStatus { get; set; } = "Active";
     public byte FailedLoginCount { get; set; }
     public DateTime? LockoutEndAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

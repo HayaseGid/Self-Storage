@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { getTodayDate } from './demoClock/demoClock'
 import './RentalCalendar.css'
 
 /*
@@ -41,7 +42,7 @@ function buildMonth(monthDate) {
 }
 
 export default function RentalCalendar({ value, onChange, endDate, minDate, maxDate, durationMonths }) {
-  const today = useMemo(() => startOfDay(new Date()), [])
+  const today = useMemo(() => startOfDay(getTodayDate()), [])
   const min = startOfDay(minDate || today)
   const max = maxDate ? startOfDay(maxDate) : null
   const [viewMonth, setViewMonth] = useState(() => {

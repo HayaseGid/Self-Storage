@@ -17,6 +17,12 @@ namespace SelfStorageAPI.DTOs
         public DateTime StartDate { get; set; }
         [Required]
         public int Months { get; set; }
+        /// <summary>Hình thức trả tiền thuê: "Monthly" hoặc "Upfront" (bắt buộc).</summary>
+        public string? PaymentPlan { get; set; }
+        /// <summary>Cách nhận kho: "InPerson" (mặc định) hoặc "Online".</summary>
+        public string? HandoverMethod { get; set; }
+        /// <summary>Khung giờ nhận kho khi nhận trực tiếp: "08:00" | "10:00" | "12:00" | "14:00" (khung 2 tiếng).</summary>
+        public string? AppointmentSlot { get; set; }
     }
 
     public class CreatePaymentDTO
@@ -33,10 +39,11 @@ namespace SelfStorageAPI.DTOs
     {
         [Required]
         public int ReservationID { get; set; }
-        [Required]
-        public string AccessType { get; set; } = string.Empty;
-        [Required]
-        public string AccessValue { get; set; } = string.Empty;
-        public string Notes { get; set; } = string.Empty;
+        public string? AccessType { get; set; }
+        public string? AccessValue { get; set; }
+        public string? Notes { get; set; }
+        public bool? UnitConditionConfirmed { get; set; }
+        public string? ConditionResult { get; set; }
+        public List<string>? EvidenceImages { get; set; }
     }
 }

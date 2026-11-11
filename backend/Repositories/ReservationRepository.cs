@@ -67,7 +67,7 @@ public class ReservationRepository : IReservationRepository
         return (
             policy?.DepositMonths ?? 2,
             policy?.HoldMinutes ?? 15,
-            contractType?.DiscountRate ?? 0m
+            0m
         );
     }
 

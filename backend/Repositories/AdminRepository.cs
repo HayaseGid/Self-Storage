@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SelfStorageAPI.Data;
+using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Models;
 
@@ -56,6 +57,101 @@ public class AdminRepository : IAdminRepository
             .OrderByDescending(log => log.Timestamp)
             .Take(limit)
             .ToListAsync(cancellationToken);
+    }
+
+    /* [PHÂN TRANG] Danh sách tài khoản: lọc / đếm / Skip-Take trong SQL. Mới tạo lên đầu (sort=newest mặc định). */
+    public async Task<(IReadOnlyList<User> Items, int Total)> GetUsersPageAsync(PageQuery query, string? roleName, CancellationToken cancellationToken)
+    {
+        var users = _context.Users.AsNoTracking().AsQueryable();
+
+        var keyword = query.Keyword;
+        if (keyword.Length > 0)
+        {
+            users = users.Where(user =>
+                user.FullName.Contains(keyword) ||
+                user.Email.Contains(keyword) ||
+                (user.Username != null && user.Username.Contains(keyword)) ||
+                (user.PhoneNumber != null && user.PhoneNumber.Contains(keyword)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(roleName) && roleName != "All")
+            users = users.Where(user => user.Role.RoleName == roleName);
+
+        var statuses = query.Statuses
+            .Where(code => code != "ALL")
+            .Select(code => code switch
+            {
+                "PENDING" or "PENDING APPROVAL" => "Pending Approval",
+                "ACTIVE" => "Active",
+                "LOCKED" => "Locked",
+                "REJECTED" => "Rejected",
+                "INACTIVE" => "Inactive",
+                _ => code
+            })
+            .ToArray();
+        if (statuses.Length > 0)
+            users = users.Where(user => statuses.Contains(user.Status));
+
+        var ordered = query.SortKey switch
+        {
+            "oldest" => users.OrderBy(user => user.CreatedAt).ThenBy(user => user.UserID),
+            "name" => users.OrderBy(user => user.FullName).ThenBy(user => user.UserID),
+            _ => users.OrderByDescending(user => user.CreatedAt).ThenByDescending(user => user.UserID)
+        };
+
+        var total = await users.CountAsync(cancellationToken);
+        var items = await ordered
+            .Skip(query.SkipFor(total))
+            .Take(query.SafePageSize)
+            .Include(user => user.Role)
+            .Include(user => user.ManagedFacilities)
+            .Include(user => user.FacilityStaffs)
+                .ThenInclude(assignment => assignment.Facility)
+            .AsSplitQuery()
+            .ToListAsync(cancellationToken);
+        return (items, total);
+    }
+
+    /* [PHÂN TRANG] Nhật ký hoạt động: mới nhất lên đầu. status=LOGIN|APPROVAL|ROLE|SECURITY lọc theo nhóm hành động. */
+    public async Task<(IReadOnlyList<UserActivityLog> Items, int Total)> GetActivityLogsPageAsync(PageQuery query, CancellationToken cancellationToken)
+    {
+        var logs = _context.UserActivityLogs.AsNoTracking().AsQueryable();
+
+        var keyword = query.Keyword;
+        if (keyword.Length > 0)
+        {
+            logs = logs.Where(log =>
+                log.Action.Contains(keyword) ||
+                (log.Details != null && log.Details.Contains(keyword)) ||
+                log.User.FullName.Contains(keyword) ||
+                log.User.Email.Contains(keyword));
+        }
+
+        var types = query.Statuses;
+        if (types.Length > 0)
+        {
+            var wantLogin = types.Contains("LOGIN");
+            var wantApproval = types.Contains("APPROVAL");
+            var wantRole = types.Contains("ROLE");
+            var wantSecurity = types.Contains("SECURITY");
+            logs = logs.Where(log =>
+                (wantLogin && log.Action == "Login") ||
+                (wantApproval && (log.Action == "Account Approved" || log.Action == "Account Rejected")) ||
+                (wantRole && log.Action == "Role Changed") ||
+                (wantSecurity && log.Action != "Login" && log.Action != "Account Approved" &&
+                    log.Action != "Account Rejected" && log.Action != "Role Changed"));
+        }
+
+        var total = await logs.CountAsync(cancellationToken);
+        var ordered = query.SortKey == "oldest"
+            ? logs.OrderBy(log => log.Timestamp).ThenBy(log => log.LogID)
+            : logs.OrderByDescending(log => log.Timestamp).ThenByDescending(log => log.LogID);
+        var items = await ordered
+            .Skip(query.SkipFor(total))
+            .Take(query.SafePageSize)
+            .Include(log => log.User)
+            .ToListAsync(cancellationToken);
+        return (items, total);
     }
 
     public async Task<User?> GetUserByIdAsync(int userId, CancellationToken cancellationToken)

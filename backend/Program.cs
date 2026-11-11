@@ -6,10 +6,20 @@ using Microsoft.IdentityModel.Tokens;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Middleware;
+using SelfStorageAPI.Models;
 using SelfStorageAPI.Repositories;
 using SelfStorageAPI.Services;
 
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Cloud deployment (Render, Railway, etc.) provides dynamic PORT
+var customPort = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(customPort))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{customPort}");
+}
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -26,8 +36,69 @@ builder.Services.AddCors(options =>
         });
 });
 
+
+void TryLoadEnv(string path)
+{
+    if (File.Exists(path))
+    {
+        foreach (var line in File.ReadAllLines(path))
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("#")) continue;
+            var idx = trimmed.IndexOf('=');
+            if (idx > 0)
+            {
+                var key = trimmed.Substring(0, idx).Trim();
+                var val = trimmed.Substring(idx + 1).Trim().Trim('"', '\'');
+                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(key)))
+                {
+                    Environment.SetEnvironmentVariable(key, val);
+                }
+            }
+        }
+    }
+}
+
+TryLoadEnv(Path.Combine(builder.Environment.ContentRootPath, "..", ".env.local"));
+TryLoadEnv(Path.Combine(builder.Environment.ContentRootPath, "..", ".env"));
+TryLoadEnv(Path.Combine(builder.Environment.ContentRootPath, ".env.local"));
+TryLoadEnv(Path.Combine(builder.Environment.ContentRootPath, ".env"));
+
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? "";
+
+bool isPostgres = connectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+                  connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
+                  connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase);
+
+string FormatNpgsqlConnectionString(string connStr)
+{
+    if (connStr.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+        connStr.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        var uri = new Uri(connStr);
+        var userInfo = uri.UserInfo.Split(':');
+        var username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : "";
+        var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+        var port = uri.Port > 0 ? uri.Port : 5432;
+        var database = uri.AbsolutePath.TrimStart('/');
+        return $"Host={uri.Host};Port={port};Database={database};Username={username};Password={password};SSL Mode=Require;Trust Server Certificate=true";
+    }
+    return connStr;
+}
+
 builder.Services.AddDbContext<SelfStorageDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    if (isPostgres)
+    {
+        options.UseNpgsql(FormatNpgsqlConnectionString(connectionString));
+    }
+    else
+    {
+        options.UseSqlServer(connectionString);
+    }
+});
 
 // Register Repositories and Services
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -53,6 +124,27 @@ builder.Services.AddScoped<IOperationsStateRepository, OperationsStateRepository
 builder.Services.AddScoped<IOperationsStateService, OperationsStateService>();
 builder.Services.AddScoped<IFacilityManagementRepository, FacilityManagementRepository>();
 builder.Services.AddScoped<IFacilityManagementService, FacilityManagementService>();
+
+//Đã cập nhật các repository và service cho StaffTools và ManagerTools
+builder.Services.AddScoped<IStaffToolsRepository, StaffToolsRepository>();
+builder.Services.AddScoped<IStaffToolsService, StaffToolsService>();
+builder.Services.AddScoped<IManagerToolsRepository, ManagerToolsRepository>();
+builder.Services.AddScoped<IManagerToolsService, ManagerToolsService>();
+//Đã sửa: 05/11/2026
+
+//Đã cập nhật các repository và service cho LateFee
+builder.Services.AddScoped<ILateFeeRepository, LateFeeRepository>();
+builder.Services.AddScoped<ILateFeeService, LateFeeService>();
+builder.Services.AddScoped<IReturnInspectionRepository, ReturnInspectionRepository>();   // [THÊM 14]
+builder.Services.AddScoped<IReturnInspectionService, ReturnInspectionService>();         // [THÊM 14]
+//Đã sửa: 09/11/2026
+
+// Cấu hình SMTP Gmail và EmailService
+builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<RegistrationOtpService>(); // OTP đăng ký: tạo + kiểm tra mã ở backend
+builder.Services.AddHostedService<RenewalSettleJob>();     // job hằng ngày: chốt kỳ thuê cũ sau gia hạn (4.2)
+
 
 // JWT authentication
 var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
@@ -105,5 +197,18 @@ app.UseMiddleware<JwtIdentityMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<SelfStorageDbContext>();
+    if (dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        dbContext.Database.EnsureCreated();
+        DatabaseSeeder.EnsureHandoverMethodColumn(dbContext); // DB Neon đã có từ trước: thêm cột mới trước khi seed / đọc Reservation
+        DatabaseSeeder.EnsureUserAccessCodeColumns(dbContext);
+        DatabaseSeeder.SeedIfEmpty(dbContext);
+        DatabaseSeeder.EnsureReturnInspectionTables(dbContext);
+    }
+}
 
 app.Run();

@@ -1,0 +1,44 @@
+/* Gia hạn hợp đồng (ContractRenewal.jsx). Dùng chung khung modal .csf và thẻ .sign-badge của ContractSignFlow.css */
+.rn-section { display: grid; gap: 12px; margin-bottom: 26px; }
+.rn-section-head h2 { margin: 0; font: 800 19px 'Be Vietnam Pro', sans-serif; color: #073d70; }
+.rn-section-head p { margin: 4px 0 0; color: #6d849b; font-size: 13.5px; line-height: 1.5; }
+.rn-list { display: grid; gap: 12px; }
+.rn-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 18px 20px; border-radius: 18px; border: 1.5px solid #cfe2f3; background: #fbfdff; box-shadow: 0 8px 22px rgba(15, 69, 111, .06); }
+.rn-card.soon { border-color: #f0d58a; background: linear-gradient(135deg, #fffaf0, #ffffff); }
+.rn-card.blocked { border-color: #e4ebf1; background: #fafbfc; }
+.rn-card.done { border-color: #bfe5cf; background: #f3fbf6; }
+.rn-card h3 { margin: 6px 0 2px; color: #073d70; font-size: 16.5px; }
+.rn-card p { margin: 0; color: #4f6880; font-size: 13.5px; }
+.rn-card .rn-reason { margin-top: 6px; color: #9a6700; font-weight: 600; }
+.rn-error { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 18px; padding: 12px 16px; border-radius: 12px; background: #fff3f3; color: #a33b3b; font-size: 13.5px; }
+.rn-error button { border: 1px solid #e5b4b4; border-radius: 8px; background: #fff; color: #a33b3b; padding: 4px 10px; cursor: pointer; }
+
+.rn-modal { width: min(760px, 100%); }
+.rn-modal-error { margin-bottom: 12px; }
+.rn-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.rn-plan { position: relative; display: grid; gap: 2px; justify-items: start; padding: 14px 14px 12px; border-radius: 14px; border: 1.5px solid #dce8ef; background: #fff; color: #4f6880; font: inherit; text-align: left; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; }
+.rn-plan:hover { border-color: #9cc7ea; }
+.rn-plan:focus-visible { outline: 3px solid #9cc7ea; outline-offset: 2px; }
+.rn-plan.active { border-color: #075a9f; background: #f2f8fe; box-shadow: 0 6px 16px rgba(7, 90, 159, .12); }
+.rn-plan strong { color: #073d70; font-size: 17px; }
+.rn-plan span { font-size: 13.5px; font-weight: 700; color: #23475e; }
+.rn-plan small { color: #8197ab; font-size: 12px; }
+.rn-plan .rn-plan-off { position: absolute; top: 10px; right: 10px; padding: 2px 7px; border-radius: 999px; background: #e2f6ea; color: #2b8b55; font-size: 11.5px; }
+.rn-summary { margin-top: 2px; }
+.rn-agree { margin-top: 14px; }
+
+.rn-pay { display: grid; gap: 10px; }
+.rn-pay-table td:last-child { text-align: right; white-space: nowrap; }
+.rn-pay-table tfoot td { font-size: 16px; }
+
+.rn-done { display: grid; justify-items: center; gap: 6px; padding: 18px 0 8px; text-align: center; }
+.rn-done h3 { margin: 4px 0 0; color: #073d70; font-size: 18px; }
+.rn-done p { margin: 0; color: #4f6880; }
+.rn-done-icon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 50%; background: #e2f6ea; color: #2b8b55; font-size: 26px; font-weight: 800; }
+
+.contract-renew-note { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; background: #f2f8fe; border: 1px solid #cfe2f3; color: #23475e; font-size: 13.5px; }
+
+@media (max-width: 640px) {
+  .rn-card { grid-template-columns: 1fr; }
+  .rn-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

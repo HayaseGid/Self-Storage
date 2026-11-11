@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.Extensions.Options;
+using SelfStorageAPI.Constants;
 using SelfStorageAPI.Services;
 
 namespace SelfStorageAPI.Middleware;
@@ -29,6 +30,7 @@ public class JwtIdentityMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         var headers = context.Request.Headers;
+        BusinessClock.SetSimulatedDate(headers[BusinessClock.SimulatedDateHeader].ToString());
         var authorization = headers.Authorization.ToString();
         var hasBearer = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
 

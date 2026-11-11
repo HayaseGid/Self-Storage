@@ -3,16 +3,22 @@ import { apiDelete, apiGet, apiPost, apiPut } from './api'
 import PriceInput from './PriceInput'
 import { formatVnd } from './storageRules'
 import { formatArea, formatBandPrice } from './priceBands'
+import { bandHints, validateBand } from './priceBandRules'
 import './BusinessPriceBands.css'
 
 /*
  * Business Operations: KHUNG GIÁ theo nhóm kích thước (S / M / L / V ...).
  * BO chỉ đặt khoảng diện tích + khoảng giá thuê/tháng cho mỗi nhóm.
  * Giá cụ thể của từng size (S1, S2...) tại từng cơ sở do Facility Manager tự đặt trong khoảng này.
+ *
+ * KHÓA CHẶT (priceBandRules.js + backend /api/price-band-rules):
+ *  - diện tích các nhóm không chồng nhau; nhóm lớn hơn phải có giá sàn & giá trần cao hơn nhóm nhỏ hơn;
+ *  - nhóm đang có kho được đặt / đang thuê: khóa khung, không ngừng sử dụng, không xóa (chỉ đổi tên);
+ *  - nhóm đã có size: khung mới phải chứa hết diện tích size và giá đang áp dụng (không tự ép giá cơ sở).
  */
 
 const money = value => `${formatVnd(value || 0)}đ`
-const EMPTY = { code: '', name: '', minArea: '', maxArea: '', minPrice: '', maxPrice: '', recommendedPrice: '', isActive: true }
+const EMPTY = { code: '', name: '', minArea: '', maxArea: '', minPrice: '', maxPrice: '', isActive: true }
 /* Danh mục kích thước chuẩn theo quy định: Small, Medium, Large, Vehicle */
 const STANDARD_GROUPS = [['S', 'Small (nhỏ)'], ['M', 'Medium (vừa)'], ['L', 'Large (lớn)'], ['V', 'Vehicle (xe)']]
 
@@ -21,15 +27,33 @@ export default function BusinessPriceBands({ dialog }) {
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(null) // { mode: 'create' | 'edit', values }
   const [openIssues, setOpenIssues] = useState(null)
+  const [rules, setRules] = useState(null) // { rules: [...], bands: [...] } từ /api/price-band-rules
+  const [rulesError, setRulesError] = useState('')
 
   const load = async () => {
     try {
       setError('')
-      setData(await apiGet('/api/price-bands'))
+      const [bandsData, rulesData] = await Promise.all([
+        apiGet('/api/price-bands'),
+        apiGet('/api/price-band-rules').catch(rulesLoadError => ({ __error: rulesLoadError }))
+      ])
+      setData(bandsData)
+      if (rulesData?.__error) {
+        setRules(null)
+        setRulesError(rulesData.__error.status === 404
+          ? 'Backend chưa có kiểm tra khung giá (PriceBandRulesController.cs). Hãy chép file vào backend/Controllers và chạy lại backend. Tạm khóa chỉnh sửa để tránh sai dữ liệu.'
+          : `Không tải được điều kiện khóa khung giá: ${rulesData.__error.message}. Tạm khóa chỉnh sửa.`)
+      } else {
+        setRules(rulesData)
+        setRulesError('')
+      }
     } catch (loadError) {
       setError(loadError.message)
     }
   }
+  const ruleBands = rules?.bands || []
+  const ruleOf = code => ruleBands.find(rule => rule.code === code) || null
+  const canEdit = Boolean(rules)
   useEffect(() => { load() }, [])
 
   const remove = async band => {
@@ -43,7 +67,7 @@ export default function BusinessPriceBands({ dialog }) {
     })
     if (!ok) return
     try {
-      await apiDelete(`/api/price-bands/${band.code}`)
+      await apiDelete(`/api/price-band-rules/${band.code}`)
       await load()
     } catch (deleteError) {
       await dialog.alert({ tone: 'warning', title: 'Không xóa được', message: deleteError.message })
@@ -52,6 +76,12 @@ export default function BusinessPriceBands({ dialog }) {
 
   const toggleActive = async band => {
     const next = !band.isActive
+    const rule = ruleOf(band.code)
+    const problems = validateBand({ code: band.code, minArea: Number(band.minArea), maxArea: Number(band.maxArea), minPrice: Number(band.minPrice), maxPrice: Number(band.maxPrice), isActive: next }, ruleBands, rule)
+    if (problems.length) {
+      await dialog.alert({ tone: 'warning', title: next ? `Chưa dùng lại được nhóm ${band.code}` : `Không ngừng sử dụng được nhóm ${band.code}`, message: problems.join('\n') })
+      return
+    }
     const ok = await dialog.confirm({
       tone: next ? 'info' : 'warning',
       title: next ? `Dùng lại nhóm ${band.code}?` : `Ngừng sử dụng nhóm ${band.code}?`,
@@ -62,7 +92,8 @@ export default function BusinessPriceBands({ dialog }) {
     })
     if (!ok) return
     try {
-      setData(await apiPut(`/api/price-bands/${band.code}`, { ...band, isActive: next }))
+      await apiPut(`/api/price-band-rules/${band.code}`, { ...band, isActive: next })
+      await load()
     } catch (toggleError) {
       await dialog.alert({ tone: 'warning', title: 'Không cập nhật được', message: toggleError.message })
     }
@@ -91,7 +122,7 @@ export default function BusinessPriceBands({ dialog }) {
             Facility Manager tự đặt giá cụ thể cho từng size (S1, S2...) tại cơ sở của mình, hệ thống chặn giá nằm ngoài khung.
           </p>
         </div>
-        <button type="button" className="dashboard-primary-btn" onClick={() => setEditing({ mode: 'create', values: EMPTY })}>+ Thêm nhóm</button>
+        <button type="button" className="dashboard-primary-btn" disabled={!canEdit} onClick={() => setEditing({ mode: 'create', values: EMPTY })}>+ Thêm nhóm</button>
       </div>
 
       <div className="pb-flow">
@@ -101,6 +132,14 @@ export default function BusinessPriceBands({ dialog }) {
         <i>→</i>
         <div><span>3</span><strong>Khách hàng</strong><small>Thấy giá của cơ sở khi tìm kho</small></div>
       </div>
+
+      {rulesError && <div className="pb-alert" role="alert">⚠ {rulesError}</div>}
+      {rules && (
+        <details className="pb-rules">
+          <summary>Quy tắc khóa khung giá (để số liệu luôn nhất quán)</summary>
+          <ul>{rules.rules.map(rule => <li key={rule}>{rule}</li>)}</ul>
+        </details>
+      )}
 
       {issueCount > 0 && (
         <div className="pb-alert">
@@ -118,6 +157,7 @@ export default function BusinessPriceBands({ dialog }) {
         : (
           <div className="pb-grid">
             {bands.map(band => {
+              const rule = ruleOf(band.code)
               const span = Number(band.maxPrice) - Number(band.minPrice) || 1
               const left = band.currentMinPrice != null ? Math.max(0, Math.min(100, (band.currentMinPrice - band.minPrice) / span * 100)) : null
               const right = band.currentMaxPrice != null ? Math.max(0, Math.min(100, (band.currentMaxPrice - band.minPrice) / span * 100)) : null
@@ -129,13 +169,19 @@ export default function BusinessPriceBands({ dialog }) {
                       <h3>{band.name}</h3>
                       <small>{band.sizes.length} kích thước · {band.unitCount} kho</small>
                     </div>
-                    <span className={`pb-status${band.isActive === false ? '' : ' on'}`}>{band.isActive === false ? 'Ngừng sử dụng' : 'Đang dùng'}</span>
+                    <span className={`pb-status${band.isActive === false ? '' : ' on'}`}>{band.isActive === false ? 'Deactive' : 'Active'}</span>
                   </header>
+
+                  {rule?.locked && (
+                    <div className="pb-lock" title={rule.lockReason}>
+                      🔒 Đang khóa khung · {rule.bookedUnitCount} kho đang được đặt / đang thuê
+                    </div>
+                  )}
 
                   <dl className="pb-ranges">
                     <div><dt>Kích thước</dt><dd>{formatArea(band.minArea)} – {formatArea(band.maxArea)}</dd></div>
                     <div><dt>Giá thuê / tháng</dt><dd>{formatBandPrice(band)}</dd></div>
-                    <div className="pb-rec"><dt>Giá khuyến nghị</dt><dd>{band.recommendedPrice != null ? money(band.recommendedPrice) : <span className="pb-muted">Chưa đặt</span>}</dd></div>
+                    <div className="pb-rec"><dt>Giá khuyến nghị (giữa khung)</dt><dd>{band.recommendedPrice != null ? money(band.recommendedPrice) : <span className="pb-muted">Chưa đặt</span>}</dd></div>
                   </dl>
 
                   <div className="pb-bar" aria-label="Giá đang dùng so với khung">
@@ -175,9 +221,17 @@ export default function BusinessPriceBands({ dialog }) {
                   )}
 
                   <footer>
-                    <button type="button" className="dashboard-secondary-btn sm" onClick={() => setEditing({ mode: 'edit', values: { ...band } })}>Sửa khung</button>
-                    <button type="button" className="dashboard-secondary-btn sm" onClick={() => toggleActive(band)}>{band.isActive === false ? 'Dùng lại' : 'Ngừng sử dụng'}</button>
-                    {band.sizes.length === 0 && <button type="button" className="dashboard-secondary-btn sm danger" onClick={() => remove(band)}>Xóa</button>}
+                    <button type="button" className="dashboard-secondary-btn sm" disabled={!canEdit} onClick={() => setEditing({ mode: 'edit', values: { ...band } })}>{rule?.locked ? 'Đổi tên' : 'Sửa khung'}</button>
+                    <button
+                      type="button"
+                      className="dashboard-secondary-btn sm"
+                      disabled={!canEdit || (band.isActive !== false && rule?.locked)}
+                      title={band.isActive !== false && rule?.locked ? rule.lockReason : ''}
+                      onClick={() => toggleActive(band)}
+                    >
+                      {band.isActive === false ? 'Dùng lại' : 'Ngừng sử dụng'}
+                    </button>
+                    {band.sizes.length === 0 && <button type="button" className="dashboard-secondary-btn sm danger" disabled={!canEdit} onClick={() => remove(band)}>Xóa</button>}
                   </footer>
                 </article>
               )
@@ -190,16 +244,19 @@ export default function BusinessPriceBands({ dialog }) {
           mode={editing.mode}
           initial={editing.values}
           bands={bands}
+          ruleBands={ruleBands}
           dialog={dialog}
           onClose={() => setEditing(null)}
-          onSaved={next => { setData(next); setEditing(null) }}
+          onSaved={async () => { setEditing(null); await load() }}
         />
       )}
     </section>
   )
 }
 
-function PriceBandForm({ mode, initial, bands, dialog, onClose, onSaved }) {
+function PriceBandForm({ mode, initial, bands, ruleBands, dialog, onClose, onSaved }) {
+  const current = mode === 'edit' ? ruleBands.find(rule => rule.code === initial.code) || null : null
+  const locked = Boolean(current?.locked)
   const [values, setValues] = useState(() => ({
     code: initial.code || '',
     name: initial.name || '',
@@ -207,62 +264,58 @@ function PriceBandForm({ mode, initial, bands, dialog, onClose, onSaved }) {
     maxArea: initial.maxArea === '' ? '' : String(Number(initial.maxArea)),
     minPrice: initial.minPrice === '' ? '' : Number(initial.minPrice),
     maxPrice: initial.maxPrice === '' ? '' : Number(initial.maxPrice),
-    recommendedPrice: initial.recommendedPrice === '' || initial.recommendedPrice == null ? '' : Number(initial.recommendedPrice),
     isActive: initial.isActive !== false
   }))
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-  const set = (key, value) => setValues(current => ({ ...current, [key]: value }))
+  const [touched, setTouched] = useState(false)
+  const set = (key, value) => { setTouched(true); setValues(current => ({ ...current, [key]: value })) }
+  const num = value => Number(String(value).replace(',', '.'))
 
-  const validate = () => {
-    const code = values.code.trim().toUpperCase()
-    if (mode === 'create' && !/^[A-Z]{1,3}$/.test(code)) return 'Mã nhóm gồm 1–3 chữ cái, ví dụ S, M, L, XL.'
-    if (mode === 'create' && bands.some(band => band.code === code)) return `Nhóm ${code} đã có khung giá.`
-    if (!values.name.trim()) return 'Vui lòng nhập tên nhóm.'
-    const minArea = Number(String(values.minArea).replace(',', '.'))
-    const maxArea = Number(String(values.maxArea).replace(',', '.'))
-    if (values.minArea === '' || values.maxArea === '' || Number.isNaN(minArea) || Number.isNaN(maxArea) || minArea < 0 || maxArea <= 0) return 'Nhập khoảng diện tích hợp lệ.'
-    if (minArea > maxArea) return 'Diện tích “từ” phải nhỏ hơn hoặc bằng “đến”.'
-    if (!values.minPrice || !values.maxPrice) return 'Nhập giá thấp nhất và cao nhất.'
-    if (Number(values.minPrice) > Number(values.maxPrice)) return 'Giá thấp nhất không được lớn hơn giá cao nhất.'
-    if (values.recommendedPrice !== '' && (Number(values.recommendedPrice) < Number(values.minPrice) || Number(values.recommendedPrice) > Number(values.maxPrice))) return 'Giá khuyến nghị phải nằm trong khoảng giá thấp nhất – cao nhất.'
-    return null
+  const candidate = {
+    code: values.code.trim().toUpperCase(),
+    minArea: values.minArea === '' ? NaN : num(values.minArea),
+    maxArea: values.maxArea === '' ? NaN : num(values.maxArea),
+    minPrice: values.minPrice === '' ? NaN : Number(values.minPrice),
+    maxPrice: values.maxPrice === '' ? NaN : Number(values.maxPrice),
+    isActive: values.isActive
   }
+  const problems = [
+    ...(!values.name.trim() ? ['Vui lòng nhập tên nhóm.'] : []),
+    ...validateBand(candidate, ruleBands, current)
+  ]
+  const hints = bandHints(candidate, ruleBands, current)
 
   const submit = async event => {
     event.preventDefault()
-    const message = validate()
-    if (message) return setError(message)
+    setTouched(true)
+    if (problems.length) return setError(problems[0])
     const payload = {
-      code: values.code.trim().toUpperCase(),
+      code: candidate.code,
       name: values.name.trim(),
-      minArea: Number(String(values.minArea).replace(',', '.')),
-      maxArea: Number(String(values.maxArea).replace(',', '.')),
-      minPrice: Number(values.minPrice),
-      maxPrice: Number(values.maxPrice),
-      recommendedPrice: values.recommendedPrice === '' ? null : Number(values.recommendedPrice),
+      minArea: candidate.minArea,
+      maxArea: candidate.maxArea,
+      minPrice: candidate.minPrice,
+      maxPrice: candidate.maxPrice,
       isActive: values.isActive
     }
     if (mode === 'edit') {
-      const narrower = payload.minPrice > Number(initial.minPrice) || payload.maxPrice < Number(initial.maxPrice)
       const ok = await dialog.confirm({
         tone: 'warning',
-        title: `Lưu khung giá nhóm ${payload.code}?`,
-        message: `Diện tích: ${formatArea(payload.minArea)} – ${formatArea(payload.maxArea)}\nGiá: ${formatVnd(payload.minPrice)}đ – ${formatVnd(payload.maxPrice)}đ/tháng` +
-          (narrower ? '\n\nKhung mới hẹp hơn: giá đang dùng của các cơ sở KHÔNG tự thay đổi; kho nằm ngoài khung sẽ được đánh dấu để Facility Manager cập nhật.' : ''),
-        confirmLabel: 'Lưu khung giá'
+        title: `Lưu nhóm ${payload.code}?`,
+        message: `Tên: ${payload.name}\nDiện tích: ${formatArea(payload.minArea)} – ${formatArea(payload.maxArea)}\nGiá: ${formatVnd(payload.minPrice)}đ – ${formatVnd(payload.maxPrice)}đ/tháng\n\nKhung mới đã được kiểm tra: không chồng nhóm khác, chứa hết size và giá đang áp dụng.`,
+        confirmLabel: 'Lưu'
       })
       if (!ok) return
     }
     setSaving(true)
     setError('')
     try {
-      const next = mode === 'create'
-        ? await apiPost('/api/price-bands', payload)
-        : await apiPut(`/api/price-bands/${payload.code}`, payload)
-      onSaved(next)
+      if (mode === 'create') await apiPost('/api/price-band-rules', payload)
+      else await apiPut(`/api/price-band-rules/${payload.code}`, payload)
+      await onSaved()
     } catch (saveError) {
-      setError(saveError.message)
+      setError(saveError.data?.errors?.join('\n') || saveError.message)
     } finally {
       setSaving(false)
     }
@@ -271,45 +324,51 @@ function PriceBandForm({ mode, initial, bands, dialog, onClose, onSaved }) {
   return (
     <div className="pb-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !saving) onClose() }}>
       <form className="pb-modal" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="pb-form-title">
-        <h3 id="pb-form-title">{mode === 'create' ? 'Thêm nhóm kích thước chuẩn' : `Sửa nhóm ${values.code}`}</h3>
+        <h3 id="pb-form-title">{mode === 'create' ? 'Thêm nhóm kích thước chuẩn' : locked ? `Đổi tên nhóm ${values.code}` : `Sửa nhóm ${values.code}`}</h3>
         {mode === 'create' && (
           <div className="pb-presets">
             {STANDARD_GROUPS.filter(([code]) => !bands.some(b => b.code === code)).map(([code, name]) => (
-              <button key={code} type="button" onClick={() => setValues(v => ({ ...v, code, name }))}>{code} · {name}</button>
+              <button key={code} type="button" onClick={() => { setTouched(true); setValues(v => ({ ...v, code, name })) }}>{code} · {name}</button>
             ))}
           </div>
         )}
-        {error && <div className="auth-message error" role="alert">{error}</div>}
+        {locked && <div className="pb-lock big">🔒 {current.lockReason} Chỉ được đổi tên nhóm.</div>}
+        {error && <div className="auth-message error pb-error" role="alert">{error}</div>}
         <div className="pb-form-row">
           <label>Mã nhóm
-            <input value={values.code} onChange={e => set('code', e.target.value.toUpperCase().slice(0, 3))} disabled={mode === 'edit'} placeholder="S" />
+            <input value={values.code} onChange={e => set('code', e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3))} disabled={mode === 'edit'} placeholder="S" />
             <small>Size có mã bắt đầu bằng chữ này thuộc nhóm (S1, S2... → S).</small>
           </label>
           <label>Tên nhóm
-            <input value={values.name} onChange={e => set('name', e.target.value)} placeholder="Kho nhỏ" maxLength={100} />
+            <input value={values.name} onChange={e => set('name', e.target.value)} placeholder="Kho nhỏ" maxLength={50} />
           </label>
         </div>
-        <fieldset>
-          <legend>Kích thước tối thiểu – tối đa (m²)</legend>
+        <fieldset disabled={locked}>
+          <legend>Diện tích tối thiểu – tối đa (m²)</legend>
           <div className="pb-form-row">
             <label>Từ<input inputMode="decimal" value={values.minArea} onChange={e => set('minArea', e.target.value.replace(/[^\d.,]/g, ''))} placeholder="10" /></label>
             <label>Đến<input inputMode="decimal" value={values.maxArea} onChange={e => set('maxArea', e.target.value.replace(/[^\d.,]/g, ''))} placeholder="20" /></label>
           </div>
         </fieldset>
-        <fieldset>
+        <fieldset disabled={locked}>
           <legend>Khoảng giá thuê (VNĐ/tháng)</legend>
           <div className="pb-form-row">
-            <label>Thấp nhất<PriceInput value={values.minPrice} onChange={n => set('minPrice', n ?? '')} ariaLabel="Giá thấp nhất" placeholder="400.000" /></label>
-            <label>Cao nhất<PriceInput value={values.maxPrice} onChange={n => set('maxPrice', n ?? '')} ariaLabel="Giá cao nhất" placeholder="800.000" /></label>
+            <label>Thấp nhất<PriceInput value={values.minPrice} onChange={n => set('minPrice', n ?? '')} ariaLabel="Giá thấp nhất" placeholder="400.000" disabled={locked} /></label>
+            <label>Cao nhất<PriceInput value={values.maxPrice} onChange={n => set('maxPrice', n ?? '')} ariaLabel="Giá cao nhất" placeholder="800.000" disabled={locked} /></label>
           </div>
-          <div className="pb-form-row">
-            <label>Giá khuyến nghị (không bắt buộc)<PriceInput value={values.recommendedPrice} onChange={n => set('recommendedPrice', n ?? '')} ariaLabel="Giá khuyến nghị" placeholder="600.000" /></label>
-            <label className="pb-active"><input type="checkbox" checked={values.isActive} onChange={e => set('isActive', e.target.checked)} /> Đang sử dụng</label>
-          </div>
+          <label className="pb-active">
+            <input type="checkbox" checked={values.isActive} onChange={e => set('isActive', e.target.checked)} disabled={locked && values.isActive} /> Active (Facility Manager được tạo size thuộc nhóm này)
+          </label>
         </fieldset>
+        {hints.length > 0 && (
+          <ul className="pb-hints">{hints.map(hint => <li key={hint}>{hint}</li>)}</ul>
+        )}
+        {touched && problems.length > 0 && (
+          <ul className="pb-problems" aria-live="polite">{problems.map(problem => <li key={problem}>{problem}</li>)}</ul>
+        )}
         <div className="pb-modal-actions">
           <button type="button" className="dashboard-secondary-btn" onClick={onClose} disabled={saving}>Hủy</button>
-          <button type="submit" className="dashboard-primary-btn" disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu khung giá'}</button>
+          <button type="submit" className="dashboard-primary-btn" disabled={saving || (touched && problems.length > 0)}>{saving ? 'Đang lưu...' : 'Lưu'}</button>
         </div>
       </form>
     </div>

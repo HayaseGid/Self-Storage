@@ -4,6 +4,11 @@ using SelfStorageAPI.Interfaces;
 
 namespace SelfStorageAPI.Controllers;
 
+/// <summary>
+/// Endpoint bàn giao cũ, giữ lại để không gãy client cũ.
+/// Áp dụng ĐÚNG các quy tắc như POST /api/staff-tools/handover (đều nằm trong HandoverService):
+/// đúng người được phân công, đã ký hợp đồng, đã tới ngày bắt đầu thuê, kho không bị người khác dùng...
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class HandoverController : ControllerBase
@@ -23,18 +28,9 @@ public class HandoverController : ControllerBase
         var email = Request.Headers["X-User-Email"].ToString();
         var result = await _handoverService.CompleteHandoverAsync(request, email, cancellationToken);
 
-        if (!result.IsSuccess)
-        {
-            return result.StatusCode switch
-            {
-                401 => Unauthorized(),
-                403 => Forbid(),
-                404 => NotFound(new { message = result.ErrorMessage }),
-                409 => Conflict(new { message = result.ErrorMessage }),
-                _ => StatusCode(500, new { message = result.ErrorMessage })
-            };
-        }
-
-        return Ok(result.Data);
+        // Lỗi luôn kèm { message } tiếng Việt để frontend hiện popup rõ ràng
+        return result.IsSuccess
+            ? Ok(result.Data)
+            : StatusCode(result.StatusCode, new { message = result.ErrorMessage });
     }
 }

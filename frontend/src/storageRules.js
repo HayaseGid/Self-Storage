@@ -6,6 +6,8 @@
  * - Kiểm tra giá thuê, tiền cọc và kỳ hạn thuê.
  */
 
+import { getTodayISO } from './demoClock/demoClock'
+
 export const DEPOSIT_HOLD_MINUTES = 15
 export const RENTAL_TERMS = [6, 12]
 export const DEPOSIT_MONTHS = 2
@@ -53,8 +55,12 @@ export const ACTIVE_RESERVATION_STATUSES = ['PENDING_PAYMENT', 'PENDING_APPROVAL
 
 export const RESERVATION_STATUS_LABELS = {
   PENDING_PAYMENT: 'Chờ khách trả cọc',
-  PENDING_APPROVAL: 'Đã cọc · Chờ duyệt',
-  CONFIRMED: 'Đã phân kho · Chờ bàn giao',
+
+  //Đã cập nhật: Vì bỏ luôn phần xét duyệt từ Facility Manager
+  PENDING_APPROVAL: 'Đã cọc · Chờ bàn giao',
+  CONFIRMED: 'Đã cọc · Chờ bàn giao',
+  //Đã sửa: 29/10/2026
+
   HANDED_OVER: 'Đang thuê',
   COMPLETED: 'Đã hoàn tất',
   CANCELLED: 'Đã hủy',
@@ -62,8 +68,7 @@ export const RESERVATION_STATUS_LABELS = {
 }
 
 function todayISO() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return getTodayISO()
 }
 
 function isReservationActive(reservation) {

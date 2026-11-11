@@ -44,6 +44,7 @@ public class SelfStorageDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        bool isNpgsql = Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
 
         // 1. Role
         modelBuilder.Entity<Role>(entity =>
@@ -61,13 +62,18 @@ public class SelfStorageDbContext : DbContext
             entity.ToTable("Users");
             entity.HasKey(u => u.UserID);
             entity.HasIndex(u => u.Email).IsUnique();
-            entity.HasIndex(u => u.Username).IsUnique().HasFilter("[Username] IS NOT NULL");
+            if (isNpgsql)
+                entity.HasIndex(u => u.Username).IsUnique().HasFilter("\"Username\" IS NOT NULL");
+            else
+                entity.HasIndex(u => u.Username).IsUnique().HasFilter("[Username] IS NOT NULL");
             entity.Property(u => u.Username).HasMaxLength(100);
             entity.Property(u => u.PasswordHash).HasMaxLength(100);
             entity.Property(u => u.FullName).HasMaxLength(150);
             entity.Property(u => u.Email).HasMaxLength(150);
             entity.Property(u => u.PhoneNumber).HasMaxLength(30);
             entity.Property(u => u.Status).HasMaxLength(30);
+            entity.Property(u => u.AccessCode).HasMaxLength(10);
+            entity.Property(u => u.AccessCodeStatus).HasMaxLength(20);
 
             entity.HasOne(u => u.Role)
                 .WithMany(r => r.Users)
@@ -95,7 +101,10 @@ public class SelfStorageDbContext : DbContext
             entity.HasKey(e => e.VerificationCodeID);
             entity.Property(e => e.Email).HasMaxLength(150);
             entity.Property(e => e.Purpose).HasMaxLength(30);
-            entity.Property(e => e.CodeHash).HasColumnType("binary(32)");
+            if (isNpgsql)
+                entity.Property(e => e.CodeHash).HasColumnType("bytea");
+            else
+                entity.Property(e => e.CodeHash).HasColumnType("binary(32)");
             entity.Property(e => e.CloseReason).HasMaxLength(20);
             entity.Property(e => e.RequestedIPAddress).HasMaxLength(50);
 
@@ -275,10 +284,10 @@ public class SelfStorageDbContext : DbContext
             entity.Property(s => s.HeightM).HasColumnType("decimal(7,2)");
             entity.Property(s => s.AreaM2)
                 .HasColumnType("decimal(9,2)")
-                .HasComputedColumnSql("CAST([WidthM]*[LengthM] AS DECIMAL(9,2))", stored: true);
+                .HasComputedColumnSql(isNpgsql ? "ROUND(\"WidthM\" * \"LengthM\", 2)" : "CAST([WidthM]*[LengthM] AS DECIMAL(9,2))", stored: true);
             entity.Property(s => s.VolumeM3)
                 .HasColumnType("decimal(10,2)")
-                .HasComputedColumnSql("CAST([WidthM]*[LengthM]*[HeightM] AS DECIMAL(10,2))", stored: true);
+                .HasComputedColumnSql(isNpgsql ? "ROUND(\"WidthM\" * \"LengthM\" * \"HeightM\", 2)" : "CAST([WidthM]*[LengthM]*[HeightM] AS DECIMAL(10,2))", stored: true);
 
             entity.HasOne(s => s.SizeCategory)
                 .WithMany(c => c.UnitSizes)
@@ -459,6 +468,7 @@ public class SelfStorageDbContext : DbContext
             entity.Property(r => r.EndDate).HasColumnType("date");
             entity.Property(r => r.AppointmentDate).HasColumnType("date");
             entity.Property(r => r.AppointmentTime).HasColumnType("time(0)");
+            entity.Property(r => r.HandoverMethod).HasMaxLength(20);
             entity.Property(r => r.Status).HasMaxLength(30);
             entity.Property(r => r.CancelReason).HasMaxLength(500);
 
@@ -499,7 +509,7 @@ public class SelfStorageDbContext : DbContext
             entity.Property(ri => ri.DiscountPercent).HasColumnType("decimal(5,2)");
             entity.Property(ri => ri.EffectiveMonthlyPrice)
                 .HasColumnType("decimal(12,2)")
-                .HasComputedColumnSql("CAST(ROUND([MonthlyPrice]*(100-[DiscountPercent])/100, 0) AS DECIMAL(12,2))", stored: true);
+                .HasComputedColumnSql(isNpgsql ? "ROUND(\"MonthlyPrice\" * (100 - \"DiscountPercent\") / 100, 2)" : "CAST(ROUND([MonthlyPrice]*(100-[DiscountPercent])/100, 0) AS DECIMAL(12,2))", stored: true);
 
             entity.HasOne(ri => ri.Reservation)
                 .WithMany(r => r.ReservationItems)
@@ -615,7 +625,7 @@ public class SelfStorageDbContext : DbContext
             entity.ToTable("ContractSignature");
             entity.HasKey(s => s.ContractID);
             entity.Property(s => s.SignerName).HasMaxLength(100);
-            entity.Property(s => s.SignatureImage).HasColumnType("nvarchar(max)");
+            entity.Property(s => s.SignatureImage).HasColumnType(isNpgsql ? "text" : "nvarchar(max)");
             entity.Property(s => s.TermsVersion).HasMaxLength(50);
 
             entity.HasOne(s => s.Contract)

@@ -196,8 +196,5 @@ export function usePolicies() {
   return state
 }
 
-/* Chương trình giảm giá (DCP) - chỉ xem. */
-export const DISCOUNTS = [
-  { code: 'NEW_CUSTOMER', name: 'Khách hàng mới', rate: 10, scope: 'Tiền thuê tháng đầu tiên', condition: 'Lần thuê đầu tiên, khi chương trình đang chạy', combinable: false },
-  { code: 'LONG_TERM', name: 'Thuê dài hạn', rate: 5, scope: 'Tiền thuê', condition: 'Thanh toán trước từ 06 tháng trở lên', combinable: false }
-]
+/* Không áp dụng chương trình giảm giá. */
+export const DISCOUNTS = []

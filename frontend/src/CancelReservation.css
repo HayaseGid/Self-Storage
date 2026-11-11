@@ -1,0 +1,46 @@
+/* Hủy đặt kho (CancelReservation.jsx) */
+.cr-modal { width: min(720px, 100%); }
+.sign-badge.cr-badge { background: #fdecec; color: #c4373c; }
+.cr-modal .csf-label { display: block; margin: 16px 0 6px; }
+.cr-modal select.csf-input { width: 100%; }
+.cr-error { margin-bottom: 12px; }
+.cr-blocked { padding: 14px 16px; border-radius: 14px; background: #fff7e6; border: 1px solid #f3d38a; color: #7a5200; font-size: 14px; line-height: 1.55; }
+.cr-summary .cr-refund strong { color: #2b8b55; }
+.cr-summary .cr-norefund strong { color: #c4373c; }
+.cr-tiers { margin: 16px 0 6px; padding: 14px 16px; border-radius: 14px; background: #f7fafc; border: 1px solid #e1ebf3; }
+.cr-tiers h4 { margin: 0 0 8px; color: #073d70; font-size: 14px; }
+.cr-tiers ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.cr-tiers li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; color: #4f6880; font-size: 13.5px; }
+.cr-tiers li strong { margin-left: auto; color: #23475e; }
+.cr-tiers li em { padding: 1px 8px; border-radius: 999px; background: #075a9f; color: #fff; font-size: 11px; font-style: normal; font-weight: 700; }
+.cr-tiers li.active { background: #eaf6ff; color: #073d70; font-weight: 600; }
+.cr-note { width: 100%; margin-top: 8px; resize: vertical; font: inherit; }
+.cr-agree { margin-top: 14px; }
+.cr-danger-btn {
+  min-height: 44px; padding: 0 20px; border: 0; border-radius: 12px;
+  background: #d93a3f; color: #fff; font: 700 14px 'DM Sans', 'Be Vietnam Pro', sans-serif; cursor: pointer;
+}
+.cr-danger-btn:hover:not(:disabled) { background: #bf2f34; }
+.cr-danger-btn:disabled { opacity: .5; cursor: not-allowed; }
+.cr-link-btn { border: 0; background: none; color: #c4373c; font-weight: 700; cursor: pointer; padding: 0 4px; }
+.cr-link-btn:hover { text-decoration: underline; }
+
+/* Tiến trình hoàn cọc (tab Thanh toán) */
+.refund-box { margin: 14px 0 4px; padding: 14px 16px; border-radius: 14px; border: 1px solid #f3d38a; background: #fffaf0; }
+.refund-box.ok { border-color: #bfe5cf; background: #f3fbf6; }
+.refund-box-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.refund-box-head strong { color: #073d70; font-size: 15px; }
+.refund-box-head span { padding: 3px 10px; border-radius: 999px; background: #fff0c9; color: #8a5a00; font-size: 12px; font-weight: 800; }
+.refund-box.ok .refund-box-head span { background: #d9f2e3; color: #2b8b55; }
+.refund-steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; counter-reset: rs; }
+.refund-steps li { position: relative; padding-left: 30px; counter-increment: rs; }
+.refund-steps li::before {
+  content: counter(rs); position: absolute; left: 0; top: 0; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; background: #e4ebf1; color: #6d8394; font-size: 11px; font-weight: 800;
+}
+.refund-steps li.done::before { content: '✓'; background: #2b8b55; color: #fff; }
+.refund-steps li.error::before { content: '!'; background: #d93a3f; color: #fff; }
+.refund-steps b { display: block; color: #23475e; font-size: 13.5px; }
+.refund-steps small { display: block; color: #6d8394; font-size: 12.5px; line-height: 1.45; }
+.refund-steps li.error small { color: #b3373b; }
+.refund-help { margin: 10px 0 0; color: #5d7387; font-size: 12.5px; line-height: 1.5; }
