@@ -671,9 +671,11 @@ public sealed class ContractRenewalsController(
         var deadline = r.EndDate.Date.AddDays(-rules.NoticeDays);
         if (today > deadline)
             return (false, $"Theo chính sách, cần gia hạn trước ngày hết hạn ít nhất {rules.NoticeDays} ngày (hạn chót {deadline:dd/MM/yyyy}). Vui lòng liên hệ cơ sở.");
-        var opensOn = deadline.AddDays(-RenewalWindowDays);
-        if (today < opensOn)
-            return (false, $"Chưa tới thời gian gia hạn. Hợp đồng này gia hạn được từ {opensOn:dd/MM/yyyy} đến {deadline:dd/MM/yyyy}.");
+        // Cho phép khách hàng chủ động gia hạn sớm bất kỳ lúc nào khi đang thuê
+        // (không ép buộc phải chờ tới 30 ngày cuối mới được bấm gia hạn).
+        // var opensOn = deadline.AddDays(-RenewalWindowDays);
+        // if (today < opensOn)
+        //     return (false, $"Chưa tới thời gian gia hạn. Hợp đồng này gia hạn được từ {opensOn:dd/MM/yyyy} đến {deadline:dd/MM/yyyy}.");
         if (r.HandoverTasks.Any(t => t.TaskType == "Move Out" && t.Status != "Cancelled"))
             return (false, "Bạn đã báo trả kho cho hợp đồng này nên không gia hạn được. Muốn thuê tiếp, hãy hủy lịch trả kho trước.");
         if (r.Charges.Any(c => RentPaymentRules.IsRent(c) && c.Status == "Unpaid" && c.DueDate.Date <= today))
