@@ -46,10 +46,15 @@ Internet hoặc lưu dữ liệu thật.
 Khi deploy, cấu hình rewrite mọi đường dẫn về `index.html` (app dùng History API).
 
 ## Cấu trúc
-- `src/App.jsx` – entry, router, trang công khai, đăng nhập/đăng ký, phân quyền theo role
-- `src/CustomerAccount.jsx`, `FacilityManagerAccount.jsx`, `FacilityStaffAccount.jsx`, `AdminAccount.jsx`, `BusinessOperations.jsx` – các dashboard theo role
-- CSS: `styles.css` (chung), `fmanagerstyles.css`, `staffstyles.css`, `AdminAccount.css`, `BusinessOperations.css`
+Mã nguồn `src/` được chia theo tầng (giống backend). Xem chi tiết trong `GIAI-THICH-CAU-TRUC-FRONTEND.md`,
+luồng gọi API trong `LUONG-API-FRONTEND.md`.
+- `src/App.jsx` – entry, router, trang công khai, đăng nhập/đăng ký, đặt kho
+- `src/api/` – gọi HTTP tới backend (`api.js` là client dùng chung)
+- `src/services/`, `src/mappers/`, `src/hooks/`, `src/store/`, `src/utils/` – nghiệp vụ, chuyển đổi dữ liệu, hook, lưu trình duyệt, tiện ích
+- `src/components/common/` – component dùng chung; `src/features/<nghiệp vụ>/` – khối nghiệp vụ dùng lại
+- `src/pages/<vai trò>/` – dashboard: `customer/CustomerAccount.jsx`, `staff/FacilityStaffAccount.jsx`, `manager/FacilityManagerAccount.jsx`, `business/BusinessOperations.jsx`, `admin/AdminAccount.jsx`
+- CSS: `src/styles/` (`styles.css` chung, `fmanagerstyles.css`, `staffstyles.css`); CSS riêng nằm cạnh component cùng tên
 
 ## Font
 - Tiêu đề: **Be Vietnam Pro** (thay Manrope – font này bị dính chữ khi gõ tiếng Việt kèm letter-spacing âm). Nội dung: DM Sans (fallback Be Vietnam Pro cho dấu tiếng Việt).
-- Muốn đổi font, sửa dòng `@import` đầu `src/styles.css` và thay `'Be Vietnam Pro'` trong các file CSS.
+- Muốn đổi font, sửa dòng `@import` đầu `src/styles/styles.css` và thay `'Be Vietnam Pro'` trong các file CSS.

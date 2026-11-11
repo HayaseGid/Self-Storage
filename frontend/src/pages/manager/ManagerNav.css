@@ -1,0 +1,108 @@
+/* ======================================================================
+ * FILE: src/pages/manager/ManagerNav.css  —  GIAO DIỆN (CSS) CHO COMPONENT ManagerNav.jsx
+ * Chỉ chứa định dạng giao diện (không có hàm / logic). Được import bởi:
+ *   - src/pages/manager/ManagerNav.jsx
+ * ====================================================================== */
+/* Menu trái Facility Manager (ManagerNav.jsx). Kế thừa kiểu nút của .customer-nav, chỉ chỉnh phần riêng. */
+
+.mnav { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; min-width: 0; }
+.mnav-group { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 0; }
+.mnav-group + .mnav-group { margin-top: 14px; }
+
+/* Tiêu đề nhóm: nhỏ, nhạt, không tranh chú ý với mục */
+.customer-nav .mnav-title,
+.mnav-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 0;
+  padding: 0 13px 4px;
+  border: 0;
+  background: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-transform: none;
+  color: #9aabbc;
+  text-align: left;
+  cursor: default;
+}
+.customer-nav .mnav-title.toggle { cursor: pointer; }
+.customer-nav .mnav-title.toggle:hover:not(:disabled) { background: none; color: var(--muted, #6d849b); }
+.customer-nav .mnav-title.toggle:disabled { cursor: default; opacity: 1; }
+.mnav-chevron { width: 14px; height: 14px; margin-left: auto; fill: none; stroke: currentColor; stroke-width: 2; transition: transform .15s; }
+.mnav-chevron.open { transform: rotate(90deg); }
+.mnav-dot { width: 7px; height: 7px; border-radius: 50%; background: #e5484d; }
+
+/* Mục */
+.customer-nav button.mnav-item { min-height: 42px; min-width: 0; width: 100%; gap: 11px; overflow: hidden; }
+.customer-nav button.mnav-item .mnav-icon { display: inline-flex; flex: 0 0 auto; width: 20px; color: #7b93ab; }
+.customer-nav button.mnav-item:hover .mnav-icon,
+.customer-nav button.mnav-item.active .mnav-icon { color: #0877cf; }
+.mnav-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mnav-label { flex: 1; min-width: 0; font-style: normal; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Số việc chờ: đỏ = cần Manager xử lý; xanh lá "Mới" = kho mới BOM vừa thêm */
+.mnav-badge {
+  flex: 0 0 auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.mnav-badge.new { background: #dff6e8; color: #1f7a48; }
+
+/* ---------- [SỬA] Menu trái cuộn được ----------
+   Khung trái (.customer-sidebar) cố định cao bằng màn hình. Mở nhóm "Thiết lập" làm menu dài hơn khung
+   -> trước đây các mục tràn ra ngoài thẻ trắng. Giờ: logo + tên Manager ở trên và nút Đăng xuất ở dưới
+   luôn đứng yên, chỉ riêng phần menu ở giữa có thanh cuộn (lăn chuột / kéo thanh cuộn để xuống). */
+.customer-sidebar:has(.mnav) { overflow: hidden; }
+.customer-sidebar:has(.mnav) > * { flex-shrink: 0; }
+
+.customer-sidebar .customer-nav.mnav {
+  position: relative;            /* để ManagerNav.jsx tính vị trí mục trong menu */
+  flex: 1 1 auto;
+  min-height: 0;                 /* bắt buộc để phần tử flex co lại và cuộn được */
+  align-content: start;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;  /* cuộn tới cuối menu không kéo cả trang theo */
+  margin: 0 -8px 0 0;
+  padding: 2px 6px 6px 0;        /* chừa chỗ cho thanh cuộn, không đè lên số đỏ */
+  scrollbar-width: thin;
+  scrollbar-color: #c5d6e4 transparent;
+  /* Bóng mờ trên / dưới chỉ hiện khi còn nội dung bị khuất -> biết là còn mục để cuộn */
+  background:
+    linear-gradient(#fff 30%, rgba(255, 255, 255, 0)) top / 100% 24px no-repeat local,
+    linear-gradient(rgba(255, 255, 255, 0), #fff 70%) bottom / 100% 24px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, rgba(15, 69, 111, .16), transparent) top / 100% 10px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, rgba(15, 69, 111, .16), transparent) bottom / 100% 10px no-repeat scroll;
+}
+.customer-sidebar .customer-nav.mnav::-webkit-scrollbar { width: 6px; }
+.customer-sidebar .customer-nav.mnav::-webkit-scrollbar-track { background: transparent; }
+.customer-sidebar .customer-nav.mnav::-webkit-scrollbar-thumb { background: #c5d6e4; border-radius: 999px; }
+.customer-sidebar .customer-nav.mnav::-webkit-scrollbar-thumb:hover { background: #9fb7cb; }
+.customer-sidebar:has(.mnav) .customer-sidebar-bottom { padding-top: 12px; }
+
+/* Màn hình thấp (laptop 768px...): thu gọn đầu khung + mục cho đỡ phải cuộn */
+@media (max-height: 820px) {
+  .customer-sidebar:has(.mnav) { padding-top: 18px; padding-bottom: 14px; }
+  .customer-sidebar:has(.mnav) .customer-brand { padding-bottom: 14px; }
+  .customer-sidebar:has(.mnav) .customer-profile-mini { padding: 12px 8px; }
+  .customer-nav button.mnav-item { min-height: 38px; }
+  .mnav-group + .mnav-group { margin-top: 10px; }
+}
+
+/* Màn hình hẹp (≤1000px): khung trái không còn cố định, menu hiện đủ, không cần cuộn riêng */
+@media (max-width: 1000px) {
+  .customer-sidebar:has(.mnav) { overflow: visible; }
+  .customer-sidebar .customer-nav.mnav { overflow: visible; margin: 0; padding: 0; background: none; }
+}

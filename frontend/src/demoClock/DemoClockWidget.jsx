@@ -1,3 +1,12 @@
+/**
+ * ======================================================================
+ * FILE: src/demoClock/DemoClockWidget.jsx  —  NÚT NỔI "GIẢ LẬP NGÀY HỆ THỐNG" (DEMO TIME TRAVEL)
+ * Hiển thị ngày đang áp dụng ở góc màn hình; bấm vào để chọn ngày giả lập, nhảy nhanh +1 ngày/+7 ngày/+1 tháng...,
+ * hoặc quay về ngày thực tế. Sau khi xác nhận sẽ tải lại trang để toàn bộ dữ liệu tính theo ngày mới
+ * (api.js gửi header X-Simulated-Date cho backend). Không gọi API trực tiếp.
+ * Dùng ở: App.jsx.
+ * ======================================================================
+ */
 import React, { useState } from 'react'
 import {
   addDaysISO,
@@ -11,6 +20,9 @@ import {
 } from './demoClock'
 import './DemoClockWidget.css'
 
+/**
+ * Biểu tượng đồng hồ (SVG).
+ */
 function ClockIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -20,6 +32,9 @@ function ClockIcon() {
   )
 }
 
+/**
+ * Component tiện ích giả lập ngày: nút thu gọn + bảng điều chỉnh khi mở rộng.
+ */
 export default function DemoClockWidget() {
   const [expanded, setExpanded] = useState(false)
   const realToday = getRealTodayISO()
@@ -29,6 +44,7 @@ export default function DemoClockWidget() {
 
   const [draftDate, setDraftDate] = useState(activeDate)
 
+  // Mở/thu gọn bảng điều chỉnh; khi mở thì nạp ngày đang áp dụng vào ô chọn ngày.
   const toggleOpen = () => {
     if (!expanded) {
       setDraftDate(getTodayISO())
@@ -36,6 +52,7 @@ export default function DemoClockWidget() {
     setExpanded(prev => !prev)
   }
 
+  // Bấm "Xác nhận": lưu ngày giả lập vào localStorage rồi tải lại trang.
   const handleConfirm = e => {
     e.preventDefault()
     if (!draftDate) return
@@ -43,6 +60,7 @@ export default function DemoClockWidget() {
     window.location.reload()
   }
 
+  // Bấm "Về hôm nay": tắt giả lập (về ngày thật) rồi tải lại trang.
   const handleResetToday = () => {
     clearSimulatedDate()
     window.location.reload()

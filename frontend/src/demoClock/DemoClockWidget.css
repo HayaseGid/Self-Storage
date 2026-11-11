@@ -1,3 +1,8 @@
+/* ======================================================================
+ * FILE: src/demoClock/DemoClockWidget.css  —  GIAO DIỆN (CSS) CHO COMPONENT DemoClockWidget.jsx
+ * Chỉ chứa định dạng giao diện (không có hàm / logic). Được import bởi:
+ *   - src/demoClock/DemoClockWidget.jsx
+ * ====================================================================== */
 .demo-clock-root {
   position: fixed;
   right: 20px;
