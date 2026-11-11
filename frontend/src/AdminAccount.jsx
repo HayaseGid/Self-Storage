@@ -20,6 +20,8 @@ function Admin() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -125,6 +127,39 @@ function Admin() {
     if (confirmed) void updateUser(id, newRole, user.status, `Đã đổi role của ${user.username}`);
   };
 
+  const resetPassword = async (user) => {
+    if (newPassword.length < 6) {
+      setError("Mật khẩu phải có ít nhất 6 ký tự.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Mật khẩu xác nhận không khớp.");
+      return;
+    }
+    const confirmed = await dialog.confirm({
+      tone: "warning",
+      title: `Đặt lại mật khẩu cho ${user.username}?`,
+      message: "Mật khẩu hiện tại sẽ được thay thế. Mật khẩu mới không thể xem lại sau khi lưu.",
+      confirmLabel: "Đặt lại mật khẩu",
+    });
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError("");
+    try {
+      await apiPut(`/api/admin/users/${user.id}/password`, { password: newPassword });
+      setNewPassword("");
+      setConfirmPassword("");
+      await loadAdminData();
+      showToast(`Đã đặt lại mật khẩu cho ${user.username}`);
+    } catch (resetError) {
+      setError(resetError.message);
+      void dialog.alert({ tone: "danger", title: "Không đặt lại được mật khẩu", message: resetError.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const pendingUsers = useMemo(
     () => users.filter((user) => user.status === "Pending" && user.role !== "Storage Customer"),
     [users]
@@ -175,6 +210,8 @@ function Admin() {
 
   const selectUser = (user) => {
     setSelectedUser(user);
+    setNewPassword("");
+    setConfirmPassword("");
     setTimeout(() => document.getElementById("admin-user-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
@@ -253,6 +290,17 @@ function Admin() {
         <label>Thay đổi role<select value={user.role} onChange={(e) => changeRole(user.id, e.target.value)}>{roleOptions.map((role) => <option key={role}>{role}</option>)}</select></label>
         <div className="admin-action-group"><button className="admin-button admin-button-light" onClick={() => toggleLock(user.id)}>{user.status === "Locked" ? "Mở khóa tài khoản" : "Khóa tài khoản"}</button></div>
       </div>
+      {user.role !== "System Administrator" && (
+        <form className="admin-password-reset" onSubmit={(event) => { event.preventDefault(); void resetPassword(user); }}>
+          <div>
+            <h4>Đặt lại mật khẩu</h4>
+            <p>Mật khẩu mới phải có ít nhất 6 ký tự. Hệ thống chỉ lưu mật khẩu đã mã hóa.</p>
+          </div>
+          <label>Mật khẩu mới<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" minLength={6} required /></label>
+          <label>Xác nhận mật khẩu<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={6} required /></label>
+          <button className="admin-button admin-button-primary" type="submit" disabled={saving}>Đặt lại mật khẩu</button>
+        </form>
+      )}
       {user.role !== "Storage Customer" && <p className="admin-detail-note">Tài khoản nghiệp vụ có lịch sử hoạt động nên hệ thống ưu tiên khóa thay vì xóa để bảo toàn dữ liệu.</p>}
     </div>
   );

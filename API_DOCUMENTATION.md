@@ -31,7 +31,7 @@ Tài liệu này quy định **Hợp đồng giao tiếp (API Contract)** chuẩ
 
 ---
 
-## 3. Bảng Tổng Hợp Nhanh 36 API Endpoints
+## 3. Bảng Tổng Hợp Nhanh 37 API Endpoints
 
 | STT | Nhóm | Method | Endpoint Path | Quyền hạn (Role) | Mô tả chức năng |
 | :-: | :--- | :---: | :--- | :--- | :--- |
@@ -40,6 +40,7 @@ Tài liệu này quy định **Hợp đồng giao tiếp (API Contract)** chuẩ
 | 3 | **Admin** | `GET` | `/api/admin/users` | System Admin | Lấy danh sách toàn bộ người dùng |
 | 4 | **Admin** | `GET` | `/api/admin/activity` | System Admin | Xem lịch sử hoạt động (200 log gần nhất) |
 | 5 | **Admin** | `PUT` | `/api/admin/users/{userId}` | System Admin | Cập nhật Role hoặc trạng thái tài khoản |
+| 5a | **Admin** | `PUT` | `/api/admin/users/{userId}/password` | System Admin | Đặt lại mật khẩu tài khoản |
 | 6 | **Catalog** | `GET` | `/api/Catalog/state` | Public | Lấy dữ liệu danh mục cơ sở, kho, loại kho, bảng giá |
 | 7 | **Catalog** | `GET` | `/api/Catalog/availability` | Public | Kiểm tra kho trống theo cơ sở, loại kho, ngày thuê |
 | 8 | **Reservation** | `POST` | `/api/Reservation` | Customer | Tạo đơn đặt chỗ & giữ kho (Hold 15 phút) |
@@ -129,6 +130,15 @@ Tài liệu này quy định **Hợp đồng giao tiếp (API Contract)** chuẩ
   }
   ```
   *(Giá trị `status` hợp lệ: `"Active"`, `"Pending"`, `"Pending Approval"`, `"Locked"`, `"Rejected"`, `"Inactive"`).*
+
+#### `PUT /api/admin/users/{userId}/password`
+- **Request Body**:
+  ```json
+  {
+    "password": "new-password"
+  }
+  ```
+- Mật khẩu mới cần ít nhất 6 ký tự; backend chỉ lưu BCrypt hash. Admin không thể xem mật khẩu cũ hoặc đặt lại mật khẩu cho tài khoản System Administrator.
 
 ---
 
@@ -378,4 +388,3 @@ Tài liệu này quy định **Hợp đồng giao tiếp (API Contract)** chuẩ
     }
     ```
 - `DELETE /api/unit-sizes/{id}`: Xóa kích thước kho (chỉ xóa được khi chưa có kho/bảng giá nào sử dụng).
-

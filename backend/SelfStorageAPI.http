@@ -1,5 +1,6 @@
 @SelfStorageAPI_HostAddress = http://localhost:5046
 @customerToken = replace-with-customer-access-token
+@adminToken = replace-with-admin-access-token
 
 GET {{SelfStorageAPI_HostAddress}}/weatherforecast/
 Accept: application/json
@@ -20,4 +21,13 @@ Content-Type: application/json
   "signatureImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jEtgAAAAASUVORK5CYII=",
   "termsVersion": "storage-rental-v1",
   "acceptedTerms": true
+}
+
+### Reset a user's password (System Administrator only)
+PUT {{SelfStorageAPI_HostAddress}}/api/admin/users/1/password
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "password": "new-password"
 }

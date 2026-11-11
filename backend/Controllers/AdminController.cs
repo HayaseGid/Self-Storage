@@ -70,4 +70,30 @@ public class AdminController : ControllerBase
 
         return NoContent();
     }
+
+    [HttpPut("users/{userId:int}/password")]
+    public async Task<IActionResult> ResetUserPassword(
+        int userId,
+        [FromBody] ResetAdminUserPasswordDTO request,
+        CancellationToken cancellationToken)
+    {
+        var email = Request.Headers["X-User-Email"].ToString();
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+        var result = await _adminService.ResetUserPasswordAsync(userId, request, email, ipAddress, cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return result.StatusCode switch
+            {
+                403 => Forbid(),
+                404 => NotFound(new { message = result.ErrorMessage }),
+                409 => Conflict(new { message = result.ErrorMessage }),
+                400 => BadRequest(new { message = result.ErrorMessage }),
+                _ => StatusCode(500, new { message = result.ErrorMessage })
+            };
+        }
+
+        return NoContent();
+    }
 }

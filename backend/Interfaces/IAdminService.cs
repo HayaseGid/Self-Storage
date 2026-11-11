@@ -11,4 +11,5 @@ public interface IAdminService
     Task<AdminServiceResponse> GetUsersPageAsync(string? adminEmail, PageQuery query, string? roleName, CancellationToken cancellationToken);
     Task<AdminServiceResponse> GetActivityPageAsync(string? adminEmail, PageQuery query, CancellationToken cancellationToken);
     Task<AdminServiceResponse> UpdateUserAsync(int userId, UpdateAdminUserDTO request, string? adminEmail, string? ipAddress, CancellationToken cancellationToken);
+    Task<AdminServiceResponse> ResetUserPasswordAsync(int userId, ResetAdminUserPasswordDTO request, string? adminEmail, string? ipAddress, CancellationToken cancellationToken);
 }

@@ -1,3 +1,4 @@
+using System.Text;
 using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Models;
@@ -167,6 +168,44 @@ public class AdminService : IAdminService
         return new AdminServiceResponse(true, null, 204, null);
     }
 
+    public async Task<AdminServiceResponse> ResetUserPasswordAsync(int userId, ResetAdminUserPasswordDTO request, string? adminEmail, string? ipAddress, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(adminEmail)) return new AdminServiceResponse(false, null, 403, null);
+
+        var administrator = await _adminRepository.GetActiveAdministratorByEmailAsync(adminEmail, cancellationToken);
+        if (administrator == null) return new AdminServiceResponse(false, null, 403, null);
+
+        if (string.IsNullOrEmpty(request.Password) || request.Password.Length < 6)
+            return new AdminServiceResponse(false, "Mật khẩu phải có ít nhất 6 ký tự.", 400, null);
+
+        if (Encoding.UTF8.GetByteCount(request.Password) > 72)
+            return new AdminServiceResponse(false, "Mật khẩu không được vượt quá 72 byte UTF-8.", 400, null);
+
+        var user = await _adminRepository.GetUserByIdAsync(userId, cancellationToken);
+        if (user == null) return new AdminServiceResponse(false, "Không tìm thấy tài khoản.", 404, null);
+
+        if (user.UserID == administrator.UserID || user.RoleID == SystemAdministratorRoleId)
+            return new AdminServiceResponse(false, "Không thể đặt lại mật khẩu tài khoản System Administrator tại đây.", 409, null);
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+        user.FailedLoginCount = 0;
+        user.LockoutEndAt = null;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        _adminRepository.AddActivityLog(new UserActivityLog
+        {
+            UserID = administrator.UserID,
+            Action = "Password Reset",
+            IPAddress = ipAddress,
+            Timestamp = DateTime.UtcNow,
+            Details = user.Username ?? user.Email
+        });
+
+        await _adminRepository.SaveChangesAsync(cancellationToken);
+
+        return new AdminServiceResponse(true, null, 204, null);
+    }
+
     private static string GetFacilityName(User user)
     {
         var names = user.ManagedFacilities
@@ -182,7 +221,7 @@ public class AdminService : IAdminService
 
     private static string GetStatusAction(string oldStatus, string status) => (oldStatus, status) switch { ("Pending", "Active") => "Account Approved", ("Locked", "Active") => "Account Unlocked", (_, "Locked") => "Account Locked", (_, "Rejected") => "Account Rejected", _ => "Account Updated" };
 
-    private static string ToClientAction(string action) => action switch { "Login" => "Đăng nhập hệ thống", "Account Approved" => "Đã duyệt tài khoản", "Account Rejected" => "Từ chối tài khoản", "Account Locked" => "Đã khóa tài khoản", "Account Unlocked" => "Đã mở khóa tài khoản", "Role Changed" => "Đã thay đổi role", _ => action };
+    private static string ToClientAction(string action) => action switch { "Login" => "Đăng nhập hệ thống", "Account Approved" => "Đã duyệt tài khoản", "Account Rejected" => "Từ chối tài khoản", "Account Locked" => "Đã khóa tài khoản", "Account Unlocked" => "Đã mở khóa tài khoản", "Role Changed" => "Đã thay đổi role", "Password Reset" => "Đã đặt lại mật khẩu", _ => action };
 
     private static string GetActivityType(string action) => action switch { "Login" => "login", "Account Approved" or "Account Rejected" => "approval", "Role Changed" => "role", _ => "security" };
 }

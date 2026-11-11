@@ -30,3 +30,11 @@ public sealed record UpdateAdminUserDTO
     [Required]
     public string Status { get; init; } = string.Empty;
 }
+
+/// <summary>Payload for setting a new password on a user account.</summary>
+public sealed record ResetAdminUserPasswordDTO
+{
+    [Required]
+    [MinLength(6)]
+    public string Password { get; init; } = string.Empty;
+}
