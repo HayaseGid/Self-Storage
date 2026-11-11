@@ -1404,7 +1404,8 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
   const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase()
 
   const accessCode = user?.accessCode || rentals.find(r => r.customerAccessCode)?.customerAccessCode || rentals.flatMap(r => r.accesses || []).find(a => a.accessType === 'Access Code')?.accessValue || null
-  const accessStatus = user?.accessCodeStatus || rentals.find(r => r.customerAccessCodeStatus)?.customerAccessCodeStatus || (accessCode ? 'Active' : 'Unissued')
+  const latestAccessStatus = rentals.find(r => r.customerAccessCodeStatus)?.customerAccessCodeStatus
+  const accessStatus = latestAccessStatus || user?.accessCodeStatus || (accessCode ? 'Active' : 'Unissued')
 
   const handleCopyCode = () => {
     if (!accessCode) return
