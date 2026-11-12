@@ -139,8 +139,10 @@ builder.Services.AddScoped<IReturnInspectionRepository, ReturnInspectionReposito
 builder.Services.AddScoped<IReturnInspectionService, ReturnInspectionService>();         // [THÊM 14]
 //Đã sửa: 09/11/2026
 
-// Cấu hình SMTP Gmail và EmailService
+// Cấu hình SMTP Gmail, Brevo HTTP API và EmailService
 builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
+builder.Services.Configure<BrevoSettings>(builder.Configuration.GetSection("BrevoSettings"));
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<RegistrationOtpService>(); // OTP đăng ký: tạo + kiểm tra mã ở backend
 builder.Services.AddHostedService<RenewalSettleJob>();     // job hằng ngày: chốt kỳ thuê cũ sau gia hạn (4.2)

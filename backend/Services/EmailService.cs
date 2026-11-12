@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Options;
@@ -11,12 +12,22 @@ namespace SelfStorageAPI.Services;
 
 public class EmailService : IEmailService
 {
+    private const string BrevoApiUrl = "https://api.brevo.com/v3/smtp/email";
+
     private readonly SmtpSettings _smtp;
+    private readonly BrevoSettings _brevo;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<EmailService> _logger;
 
-    public EmailService(IOptions<SmtpSettings> smtpOptions, ILogger<EmailService> logger)
+    public EmailService(
+        IOptions<SmtpSettings> smtpOptions,
+        IOptions<BrevoSettings> brevoOptions,
+        IHttpClientFactory httpClientFactory,
+        ILogger<EmailService> logger)
     {
         _smtp = smtpOptions.Value;
+        _brevo = brevoOptions.Value;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -63,9 +74,16 @@ public class EmailService : IEmailService
 
     public async Task SendRawEmailAsync(string toEmail, string subject, string bodyHtml, CancellationToken ct = default)
     {
+        // Ưu tiên gửi qua Brevo HTTP API (cổng 443) nếu đã cấu hình ApiKey — không bị chặn trên Render Free
+        if (!string.IsNullOrWhiteSpace(_brevo.ApiKey))
+        {
+            await SendViaBrevoAsync(toEmail, subject, bodyHtml, ct);
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_smtp.SenderEmail) || string.IsNullOrWhiteSpace(_smtp.Password))
         {
-            throw new InvalidOperationException("Chưa cấu hình tài khoản Gmail SMTP trong appsettings.json (SmtpSettings).");
+            throw new InvalidOperationException("Chưa cấu hình BrevoSettings:ApiKey hoặc SmtpSettings trong appsettings.json.");
         }
 
         var message = new MimeMessage();
@@ -115,6 +133,57 @@ public class EmailService : IEmailService
         {
             _logger.LogError(ex, "Lỗi khi gửi email qua Gmail SMTP tới {ToEmail} sau {ElapsedMs} ms.", toEmail, sw.ElapsedMilliseconds);
             throw new InvalidOperationException($"Lỗi kết nối Gmail SMTP: {ex.Message}", ex);
+        }
+    }
+
+    private async Task SendViaBrevoAsync(string toEmail, string subject, string bodyHtml, CancellationToken ct)
+    {
+        var senderEmail = !string.IsNullOrWhiteSpace(_brevo.SenderEmail)
+            ? _brevo.SenderEmail.Trim()
+            : _smtp.SenderEmail.Trim();
+        var senderName = !string.IsNullOrWhiteSpace(_brevo.SenderName)
+            ? _brevo.SenderName.Trim()
+            : _smtp.SenderName.Trim();
+
+        if (string.IsNullOrWhiteSpace(senderEmail))
+        {
+            throw new InvalidOperationException("Chưa cấu hình BrevoSettings:SenderEmail (hoặc SmtpSettings:SenderEmail).");
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+
+        var payload = new
+        {
+            sender = new { name = senderName, email = senderEmail },
+            to = new[] { new { email = toEmail.Trim() } },
+            subject,
+            htmlContent = bodyHtml
+        };
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Post, BrevoApiUrl);
+            request.Headers.Add("api-key", _brevo.ApiKey.Trim());
+            request.Headers.Add("accept", "application/json");
+            request.Content = JsonContent.Create(payload);
+
+            using var response = await client.SendAsync(request, timeoutCts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(timeoutCts.Token);
+                _logger.LogError("Brevo API trả về lỗi {StatusCode} khi gửi tới {ToEmail}: {ErrorBody}", (int)response.StatusCode, toEmail, errorBody);
+                throw new InvalidOperationException($"Lỗi gửi email qua Brevo API ({(int)response.StatusCode}): {errorBody}");
+            }
+
+            _logger.LogInformation("Đã gửi email qua Brevo API thành công tới {ToEmail} với tiêu đề '{Subject}' trong {ElapsedMs} ms.", toEmail, subject, sw.ElapsedMilliseconds);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "Hết thời gian chờ Brevo API ({ElapsedMs} ms) khi gửi tới {ToEmail}.", sw.ElapsedMilliseconds, toEmail);
+            throw new TimeoutException("Kết nối tới Brevo API quá lâu. Vui lòng thử lại sau.", ex);
         }
     }
 
