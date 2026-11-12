@@ -37,8 +37,10 @@ const toTimes = res => ({
  * @param {{fullName:string, email:string, password:string, phoneNumber:string}} data thông tin đăng ký.
  * @returns {Promise<{email, expiresAt, resendAvailableAt}>} mốc hết hạn / mốc được gửi lại mã.
  */
+const OTP_SEND_TIMEOUT_MS = 35000
+
 export async function startRegistration({ fullName, email, password, phoneNumber }) {
-  return toTimes(await apiPost('/api/auth/register/start', { fullName, email, password, phoneNumber }))
+  return toTimes(await apiPost('/api/auth/register/start', { fullName, email, password, phoneNumber }, { timeout: OTP_SEND_TIMEOUT_MS }))
 }
 
 /**
@@ -48,7 +50,7 @@ export async function startRegistration({ fullName, email, password, phoneNumber
  * @returns {Promise<{email, expiresAt, resendAvailableAt}>}
  */
 export async function resendRegistrationOtp(email) {
-  return toTimes(await apiPost('/api/auth/register/resend', { email }))
+  return toTimes(await apiPost('/api/auth/register/resend', { email }, { timeout: OTP_SEND_TIMEOUT_MS }))
 }
 
 /**

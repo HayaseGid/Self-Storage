@@ -78,7 +78,16 @@ public class EmailService : IEmailService
             Text = bodyHtml
         };
 
-        using var client = new SmtpClient();
+        using var client = new SmtpClient
+        {
+            // Giới hạn thời gian chờ SMTP (15 giây) để tránh treo request quá lâu
+            Timeout = 15000
+        };
+        using var smtpTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        smtpTimeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+        var smtpCt = smtpTimeoutCts.Token;
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             // Gmail dùng cổng 587 với STARTTLS
@@ -86,20 +95,25 @@ public class EmailService : IEmailService
                 ? SecureSocketOptions.SslOnConnect 
                 : SecureSocketOptions.StartTls;
 
-            await client.ConnectAsync(_smtp.Server, _smtp.Port, options, ct);
+            await client.ConnectAsync(_smtp.Server, _smtp.Port, options, smtpCt);
 
             // Xóa khoảng trắng trong mật khẩu ứng dụng nếu người dùng nhập dạng "xxxx xxxx xxxx xxxx"
             var cleanPassword = _smtp.Password.Replace(" ", "").Trim();
-            await client.AuthenticateAsync(_smtp.SenderEmail.Trim(), cleanPassword, ct);
+            await client.AuthenticateAsync(_smtp.SenderEmail.Trim(), cleanPassword, smtpCt);
 
-            await client.SendAsync(message, ct);
-            await client.DisconnectAsync(true, ct);
+            await client.SendAsync(message, smtpCt);
+            await client.DisconnectAsync(true, smtpCt);
 
-            _logger.LogInformation("Đã gửi email thành công tới {ToEmail} với tiêu đề '{Subject}'.", toEmail, subject);
+            _logger.LogInformation("Đã gửi email thành công tới {ToEmail} với tiêu đề '{Subject}' trong {ElapsedMs} ms.", toEmail, subject, sw.ElapsedMilliseconds);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "Hết thời gian chờ kết nối Gmail SMTP ({ElapsedMs} ms) khi gửi tới {ToEmail}.", sw.ElapsedMilliseconds, toEmail);
+            throw new TimeoutException("Kết nối tới máy chủ gửi email (Gmail SMTP) quá lâu. Vui lòng thử lại sau.", ex);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi khi gửi email qua Gmail SMTP tới {ToEmail}.", toEmail);
+            _logger.LogError(ex, "Lỗi khi gửi email qua Gmail SMTP tới {ToEmail} sau {ElapsedMs} ms.", toEmail, sw.ElapsedMilliseconds);
             throw new InvalidOperationException($"Lỗi kết nối Gmail SMTP: {ex.Message}", ex);
         }
     }
