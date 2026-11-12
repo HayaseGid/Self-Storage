@@ -1,0 +1,50 @@
+﻿"Defect ID","Related TC","Module","Summary (Tiêu đề lỗi)","Severity","Priority","Steps to Reproduce","Expected Result","Actual Result","Assignee","Status"
+"BUG-001","TC001","Đăng ký & OTP","Gửi OTP đăng ký qua Gmail SMTP bị treo quá 20s và timeout khi deploy lên Render Free","Critical","High","1. Mở trang `/register` trên bản web
+2. Nhập đủ thông tin và bấm ""Gửi mã xác thực""","Gửi email OTP thành công trong 1–2s và chuyển sang `/verify-otp`","Render Free chặn cổng SMTP 587 khiến request treo quá 20s và báo ""Máy chủ phản hồi quá lâu""","Thành viên 1","Closed *(Đã chuyển sang Brevo API)*"
+"BUG-002","TC002","Đăng ký & OTP","Nhập toàn khoảng trắng vào ô Họ và Tên vẫn vượt qua validation phía trình duyệt trước khi gọi API","Minor","Low","1. Vào `/register`
+2. Nhập `""   ""` vào ô Họ, `""   ""` vào ô Tên
+3. Bấm gửi","Thông báo lỗi ngay ở frontend không cần gửi request","Frontend trim nhưng vẫn cần kiểm tra nhất quán trước khi submit","Thành viên 1","Open"
+"BUG-003","TC015","Đăng ký & OTP","Nút ""Gửi lại mã"" ở `/verify-otp` khi F5 lại trang bị reset bộ đếm 60s trên UI dù backend vẫn chặn 429","Minor","Medium","1. Gửi OTP -> sang `/verify-otp`
+2. Nhấn F5 tải lại trang trước khi hết 60s
+3. Bấm ""Gửi lại mã""","UI vẫn hiển thị đúng thời gian đếm ngược còn lại","UI cho bấm nút và hiện thông báo lỗi 429 từ backend","Thành viên 1","Open"
+"BUG-004","TC034","Đăng nhập & Quyền","Token hết hạn khi đang ở trang `/account` chỉ chuyển về `/login` sau khi gọi API mới","Minor","Low","1. Để JWT hết hạn trong `localStorage`
+2. Thao tác trên tab đang mở","Tự động phát hiện và chuyển về `/login` kèm thông báo rõ ràng","Chỉ chuyển về `/login` khi người dùng bấm nút gọi API nhận 401 `TOKEN_INVALID`","Thành viên 1","Closed"
+"BUG-005","TC042","Admin - Cơ sở","Thông báo lỗi khi tạo trùng Mã chi nhánh (Prefix) chưa nêu rõ mã bị trùng","Minor","Low","1. Vào `/admin` tạo cơ sở mới với mã `TD` đã tồn tại
+2. Bấm Lưu","Báo rõ: ""Mã chi nhánh 'TD' đã được sử dụng""","Hiển thị thông báo lỗi chung từ cơ sở dữ liệu","Thành viên 1","Open"
+"BUG-006","TC048","Admin - Kích thước","Ô nhập Diện tích / Giá thuê cho phép gõ ký tự `e` hoặc dấu `-` trên trình duyệt","Minor","Low","1. Mở form tạo Kích thước kho
+2. Gõ `-100` hoặc `1e5` vào ô nhập số","Chặn nhập số âm hoặc ký tự chữ","Input `type=""number""` vẫn cho gõ trước khi submit","Thành viên 1","Open"
+"BUG-007","TC066","Catalog & Lọc","Khi lọc nhiều điều kiện không có kho phù hợp, bố cục khung sơ đồ bị thu hẹp đột ngột","Minor","Low","1. Vào trang Tìm kho
+2. Chọn tổ hợp lọc không có kho nào khớp","Khung hiển thị giữ chiều cao ổn định với thông báo rỗng căn giữa","Khung co lại sát thanh lọc gây giật giao diện","Thành viên 2","Open"
+"BUG-008","TC075","Giỏ hàng & Giữ chỗ","Khách chưa đăng nhập bấm Thanh toán từ Giỏ hàng không hiển thị nhắc nhở giữ chỗ chỉ có hiệu lực 15p sau khi tạo đơn","Minor","Low","1. Thêm kho vào giỏ khi chưa đăng nhập
+2. Bấm Đặt kho","Hiển thị ghi chú rõ ràng luồng đăng nhập để giữ kho","Chuyển thẳng sang `/login` với ghi chú ngắn","Thành viên 2","Open"
+"BUG-009","TC084","Giỏ hàng & Giữ chỗ","Đồng hồ đếm ngược 15 phút trên tab Đơn đặt chỗ không tự động đổi trạng thái thành `Expired` khi về `00:00` nếu chưa F5","Major","Medium","1. Tạo đơn giữ chỗ `PendingPayment`
+2. Chờ đồng hồ đếm về `00:00`","Tự động cập nhật UI sang ""Đã hết hạn"" ngay khi về `00:00`","Đồng hồ dừng ở `00:00`, phải tải lại trang mới thấy `Expired`","Thành viên 2","Open"
+"BUG-010","TC096","Thanh toán cọc","Khi VNPay redirect về `/payment-result` trên mạng chậm, màn hình loading thiếu thông báo đang xác thực giao dịch","Minor","Low","1. Thanh toán VNPay Sandbox thành công
+2. Quan sát màn hình khi vừa chuyển về `/payment-result`","Hiện spinner kèm chữ ""Đang xác thực kết quả thanh toán với VNPay...""","Màn hình trống vài giây trước khi hiện kết quả","Thành viên 2","Closed"
+"BUG-011","TC103","Hủy đơn & Hoàn cọc","Số tiền hoàn cọc dự kiến hiển thị trong popup xác nhận hủy đôi khi chưa format dấu chấm phân cách hàng nghìn","Minor","Low","1. Mở đơn đã đóng cọc
+2. Bấm Hủy đặt chỗ để mở popup xác nhận","Hiển thị `500.000đ` đúng chuẩn Việt Nam","Hiển thị `500000` không có dấu phân cách","Thành viên 2","Open"
+"BUG-012","TC093","Thanh toán cọc","Mở 2 tab cùng bấm thanh toán Simulator cho 1 đơn: tab thứ 2 hiện lỗi 409 nhưng chưa tự làm mới lại danh sách đơn","Minor","Medium","1. Mở 2 tab cùng đơn `PendingPayment`
+2. Thanh toán xong ở Tab 1, bấm thanh toán ở Tab 2","Tab 2 báo lỗi 409 và tự động reload danh sách đơn mới","Tab 2 báo lỗi 409 nhưng vẫn giữ nút thanh toán cũ cho đến khi F5","Thành viên 2","Open"
+"BUG-013","TC115","Hợp đồng & Email","Email gửi hợp đồng qua EmailJS ở bản cũ bị lặp 2 lần dòng lưu ý Luật Giao dịch điện tử khi kết hợp với backend","Minor","Low","1. Bấm gửi hợp đồng qua email
+2. Mở email trong Gmail kiểm tra phần chân thư","Chỉ hiển thị 1 dòng lưu ý Luật Giao dịch điện tử","Hiện lặp lại 2 lần ở cuối nội dung và footer","Thành viên 3","Closed *(Đã sửa trong contractEmail.js)*"
+"BUG-014","TC113","Hợp đồng & Email","Vẽ 1 chấm nhỏ trên canvas chữ ký vẫn được tính là đã ký hợp đồng","Minor","Medium","1. Mở form ký hợp đồng
+2. Click 1 chấm duy nhất lên khung chữ ký
+3. Tích đồng ý và xác nhận","Yêu cầu nét ký hợp lệ tối thiểu trước khi chấp nhận","Hệ thống chấp nhận ảnh chữ ký chỉ có 1 điểm ảnh","Thành viên 3","Open"
+"BUG-015","TC132","Tiền thuê định kỳ","Sau khi đóng tiền thuê tháng 2 qua Demo thành công, badge ""Đến hạn"" ở danh sách bên ngoài chưa tắt ngay nếu không đóng modal","Minor","Low","1. Mở modal đóng tiền thuê tháng 2
+2. Đóng tiền thành công và quan sát nền phía sau","Danh sách đơn phía sau cập nhật trạng thái ngay lập tức","Phải đóng modal hoặc tải lại dữ liệu mới cập nhật badge","Thành viên 3","Closed"
+"BUG-016","TC141","Gia hạn HĐ","Chọn gia hạn số tháng lớn hơn 24 tháng không có cảnh báo giới hạn tối đa ở ô nhập liệu","Minor","Low","1. Mở modal Gia hạn
+2. Nhập số tháng = 36","Kiểm tra hoặc giới hạn số tháng hợp lệ theo chính sách","Cho phép nhập số lớn trước khi backend/bảng giá xử lý","Thành viên 3","Open"
+"BUG-017","TC152","Phí trễ hạn","Khi đổi Demo Clock tiến thêm nhiều ngày liên tiếp, cần F5 lại trang `/account` thì khoản `LateFee` mới tự tính lại và hiển thị","Major","Medium","1. Đang mở `/account` ở tab Nợ/Phí
+2. Chỉnh Demo Clock trễ hạn +10 ngày","Giao diện tự động gọi lại API tính `LateFee` theo ngày mới","Phải chuyển tab hoặc F5 lại trang mới thấy `LateFee` phát sinh","Thành viên 3","Open"
+"BUG-018","TC162","Hợp đồng & Email","Nút ""Gửi qua email"" cho phép bấm liên tiếp nếu mạng chậm trước khi state `sending` kịp khóa nút","Minor","Low","1. Click đúp nhanh vào nút ""Gửi qua email""","Khóa nút ngay lần click đầu tiên (`disabled={sending}`)","Đã có `setSending(true)` nhưng trên mạng chậm vẫn cần thông báo trạng thái rõ hơn","Thành viên 3","Closed"
+"BUG-019","TC167","Manager - Kho","Khi Manager tạo liền 3 kho mới cùng lúc, bảng danh sách kho không tự cuộn tới kho mới vừa tạo","Minor","Low","1. Vào `/manager` tạo kho mới `TD-U15`
+2. Bấm Lưu","Cuộn tới hoặc highlight kho vừa tạo ở đầu/cuối bảng","Bảng giữ nguyên vị trí cuộn cũ","Thành viên 4","Open"
+"BUG-020","TC172","Manager - Phân công","Nếu email của Staff bị sai định dạng trong DB, không có cảnh báo trên UI Manager khi hệ thống gửi mail báo việc thất bại","Minor","Medium","1. Gán việc Move-In cho Staff có email không hợp lệ
+2. Lưu phân công","Hiện toast cảnh báo ""Đã lưu phân công nhưng không gửi được email cho Staff""","Chỉ ghi warning trong log server, UI Manager báo thành công hoàn toàn","Thành viên 4","Open"
+"BUG-021","TC185","Bàn giao (Move-In)","Mã PIN cửa kho hiển thị ở dạng văn bản thuần trên màn hình khách hàng, chưa có nút ""Sao chép mã PIN""","Minor","Low","1. Hoàn tất bàn giao Move-In
+2. Khách mở `/account` xem mã PIN","Có nút Copy nhanh mã PIN và nút ẩn/hiện bảo mật","Chỉ hiển thị số PIN thuần","Thành viên 4","Open"
+"BUG-022","TC191","Bàn giao (Move-In)","Đơn có 3 kho khi bàn giao trên màn hình mobile bị tràn ngang bảng danh sách kho","Minor","Low","1. Mở phiếu bàn giao đơn 3 kho ở màn hình rộng 375px","Bảng có thanh cuộn ngang gọn trong card","Bảng đẩy rộng khung modal ra ngoài màn hình","Thành viên 4","Open"
+"BUG-023","TC206","Kiểm định Trả kho","Khi nhập phí bồi thường hư hại có dấu phẩy/chấm (vd `300.000`), ô input báo lỗi không phải số nguyên","Major","Medium","1. Mở form Kiểm định Trả kho
+2. Gõ `300.000` vào ô Phí bồi thường","Tự loại bỏ dấu chấm hoặc hướng dẫn nhập số liền `300000`","Input số không nhận giá trị có dấu phân cách","Thành viên 4","Open"
+"BUG-024","TC214","Trả kho (Move-Out)","Trang chi tiết đơn đã hoàn tất trả kho (`Completed`) chưa hiển thị link tải biên bản kiểm định trả kho dạng PDF","Minor","Low","1. Hoàn tất kiểm định trả kho có khấu trừ phí hư hại
+2. Khách vào xem lại đơn đã trả","Có nút In/Xuất biên bản kiểm định & hoàn cọc","Chỉ hiển thị bảng tóm tắt số tiền hoàn cọc","Thành viên 4","Open"

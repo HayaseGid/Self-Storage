@@ -1,0 +1,342 @@
+﻿"Test Case ID","Module","Test Case Description","Pre-condition","Test Steps","Test Data","Expected Result","Actual Result","Status","Tester","Defect ID"
+"TC001","Đăng ký & OTP","Đăng ký tài khoản mới thành công với đầy đủ thông tin hợp lệ","Chưa đăng nhập; đang ở `/register`; email chưa tồn tại trong hệ thống","1. Nhập Họ, Tên, Email, SĐT, Mật khẩu, Xác nhận mật khẩu
+2. Bấm ""Gửi mã xác thực""
+3. Nhập đúng mã OTP 6 số từ email và bấm xác thực","Họ: Nguyễn, Tên: An, Email: test01@gmail.com, SĐT: 0912345678, MK: 123456","Chuyển sang `/verify-otp`, nhận được email OTP qua Brevo; xác thực đúng mã tạo tài khoản Customer thành công","","","Thanh vien 1",""
+"TC002","Đăng ký & OTP","Kiểm tra bỏ trống Họ và Tên khi đăng ký","Đang ở `/register`","1. Để trống ô Họ hoặc Tên
+2. Nhập các trường còn lại hợp lệ
+3. Bấm ""Gửi mã xác thực""","Họ: """", Tên: ""An""","Hệ thống chặn gửi và hiển thị thông báo lỗi yêu cầu nhập họ và tên","","","Thanh vien 1",""
+"TC003","Đăng ký & OTP","Kiểm tra nhập Họ và Tên vượt quá 150 ký tự","Đang ở `/register`","1. Nhập Họ + Tên dài 155 ký tự
+2. Nhập các trường khác hợp lệ
+3. Bấm ""Gửi mã xác thực""","FullName: chuỗi 155 ký tự","Backend trả lỗi 400: ""Họ và tên tối đa 150 ký tự.""","","","Thanh vien 1",""
+"TC004","Đăng ký & OTP","Kiểm tra nhập Email sai định dạng","Đang ở `/register`","1. Nhập Email không có `@` hoặc thiếu tên miền
+2. Bấm ""Gửi mã xác thực""","Email: ""abc.gmail.com""","Trình duyệt/Hệ thống báo email không hợp lệ, không gọi API gửi OTP","","","Thanh vien 1",""
+"TC005","Đăng ký & OTP","Kiểm tra đăng ký bằng Email đã tồn tại trong hệ thống","Email `customer@storespace.vn` đã có tài khoản","1. Nhập Email đã tồn tại
+2. Nhập đủ thông tin khác
+3. Bấm ""Gửi mã xác thực""","Email: customer@storespace.vn","Hệ thống trả lỗi 409: ""Email này đã được sử dụng. Vui lòng đăng nhập hoặc dùng email khác.""","","","Thanh vien 1",""
+"TC006","Đăng ký & OTP","Kiểm tra nhập Mật khẩu ngắn hơn 6 ký tự","Đang ở `/register`","1. Nhập Mật khẩu 5 ký tự
+2. Nhập Xác nhận MK giống vậy
+3. Bấm ""Gửi mã xác thực""","Password: ""12345""","Hiển thị thông báo lỗi: ""Mật khẩu phải có ít nhất 6 ký tự.""","","","Thanh vien 1",""
+"TC007","Đăng ký & OTP","Kiểm tra nhập Mật khẩu dài tối đa hợp lệ (100 ký tự)","Đang ở `/register`","1. Nhập Mật khẩu đúng 100 ký tự
+2. Bấm ""Gửi mã xác thực""","Password: chuỗi 100 ký tự","Chấp nhận mật khẩu và gửi mã OTP thành công","","","Thanh vien 1",""
+"TC008","Đăng ký & OTP","Kiểm tra nhập Mật khẩu vượt quá 100 ký tự","Đang ở `/register`","1. Nhập Mật khẩu 101 ký tự
+2. Bấm ""Gửi mã xác thực""","Password: chuỗi 101 ký tự","Backend trả lỗi 400: ""Mật khẩu tối đa 100 ký tự.""","","","Thanh vien 1",""
+"TC009","Đăng ký & OTP","Kiểm tra Mật khẩu xác nhận không khớp","Đang ở `/register`","1. Nhập Mật khẩu và Xác nhận mật khẩu khác nhau
+2. Bấm ""Gửi mã xác thực""","MK: ""123456"", Xác nhận: ""123457""","Hiển thị lỗi: ""Mật khẩu xác nhận không khớp.""","","","Thanh vien 1",""
+"TC010","Đăng ký & OTP","Kiểm tra nhập Số điện thoại vượt quá 30 ký tự","Đang ở `/register`","1. Nhập SĐT dài 31 số
+2. Bấm ""Gửi mã xác thực""","Phone: ""0912345678901234567890123456789""","Backend trả lỗi 400: ""Số điện thoại tối đa 30 ký tự.""","","","Thanh vien 1",""
+"TC011","Đăng ký & OTP","Kiểm tra đăng ký không nhập Số điện thoại (trường tùy chọn)","Đang ở `/register`","1. Để trống ô Số điện thoại
+2. Nhập đủ Họ tên, Email, Mật khẩu
+3. Bấm ""Gửi mã xác thực""","Phone: """"","Hệ thống vẫn cho phép đăng ký và gửi OTP bình thường","","","Thanh vien 1",""
+"TC012","Đăng ký & OTP","Kiểm tra bỏ trống hoặc nhập thiếu 6 số OTP","Đang ở `/verify-otp`","1. Nhập 4 chữ số
+2. Bấm nút xác thực OTP","OTP: ""1234""","Hiển thị lỗi: ""Vui lòng nhập đủ 6 chữ số OTP.""","","","Thanh vien 1",""
+"TC013","Đăng ký & OTP","Kiểm tra nhập sai mã OTP lần thứ 1","Đang ở `/verify-otp`, vừa nhận mã","1. Nhập mã 6 số sai
+2. Bấm xác thực","OTP: ""000000"" (khác mã gửi)","Hiển thị lỗi: ""OTP không đúng. Bạn còn 4 lần thử.""","","","Thanh vien 1",""
+"TC014","Đăng ký & OTP","Kiểm tra nhập sai mã OTP quá 5 lần liên tiếp","Đang ở `/verify-otp`, đã sai 4 lần","1. Nhập sai mã OTP lần thứ 5
+2. Bấm xác thực","OTP sai lần 5","Hiển thị lỗi: ""OTP không đúng. Bạn đã hết số lần thử, hãy gửi lại mã mới."" và đóng mã hiện tại","","","Thanh vien 1",""
+"TC015","Đăng ký & OTP","Kiểm tra bấm Gửi lại mã trước khi hết 60 giây cooldown","Vừa gửi OTP cách đây < 60 giây","1. Ở `/verify-otp`, kiểm tra nút Gửi lại mã hoặc gọi API `/resend` trước 60s","Email đang chờ xác thực","Nút bị khóa đếm ngược hoặc API trả lỗi 429: ""Vui lòng chờ X giây rồi gửi lại mã.""","","","Thanh vien 1",""
+"TC016","Đăng ký & OTP","Kiểm tra Gửi lại mã OTP thành công sau 60 giây","Đã chờ hết 60 giây cooldown","1. Bấm ""Gửi lại mã""
+2. Kiểm tra email mới nhận được","Email đang chờ xác thực","Nhận được mã OTP mới; mã OTP cũ trước đó không còn hiệu lực","","","Thanh vien 1",""
+"TC017","Đăng ký & OTP","Kiểm tra dùng mã OTP cũ sau khi đã bấm Gửi lại mã mới","Đã bấm Gửi lại mã mới thành công","1. Nhập mã OTP cũ (lần 1)
+2. Bấm xác thực","Mã OTP cũ","Hệ thống báo OTP không đúng / không còn hiệu lực","","","Thanh vien 1",""
+"TC018","Đăng ký & OTP","Kiểm tra xác thực khi mã OTP đã hết hạn (quá 5 phút)","Mã OTP đã tạo quá 5 phút","1. Nhập mã OTP đã hết hạn
+2. Bấm xác thực","Mã OTP cũ quá 5 phút","Hiển thị lỗi: ""Mã OTP đã hết hạn. Vui lòng gửi lại mã mới.""","","","Thanh vien 1",""
+"TC019","Đăng ký & OTP","Kiểm tra chuẩn hóa Email chữ hoa / khoảng trắng khi đăng ký","Đang ở `/register`","1. Nhập Email có khoảng trắng đầu/cuối và chữ in hoa
+2. Hoàn tất đăng ký","Email: ""  TestUser02@GMAIL.COM  ""","Hệ thống tự trim & lowercase thành `testuser02@gmail.com` và gửi OTP bình thường","","","Thanh vien 1",""
+"TC020","Đăng ký & OTP","Kiểm tra bảo mật: API `/register/start` không trả về mã OTP cho trình duyệt","Mở DevTools tab Network","1. Gửi đăng ký ở `/register`
+2. Kiểm tra Response JSON của `POST /api/auth/register/start`","Thông tin đăng ký hợp lệ","Response chỉ có `email`, `expiresAt`, `resendAvailableAt`, `message`; hoàn toàn không chứa mã OTP","","","Thanh vien 1",""
+"TC021","Đăng nhập & Quyền","Đăng nhập thành công bằng tài khoản Customer","Đã có tài khoản Customer `Active`","1. Vào `/login`
+2. Nhập đúng Email & Mật khẩu
+3. Bấm Đăng nhập","Tài khoản Customer hợp lệ","Đăng nhập thành công, lưu JWT vào `localStorage`, chuyển về trang chủ / trang trước đó","","","Thanh vien 1",""
+"TC022","Đăng nhập & Quyền","Đăng nhập thành công bằng tài khoản Staff","Đã có tài khoản Staff `Active`","1. Vào `/login`
+2. Nhập đúng Email & Mật khẩu Staff","Tài khoản Staff hợp lệ","Đăng nhập thành công, điều hướng tới khu vực làm việc của Staff","","","Thanh vien 1",""
+"TC023","Đăng nhập & Quyền","Đăng nhập thành công bằng tài khoản Facility Manager","Đã có tài khoản Manager `Active`","1. Vào `/login`
+2. Nhập đúng Email & Mật khẩu Manager","Tài khoản Manager hợp lệ","Đăng nhập thành công, điều hướng tới trang quản lý cơ sở `/manager`","","","Thanh vien 1",""
+"TC024","Đăng nhập & Quyền","Đăng nhập thành công bằng tài khoản Business Admin","Đã có tài khoản Admin `Active`","1. Vào `/login`
+2. Nhập đúng Email & Mật khẩu Admin","Tài khoản Admin hợp lệ","Đăng nhập thành công, điều hướng tới trang quản trị `/admin`","","","Thanh vien 1",""
+"TC025","Đăng nhập & Quyền","Đăng nhập sai Mật khẩu","Tài khoản tồn tại","1. Nhập đúng Email, nhập sai Mật khẩu
+2. Bấm Đăng nhập","Password sai","Trả lỗi 401, hiển thị thông báo sai email hoặc mật khẩu","","","Thanh vien 1",""
+"TC026","Đăng nhập & Quyền","Đăng nhập bằng Email chưa đăng ký","Email chưa tồn tại trong DB","1. Nhập Email không tồn tại + Mật khẩu bất kỳ
+2. Bấm Đăng nhập","Email: notfound@gmail.com","Trả lỗi 401, hiển thị thông báo đăng nhập không hợp lệ","","","Thanh vien 1",""
+"TC027","Đăng nhập & Quyền","Đăng nhập bỏ trống Email hoặc Mật khẩu","Đang ở `/login`","1. Để trống Email hoặc Mật khẩu
+2. Bấm Đăng nhập","Email: """", MK: """"","Trình duyệt/Hệ thống yêu cầu điền đủ thông tin trước khi gửi","","","Thanh vien 1",""
+"TC028","Đăng nhập & Quyền","Đăng nhập bằng tài khoản đang bị vô hiệu hóa (`Inactive` / `Locked`)","Tài khoản bị Admin khóa","1. Nhập đúng Email & MK của tài khoản bị khóa
+2. Bấm Đăng nhập","Tài khoản bị khóa","Chặn đăng nhập và thông báo tài khoản đã bị vô hiệu hóa","","","Thanh vien 1",""
+"TC029","Đăng nhập & Quyền","Đăng xuất khỏi hệ thống","Đang đăng nhập","1. Bấm nút Đăng xuất trên thanh menu","Phiên đăng nhập hiện tại","Xóa `storespace_current_user` trong `localStorage`, quay về trạng thái khách vãng lai","","","Thanh vien 1",""
+"TC030","Đăng nhập & Quyền","Khách hàng (Customer) truy cập trái phép trang `/admin`","Đang đăng nhập bằng Customer","1. Gõ trực tiếp URL `/admin` trên thanh địa chỉ","Tài khoản Customer","Chặn truy cập trang quản trị, không hiển thị dữ liệu Admin","","","Thanh vien 1",""
+"TC031","Đăng nhập & Quyền","Khách hàng (Customer) truy cập trái phép trang `/manager`","Đang đăng nhập bằng Customer","1. Gõ trực tiếp URL `/manager`","Tài khoản Customer","Chặn truy cập, API `/api/manager/...` trả mã 403/401","","","Thanh vien 1",""
+"TC032","Đăng nhập & Quyền","Staff truy cập trái phép API của Business Admin","Đang đăng nhập bằng Staff","1. Gọi `GET /api/admin/users` với JWT của Staff","Token của Staff","Backend từ chối với mã HTTP 403 Forbidden","","","Thanh vien 1",""
+"TC033","Đăng nhập & Quyền","Người dùng chưa đăng nhập gọi API riêng tư của Customer","Chưa đăng nhập (không có JWT)","1. Gọi `GET /api/customer/reservations`","Không có Header Authorization","Backend trả 401 Unauthorized","","","Thanh vien 1",""
+"TC034","Đăng nhập & Quyền","Gửi JWT hết hạn hoặc bị chỉnh sửa chữ ký","Có chuỗi JWT sai chữ ký","1. Gắn token giả mạo vào `localStorage`
+2. Tải lại trang Tài khoản","Token không hợp lệ","Backend trả 401 + `TOKEN_INVALID`, frontend tự đăng xuất và chuyển về `/login`","","","Thanh vien 1",""
+"TC035","Đăng nhập & Quyền","Đăng ký trực tiếp Role Manager/Customer qua API `/api/auth/register` cũ","Không có quyền Admin","1. Gửi `POST /api/auth/register` với `roleName: ""Storage Customer""`","Payload đăng ký cũ","Backend chặn với lỗi 400: ""Tài khoản khách hàng đăng ký qua bước xác thực email (OTP).""","","","Thanh vien 1",""
+"TC036","Admin - Nhân sự","Admin xem danh sách người dùng và lọc theo vai trò","Đang đăng nhập Business Admin","1. Vào `/admin` -> tab Người dùng
+2. Chọn lọc theo Staff / Manager / Customer","Bộ lọc Role","Hiển thị đúng danh sách người dùng thuộc vai trò đã chọn","","","Thanh vien 1",""
+"TC037","Admin - Nhân sự","Admin tạo tài khoản Staff mới cho một cơ sở","Đang đăng nhập Admin; có cơ sở hoạt động","1. Mở form tạo nhân sự
+2. Nhập Họ tên, Email, MK, chọn Role Staff và Cơ sở
+3. Lưu","Email mới, Role: Facility Staff","Tạo tài khoản thành công, Staff đăng nhập được và thuộc đúng cơ sở được gán","","","Thanh vien 1",""
+"TC038","Admin - Nhân sự","Admin tạo tài khoản trùng Email đã có","Đang đăng nhập Admin","1. Nhập Email đã tồn tại trong DB
+2. Bấm Lưu","Email trùng","Hệ thống báo lỗi 400/409 không cho tạo trùng Email","","","Thanh vien 1",""
+"TC039","Admin - Nhân sự","Admin khóa (vô hiệu hóa) tài khoản Staff đang hoạt động","Đang đăng nhập Admin","1. Chọn 1 Staff đang `Active`
+2. Đổi trạng thái sang `Inactive`","Tài khoản Staff","Trạng thái cập nhật thành công; Staff đó không thể đăng nhập tiếp","","","Thanh vien 1",""
+"TC040","Admin - Nhân sự","Admin mở khóa lại tài khoản đã bị vô hiệu hóa","Đang đăng nhập Admin","1. Chọn tài khoản đang `Inactive`
+2. Đổi trạng thái về `Active`","Tài khoản bị khóa","Tài khoản hoạt động lại và đăng nhập bình thường","","","Thanh vien 1",""
+"TC041","Admin - Cơ sở","Admin tạo cơ sở mới hợp lệ với Mã chi nhánh (Prefix)","Đang đăng nhập Admin","1. Vào mục Quản lý Cơ sở
+2. Nhập Tên cơ sở, Địa chỉ, Mã chi nhánh (`Q7`)
+3. Lưu","Name: ""Kho Quận 7"", Code: ""Q7""","Tạo cơ sở thành công; hiển thị trong danh sách cơ sở","","","Thanh vien 1",""
+"TC042","Admin - Cơ sở","Admin tạo cơ sở mới bị trùng Mã chi nhánh","Đã có cơ sở dùng mã `TD`","1. Nhập thông tin cơ sở mới với Mã chi nhánh `TD`
+2. Lưu","Prefix: ""TD""","Hệ thống báo lỗi trùng mã chi nhánh, không cho lưu","","","Thanh vien 1",""
+"TC043","Admin - Cơ sở","Admin bỏ trống Tên cơ sở hoặc Địa chỉ khi tạo","Đang đăng nhập Admin","1. Để trống Tên cơ sở
+2. Bấm Lưu","Name: """"","Hiển thị lỗi validation, không cho tạo cơ sở","","","Thanh vien 1",""
+"TC044","Admin - Cơ sở","Admin cập nhật thông tin cơ sở (địa chỉ / trạng thái)","Đã có cơ sở trong hệ thống","1. Chọn sửa 1 cơ sở
+2. Đổi địa chỉ mới và lưu","Địa chỉ mới","Cập nhật thành công; trang Catalog bên ngoài hiển thị địa chỉ mới","","","Thanh vien 1",""
+"TC045","Admin - Loại & Cỡ kho","Admin thêm Loại kho mới (Unit Type)","Đang đăng nhập Admin","1. Vào mục Loại kho
+2. Nhập tên loại (vd: ""Kho lạnh mini"") và mô tả
+3. Lưu","TypeName: ""Kho lạnh mini""","Thêm thành công, xuất hiện trong danh sách loại kho khi tạo kho mới","","","Thanh vien 1",""
+"TC046","Admin - Loại & Cỡ kho","Admin thêm Loại kho trùng tên đã có","Đã có loại ""Kho tiêu chuẩn""","1. Nhập tên ""Kho tiêu chuẩn""
+2. Lưu","TypeName trùng","Báo lỗi không cho tạo loại kho trùng tên","","","Thanh vien 1",""
+"TC047","Admin - Loại & Cỡ kho","Admin thêm Kích thước kho mới (Unit Size) hợp lệ","Đang đăng nhập Admin","1. Nhập Tên kích thước, Diện tích (m²), Giá thuê cơ bản/tháng
+2. Lưu","Size: ""Lớn"", Area: 10, Price: 2500000","Thêm kích thước thành công","","","Thanh vien 1",""
+"TC048","Admin - Loại & Cỡ kho","Admin nhập Diện tích hoặc Giá thuê ≤ 0 khi tạo Kích thước","Đang đăng nhập Admin","1. Nhập Giá = 0 hoặc số âm
+2. Bấm Lưu","Price: -500000","Hệ thống báo lỗi validation giá/diện tích phải lớn hơn 0","","","Thanh vien 1",""
+"TC049","Admin - Khung giá","Admin tạo/cập nhật Khung giá theo thời hạn thuê (Price Band)","Đang đăng nhập Admin","1. Tạo khung giá thuê từ 6 tháng giảm 10%
+2. Lưu","MinMonths: 6, Discount: 10%","Lưu thành công; ở trang đặt kho khi chọn 6 tháng giá tự động giảm 10%","","","Thanh vien 1",""
+"TC050","Admin - Khung giá","Admin nhập phần trăm giảm giá ngoài khoảng 0–100%","Đang đăng nhập Admin","1. Nhập mức giảm 120% hoặc -5%
+2. Lưu","Discount: 120","Hệ thống chặn và báo lỗi phần trăm không hợp lệ","","","Thanh vien 1",""
+"TC051","Admin - Chính sách","Admin xem danh sách 4 nhóm chính sách hiện hành","Đang đăng nhập Admin","1. Mở mục Chính sách (Policies)","Không","Hiển thị đủ 4 chính sách: Tiền cọc (`deposit`), Giữ chỗ (`reservation`), Quá hạn (`overdue`), Gia hạn & Trả kho (`renewal_return`)","","","Thanh vien 1",""
+"TC052","Admin - Chính sách","Admin cập nhật tỷ lệ đặt cọc trong Chính sách (`deposit`)","Đang đăng nhập Admin","1. Sửa tỷ lệ đặt cọc từ 50% sang 30%
+2. Lưu","DepositRate: 30%","Lưu thành công; đơn đặt mới tính tiền cọc theo 30%","","","Thanh vien 1",""
+"TC053","Admin - Chính sách","Admin cập nhật thời gian giữ chỗ (`reservation`)","Đang đăng nhập Admin","1. Chỉnh thời gian giữ chỗ hoặc phí phạt hủy đơn
+2. Lưu","HoldMinutes: 15","Cập nhật thành công và áp dụng cho các đơn mới","","","Thanh vien 1",""
+"TC054","Admin - Chính sách","Admin cập nhật chính sách phí trễ hạn (`overdue`)","Đang đăng nhập Admin","1. Sửa số ngày ân hạn / mức phạt trễ hạn
+2. Lưu","GraceDays / FeeRate","Lưu thành công; hợp đồng mới hiển thị điều khoản mới","","","Thanh vien 1",""
+"TC055","Admin - Báo cáo","Admin xem tổng quan Dashboard thống kê toàn hệ thống","Đang đăng nhập Admin","1. Mở trang chủ Admin `/admin`","Dữ liệu hệ thống hiện có","Hiển thị chính xác tổng số cơ sở, tổng số kho, doanh thu và danh sách tài khoản","","","Thanh vien 1"
+"TC056","Catalog & Lọc","Hiển thị danh sách cơ sở và kho trống trên trang Tìm kho","Hệ thống có dữ liệu cơ sở và kho `Available`","1. Mở trang chủ -> vào mục Tìm kho / Đặt kho","Không","Hiển thị danh sách cơ sở, các kho kèm trạng thái, diện tích, giá/tháng","","","Thanh vien 2",""
+"TC057","Catalog & Lọc","Lọc danh sách kho theo Cơ sở (Facility)","Có ít nhất 2 cơ sở","1. Chọn cơ sở ""Thủ Đức"" ở bộ lọc","Facility: Thủ Đức","Chỉ hiển thị các kho thuộc cơ sở Thủ Đức (mã `TD-...`)","","","Thanh vien 2",""
+"TC058","Catalog & Lọc","Lọc danh sách kho theo Loại kho (Unit Type)","Có nhiều loại kho","1. Chọn loại kho (vd: Kho tiêu chuẩn / Kho điều hòa)","UnitType: Điều hòa","Chỉ hiển thị các kho đúng loại đã chọn","","","Thanh vien 2",""
+"TC059","Catalog & Lọc","Lọc danh sách kho theo Kích thước (Unit Size)","Có nhiều kích thước","1. Chọn kích thước (Nhỏ / Vừa / Lớn)","UnitSize: Vừa","Chỉ hiển thị các kho có kích thước tương ứng","","","Thanh vien 2",""
+"TC060","Catalog & Lọc","Kết hợp nhiều bộ lọc (Cơ sở + Loại + Kích thước)","Đang ở trang Tìm kho","1. Chọn đồng thời Cơ sở + Loại + Kích thước","Thủ Đức + Điều hòa + Nhỏ","Chỉ hiển thị các kho thỏa mãn cả 3 điều kiện","","","Thanh vien 2",""
+"TC061","Catalog & Lọc","Đặt lại bộ lọc về mặc định (Reset Filter)","Đang áp dụng bộ lọc","1. Bấm nút Xóa lọc / Chọn ""Tất cả""","Không","Hiển thị lại toàn bộ danh sách kho","","","Thanh vien 2",""
+"TC062","Catalog & Lọc","Kiểm tra trạng thái hiển thị của kho đang được thuê (`Occupied`) hoặc bảo trì (`Maintenance`)","Có kho `Occupied` và `Maintenance`","1. Xem danh sách/sơ đồ kho tại cơ sở","Kho `TD-U02` (Occupied)","Kho hiển thị đúng trạng thái và không cho phép thêm vào giỏ hàng","","","Thanh vien 2",""
+"TC063","Catalog & Lọc","Tính giá thuê theo khung giảm giá khi chọn số tháng dài hạn","Có Price Band (vd: ≥ 6 tháng giảm %)","1. Chọn số tháng thuê = 6 tháng hoặc 12 tháng
+2. Xem đơn giá hiển thị","Months: 6","Giá thuê/tháng tự động áp dụng mức giảm theo khung giá","","","Thanh vien 2",""
+"TC064","Catalog & Lọc","Tính tiền đặt cọc chính xác theo chính sách hiện hành","Chính sách `deposit` đang cấu hình","1. Chọn kho có giá X/tháng, thuê N tháng
+2. Xem số tiền cọc tạm tính","Kho 1.000.000đ, 3 tháng","Tiền cọc tính đúng công thức của chính sách hệ thống","","","Thanh vien 2",""
+"TC065","Catalog & Lọc","Xem chi tiết thông số một kho cụ thể trên sơ đồ (Map)","Đang ở trang sơ đồ kho","1. Click vào 1 ô kho bất kỳ trên sơ đồ","Ô kho `Available`","Hiện popup/thẻ thông tin: Mã kho, diện tích, loại, giá/tháng, nút chọn kho","","","Thanh vien 2",""
+"TC066","Catalog & Lọc","Lọc tìm kiếm không có kho nào phù hợp","Chọn tổ hợp lọc không có kho","1. Chọn tổ hợp lọc không tồn tại kho trống","Bộ lọc rỗng kết quả","Hiển thị thông báo thân thiện ""Không tìm thấy kho phù hợp""","","","Thanh vien 2",""
+"TC067","Catalog & Lọc","Khách vãng lai (chưa đăng nhập) xem Catalog kho","Chưa đăng nhập","1. Truy cập trang chủ và trang Đặt kho","Không","Xem được đầy đủ danh sách, giá và sơ đồ kho bình thường","","","Thanh vien 2",""
+"TC068","Catalog & Lọc","Kiểm tra phân trang / cuộn danh sách khi cơ sở có nhiều kho","Cơ sở có nhiều hơn 10 kho","1. Mở trang danh sách kho
+2. Chuyển trang hoặc xem thêm","Trang 1, Trang 2","Danh sách hiển thị đầy đủ, không bị trùng hoặc mất kho","","","Thanh vien 2",""
+"TC069","Catalog & Lọc","Kiểm tra tự động đồng bộ trạng thái kho khi hết hạn giữ chỗ","Có kho vừa hết 15p giữ chỗ","1. Tải lại Catalog sau khi hết 15p giữ chỗ","Kho hết hạn giữ chỗ","Kho tự động chuyển về `Available` cho người khác đặt","","","Thanh vien 2",""
+"TC070","Catalog & Lọc","Kiểm tra chọn ngày bắt đầu thuê trong quá khứ","Đang ở form đặt kho","1. Nhập hoặc chọn ngày nhận kho nhỏ hơn ngày hiện tại","StartDate: ngày hôm qua","Hệ thống không cho chọn hoặc báo lỗi ngày bắt đầu không hợp lệ","","","Thanh vien 2",""
+"TC071","Giỏ hàng & Giữ chỗ","Thêm 1 kho vào Giỏ hàng thành công","Kho đang `Available`","1. Chọn 1 kho trống -> bấm Thêm vào giỏ
+2. Mở trang Giỏ hàng (`/cart`)","Kho `TD-U01`","Kho xuất hiện trong Giỏ hàng kèm thời hạn thuê và tiền cọc","","","Thanh vien 2",""
+"TC072","Giỏ hàng & Giữ chỗ","Thêm nhiều kho trong cùng 1 cơ sở vào Giỏ hàng","Có ≥ 2 kho `Available` cùng cơ sở","1. Thêm lần lượt 2 kho cùng cơ sở vào giỏ","`TD-U01`, `TD-U03`","Giỏ hàng hiển thị cả 2 kho và cộng dồn tổng tiền cọc","","","Thanh vien 2",""
+"TC073","Giỏ hàng & Giữ chỗ","Thêm cùng 1 kho 2 lần vào Giỏ hàng","Kho `TD-U01` đã có trong giỏ","1. Bấm thêm lại kho `TD-U01`","`TD-U01`","Hệ thống không nhân đôi kho trong giỏ hoặc báo kho đã có trong giỏ","","","Thanh vien 2",""
+"TC074","Giỏ hàng & Giữ chỗ","Xóa 1 kho khỏi Giỏ hàng","Giỏ hàng có 2 kho","1. Bấm nút Xóa trên 1 kho
+2. Kiểm tra tổng tiền","`TD-U01`","Kho bị xóa khỏi giỏ, tổng tiền cọc cập nhật lại chính xác","","","Thanh vien 2",""
+"TC075","Giỏ hàng & Giữ chỗ","Khách chưa đăng nhập bấm Thanh toán từ Giỏ hàng","Chưa đăng nhập; giỏ có kho","1. Mở Giỏ hàng
+2. Bấm nút Tiếp tục đặt kho / Thanh toán","Chưa login","Hệ thống lưu nháp giỏ hàng (`BookingDraftNote`), chuyển sang `/login` hoặc `/register`","","","Thanh vien 2",""
+"TC076","Giỏ hàng & Giữ chỗ","Khôi phục giỏ hàng nháp sau khi đăng nhập/đăng ký thành công","Đã tạo nháp trước khi login","1. Đăng nhập thành công từ link redirect","Tài khoản Customer","Hệ thống quay lại trang đặt kho/giỏ hàng với dữ liệu kho đã chọn trước đó","","","Thanh vien 2",""
+"TC077","Giỏ hàng & Giữ chỗ","Tạo đơn giữ chỗ (Reservation) với hình thức Nhận tại quầy (`Counter`) & Trả 1 lần (`Full`)","Đã đăng nhập Customer; giỏ có kho","1. Chọn ngày bắt đầu hợp lệ
+2. Chọn ""Nhận tại quầy"" + ""Trả toàn bộ 1 lần""
+3. Bấm Tạo đơn / Đặt giữ chỗ","Handover: Counter, Payment: Full","Tạo Reservation trạng thái `PendingPayment`, kho chuyển sang `Reserved`, đếm ngược 15 phút","","","Thanh vien 2",""
+"TC078","Giỏ hàng & Giữ chỗ","Tạo đơn giữ chỗ với hình thức Bàn giao Online (`Online`) & Trả theo tháng (`Monthly`)","Đã đăng nhập Customer","1. Chọn ""Bàn giao online"" + ""Trả theo tháng""
+2. Tạo đơn","Handover: Online, Payment: Monthly","Tạo Reservation thành công, lưu đúng `HandoverMethod = Online` và `PaymentPlan = Monthly`","","","Thanh vien 2",""
+"TC079","Giỏ hàng & Giữ chỗ","Kiểm tra chỉ tạo được khoản phí `Deposit` (tiền cọc) lúc mới đặt đơn","Vừa tạo Reservation `PendingPayment`","1. Xem chi tiết khoản phải trả ngay khi đặt cọc","Đơn mới tạo","Số tiền cần thanh toán ngay chỉ là **Tiền cọc**, tiền thuê đóng khi nhận kho","","","Thanh vien 2",""
+"TC080","Giỏ hàng & Giữ chỗ","Đặt giữ kho bị người khác giữ/đặt trước đó vài giây (Race condition)","Kho vừa chuyển `Reserved` ở phiên khác","1. Khách B bấm Tạo đơn cho kho mà Khách A vừa đặt","Kho vừa bị giữ","Backend trả lỗi 409 Conflict: kho không còn trống, yêu cầu chọn kho khác","","","Thanh vien 2",""
+"TC081","Giỏ hàng & Giữ chỗ","Chọn số tháng thuê = 0 hoặc số âm","Đang đặt kho","1. Nhập/gửi API với `months = 0`","Months: 0","Backend trả lỗi 400 Bad Request","","","Thanh vien 2",""
+"TC082","Giỏ hàng & Giữ chỗ","Chọn ngày bắt đầu thuê vượt quá giới hạn đặt trước (theo chính sách)","Chính sách giới hạn đặt trước N ngày","1. Chọn ngày nhận kho cách hiện tại quá xa (vd: 1 năm sau)","StartDate quá xa","Hệ thống báo lỗi ngày bắt đầu vượt quá phạm vi cho phép","","","Thanh vien 2",""
+"TC083","Giỏ hàng & Giữ chỗ","Đặt giữ chỗ nhiều kho khác cơ sở trong cùng 1 đơn","Giỏ có kho ở Thủ Đức và Bình Tân","1. Thử tạo 1 đơn chứa kho từ 2 cơ sở khác nhau","`TD-U01` + `BT-U01`","Hệ thống tách theo cơ sở hoặc chặn không cho gộp 2 cơ sở vào 1 đơn","","","Thanh vien 2",""
+"TC084","Giỏ hàng & Giữ chỗ","Kiểm tra đơn giữ chỗ tự động hết hạn (`Expired`) sau 15 phút chưa thanh toán","Đơn `PendingPayment` đã tạo > 15 phút","1. Đợi quá 15 phút (hoặc chỉnh Demo Clock +16 phút)
+2. Tải lại danh sách đơn","Đơn quá 15p","Đơn chuyển sang `Expired`, kho tự động giải phóng về `Available`","","","Thanh vien 2",""
+"TC085","Giỏ hàng & Giữ chỗ","Cố gắng thanh toán cho đơn giữ chỗ đã hết hạn 15 phút","Đơn đã `Expired`","1. Bấm thanh toán cọc cho đơn hết hạn","Đơn `Expired`","Backend trả lỗi 409: ""Thời gian giữ kho đã hết. Vui lòng tạo đặt chỗ mới.""","","","Thanh vien 2",""
+"TC086","Giỏ hàng & Giữ chỗ","Xem danh sách đơn đặt chỗ trong trang Tài khoản (`/account`)","Đang đăng nhập Customer","1. Mở trang Tài khoản -> mục Đặt chỗ / Đơn hàng","Tài khoản có đơn","Hiển thị đúng mã đơn (`RES-...`), cơ sở, danh sách kho, trạng thái, tiền cọc","","","Thanh vien 2",""
+"TC087","Giỏ hàng & Giữ chỗ","Khách tự chọn giữ tối đa số kho cho phép trong 1 đơn","Có nhiều kho trống","1. Thêm nhiều kho vào giỏ và tạo đơn","3 kho cùng cơ sở","Tạo đơn thành công, bảng `ReservationDetail` lưu đủ 3 kho","","","Thanh vien 2",""
+"TC088","Giỏ hàng & Giữ chỗ","Kiểm tra khách không thể xem/thao tác đơn đặt chỗ của khách khác","Khách A và Khách B đều có đơn","1. Khách B gọi API chi tiết đơn của Khách A","`reservationId` của Khách A","Backend trả 404/403, không lộ dữ liệu của Khách A","","","Thanh vien 2",""
+"TC089","Giỏ hàng & Giữ chỗ","Đặt kho với ngày bắt đầu là chính hôm nay","Đang đặt kho","1. Chọn `StartDate = hôm nay`
+2. Tạo đơn","StartDate: hôm nay","Hệ thống chấp nhận và tạo đơn giữ chỗ thành công","","","Thanh vien 2",""
+"TC090","Giỏ hàng & Giữ chỗ","Kiểm tra hiển thị đồng hồ đếm ngược thời gian giữ chỗ trên giao diện","Có đơn `PendingPayment`","1. Mở trang thanh toán / chi tiết đơn `PendingPayment`","Đơn còn < 15p","Đồng hồ đếm ngược thời gian còn lại chính xác theo `ExpiresAt`","","","Thanh vien 2"
+"TC091","Thanh toán cọc","Thanh toán tiền cọc thành công bằng Phương thức mô phỏng (Simulator)","Đơn `PendingPayment`, đúng số tiền cọc","1. Chọn thanh toán cọc -> chọn Mô phỏng/QR
+2. Bấm Xác nhận thanh toán","Amount = Deposit","Payment chuyển `Completed`, Charge Deposit `Paid`, đơn xác nhận và tự sinh Hợp đồng","","","Thanh vien 2",""
+"TC092","Thanh toán cọc","Thanh toán cọc sai số tiền (nhỏ hơn hoặc lớn hơn tiền cọc)","Đơn `PendingPayment`","1. Gửi request `/api/payments/confirm` với `Amount` khác `depositSum`","Amount != Deposit","Backend trả lỗi 400: ""Số tiền thanh toán phải đúng bằng tiền cọc...""","","","Thanh vien 2",""
+"TC093","Thanh toán cọc","Thanh toán cọc 2 lần liên tiếp cho cùng 1 đơn (Idempotency)","Đơn đã thanh toán cọc `Completed`","1. Bấm thanh toán lại hoặc gọi lại `/api/payments/confirm`","ReservationID đã trả cọc","Backend trả 409: ""Đặt chỗ không ở trạng thái chờ thanh toán hoặc đã được thanh toán.""","","","Thanh vien 2",""
+"TC094","Thanh toán cọc","Tạo link thanh toán VNPay Sandbox thành công cho 1 đơn","Đơn `PendingPayment`; VNPay đã cấu hình","1. Chọn VNPay -> bấm Thanh toán
+2. Kiểm tra điều hướng","ReservationID hợp lệ","Backend trả URL `https://sandbox.vnpayment.vn/...` kèm chữ ký `vnp_SecureHash`","","","Thanh vien 2",""
+"TC095","Thanh toán cọc","Tạo link thanh toán VNPay gộp nhiều đơn cùng lúc","Có 2 đơn `PendingPayment`","1. Chọn 2 đơn -> bấm Thanh toán VNPay","`reservationIds: [1, 2]`","Tổng tiền trên cổng VNPay bằng tổng tiền cọc của cả 2 đơn","","","Thanh vien 2",""
+"TC096","Thanh toán cọc","Thanh toán cọc qua VNPay Sandbox thành công (vnp_ResponseCode = 00)","Đang ở trang VNPay Sandbox","1. Nhập thẻ test NCB `9704198526191432198`, OTP `123456`
+2. Xác nhận","Thẻ test VNPay hợp lệ","Quay về `/payment-result`, `/api/vnpay/return-verify` xác nhận thành công, đơn xác nhận & tạo hợp đồng","","","Thanh vien 2",""
+"TC097","Thanh toán cọc","Khách hủy thanh toán trên cổng VNPay (vnp_ResponseCode = 24)","Đang ở trang VNPay Sandbox","1. Bấm nút Hủy giao dịch trên trang VNPay","Hủy trên VNPay","Quay về `/payment-result` báo giao dịch đã hủy/thất bại; đơn vẫn giữ `PendingPayment`","","","Thanh vien 2",""
+"TC098","Thanh toán cọc","Giả mạo tham số `vnp_SecureHash` trên URL `/payment-result`","Có URL return từ VNPay","1. Sửa 1 ký tự trong `vnp_Amount` hoặc `vnp_SecureHash` trên URL
+2. Tải trang","URL bị sửa chữ ký","Backend phát hiện sai chữ ký, từ chối ghi nhận thanh toán","","","Thanh vien 2",""
+"TC099","Thanh toán cọc","Kiểm tra gọi `return-verify` nhiều lần (F5 trang `/payment-result`)","Đã thanh toán VNPay thành công","1. Nhấn F5 tải lại trang `/payment-result`","Cùng URL callback VNPay","Backend xử lý idempotent, chỉ ghi nhận thanh toán 1 lần duy nhất","","","Thanh vien 2",""
+"TC100","Thanh toán cọc","Kiểm tra gọi `/api/vnpay/status` xem trạng thái cấu hình VNPay","Không yêu cầu đăng nhập","1. Gọi `GET /api/vnpay/status`","Không","Trả về `configured: true`, ẩn `HashSecret` (chỉ trả `hashSecretLength`)","","","Thanh vien 2",""
+"TC101","Hủy đơn & Hoàn cọc","Khách tự hủy đơn khi đang `PendingPayment` (chưa đóng cọc)","Đơn đang `PendingPayment`","1. Mở đơn -> bấm Hủy đặt chỗ
+2. Xác nhận hủy","Đơn chưa đóng cọc","Đơn chuyển `Cancelled`, kho về `Available`, không phát sinh giao dịch hoàn tiền","","","Thanh vien 2",""
+"TC102","Hủy đơn & Hoàn cọc","Khách hủy đơn đã đóng cọc trước thời hạn cho phép hoàn 100% cọc","Đơn đã đóng cọc; còn nhiều ngày mới đến `StartDate`","1. Mở chi tiết đơn -> bấm Hủy đơn
+2. Xem số tiền hoàn dự kiến và xác nhận","Hủy sớm theo chính sách","Đơn chuyển `Cancelled`, kho về `Available`, tạo giao dịch hoàn cọc đúng tỷ lệ chính sách","","","Thanh vien 2",""
+"TC103","Hủy đơn & Hoàn cọc","Khách hủy đơn sát ngày nhận kho (chỉ hoàn một phần hoặc mất cọc theo chính sách)","Đơn đã đóng cọc; sát ngày `StartDate`","1. Chỉnh Demo Clock đến sát `StartDate`
+2. Bấm Hủy đơn","Hủy sát ngày","Hệ thống tính đúng tỷ lệ khấu trừ/hoàn cọc theo chính sách `reservation`","","","Thanh vien 2",""
+"TC104","Hủy đơn & Hoàn cọc","Cố gắng hủy đơn đã bàn giao nhận kho (đang thuê `Active`)","Đơn đã Move-In","1. Kiểm tra nút Hủy hoặc gọi API hủy đơn","Đơn đang thuê","Hệ thống không cho phép hủy (chỉ được làm thủ tục Trả kho)","","","Thanh vien 2",""
+"TC105","Hủy đơn & Hoàn cọc","Cố gắng hủy lại đơn đã ở trạng thái `Cancelled`","Đơn đã `Cancelled`","1. Gọi API hủy cho đơn đã hủy","Đơn `Cancelled`","Backend trả lỗi 409 không cho hủy lặp lại","","","Thanh vien 2",""
+"TC106","Hủy đơn & Hoàn cọc","Thử lại hoàn tiền (`retryRefund`) khi giao dịch hoàn cọc trước đó gặp lỗi","Có bản ghi hoàn cọc `Failed`","1. Bấm nút Thử lại hoàn tiền ở đơn đã hủy","Đơn hoàn tiền lỗi","Hệ thống gọi xử lý lại giao dịch hoàn cọc và cập nhật trạng thái","","","Thanh vien 2",""
+"TC107","Hủy đơn & Hoàn cọc","Kiểm tra trạng thái kho sau khi hủy đơn có nhiều kho","Đơn có 2 kho đã đóng cọc","1. Hủy đơn 2 kho
+2. Kiểm tra Catalog","Đơn 2 kho","Cả 2 kho đều quay về `Available` để người khác thuê","","","Thanh vien 2",""
+"TC108","Thanh toán cọc","Kiểm tra tạo hợp đồng tự động ngay sau khi thanh toán cọc thành công","Đơn vừa thanh toán cọc thành công","1. Mở mục Hợp đồng trong `/account`","Đơn mới trả cọc","Xuất hiện hợp đồng tương ứng ở trạng thái chờ khách ký online","","","Thanh vien 2",""
+"TC109","Thanh toán cọc","Kiểm tra thanh toán cọc cho đơn gia hạn (`GH-...`) bằng API đặt cọc thường","Có đơn gia hạn `PendingPayment`","1. Gửi đơn gia hạn vào `/api/payments/confirm`","Mã đơn `GH-...`","Backend chặn với lỗi 409: ""Đơn gia hạn thanh toán ở mục Gia hạn hợp đồng.""","","","Thanh vien 2",""
+"TC110","Thanh toán cọc","Kiểm tra hiển thị lịch sử giao dịch thanh toán cọc của khách","Khách đã có giao dịch `Completed`","1. Vào `/account` -> mục Lịch sử thanh toán / Hóa đơn","Tài khoản Customer","Hiển thị đủ mã giao dịch (`OrderCode`), số tiền, phương thức (VNPay/Simulator), thời gian","","","Thanh vien 2",""
+"TC111","Hợp đồng & Email","Xem chi tiết nội dung hợp đồng thuê kho trong tài khoản","Khách đã đóng cọc, có hợp đồng","1. Vào `/account` -> mục Hợp đồng
+2. Bấm Xem chi tiết hợp đồng","Hợp đồng mới tạo","Hiển thị đầy đủ các bên, danh sách kho, thời hạn, giá thuê, tiền cọc, điều khoản chính sách","","","Thanh vien 3",""
+"TC112","Hợp đồng & Email","Ký hợp đồng điện tử thành công (vẽ chữ ký + tích đồng ý)","Hợp đồng chưa ký (`Pending`)","1. Mở luồng ký hợp đồng
+2. Vẽ chữ ký lên khung canvas
+3. Tích ô ""Đồng ý điều khoản""
+4. Bấm Xác nhận ký","Chữ ký hợp lệ + Đã tích","Lưu chữ ký thành công, trạng thái đổi sang ""Đã ký"" kèm tên người ký & thời gian ký","","","Thanh vien 3",""
+"TC113","Hợp đồng & Email","Kiểm tra chặn ký hợp đồng khi chưa vẽ chữ ký trên canvas","Đang mở form ký hợp đồng","1. Tích đồng ý điều khoản nhưng để trống khung chữ ký
+2. Bấm Xác nhận ký","Canvas rỗng","Hệ thống báo lỗi yêu cầu vẽ chữ ký trước khi gửi","","","Thanh vien 3",""
+"TC114","Hợp đồng & Email","Kiểm tra chặn ký hợp đồng khi chưa tích ô Đồng ý điều khoản","Đã vẽ chữ ký trên canvas","1. Không tích ô Đồng ý điều khoản
+2. Bấm Xác nhận ký","`acceptedTerms = false`","Nút bị vô hiệu hóa hoặc báo lỗi yêu cầu đồng ý điều khoản hợp đồng","","","Thanh vien 3",""
+"TC115","Hợp đồng & Email","Tự động gửi email bản sao hợp đồng qua Brevo ngay sau khi ký xong","Đã cấu hình Brevo trên server","1. Thực hiện ký hợp đồng thành công (như TC112)
+2. Kiểm tra hộp thư Gmail của khách","Email khách hàng","Hiện thông báo đã gửi bản hợp đồng; Gmail nhận được thư với template StoreSpace Storage đầy đủ","","","Thanh vien 3",""
+"TC116","Hợp đồng & Email","Bấm nút ""Gửi qua email"" thủ công trong chi tiết hợp đồng","Hợp đồng đã tồn tại","1. Mở `ContractDetailModal`
+2. Bấm nút ""Gửi qua email""","Hợp đồng bất kỳ","Gọi `POST /api/email/send-contract`, báo gửi thành công và nhận được email qua Brevo","","","Thanh vien 3",""
+"TC117","Hợp đồng & Email","Kiểm tra bảo mật: không cho phép gửi hợp đồng tới email của người khác","Đang đăng nhập bằng `userA@gmail.com`","1. Gọi `POST /api/email/send-contract` với `toEmail: ""userB@gmail.com""`","Email người khác","Backend trả 403 Forbidden: ""Chỉ gửi được hợp đồng về email của tài khoản đang đăng nhập.""","","","Thanh vien 3",""
+"TC118","Hợp đồng & Email","Kiểm tra không cho ký lại hợp đồng đã ký trước đó","Hợp đồng đã ký","1. Gọi lại `POST /api/contracts/{id}/signature`","Hợp đồng đã ký","Backend trả 409 Conflict không cho ghi đè chữ ký đã xác nhận","","","Thanh vien 3",""
+"TC119","Hợp đồng & Email","Kiểm tra ký gộp nhóm hợp đồng có nhiều kho cùng lúc","Đơn có ≥ 2 kho (nhiều `contractId`)","1. Ký ở màn hình nhóm hợp đồng","Nhóm 2 hợp đồng","Tất cả hợp đồng trong nhóm đều được ký cùng chữ ký và gửi 1 email tổng hợp","","","Thanh vien 3",""
+"TC120","Hợp đồng & Email","Kiểm tra xem chữ ký đã lưu sau khi tải lại trang","Hợp đồng vừa ký xong","1. Nhấn F5 tải lại trang `/account`
+2. Mở lại chi tiết hợp đồng","Hợp đồng đã ký","Hiển thị đúng ảnh chữ ký (`signatureImage`), tên và mốc thời gian đã ký","","","Thanh vien 3",""
+"TC121","Hợp đồng & Email","Kiểm tra tính năng In / Lưu PDF hợp đồng","Đang mở chi tiết hợp đồng","1. Bấm nút In / Lưu PDF","Hợp đồng bất kỳ","Mở hộp thoại in của trình duyệt với bố cục hợp đồng rõ ràng","","","Thanh vien 3",""
+"TC122","Hợp đồng & Email","Khách hàng A xem chữ ký hợp đồng của Khách hàng B","Khách A đăng nhập","1. Gọi `GET /api/contracts/{id_cua_B}/signature`","ID hợp đồng của B","Backend trả 403/404, không lộ dữ liệu hợp đồng của người khác","","","Thanh vien 3",""
+"TC123","Hợp đồng & Email","Kiểm tra nội dung email hợp đồng hiển thị đúng thanh tóm tắt (Mã HĐ, Cơ sở, Thời hạn)","Vừa gửi mail hợp đồng qua Brevo","1. Mở email nhận được trong Gmail","Email hợp đồng","Có banner StoreSpace, thanh tóm tắt Mã HĐ, Cơ sở, Thời hạn, Điều 1–4, Phụ lục 01","","","Thanh vien 3",""
+"TC124","Hợp đồng & Email","Kiểm tra nút Xem hợp đồng khi đơn chưa thanh toán cọc","Đơn `PendingPayment`","1. Mở đơn chưa trả cọc","Đơn chưa đóng cọc","Chưa có hợp đồng để ký; nhắc khách hoàn tất đặt cọc trước","","","Thanh vien 3",""
+"TC125","Hợp đồng & Email","Kiểm tra gửi email hợp đồng khi chưa đăng nhập","Chưa đăng nhập","1. Gọi `POST /api/email/send-contract`","Không có Token","Backend trả 401: ""Vui lòng đăng nhập để gửi hợp đồng.""","","","Thanh vien 3",""
+"TC126","Tiền thuê định kỳ","Xem lịch đóng tiền thuê của đơn trả 1 lần (`Full`)","Đơn đã đặt cọc, hình thức `Full`","1. Vào `/account` -> chi tiết tiền thuê của đơn","PaymentPlan: Full","Hiển thị 1 kỳ thanh toán duy nhất (toàn bộ tiền thuê) vào ngày nhận kho","","","Thanh vien 3",""
+"TC127","Tiền thuê định kỳ","Xem lịch đóng tiền thuê của đơn trả theo tháng (`Monthly`)","Đơn thuê 3 tháng, hình thức `Monthly`","1. Vào `/account` -> chi tiết tiền thuê của đơn","PaymentPlan: Monthly, 3 tháng","Hiển thị đủ 3 kỳ đóng tiền hàng tháng với ngày đến hạn và số tiền từng kỳ","","","Thanh vien 3",""
+"TC128","Tiền thuê định kỳ","Chặn đóng tiền thuê khi chưa ký hợp đồng","Đơn đã đóng cọc, chưa ký HĐ","1. Kiểm tra trạng thái đóng tiền hoặc gọi `/pay-demo`","Hợp đồng chưa ký","Không cho đóng tiền thuê, báo lý do cần ký hợp đồng trước","","","Thanh vien 3",""
+"TC129","Tiền thuê định kỳ","Chặn đóng tiền thuê khi chưa tới ngày bắt đầu thuê (`StartDate`)","Đã ký HĐ, `Today < StartDate`","1. Chỉnh Demo Clock về trước `StartDate`
+2. Thử đóng tiền thuê kỳ 1","Today < StartDate","Hệ thống báo chưa đến ngày nhận kho / chưa đến hạn đóng tiền","","","Thanh vien 3",""
+"TC130","Tiền thuê định kỳ","Đóng tiền thuê kỳ đầu thành công vào đúng ngày nhận kho (`StartDate`)","Đã ký HĐ, `Today == StartDate`","1. Chỉnh Demo Clock = `StartDate`
+2. Bấm đóng tiền thuê kỳ đầu (Mô phỏng)","Today == StartDate","Thanh toán thành công, kỳ 1 đổi sang `Paid`, đủ điều kiện để Staff bàn giao kho","","","Thanh vien 3",""
+"TC131","Tiền thuê định kỳ","Đóng tiền thuê kỳ đầu qua cổng VNPay Sandbox","Đã ký HĐ, `Today == StartDate`","1. Chọn thanh toán tiền thuê qua VNPay
+2. Nhập thẻ test thành công","Thẻ NCB test","VNPay xác nhận thành công, kỳ 1 chuyển `Paid`","","","Thanh vien 3",""
+"TC132","Tiền thuê định kỳ","Đóng tiền thuê tháng thứ 2 khi tới kỳ (đơn `Monthly`)","Đã nhận kho, kỳ 1 đã `Paid`, `Today` tới kỳ 2","1. Chỉnh Demo Clock sang tháng thứ 2
+2. Bấm đóng tiền tháng 2","Kỳ 2 đến hạn","Đóng thành công kỳ 2, trạng thái cập nhật `Paid`","","","Thanh vien 3",""
+"TC133","Tiền thuê định kỳ","Kiểm tra không cho đóng tiền khi tất cả các kỳ đã `Paid`","Đơn đã đóng đủ các kỳ","1. Gọi `/api/rent-payments/{id}/pay-demo`","Không còn kỳ `Unpaid`","Backend trả 409: ""Không còn khoản tiền thuê nào cần đóng.""","","","Thanh vien 3",""
+"TC134","Tiền thuê định kỳ","Kiểm tra đơn gia hạn chưa thanh toán không được đóng tiền ở luồng tiền thuê thường","Có đơn gia hạn `GH-...` đang `PendingPayment`","1. Gọi `/api/rent-payments/{renewalId}/pay-demo`","Mã đơn `GH-...`","Backend trả 409: ""Đơn gia hạn thanh toán ở mục Gia hạn hợp đồng.""","","","Thanh vien 3",""
+"TC135","Tiền thuê định kỳ","Kiểm tra tiền cọc không bị trừ nhầm vào tiền thuê kỳ đầu","Đơn thuê 1.000.000đ/tháng, đã cọc 500.000đ","1. Xem số tiền cần đóng kỳ đầu vào ngày nhận kho","Kho 1.000.000đ","Tiền thuê kỳ đầu vẫn là 1.000.000đ (tiền cọc được giữ làm bảo đảm đến khi trả kho)","","","Thanh vien 3",""
+"TC136","Tiền thuê định kỳ","Kiểm tra đóng tiền thuê khi đang có nhiều kho trong cùng 1 đơn","Đơn gồm 2 kho","1. Đóng tiền thuê kỳ đầu của đơn 2 kho","2 kho cùng đơn","Tổng tiền bằng tổng tiền thuê của cả 2 kho và tất toán đồng thời","","","Thanh vien 3",""
+"TC137","Tiền thuê định kỳ","Khách hàng A xem/đóng tiền thuê cho đơn của Khách hàng B","Khách A đăng nhập","1. Gọi `GET /api/rent-payments/{id_cua_B}`","ID của B","Backend trả 404: ""Không tìm thấy đơn thuộc tài khoản này.""","","","Thanh vien 3",""
+"TC138","Tiền thuê định kỳ","Kiểm tra trạng thái thanh toán của đơn thay đổi sau khi đóng tiền thuê (không làm đổi sai trạng thái thuê)","Đơn đang `Active` (đã nhận kho)","1. Đóng tiền thuê tháng tiếp theo","Đơn đang `Active`","Tiền kỳ mới đổi `Paid`, trạng thái thuê `Active` của đơn vẫn giữ nguyên","","","Thanh vien 3",""
+"TC139","Tiền thuê định kỳ","Kiểm tra hủy giao dịch VNPay đang `Pending` khi khách chuyển sang đóng mô phỏng","Vừa tạo link VNPay nhưng bỏ dở","1. Quay lại web và bấm đóng mô phỏng (`pay-demo`)","Có Payment VNPay `Pending`","Payment `Pending` cũ tự chuyển `Cancelled`, giao dịch mới `Completed` không bị trùng","","","Thanh vien 3",""
+"TC140","Tiền thuê định kỳ","Kiểm tra hiển thị ngày đến hạn đóng tiền tiếp theo trên UI Tài khoản","Đơn `Monthly` đã đóng kỳ 1","1. Mở tab Hợp đồng / Thanh toán","Đơn trả theo tháng","Hiển thị rõ ngày đến hạn của kỳ 2 và nút nhắc đóng tiền","","","Thanh vien 3",""
+"TC141","Gia hạn HĐ","Tạo yêu cầu gia hạn hợp đồng thành công cho đơn đang thuê (`Active`)","Đơn đang `Active`, sắp hết hạn","1. Vào mục Hợp đồng -> bấm ""Gia hạn""
+2. Chọn số tháng gia hạn (vd: 3 tháng) và hình thức trả
+3. Xác nhận","RenewalMonths: 3","Tạo đơn gia hạn mã `GH-...` ở trạng thái `PendingPayment`, hiển thị số tiền cần thanh toán","","","Thanh vien 3",""
+"TC142","Gia hạn HĐ","Tính đúng cọc bổ sung khi gia hạn với giá mới cao hơn hoặc số tháng thay đổi","Chính sách giá mới cao hơn kỳ cũ","1. Tạo yêu cầu gia hạn
+2. Kiểm tra chi tiết các khoản thu","Giá kỳ mới > kỳ cũ","Hệ thống tự động tính phần chênh lệch cọc bổ sung (nếu có) cộng vào tiền gia hạn","","","Thanh vien 3",""
+"TC143","Gia hạn HĐ","Thanh toán đơn gia hạn thành công (Simulator / VNPay)","Đơn `GH-...` đang `PendingPayment`","1. Thực hiện thanh toán đơn gia hạn","Đơn `GH-...`","Thanh toán thành công, `ContractRenewalFinalizer` chuyển cọc và tạo phụ lục gia hạn","","","Thanh vien 3",""
+"TC144","Gia hạn HĐ","Ký phụ lục gia hạn hợp đồng và nhận email xác nhận","Đã thanh toán gia hạn xong","1. Mở phụ lục gia hạn -> vẽ chữ ký & tích đồng ý
+2. Xác nhận","Phụ lục gia hạn","Phụ lục chuyển trạng thái Đã ký và gửi email hợp đồng gia hạn qua Brevo","","","Thanh vien 3",""
+"TC145","Gia hạn HĐ","Chặn tạo gia hạn khi hợp đồng đang có yêu cầu gia hạn chưa xử lý","Đã có 1 đơn `GH-...` đang chờ","1. Bấm Gia hạn thêm lần nữa trên cùng hợp đồng","Đã có `GH-...` Pending","Hệ thống chặn và báo đã có yêu cầu gia hạn đang chờ xử lý","","","Thanh vien 3",""
+"TC146","Gia hạn HĐ","Chặn tạo gia hạn cho đơn chưa nhận kho hoặc đã trả kho (`Completed` / `Cancelled`)","Đơn chưa Move-In hoặc đã trả kho","1. Thử gọi API gia hạn cho đơn `Cancelled`","Đơn không `Active`","Backend trả lỗi 400/409 không cho phép gia hạn","","","Thanh vien 3",""
+"TC147","Gia hạn HĐ","Kiểm tra chọn số tháng gia hạn = 0 hoặc âm","Đang mở modal Gia hạn","1. Nhập số tháng = 0 hoặc -1
+2. Gửi yêu cầu","Months: 0","Hệ thống báo lỗi validation số tháng gia hạn phải ≥ 1","","","Thanh vien 3",""
+"TC148","Gia hạn HĐ","Kiểm tra Hủy yêu cầu gia hạn khi chưa thanh toán","Đơn `GH-...` đang `PendingPayment`","1. Bấm Hủy yêu cầu gia hạn","Đơn `GH-...` chưa trả","Đơn gia hạn bị hủy, hợp đồng gốc vẫn giữ nguyên ngày kết thúc cũ","","","Thanh vien 3",""
+"TC149","Gia hạn HĐ","Kiểm tra ngày bắt đầu của kỳ gia hạn nối tiếp đúng ngày kết thúc cũ","HĐ cũ kết thúc ngày `30/11`","1. Xem ngày bắt đầu và kết thúc của phụ lục gia hạn 2 tháng","HĐ cũ hết `30/11`","Kỳ gia hạn bắt đầu từ `01/12` (hoặc ngày kế tiếp chính xác theo quy tắc)","","","Thanh vien 3",""
+"TC150","Gia hạn HĐ","Kiểm tra job tự động chốt kỳ thuê cũ sau gia hạn (`RenewalSettleJob`)","Đã gia hạn và tới ngày chuyển kỳ","1. Chỉnh Demo Clock sang ngày bắt đầu kỳ gia hạn
+2. Kiểm tra trạng thái","Đã qua ngày hết hạn cũ","Kỳ cũ chuyển sang hoàn tất, hợp đồng chính thức chạy theo kỳ gia hạn mới","","","Thanh vien 3",""
+"TC151","Phí trễ hạn (Late Fee)","Kiểm tra chưa phát sinh phí phạt khi đang trong số ngày ân hạn (Grace Period)","Quá hạn đóng tiền 1 ngày (trong mức ân hạn)","1. Chỉnh Demo Clock quá hạn 1 ngày
+2. Kiểm tra mục Phí trễ hạn","Quá hạn 1 ngày","Chưa phát sinh khoản phí `LateFee` (hoặc bằng 0đ theo chính sách `overdue`)","","","Thanh vien 3",""
+"TC152","Phí trễ hạn (Late Fee)","Tự động phát sinh phí trễ hạn khi quá hạn đóng tiền thuê tháng","Đơn `Monthly` chưa đóng kỳ 2; quá hạn > grace days","1. Chỉnh Demo Clock quá hạn 10 ngày
+2. Mở trang Tài khoản / gọi API LateFee","Trễ hạn 10 ngày","Hệ thống tự động tạo/tính khoản `LateFee` đúng theo công thức trong `LateFeeRules`","","","Thanh vien 3",""
+"TC153","Phí trễ hạn (Late Fee)","Tự động phát sinh phí trễ hạn khi quá ngày kết thúc hợp đồng mà chưa trả kho","HĐ hết hạn, khách chưa làm thủ tục trả kho","1. Chỉnh Demo Clock sau `EndDate` 7 ngày
+2. Kiểm tra thông tin đơn","Trễ trả kho 7 ngày","Phát sinh khoản phí phạt quá hạn trả kho tương ứng số ngày trễ","","","Thanh vien 3",""
+"TC154","Phí trễ hạn (Late Fee)","Thanh toán khoản phí trễ hạn (`LateFee`) thành công","Đơn đang có `LateFee` `Unpaid`","1. Mở mục Thanh toán phí trễ hạn
+2. Thực hiện thanh toán","Có `LateFee` Unpaid","Khoản `LateFee` chuyển sang `Paid`, tổng nợ về 0đ","","","Thanh vien 3",""
+"TC155","Phí trễ hạn (Late Fee)","Kiểm tra chặn trả kho / gia hạn hoặc cảnh báo khi còn nợ phí trễ hạn chưa đóng","Đơn đang có `LateFee` `Unpaid`","1. Kiểm tra thông báo ở mục Trả kho hoặc Thanh toán","Còn nợ `LateFee`","Hệ thống hiển thị khoản nợ `LateFee` cần tất toán (hoặc khấu trừ vào cọc khi kiểm định)","","","Thanh vien 3",""
+"TC156","Phí trễ hạn (Late Fee)","Manager / Staff xem danh sách các đơn đang bị quá hạn trong cơ sở","Có đơn quá hạn trong cơ sở","1. Đăng nhập Manager -> xem báo cáo / danh sách quá hạn","Dữ liệu đơn quá hạn","Hiển thị chính xác tên khách, mã đơn, số ngày trễ và số tiền phạt","","","Thanh vien 3",""
+"TC157","Phí trễ hạn (Late Fee)","Kiểm tra không tính trùng phí trễ hạn 2 lần cho cùng 1 ngày/kỳ","Đã tính `LateFee` cho ngày D","1. Tải lại trang nhiều lần hoặc gọi lại API trong cùng ngày D","Cùng ngày giả lập","Hệ thống chỉ ghi nhận/cập nhật đúng 1 khoản phí phạt, không cộng dồn trùng","","","Thanh vien 3",""
+"TC158","Phí trễ hạn (Late Fee)","Kiểm tra mức phí trễ hạn thay đổi sau khi Admin cập nhật chính sách `overdue`","Admin vừa đổi tỷ lệ phạt","1. So sánh phí phạt tính cho đơn mới sau khi đổi chính sách","Chính sách mới","Phí trễ hạn tính theo mức mới vừa cấu hình","","","Thanh vien 3",""
+"TC159","Phí trễ hạn (Late Fee)","Kiểm tra đóng phí trễ hạn kèm tiền thuê tháng bị trễ","Có kỳ thuê quá hạn + `LateFee`","1. Thực hiện đóng tiền kỳ bị trễ","Kỳ trễ + LateFee","Hệ thống yêu cầu đóng đủ cả tiền thuê và phí trễ hạn liên quan","","","Thanh vien 3",""
+"TC160","Gia hạn & Phí","Kiểm tra tổng tiền thực thu trên Dashboard Manager sau khi thu tiền thuê & LateFee","Vừa đóng tiền thuê + phí trễ","1. Đăng nhập Manager -> xem Báo cáo doanh thu","Giao dịch mới `Completed`","Doanh thu phân loại đúng theo `Rent`, `Renewal`, `LateFee`","","","Thanh vien 3",""
+"TC161","Gia hạn & Phí","Kiểm tra gửi lại email hợp đồng cho phụ lục gia hạn","Đã có phụ lục gia hạn","1. Mở chi tiết phụ lục -> bấm Gửi qua email","Phụ lục gia hạn","Nhận được email có tiêu đề và nội dung phụ lục gia hạn","","","Thanh vien 3",""
+"TC162","Hợp đồng & Email","Kiểm tra thông báo lỗi thân thiện khi người dùng gửi hợp đồng quá nhanh liên tiếp hoặc mất mạng","Ngắt mạng hoặc backend tắt","1. Bấm ""Gửi qua email"" khi backend không phản hồi","Mất kết nối backend","UI hiện thông báo lỗi rõ ràng tiếng Việt, không bị crash trang","","","Thanh vien 3",""
+"TC163","Tiền thuê định kỳ","Kiểm tra Demo Clock đồng bộ header `X-Simulated-Date` tới Backend","Đang bật Demo Clock","1. Đổi ngày trên Demo Clock
+2. Mở DevTools kiểm tra Header request","Header `X-Simulated-Date`","Mọi API từ frontend gửi lên đều kèm đúng ngày giả lập đã chọn","","","Thanh vien 3",""
+"TC164","Tiền thuê định kỳ","Tắt Demo Clock để quay về ngày thực tế của hệ thống","Đang bật Demo Clock","1. Bấm Reset / Tắt Demo Clock","Không","Header `X-Simulated-Date` biến mất, dữ liệu hiển thị lại theo ngày hiện tại thực tế","","","Thanh vien 3",""
+"TC165","Phí trễ hạn (Late Fee)","Kiểm tra thông báo nhắc nhở (Customer Notification) hiển thị trên web khi sắp/đã quá hạn","Có đơn sắp đến hạn hoặc trễ hạn","1. Đăng nhập Customer -> xem mục Thông báo trong `/account`","Đơn sắp đến hạn","Hiển thị danh sách thông báo nhắc đóng tiền / ký hợp đồng / nhận kho chính xác","","","Thanh vien 3",""
+"TC166","Manager - Quản lý kho","Manager xem danh sách tất cả kho trong cơ sở mình phụ trách","Đang đăng nhập Facility Manager","1. Vào `/manager` -> tab Quản lý kho","Tài khoản Manager Thủ Đức","Chỉ hiển thị các kho thuộc cơ sở Thủ Đức (không lẫn cơ sở khác)","","","Thanh vien 4",""
+"TC167","Manager - Quản lý kho","Manager tạo kho mới và kiểm tra tự động sinh mã kho (`<Prefix>-U<Số>`)","Cơ sở có mã chi nhánh `TD`","1. Bấm Thêm kho mới
+2. Chọn Loại kho, Kích thước (không cần nhập mã kho)
+3. Lưu","Loại + Kích thước hợp lệ","Hệ thống tự động sinh mã kho dạng `TD-Uxx` với trạng thái `Available`","","","Thanh vien 4",""
+"TC168","Manager - Quản lý kho","Manager chuyển trạng thái kho trống sang Bảo trì (`Maintenance`)","Kho đang `Available`","1. Chọn kho `Available`
+2. Đổi trạng thái sang `Maintenance`","Kho `TD-U05`","Kho đổi sang `Maintenance` và ẩn/khóa không cho khách đặt trên Catalog","","","Thanh vien 4",""
+"TC169","Manager - Quản lý kho","Manager chuyển kho đang Bảo trì về lại Sẵn sàng (`Available`)","Kho đang `Maintenance`","1. Chọn kho `Maintenance`
+2. Đổi trạng thái về `Available`","Kho `TD-U05`","Kho hoạt động lại và cho phép khách đặt trên Catalog","","","Thanh vien 4",""
+"TC170","Manager - Quản lý kho","Chặn chuyển kho đang có khách thuê (`Occupied`) sang Bảo trì","Kho đang `Occupied`","1. Thử đổi trạng thái kho đang có người thuê sang `Maintenance`","Kho `Occupied`","Hệ thống chặn với lỗi 409, không cho chuyển bảo trì khi đang có khách thuê","","","Thanh vien 4"
+"TC171","Manager - Phân công","Manager phân công Staff cho đơn Nhận kho (Move-In) thành công","Có đơn đã thanh toán cọc, chưa có người phụ trách","1. Vào `/manager` -> mục Phân công
+2. Chọn đơn Move-In -> chọn Staff + ngày + khung giờ
+3. Lưu phân công","Staff cùng cơ sở","Lưu phân công thành công; Staff thấy việc mới trong danh sách việc của mình","","","Thanh vien 4",""
+"TC172","Manager - Phân công","Hệ thống tự động gửi email báo việc cho Staff sau khi Manager phân công Move-In","Đã cấu hình Brevo; Staff có email hợp lệ","1. Manager hoàn tất phân công Move-In (như TC171)
+2. Kiểm tra hộp thư của Staff","Email Staff","Staff nhận được email `[StoreSpace] Việc nhận kho mới ...` kèm mã đơn, tên khách, danh sách kho","","","Thanh vien 4",""
+"TC173","Manager - Phân công","Chặn phân công 2 việc nhận/trả kho trùng cho cùng 1 kho đang mở","Kho đã có 1 phân công Move-In chưa xong","1. Thử tạo thêm 1 phân công Move-In khác cho cùng kho đó","Kho đã được phân công","Backend trả 409: không cho phép trùng phân công trên cùng 1 kho","","","Thanh vien 4",""
+"TC174","Manager - Phân công","Chặn Manager phân công Staff thuộc cơ sở khác","Staff B thuộc cơ sở Bình Tân","1. Manager Thủ Đức thử phân công đơn Thủ Đức cho Staff Bình Tân","Staff khác cơ sở","Backend chặn với lỗi 400/403 không cho phân công chéo cơ sở","","","Thanh vien 4",""
+"TC175","Manager - Phân công","Manager phân công lại (đổi) Staff phụ trách trước khi bàn giao","Đơn đã phân công Staff A, chưa bàn giao","1. Đổi người phụ trách sang Staff B
+2. Lưu","Staff B cùng cơ sở","Đơn chuyển sang danh sách việc của Staff B, không còn ở Staff A","","","Thanh vien 4",""
+"TC176","Manager - Phân công","Manager phân công Staff kiểm định Trả kho (Move-Out)","Khách đã gửi yêu cầu trả kho","1. Chọn yêu cầu trả kho -> gán Staff kiểm định
+2. Lưu","Đơn yêu cầu trả kho","Staff được gán nhận nhiệm vụ Move-Out trong trang `/staff`","","","Thanh vien 4",""
+"TC177","Manager - Báo cáo","Manager xem báo cáo doanh thu thực thu theo từng loại phí (`Deposit`, `Rent`, `Renewal`, `LateFee`, `ExtraFee`)","Cơ sở có dữ liệu thanh toán","1. Vào `/manager` -> tab Báo cáo","Khoảng thời gian mặc định","Hiển thị chính xác tổng tiền thực thu phân theo từng loại phí (`Payment Completed`)","","","Thanh vien 4",""
+"TC178","Manager - Báo cáo","Manager lọc báo cáo cơ sở theo khoảng thời gian (Từ ngày – Đến ngày)","Có giao dịch ở nhiều tháng","1. Chọn ngày bắt đầu và ngày kết thúc
+2. Bấm Lọc","`2026-10-01` đến `2026-10-31`","Số liệu doanh thu và số đơn thay đổi chính xác theo khoảng ngày đã chọn","","","Thanh vien 4",""
+"TC179","Manager - Báo cáo","Manager xem danh sách khách hàng / đơn thuê đang hoạt động tại cơ sở","Có đơn `Active` tại cơ sở","1. Mở tab Đơn thuê / Khách hàng tại `/manager`","Tài khoản Manager","Hiển thị đúng danh sách đơn, mã kho, ngày hết hạn, trạng thái đóng tiền","","","Thanh vien 4",""
+"TC180","Manager - Phân quyền","Manager cơ sở A xem/sửa dữ liệu cơ sở B","Có 2 cơ sở A và B","1. Manager Thủ Đức gọi API quản lý của Bình Tân","`facilityId` của Bình Tân","Backend trả 403 Forbidden, bảo vệ dữ liệu từng cơ sở","","","Thanh vien 4",""
+"TC181","Bàn giao (Move-In)","Staff xem danh sách công việc bàn giao nhận kho được giao","Staff đã được Manager phân công","1. Đăng nhập Staff -> vào `/staff`","Tài khoản Staff","Hiển thị đúng các đơn Move-In được phân công kèm thông tin khách & trạng thái sẵn sàng","","","Thanh vien 4",""
+"TC182","Bàn giao (Move-In)","Chặn bàn giao khi khách CHƯA ký hợp đồng điện tử","Đơn chưa ký HĐ; đã tới `StartDate`","1. Staff mở đơn -> bấm Bàn giao","Hợp đồng chưa ký","Hệ thống chặn bàn giao và báo rõ lý do: khách chưa ký hợp đồng","","","Thanh vien 4",""
+"TC183","Bàn giao (Move-In)","Chặn bàn giao khi khách CHƯA đóng tiền thuê kỳ đầu","Đã ký HĐ, nhưng chưa đóng tiền thuê kỳ 1","1. Staff mở đơn -> bấm Bàn giao","Kỳ 1 chưa `Paid`","Hệ thống chặn bàn giao và báo lý do: khách chưa thanh toán tiền thuê kỳ đầu","","","Thanh vien 4",""
+"TC184","Bàn giao (Move-In)","Chặn bàn giao trước ngày bắt đầu thuê (`Today < StartDate`)","Đã ký HĐ + đã đóng tiền (nếu cho trước), `Today < StartDate`","1. Chỉnh Demo Clock về trước `StartDate`
+2. Bấm Bàn giao","Today < StartDate","Hệ thống chặn bàn giao trước ngày hẹn nhận kho","","","Thanh vien 4",""
+"TC185","Bàn giao (Move-In)","Staff bàn giao thành công đơn Nhận tại quầy (`Counter`)","Đã ký HĐ + đóng tiền kỳ đầu + đúng `StartDate`","1. Staff kiểm tra đủ điều kiện
+2. Nhập ghi chú / xác nhận bàn giao tại quầy","Handover: Counter","Đơn chuyển sang `Active` (`CheckedIn`), kho chuyển `Occupied`, sinh mã PIN ra vào cho khách","","","Thanh vien 4",""
+"TC186","Bàn giao (Move-In)","Staff bàn giao thành công đơn Bàn giao Online (`Online`)","Đơn `Online`, đủ điều kiện bàn giao","1. Staff bấm Hoàn tất bàn giao online","Handover: Online","Đơn chuyển `Active`, kho `Occupied`, tự động gửi email qua Brevo báo khách nhận chìa tại lễ tân","","","Thanh vien 4",""
+"TC187","Bàn giao (Move-In)","Kiểm tra khách xem được mã PIN cửa kho sau khi bàn giao thành công","Đơn vừa hoàn tất Move-In","1. Đăng nhập Customer -> vào `/account` -> xem chi tiết kho đang thuê","Đơn `Active`","Hiển thị mã PIN ra vào kho rõ ràng cho khách","","","Thanh vien 4",""
+"TC188","Bàn giao (Move-In)","Kiểm tra trước khi bàn giao thì khách chưa thấy mã PIN ra vào","Đơn mới đặt cọc, chưa Move-In","1. Customer kiểm tra chi tiết đơn chưa bàn giao","Đơn chưa Move-In","Chưa cấp / chưa hiển thị mã PIN ra vào kho","","","Thanh vien 4",""
+"TC189","Bàn giao (Move-In)","Chặn bàn giao lặp lại cho đơn đã bàn giao rồi","Đơn đã Move-In (`Active`)","1. Gọi lại `POST /api/handover/complete` cho đơn đã bàn giao","Đơn đã Move-In","Backend trả lỗi 409 không cho bàn giao lần 2","","","Thanh vien 4",""
+"TC190","Bàn giao (Move-In)","Staff khác không được phân công cố gắng bấm bàn giao đơn","Đơn gán cho Staff A","1. Staff B gọi API hoàn tất bàn giao cho đơn của Staff A","Staff B đăng nhập","Backend từ chối (403) nếu không phải Staff được phân công hoặc Manager","","","Thanh vien 4",""
+"TC191","Bàn giao (Move-In)","Kiểm tra cập nhật trạng thái đơn và từng kho trong đơn có nhiều kho khi Move-In","Đơn có 2 kho đủ điều kiện","1. Staff hoàn tất bàn giao đơn 2 kho","Đơn 2 kho","Cả 2 kho đều chuyển `Occupied` và ghi nhận thời gian bàn giao","","","Thanh vien 4",""
+"TC192","Bàn giao (Move-In)","Staff xem chi tiết thông tin liên hệ khách (tên, SĐT, email) trong phiếu Move-In","Có đơn Move-In được giao","1. Mở chi tiết việc Move-In trên `/staff`","Đơn Move-In","Hiển thị đầy đủ SĐT, Email, mã kho, hình thức nhận kho","","","Thanh vien 4",""
+"TC193","Bàn giao (Move-In)","Staff tìm kiếm hoặc lọc công việc Move-In theo mã đơn / trạng thái","Danh sách có nhiều việc","1. Nhập mã đơn `RES-...` vào ô tìm kiếm hoặc lọc","Mã đơn `RES-...`","Lọc ra chính xác phiếu bàn giao cần tìm","","","Thanh vien 4",""
+"TC194","Bàn giao (Move-In)","Kiểm tra ghi log lỗi không làm sập luồng bàn giao nếu gửi mail Online thất bại","Giả lập lỗi gửi mail","1. Hoàn tất bàn giao Online khi email lỗi","Email service lỗi","Giao dịch bàn giao trong DB vẫn thành công (`Active`), chỉ ghi warning log","","","Thanh vien 4",""
+"TC195","Bàn giao (Move-In)","Kiểm tra Customer thấy trạng thái đơn chuyển sang ""Đang thuê"" ngay sau khi Staff bàn giao","Staff vừa bấm bàn giao","1. Ở tab Customer, tải lại `/account`","Đơn vừa Move-In","Trạng thái đơn hiển thị ""Đang thuê"" (`Active`), mở khóa nút Gia hạn & Trả kho","","","Thanh vien 4",""
+"TC196","Bàn giao (Move-In)","Kiểm tra Staff đánh dấu khách vắng mặt / dời lịch (nếu có) hoặc cập nhật ghi chú bàn giao","Đơn Move-In chưa xong","1. Nhập ghi chú bàn giao (vd: ""Đã giao 2 chìa khóa"") và hoàn tất","Ghi chú bàn giao","Ghi chú được lưu lại trong lịch sử bàn giao","","","Thanh vien 4",""
+"TC197","Bàn giao (Move-In)","Kiểm tra quyền truy cập: Customer gọi API `/api/handover/complete`","Đang đăng nhập Customer","1. Gọi `POST /api/handover/complete` bằng token Customer","Token Customer","Backend trả 403 Forbidden","","","Thanh vien 4",""
+"TC198","Bàn giao (Move-In)","Kiểm tra bàn giao khi đơn có `LateFee` chưa thanh toán (nếu phát sinh trước nhận kho)","Đơn có khoản nợ phát sinh","1. Kiểm tra điều kiện bàn giao","Có khoản chưa thanh toán","Hệ thống hiển thị cảnh báo các khoản còn thiếu trước khi cho bàn giao","","","Thanh vien 4",""
+"TC199","Bàn giao (Move-In)","Kiểm tra hiển thị hướng dẫn nhận chìa tại quầy cho đơn `Online`","Đơn `Online` đã bàn giao","1. Xem email và giao diện khách sau bàn giao","Đơn `Online`","Hướng dẫn rõ quy trình nhận chìa khóa tại quầy lễ tân cơ sở","","","Thanh vien 4",""
+"TC200","Bàn giao (Move-In)","Kiểm tra mã PIN bị thu hồi / vô hiệu khi đơn đã trả kho xong","Đơn vừa hoàn tất Move-Out","1. Xem lại thông tin đơn đã hoàn tất trả kho","Đơn `Completed`","Mã PIN không còn hiệu lực sử dụng","","","Thanh vien 4",""
+"TC201","Trả kho (Move-Out)","Khách hàng gửi yêu cầu Trả kho (Unit Return) hợp lệ","Đơn đang `Active`","1. Vào `/account` -> bấm ""Trả kho""
+2. Chọn ngày trả dự kiến & xác nhận","Ngày trả hợp lệ","Tạo yêu cầu Trả kho thành công, chờ Manager phân công / Staff kiểm định","","","Thanh vien 4",""
+"TC202","Trả kho (Move-Out)","Chặn khách gửi yêu cầu Trả kho 2 lần cho cùng 1 đơn/kho đang chờ kiểm định","Đã có yêu cầu trả kho đang mở","1. Bấm gửi yêu cầu Trả kho thêm lần nữa","Đã có Return Request","Hệ thống báo lỗi 409 đã có yêu cầu trả kho đang xử lý","","","Thanh vien 4",""
+"TC203","Trả kho (Move-Out)","Chặn khách gửi yêu cầu Trả kho cho đơn chưa nhận kho (chưa `Active`)","Đơn mới đặt cọc, chưa Move-In","1. Kiểm tra UI hoặc gọi API `/api/unit-returns`","Đơn chưa Move-In","Không cho phép trả kho khi chưa nhận kho","","","Thanh vien 4",""
+"TC204","Trả kho (Move-Out)","Khách hủy yêu cầu Trả kho trước khi Staff kiểm định","Yêu cầu trả kho đang `Pending`","1. Bấm Hủy yêu cầu trả kho","Return Request `Pending`","Yêu cầu trả kho bị hủy, hợp đồng tiếp tục trạng thái `Active`","","","Thanh vien 4",""
+"TC205","Kiểm định Trả kho","Staff thực hiện Kiểm định Trả kho với tình trạng kho Đạt chuẩn (Không hư hại)","Yêu cầu trả kho đã được gán cho Staff","1. Staff vào `/staff` -> tab Trả kho / Kiểm định
+2. Chọn ""Đạt chuẩn / Không hư hại"", phí bồi thường = 0
+3. Xác nhận hoàn tất","DamageFee: 0","Đơn chuyển `Completed`, kho về `Available`, khách được hoàn trả 100% tiền cọc","","","Thanh vien 4",""
+"TC206","Kiểm định Trả kho","Staff Kiểm định Trả kho phát hiện hư hại và nhập Phí bồi thường nhỏ hơn tiền cọc","Có tiền cọc 1.000.000đ; kho bị trầy/bẩn","1. Chọn tình trạng ""Có hư hại""
+2. Nhập phí bồi thường `300.000đ` + ghi chú/lý do
+3. Xác nhận","DamageFee: 300.000, Cọc: 1.000.000","Tạo khoản `ExtraFee` 300.000đ, tự động khấu trừ vào cọc -> hoàn trả khách `700.000đ`, kho về `Available`","","","Thanh vien 4",""
+"TC207","Kiểm định Trả kho","Staff nhập Phí bồi thường lớn hơn số tiền cọc đang giữ","Tiền cọc 1.000.000đ; hư hại nặng `1.500.000đ`","1. Nhập phí bồi thường `1.500.000đ`
+2. Xác nhận kiểm định","DamageFee: 1.500.000, Cọc: 1.000.000","Khấu trừ hết 1.000.000đ cọc (hoàn cọc = 0đ), ghi nhận phần nợ chênh lệch `500.000đ` khách cần đóng thêm","","","Thanh vien 4",""
+"TC208","Kiểm định Trả kho","Staff nhập Phí bồi thường là số âm","Đang mở form Kiểm định","1. Nhập `-100000` vào ô phí bồi thường
+2. Bấm Xác nhận","DamageFee: -100000","Hệ thống báo lỗi validation không chấp nhận số tiền âm","","","Thanh vien 4",""
+"TC209","Kiểm định Trả kho","Staff chọn ""Có hư hại"" nhưng bỏ trống lý do / ghi chú hư hại","Đang mở form Kiểm định","1. Chọn ""Có hư hại"", nhập tiền > 0, bỏ trống mô tả
+2. Bấm Xác nhận","Notes: """"","Hệ thống yêu cầu nhập ghi chú/lý do hư hại rõ ràng","","","Thanh vien 4",""
+"TC210","Kiểm định Trả kho","Kiểm tra khấu trừ cả Phí trễ hạn (`LateFee`) chưa đóng vào tiền cọc khi Trả kho","Đơn còn nợ `LateFee` 200.000đ, cọc 1.000.000đ","1. Thực hiện kiểm định trả kho không hư hại","LateFee: 200.000, Cọc: 1.000.000","Hệ thống khấu trừ 200.000đ `LateFee` vào cọc -> hoàn trả khách `800.000đ`","","","Thanh vien 4",""
+"TC211","Kiểm định Trả kho","Kiểm tra trạng thái kho trên Catalog ngay sau khi hoàn tất Move-Out","Vừa hoàn tất kiểm định trả kho","1. Mở trang Tìm kho (Catalog)","Kho vừa trả","Kho hiển thị lại trạng thái `Available` và khách mới có thể đặt thuê ngay","","","Thanh vien 4",""
+"TC212","Kiểm định Trả kho","Kiểm tra không cho phép Kiểm định lặp lại lần 2 cho yêu cầu trả kho đã hoàn tất","Yêu cầu trả kho đã `Completed`","1. Gọi lại API kiểm định cho đơn đã xong","Return đã `Completed`","Backend trả 409 Conflict không cho xử lý lặp lại","","","Thanh vien 4",""
+"TC213","Kiểm định Trả kho","Kiểm tra hoàn tất trả kho khi đơn có nhiều kho (trả từng phần hoặc trả hết)","Đơn gồm 2 kho `Active`","1. Thực hiện trả và kiểm định kho","Đơn 2 kho","Cập nhật đúng trạng thái từng kho và tính tiền hoàn cọc tương ứng","","","Thanh vien 4",""
+"TC214","Trả kho (Move-Out)","Kiểm tra lịch sử hoàn cọc hiển thị trên trang Tài khoản của khách hàng","Vừa hoàn tất trả kho có hoàn cọc","1. Đăng nhập Customer -> vào `/account` -> xem chi tiết đơn đã trả","Đơn `Completed`","Hiển thị rõ: Tiền cọc ban đầu, Các khoản khấu trừ (nếu có), Số tiền thực hoàn","","","Thanh vien 4",""
+"TC215","Trả kho (Move-Out)","Kiểm tra Customer không thể tự gọi API kiểm định trả kho của Staff","Đang đăng nhập Customer","1. Gọi `POST /api/return-inspections` bằng token Customer","Token Customer","Backend trả 403 Forbidden","","","Thanh vien 4",""
+"TC216","Trả kho (Move-Out)","Kiểm tra chọn ngày trả kho nhỏ hơn ngày nhận kho (`ReturnDate < StartDate`)","Đơn `Active`","1. Nhập ngày trả kho trước ngày nhận kho","ReturnDate < StartDate","Hệ thống báo lỗi validation ngày trả kho không hợp lệ","","","Thanh vien 4",""
+"TC217","Trả kho (Move-Out)","Kiểm tra trả kho sớm trước ngày kết thúc hợp đồng (`ReturnDate < EndDate`)","Hợp đồng còn hạn 1 tháng","1. Khách yêu cầu trả kho sớm
+2. Staff kiểm định hoàn tất","Trả sớm","Xử lý trả kho thành công theo đúng chính sách `renewal_return`","","","Thanh vien 4",""
+"TC218","Trả kho (Move-Out)","Kiểm tra trả kho đúng ngày hết hạn hợp đồng (`ReturnDate == EndDate`)","Chỉnh Demo Clock = `EndDate`","1. Khách gửi yêu cầu trả kho đúng `EndDate`
+2. Staff kiểm định đạt chuẩn","Today == EndDate","Không phát sinh phí trễ hạn, hoàn 100% cọc, đơn chuyển `Completed`","","","Thanh vien 4",""
+"TC219","Báo cáo & Vận hành","Kiểm tra số lượng kho trống / đang thuê trên Dashboard Manager cập nhật ngay sau Move-Out","Vừa hoàn tất Move-Out","1. Mở lại `/manager` Dashboard","Cơ sở vừa có Move-Out","Số kho `Occupied` giảm 1, số kho `Available` tăng 1 chính xác","","","Thanh vien 4",""
+"TC220","Luồng End-to-End","Kiểm tra toàn bộ vòng đời khép kín 1 đơn thuê kho (Đăng ký -> Đặt cọc -> Ký HĐ -> Đóng tiền -> Move-In -> Move-Out)","Tài khoản mới, kho trống","1. Đăng ký OTP -> Đặt kho & cọc -> Ký HĐ -> Đóng tiền ngày nhận -> Staff Move-In -> Khách trả kho -> Staff kiểm định","Luồng E2E đầy đủ","Mọi bước liên kết trơn tru, dữ liệu trạng thái kho và tài chính khớp hoàn toàn từ đầu đến cuối","","","Thanh vien 4",""
