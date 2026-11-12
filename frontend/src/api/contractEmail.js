@@ -4,36 +4,15 @@
  * Dùng ở: ContractDetailModal, CustomerAccount (sau khi khách ký hợp đồng / bấm "Gửi email").
  * Luồng gửi (sendContractEmail):
  *  1. Dựng nội dung hợp đồng dạng HTML (buildContractEmailHtml).
- *  2. Ưu tiên gửi qua backend: POST /api/email/send-contract (EmailController, Gmail SMTP).
- *  3. Nếu backend lỗi -> dự phòng gửi trực tiếp qua dịch vụ EmailJS (cần cấu hình biến
- *     VITE_EMAILJS_* trong .env).
+ *  2. Gửi qua backend: POST /api/email/send-contract (EmailController -> EmailService: Brevo HTTP API / SMTP).
  * ======================================================================
- */
-/*
- * Gửi hợp đồng thuê kho qua email bằng EmailJS (giống cách gửi OTP trong otpService.js),
- * nên KHÔNG cần sửa backend.
- *
- * Cấu hình (file frontend/.env):
- *   VITE_EMAILJS_SERVICE_ID=...            (dùng chung với OTP)
- *   VITE_EMAILJS_PUBLIC_KEY=...            (dùng chung với OTP)
- *   VITE_EMAILJS_CONTRACT_TEMPLATE_ID=...  (template RIÊNG cho hợp đồng)
- *
- * Template hợp đồng trên EmailJS cần:
- *   - To Email:  {{to_email}}
- *   - Subject:   {{subject}}
- *   - Content:   chọn chế độ "Code" (HTML) và đặt {{{contract_html}}}  (3 dấu ngoặc để giữ định dạng HTML)
- * Các biến khác có thể dùng: {{to_name}}, {{contract_number}}, {{facility_name}}, {{start_date}}, {{end_date}}.
  */
 import { contractUnits } from '../features/contract/ContractDocument'
 import { describePolicy } from '../services/policies'
 import { formatVnd } from '../services/storageRules'
 import { apiPost } from './api'
 
-const EMAILJS_SEND_URL = 'https://api.emailjs.com/api/v1.0/email/send'
-const SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID
-const PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY
-const CONTRACT_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_CONTRACT_TEMPLATE_ID
-const MAX_HTML_LENGTH = 40000 // EmailJS giới hạn dung lượng mỗi lần gửi (~50KB)
+const CONTRACT_SEND_TIMEOUT_MS = 35000
 
 /**
  * Escape ký tự đặc biệt HTML (& < > " ') để chèn dữ liệu người dùng vào HTML an toàn.
@@ -50,12 +29,6 @@ const fmtTime = iso => {
   const d = iso ? new Date(iso) : null
   return d && !Number.isNaN(d.getTime()) ? d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
 }
-
-/**
- * Kiểm tra đã cấu hình đủ biến môi trường EmailJS (service, public key, template hợp đồng) chưa.
- * @returns {boolean}
- */
-export const isContractEmailConfigured = () => Boolean(SERVICE_ID && PUBLIC_KEY && CONTRACT_TEMPLATE_ID)
 
 /* Nội dung hợp đồng dạng HTML (inline style để hiển thị đúng trong Gmail/Outlook). Không nhúng ảnh chữ ký vì quá nặng. */
 /**
@@ -108,17 +81,14 @@ export function buildContractEmailHtml({ group, customer, facilityAddress, signa
       ? `Đã ký điện tử bởi <strong>${esc(signature.signerName || customer?.name)}</strong> lúc ${esc(fmtTime(signature.signedAt))}.`
       : '<span style="color:#9a6700">Hợp đồng chưa được ký. Vui lòng đăng nhập StoreSpace để ký online.</span>'}</p>
   </div>
-  <p style="color:#8197ab;font-size:12px;margin-top:14px">Chữ ký điện tử có giá trị như chữ ký tay theo Luật Giao dịch điện tử. Email được gửi tự động từ hệ thống StoreSpace, vui lòng không trả lời.</p>
 </div>`.trim()
 }
 
 /**
- * Gửi email hợp đồng cho khách hàng.
- * API chính: POST /api/email/send-contract  (EmailController — gửi bằng Gmail SMTP phía backend).
- * Dự phòng: gọi trực tiếp https://api.emailjs.com/api/v1.0/email/send nếu backend lỗi.
+ * Gửi email hợp đồng cho khách hàng qua Backend (Brevo HTTP API / SMTP).
+ * API: POST /api/email/send-contract  (EmailController).
  * @param {{group, customer, facilityAddress, signature, policies}} args giống buildContractEmailHtml.
  * @returns {Promise<{sentTo:string}>} email đã gửi tới.
- * @throws {Error} khi tài khoản không có email, chưa cấu hình EmailJS, hoặc nội dung quá dài.
  */
 export async function sendContractEmail({ group, customer, facilityAddress, signature, policies }) {
   if (!customer?.email) throw new Error('Tài khoản chưa có email.')
@@ -126,49 +96,16 @@ export async function sendContractEmail({ group, customer, facilityAddress, sign
   const first = group.rentals[0]
   const subject = `[StoreSpace] Hợp đồng thuê kho ${group.code}${signature ? ' (đã ký)' : ''}`
 
-  // 1. Ưu tiên gửi qua Backend Gmail SMTP (bền vững, không giới hạn lượt gửi)
-  try {
-    await apiPost('/api/email/send-contract', {
-      toEmail: customer.email,
-      toName: customer.name,
-      subject,
-      contractNumber: group.code,
-      facilityName: first?.facility,
-      startDate: first?.startDate,
-      endDate: first?.endDate,
-      contractHtml: html
-    })
-    return { sentTo: customer.email }
-  } catch (backendError) {
-    console.warn('Gửi hợp đồng qua Backend SMTP gặp sự cố, chuyển sang EmailJS fallback:', backendError.message)
-  }
+  await apiPost('/api/email/send-contract', {
+    toEmail: customer.email,
+    toName: customer.name,
+    subject,
+    contractNumber: group.code,
+    facilityName: first?.facility,
+    startDate: first?.startDate,
+    endDate: first?.endDate,
+    contractHtml: html
+  }, { timeout: CONTRACT_SEND_TIMEOUT_MS })
 
-  // 2. Fallback sang EmailJS nếu backend chưa phản hồi
-  if (!isContractEmailConfigured()) {
-    throw new Error('Chưa thể gửi email hợp đồng. Vui lòng thử lại sau ít phút hoặc in hợp đồng dạng PDF.')
-  }
-  if (html.length > MAX_HTML_LENGTH) throw new Error('Hợp đồng quá dài để gửi qua email. Vui lòng dùng In / Lưu PDF.')
-
-  const response = await fetch(EMAILJS_SEND_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      service_id: SERVICE_ID,
-      template_id: CONTRACT_TEMPLATE_ID,
-      user_id: PUBLIC_KEY,
-      template_params: {
-        to_email: customer.email,
-        to_name: customer.name,
-        subject,
-        contract_number: group.code,
-        facility_name: first.facility,
-        start_date: first.startDate,
-        end_date: first.endDate,
-        contract_html: html
-      }
-    })
-  })
-  const text = await response.text()
-  if (!response.ok) throw new Error(text || 'EmailJS không gửi được email hợp đồng.')
   return { sentTo: customer.email }
 }

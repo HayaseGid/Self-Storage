@@ -5,6 +5,7 @@ using MailKit.Security;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using MimeKit.Text;
+using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Interfaces;
 using SelfStorageAPI.Models;
 
@@ -38,11 +39,15 @@ public class EmailService : IEmailService
         await SendRawEmailAsync(toEmail, subject, bodyHtml, ct);
     }
 
-    public async Task SendContractEmailAsync(string toEmail, string? toName, string? subject, string contractHtml, CancellationToken ct = default)
+    public async Task SendContractEmailAsync(SendContractEmailRequest request, CancellationToken ct = default)
     {
-        var finalSubject = !string.IsNullOrWhiteSpace(subject) ? subject : "[StoreSpace] Hợp đồng thuê kho lưu trữ của bạn";
-        var bodyHtml = BuildContractEmailHtml(toName, contractHtml);
-        await SendRawEmailAsync(toEmail, finalSubject, bodyHtml, ct);
+        var finalSubject = !string.IsNullOrWhiteSpace(request.Subject)
+            ? request.Subject
+            : !string.IsNullOrWhiteSpace(request.ContractNumber)
+                ? $"[StoreSpace] Hợp đồng thuê kho {request.ContractNumber}"
+                : "[StoreSpace] Hợp đồng thuê kho lưu trữ của bạn";
+        var bodyHtml = BuildContractEmailHtml(request);
+        await SendRawEmailAsync(request.ToEmail, finalSubject, bodyHtml, ct);
     }
 
     public async Task TestConnectionAsync(string toEmail, CancellationToken ct = default)
@@ -236,9 +241,32 @@ public class EmailService : IEmailService
 </html>";
     }
 
-    private static string BuildContractEmailHtml(string? toName, string contractHtml)
+    private string BuildContractEmailHtml(SendContractEmailRequest req)
     {
-        var displayName = !string.IsNullOrWhiteSpace(toName) ? WebUtility.HtmlEncode(toName) : "Quý khách";
+        static string E(string? v) => WebUtility.HtmlEncode(v ?? string.Empty);
+
+        var contractNumber = !string.IsNullOrWhiteSpace(req.ContractNumber) ? E(req.ContractNumber.Trim()) : null;
+        var facilityName = !string.IsNullOrWhiteSpace(req.FacilityName) ? E(req.FacilityName.Trim()) : null;
+        var period = !string.IsNullOrWhiteSpace(req.StartDate) || !string.IsNullOrWhiteSpace(req.EndDate)
+            ? $"{E(req.StartDate ?? "—")} → {E(req.EndDate ?? "—")}"
+            : null;
+        var supportEmail = !string.IsNullOrWhiteSpace(_brevo.SenderEmail)
+            ? E(_brevo.SenderEmail.Trim())
+            : !string.IsNullOrWhiteSpace(_smtp.SenderEmail)
+                ? E(_smtp.SenderEmail.Trim())
+                : "stardewvalleypvp@gmail.com";
+
+        var metaHtml = (contractNumber is not null || facilityName is not null || period is not null)
+            ? $@"
+      <table style=""width:100%;border-collapse:collapse;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:10px;margin-bottom:20px;font-size:13px;color:#1e3a8a;"">
+        <tr>
+          {(contractNumber is not null ? $@"<td style=""padding:10px 14px;""><strong>Mã hợp đồng:</strong> {contractNumber}</td>" : "")}
+          {(facilityName is not null ? $@"<td style=""padding:10px 14px;""><strong>Cơ sở:</strong> {facilityName}</td>" : "")}
+          {(period is not null ? $@"<td style=""padding:10px 14px;""><strong>Thời hạn:</strong> {period}</td>" : "")}
+        </tr>
+      </table>"
+            : string.Empty;
+
         return $@"
 <!DOCTYPE html>
 <html lang=""vi"">
@@ -254,12 +282,12 @@ public class EmailService : IEmailService
     </div>
 
     <div style=""padding:32px 28px;"">
-      <div style=""background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13.5px;color:#065f46;line-height:1.5;"">
-        ✓ <strong>Bản sao hợp đồng điện tử:</strong> Hợp đồng đã được ký điện tử và lưu trữ an toàn trong tài khoản của bạn tại StoreSpace.
+      <div style=""background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:14px 18px;margin-bottom:16px;font-size:13.5px;color:#065f46;line-height:1.5;"">
+        ✓ <strong>Bản sao hợp đồng điện tử:</strong> Hợp đồng của bạn được lưu trữ an toàn trong tài khoản StoreSpace.
       </div>
-
-      <div style=""margin-top:16px;"">
-        {contractHtml}
+      {metaHtml}
+      <div style=""margin-top:12px;"">
+        {req.ContractHtml}
       </div>
 
       <div style=""margin-top:24px;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-size:13px;color:#475569;line-height:1.5;"">
@@ -268,7 +296,7 @@ public class EmailService : IEmailService
     </div>
 
     <div style=""background:#f8fafc;padding:18px 24px;text-align:center;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;line-height:1.5;"">
-      <strong>StoreSpace Support</strong> · Hỗ trợ khách hàng: stardewvalleypvp@gmail.com<br/>
+      <strong>StoreSpace Support</strong> · Hỗ trợ khách hàng: {supportEmail}<br/>
       Email được gửi tự động từ hệ thống StoreSpace. Vui lòng không trả lời thư này.
     </div>
   </div>

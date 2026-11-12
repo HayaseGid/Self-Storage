@@ -49,18 +49,13 @@ public class EmailController : ControllerBase
 
         try
         {
-            await _emailService.SendContractEmailAsync(
-                request.ToEmail, 
-                request.ToName, 
-                request.Subject, 
-                request.ContractHtml, 
-                ct);
+            await _emailService.SendContractEmailAsync(request, ct);
 
             return Ok(new { success = true, message = $"Đã gửi hợp đồng đến {request.ToEmail}" });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi gửi hợp đồng qua Gmail SMTP đến {Email}", request.ToEmail);
+            _logger.LogError(ex, "Lỗi gửi hợp đồng qua email đến {Email}", request.ToEmail);
             return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
