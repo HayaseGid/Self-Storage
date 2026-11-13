@@ -59,3 +59,6 @@
 "BUG-027","TC028","Module1 - Auth & Admin","Login with a Locked account shows a misleading ""no permission"" message instead of ""account locked""","Minor","Medium","1. System Administrator locks staff2@test.com
 2. Go to /login
 3. Log in with staff2@test.com / 123456","The page says the account is deactivated/locked (""Tài khoản chưa được kích hoạt hoặc đã bị khóa."")","The backend returns 403 Forbid() with no body, so the page shows ""Tài khoản của bạn không có quyền thực hiện thao tác này.""","Lê Hữu Hoàng Anh","Open"
+"BUG-028","TC086","Module2 - Booking & Payment","The same reservation is shown with two different order codes (RS-2026-60069 vs RS-2026-00034)","Minor","Medium","1. Log in as Customer and book unit TD-U29 up to step 2 ""Thanh toán cọc"" (code shown: RS-2026-60069)
+2. Open /customer -> ""Thanh toán""
+3. Look at the order card in ""1. Tiền cọc giữ kho & Phí gia hạn cần đóng ngay""","The card shows the same code RS-2026-60069","The card shows ""Mã đơn RS-2026-00034"" (built from the reservation ID); the deposit step, cancel dialog and API use RS-2026-60069","Member 2","Open"
