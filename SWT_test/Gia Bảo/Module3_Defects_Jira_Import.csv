@@ -1,0 +1,207 @@
+﻿Defect ID,Summary,Issue Type,Priority,Severity,Status,Component/s,Labels,Test Case ID,Found Date,Environment,Pre-condition,Test Data,Steps to Reproduce,Expected Result,Actual Result,Description
+BUG-013,[BUG-013] Renewal appendix email is titled and worded as a normal rental contract,Bug,Low,Minor,To Do,Contract Renewal,SWT301 Module3 TC150,TC150,12/11/2026,"https://self-storage-ten.vercel.app (backend on Render), account cust4@test.com",Brevo configured,Renewal appendix email,"1. Log in as Customer (cust4@test.com / 123456)
+2. Sign the renewal appendix (TC149)
+3. Check the email subject/title sent for the appendix",Subject/title say it is the renewal appendix of HD-2026-00026,"Email for HD-2026-00036 has subject ""[StoreSpace] Hợp đồng thuê kho HD-2026-00036 (đã ký)"", title ""HỢP ĐỒNG THUÊ KHO LƯU TRỮ"", no reference to HD-2026-00026 and ""Tiền cọc đã thanh toán"".","Test case: TC150 - Email for the renewal appendix is labelled as an appendix
+Module: Module3_Contract_Rent / Contract Renewal
+Severity: Minor
+Environment: https://self-storage-ten.vercel.app
+
+Pre-condition: Brevo configured
+Test data: Renewal appendix email
+
+Steps to reproduce:
+1. Log in as Customer (cust4@test.com / 123456)
+2. Sign the renewal appendix (TC149)
+3. Check the email subject/title sent for the appendix
+
+Expected result: Subject/title say it is the renewal appendix of HD-2026-00026
+Actual result: Email for HD-2026-00036 has subject ""[StoreSpace] Hợp đồng thuê kho HD-2026-00036 (đã ký)"", title ""HỢP ĐỒNG THUÊ KHO LƯU TRỮ"", no reference to HD-2026-00026 and ""Tiền cọc đã thanh toán""."
+BUG-014,[BUG-014] Single-dot signature is accepted as a valid e-signature,Bug,Medium,Major,To Do,Contract & Email,SWT301 Module3 TC115,TC115,12/11/2026,"https://self-storage-ten.vercel.app (backend on Render), account cust4@test.com",All term groups accepted,Signature = 1 dot,"1. Log in as Customer (cust4@test.com / 123456)
+2. Open the left menu ""Hợp đồng"" (Contracts)
+3. Click ""Xem & ký hợp đồng"" on the contract
+4. Step 1: click ""Tiếp tục: Điều khoản""
+5. Step 2: click ""Tôi đã đọc và đồng ý tất cả"", then ""Tiếp tục: Ký""
+6. Step 3: click once on the canvas (one dot only)
+7. Type the correct full name
+8. Click ""Ký hợp đồng""",System rejects the signature and asks for a real hand-drawn signature,"A single dot on the canvas (4 pixels) was accepted: HD-2026-00028 was signed and ""Đã ký hợp đồng"" was shown.","Test case: TC115 - Block an invalid signature consisting of a single dot
+Module: Module3_Contract_Rent / Contract & Email
+Severity: Major
+Environment: https://self-storage-ten.vercel.app
+
+Pre-condition: All term groups accepted
+Test data: Signature = 1 dot
+
+Steps to reproduce:
+1. Log in as Customer (cust4@test.com / 123456)
+2. Open the left menu ""Hợp đồng"" (Contracts)
+3. Click ""Xem & ký hợp đồng"" on the contract
+4. Step 1: click ""Tiếp tục: Điều khoản""
+5. Step 2: click ""Tôi đã đọc và đồng ý tất cả"", then ""Tiếp tục: Ký""
+6. Step 3: click once on the canvas (one dot only)
+7. Type the correct full name
+8. Click ""Ký hợp đồng""
+
+Expected result: System rejects the signature and asks for a real hand-drawn signature
+Actual result: A single dot on the canvas (4 pixels) was accepted: HD-2026-00028 was signed and ""Đã ký hợp đồng"" was shown."
+BUG-015,[BUG-015] Late fees calculated at Demo Clock future dates remain after returning to today,Bug,Medium,Major,To Do,Recurring Rent,SWT301 Module3 TC141,TC141,12/11/2026,"https://self-storage-ten.vercel.app (backend on Render), account cust4@test.com",Demo Clock was set,Real date 13/11/2026,"1. Click the Demo Clock widget (bottom-right), pick date 15/12/2026, click ""Xác nhận"" (page reloads)
+2. Open the Demo Clock widget and click ""Về hôm nay""
+3. Check the date badge",Widget shows today 13/11/2026 and all screens show data of the real date (no late fees calculated for future dates),"""Về hôm nay"" set the widget back to ""HÔM NAY 13/11/2026"", but Payments still shows ""Phí trễ hạn chưa đóng: 14.600đ"" calculated at future demo dates (kỳ 13/03–12/04/2027 trễ 55 ngày; kỳ 13/04–12/05/2027 trễ 24 ngày).","Test case: TC141 - Demo Clock returns to the real date
+Module: Module3_Contract_Rent / Recurring Rent
+Severity: Major
+Environment: https://self-storage-ten.vercel.app
+
+Pre-condition: Demo Clock was set
+Test data: Real date 13/11/2026
+
+Steps to reproduce:
+1. Click the Demo Clock widget (bottom-right), pick date 15/12/2026, click ""Xác nhận"" (page reloads)
+2. Open the Demo Clock widget and click ""Về hôm nay""
+3. Check the date badge
+
+Expected result: Widget shows today 13/11/2026 and all screens show data of the real date (no late fees calculated for future dates)
+Actual result: ""Về hôm nay"" set the widget back to ""HÔM NAY 13/11/2026"", but Payments still shows ""Phí trễ hạn chưa đóng: 14.600đ"" calculated at future demo dates (kỳ 13/03–12/04/2027 trễ 55 ngày; kỳ 13/04–12/05/2027 trễ 24 ngày)."
+BUG-016,[BUG-016] Pending renewal shown with RS- code and described as an unpaid deposit,Bug,Low,Minor,To Do,Recurring Rent,SWT301 Module3 TC140,TC140,12/11/2026,"https://self-storage-ten.vercel.app (backend on Render), account cust4@test.com",Pending renewal exists,Renewal order GH-2026-xxxxx,"1. Log in as Customer (cust4@test.com / 123456)
+2. Create a renewal request but do not pay (TC143)
+3. Open the left menu ""Thanh toán"" (Payments)","Payments lists the item as ""Gia hạn hợp đồng"" with its renewal code GH-2026-xxxxx; it is not described as an unpaid deposit","Payments shows the renewal as ""GIA HẠN HỢP ĐỒNG"" but with code ""RS-2026-00035"" instead of GH-2026-18818, and the top banner says ""Đơn RS-2026-00035 (kho TD-U01) chưa đặt cọc · 400.000đ"".","Test case: TC140 - Pending renewal is shown as a renewal payment, not as a rent bill
+Module: Module3_Contract_Rent / Recurring Rent
+Severity: Minor
+Environment: https://self-storage-ten.vercel.app
+
+Pre-condition: Pending renewal exists
+Test data: Renewal order GH-2026-xxxxx
+
+Steps to reproduce:
+1. Log in as Customer (cust4@test.com / 123456)
+2. Create a renewal request but do not pay (TC143)
+3. Open the left menu ""Thanh toán"" (Payments)
+
+Expected result: Payments lists the item as ""Gia hạn hợp đồng"" with its renewal code GH-2026-xxxxx; it is not described as an unpaid deposit
+Actual result: Payments shows the renewal as ""GIA HẠN HỢP ĐỒNG"" but with code ""RS-2026-00035"" instead of GH-2026-18818, and the top banner says ""Đơn RS-2026-00035 (kho TD-U01) chưa đặt cọc · 400.000đ""."
+BUG-017,[BUG-017] No fee when the unit is not returned after the contract end date,Bug,High,Major,To Do,Late Fee,SWT301 Module3 TC165,TC165,12/11/2026,"https://self-storage-ten.vercel.app (backend on Render), account cust4@test.com","Contract expired 7 days ago, unit not returned, not renewed","HD-2026-00036 ended 12/05/2027, unit not returned","1. Click the Demo Clock widget (bottom-right), pick date 19/05/2027, click ""Xác nhận"" (page reloads)
+2. Log in as Customer (cust4@test.com / 123456)
+3. Open the left menu ""Thanh toán"" (Payments)
+4. Check the fees of appendix HD-2026-00036 for a late-return fee
+5. Log in as Facility Manager (fm3@test.com / 123456)
+6. Open ""Công nợ & phí trễ hạn""",A late-return fee based on days overdue is shown to customer and manager,"Demo date 19/05/2027: HD-2026-00036 still ""Handed Over"" and only rent late fees are listed (12.800đ, 6.600đ); no late-return fee.","Test case: TC165 - Fee is charged when the unit is not returned after the end date
+Module: Module3_Contract_Rent / Late Fee
+Severity: Major
+Environment: https://self-storage-ten.vercel.app
+
+Pre-condition: Contract expired 7 days ago, unit not returned, not renewed
+Test data: HD-2026-00036 ended 12/05/2027, unit not returned
+
+Steps to reproduce:
+1. Click the Demo Clock widget (bottom-right), pick date 19/05/2027, click ""Xác nhận"" (page reloads)
+2. Log in as Customer (cust4@test.com / 123456)
+3. Open the left menu ""Thanh toán"" (Payments)
+4. Check the fees of appendix HD-2026-00036 for a late-return fee
+5. Log in as Facility Manager (fm3@test.com / 123456)
+6. Open ""Công nợ & phí trễ hạn""
+
+Expected result: A late-return fee based on days overdue is shown to customer and manager
+Actual result: Demo date 19/05/2027: HD-2026-00036 still ""Handed Over"" and only rent late fees are listed (12.800đ, 6.600đ); no late-return fee."
+BUG-018,[BUG-018] Confirmation name with extra inner spaces is rejected,Bug,Low,Minor,To Do,Contract & Email,SWT301 Module3 TC117,TC117,12/11/2026,"https://self-storage-ten.vercel.app (backend on Render), account cust4@test.com",Logged in as cust4 (Đỗ Khách Hàng),Correct name with a double space,"1. Log in as Customer (cust4@test.com / 123456)
+2. Open the left menu ""Hợp đồng"" (Contracts)
+3. Click ""Xem & ký hợp đồng"" on the contract
+4. Step 1: click ""Tiếp tục: Điều khoản""
+5. Step 2: click ""Tôi đã đọc và đồng ý tất cả"", then ""Tiếp tục: Ký""
+6. Step 3: draw a signature
+7. Type ""Đỗ  Khách Hàng"" (two spaces between words)
+8. Click ""Ký hợp đồng""",Whitespace is normalized and the name is accepted,"""Đỗ  Khách Hàng"" (double space) was rejected with ""Họ tên xác nhận phải trùng với tên tài khoản: Đỗ Khách Hàng."" — inner spaces are not normalized.","Test case: TC117 - Confirmation name containing extra spaces between words
+Module: Module3_Contract_Rent / Contract & Email
+Severity: Minor
+Environment: https://self-storage-ten.vercel.app
+
+Pre-condition: Logged in as cust4 (Đỗ Khách Hàng)
+Test data: Correct name with a double space
+
+Steps to reproduce:
+1. Log in as Customer (cust4@test.com / 123456)
+2. Open the left menu ""Hợp đồng"" (Contracts)
+3. Click ""Xem & ký hợp đồng"" on the contract
+4. Step 1: click ""Tiếp tục: Điều khoản""
+5. Step 2: click ""Tôi đã đọc và đồng ý tất cả"", then ""Tiếp tục: Ký""
+6. Step 3: draw a signature
+7. Type ""Đỗ  Khách Hàng"" (two spaces between words)
+8. Click ""Ký hợp đồng""
+
+Expected result: Whitespace is normalized and the name is accepted
+Actual result: ""Đỗ  Khách Hàng"" (double space) was rejected with ""Họ tên xác nhận phải trùng với tên tài khoản: Đỗ Khách Hàng."" — inner spaces are not normalized."
+BUG-025,[BUG-025] Payment plan and rent reminder are not shown before move-in,Bug,Low,Minor,To Do,Recurring Rent,SWT301 Module3 TC131,TC131,12/11/2026,"https://self-storage-ten.vercel.app (backend on Render), account cust4@test.com","Deposit paid + signed, not handed over",HD-2026-00027 (Upfront),"1. Log in as Customer (cust4@test.com / 123456)
+2. Open the left menu ""Hợp đồng"" (Contracts)
+3. In tab ""Đã cọc · chờ nhận kho"" open the Upfront contract card and ""Xem chi tiết""
+4. Look for the payment plan and the rent reminder","Payment plan ""Trả 1 lần"" and reminder ""Sau khi nhận kho, bạn đóng ... tiền thuê (toàn bộ kỳ thuê)"" are shown before move-in","Before move-in, HD-2026-00027 (Upfront) shows no payment plan and no rent reminder in the contract list, detail dialog, ""Kho của tôi"" or Payments; the plan only appears on the card after handover.","Test case: TC131 - Payment plan is visible before move-in (Upfront)
+Module: Module3_Contract_Rent / Recurring Rent
+Severity: Minor
+Environment: https://self-storage-ten.vercel.app
+
+Pre-condition: Deposit paid + signed, not handed over
+Test data: HD-2026-00027 (Upfront)
+
+Steps to reproduce:
+1. Log in as Customer (cust4@test.com / 123456)
+2. Open the left menu ""Hợp đồng"" (Contracts)
+3. In tab ""Đã cọc · chờ nhận kho"" open the Upfront contract card and ""Xem chi tiết""
+4. Look for the payment plan and the rent reminder
+
+Expected result: Payment plan ""Trả 1 lần"" and reminder ""Sau khi nhận kho, bạn đóng ... tiền thuê (toàn bộ kỳ thuê)"" are shown before move-in
+Actual result: Before move-in, HD-2026-00027 (Upfront) shows no payment plan and no rent reminder in the contract list, detail dialog, ""Kho của tôi"" or Payments; the plan only appears on the card after handover."
+BUG-026,[BUG-026] Payment history drops handed-over deposits and mislabels rent as deposit,Bug,Medium,Major,To Do,Recurring Rent,SWT301 Module3 TC142,TC142,12/11/2026,"https://self-storage-ten.vercel.app (backend on Render), account cust4@test.com",Payments completed,cust4 deposits and rent payment,"1. Log in as Customer (cust4@test.com / 123456)
+2. Open the left menu ""Thanh toán"" (Payments)
+3. Read ""Lịch sử giao dịch & Biên lai""","All completed payments are listed with the correct type (deposit / rent / renewal), amount and reference; totals match the list","History misses the 800.000đ deposit of RS-2026-66648 after handover (total dropped from 6.600.000đ/5 to 5.800.000đ/4) and labels the rent payment SIM-RENT-20261113-D8407D (400.000đ) as ""Đặt cọc giữ kho"".","Test case: TC142 - Payment history lists completed payments
+Module: Module3_Contract_Rent / Recurring Rent
+Severity: Major
+Environment: https://self-storage-ten.vercel.app
+
+Pre-condition: Payments completed
+Test data: cust4 deposits and rent payment
+
+Steps to reproduce:
+1. Log in as Customer (cust4@test.com / 123456)
+2. Open the left menu ""Thanh toán"" (Payments)
+3. Read ""Lịch sử giao dịch & Biên lai""
+
+Expected result: All completed payments are listed with the correct type (deposit / rent / renewal), amount and reference; totals match the list
+Actual result: History misses the 800.000đ deposit of RS-2026-66648 after handover (total dropped from 6.600.000đ/5 to 5.800.000đ/4) and labels the rent payment SIM-RENT-20261113-D8407D (400.000đ) as ""Đặt cọc giữ kho""."
+BUG-027,[BUG-027] Renewal hold countdown shows 0 minutes while the hold is still active,Bug,Low,Minor,To Do,Contract Renewal,SWT301 Module3 TC143,TC143,12/11/2026,"https://self-storage-ten.vercel.app (backend on Render), account cust4@test.com","Handed over, rent paid, before deadline","Months 3, Monthly","1. Log in as Customer (cust4@test.com / 123456)
+2. Open the left menu ""Hợp đồng"" (Contracts)
+3. In Contracts click tab ""Đang thuê"" (Active)
+4. Click ""↻ Gia hạn"" on HD-2026-00026
+5. Choose ""3 tháng"" and ""Trả theo tháng"", click Continue
+6. Tick both confirmation boxes
+7. Click ""Thanh toán 400.000đ"", then reload the page without paying","Renewal order GH-2026-xxxxx created; card ""Chờ thanh toán · còn N phút"" shows the real remaining hold time (about 15 minutes) with ""Thanh toán"" and ""Hủy""","Renewal GH-2026-18818 (13/02/2027 → 12/05/2027, 400.000đ) was created, but the card shows ""Chờ thanh toán · còn 0 phút"" while the hold lasts until 13:00 (Payments shows 14:39 left).","Test case: TC143 - Create a 3-month renewal request, monthly payment
+Module: Module3_Contract_Rent / Contract Renewal
+Severity: Minor
+Environment: https://self-storage-ten.vercel.app
+
+Pre-condition: Handed over, rent paid, before deadline
+Test data: Months 3, Monthly
+
+Steps to reproduce:
+1. Log in as Customer (cust4@test.com / 123456)
+2. Open the left menu ""Hợp đồng"" (Contracts)
+3. In Contracts click tab ""Đang thuê"" (Active)
+4. Click ""↻ Gia hạn"" on HD-2026-00026
+5. Choose ""3 tháng"" and ""Trả theo tháng"", click Continue
+6. Tick both confirmation boxes
+7. Click ""Thanh toán 400.000đ"", then reload the page without paying
+
+Expected result: Renewal order GH-2026-xxxxx created; card ""Chờ thanh toán · còn N phút"" shows the real remaining hold time (about 15 minutes) with ""Thanh toán"" and ""Hủy""
+Actual result: Renewal GH-2026-18818 (13/02/2027 → 12/05/2027, 400.000đ) was created, but the card shows ""Chờ thanh toán · còn 0 phút"" while the hold lasts until 13:00 (Payments shows 14:39 left)."
+BUG-028,[BUG-028] Manager receivables ignore unpaid rent of a renewed contract and label it returned,Bug,Medium,Major,To Do,Late Fee,SWT301 Module3 TC161,TC161,12/11/2026,"https://self-storage-ten.vercel.app (backend on Render), account cust4@test.com",Late fee exists,Thu Duc facility,"1. Click the Demo Clock widget (bottom-right), pick date 23/12/2026, click ""Xác nhận"" (page reloads)
+2. Log in as Facility Manager (fm3@test.com / 123456)
+3. Open tab ""Công nợ & phí trễ hạn""","Summary counts the overdue rent of HD-2026-00026 (400.000đ, 1 period); list shows Đỗ Khách Hàng, HD-2026-00026 with correct status, days late and late fee","Summary shows ""Tiền thuê quá hạn 0đ · 0 kỳ · 0 hợp đồng"" although period 13/12 (400.000đ) of HD-2026-00026 is unpaid; HD-2026-00026 is labelled ""Đã trả kho"" (it was renewed) with ""Còn nợ sau trả kho 1.600đ"".","Test case: TC161 - Manager sees receivables and late fees of the facility
+Module: Module3_Contract_Rent / Late Fee
+Severity: Major
+Environment: https://self-storage-ten.vercel.app
+
+Pre-condition: Late fee exists
+Test data: Thu Duc facility
+
+Steps to reproduce:
+1. Click the Demo Clock widget (bottom-right), pick date 23/12/2026, click ""Xác nhận"" (page reloads)
+2. Log in as Facility Manager (fm3@test.com / 123456)
+3. Open tab ""Công nợ & phí trễ hạn""
+
+Expected result: Summary counts the overdue rent of HD-2026-00026 (400.000đ, 1 period); list shows Đỗ Khách Hàng, HD-2026-00026 with correct status, days late and late fee
+Actual result: Summary shows ""Tiền thuê quá hạn 0đ · 0 kỳ · 0 hợp đồng"" although period 13/12 (400.000đ) of HD-2026-00026 is unpaid; HD-2026-00026 is labelled ""Đã trả kho"" (it was renewed) with ""Còn nợ sau trả kho 1.600đ""."
