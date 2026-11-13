@@ -241,6 +241,20 @@ Cách đọc mỗi case:
 - **Căn cứ:** `ReservationService.cs`: chỉ nhận `Months` là 1, 3, 6, 12; còn lại trả 400 "Thời hạn thuê chỉ được chọn 1, 3, 6 hoặc 12 tháng."
 - **Kết quả:** Pass.
 
+const tok = JSON.parse(localStorage.getItem('storespace_current_user')).token;
+for (const m of [0, -1]) {
+  const r = await fetch('https://self-storage-sk0b.onrender.com/api/reservation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+    body: JSON.stringify({
+      months: m, startDate: '2026-11-20',
+      units: [{ unitID: 109, unitNumber: 'TD-U29' }],
+      paymentPlan: 'Monthly', handoverMethod: 'Online'
+    })
+  });
+  console.log('months =', m, '→', r.status, await r.text());
+}
+
 **TC082 – Ngày bắt đầu quá xa** ❌ **Fail – BUG-026 (mới)**
 - **Mục đích:** không cho giữ kho trước quá lâu (vd 1 năm sau), tránh khóa kho vô lý.
 - **Cách test:** chọn ngày 13/11/2027 → bấm đặt.
@@ -264,6 +278,14 @@ Cách đọc mỗi case:
 - **Mục đích:** không cho trả tiền cho kho đã bị giải phóng.
 - **Căn cứ:** `PaymentService.cs`: đơn `Expired` trả 409 "Thời gian giữ kho đã hết. Vui lòng tạo đặt chỗ mới."; VNPay cũng chặn tương tự.
 - **Kết quả:** Pass.
+
+const tok = JSON.parse(localStorage.getItem('storespace_current_user')).token;
+const r = await fetch('https://self-storage-sk0b.onrender.com/api/payment/confirm', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+  body: JSON.stringify({ reservationID: 34, amount: 1800000, paymentType: 'QR' })
+});
+console.log(r.status, await r.text());
 
 **TC086 – Xem danh sách đơn trong /account**
 - **Mục đích:** khách theo dõi được đơn của mình.
