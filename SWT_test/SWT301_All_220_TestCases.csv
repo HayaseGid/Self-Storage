@@ -1,7 +1,14 @@
 ﻿"Test Case ID","Module","Test Case Description","Pre-condition","Test Steps","Test Data","Expected Result","Actual Result","Status","Tester","Defect ID"
-"TC001","Đăng ký & OTP","Đăng ký tài khoản mới thành công với đầy đủ thông tin hợp lệ","Chưa đăng nhập; đang ở `/register`; email chưa tồn tại trong hệ thống","1. Nhập Họ, Tên, Email, SĐT, Mật khẩu, Xác nhận mật khẩu
-2. Bấm ""Gửi mã xác thực""
-3. Nhập đúng mã OTP 6 số từ email và bấm xác thực","Họ: Nguyễn, Tên: An, Email: test01@gmail.com, SĐT: 0912345678, MK: 123456","Chuyển sang `/verify-otp`, nhận được email OTP qua Brevo; xác thực đúng mã tạo tài khoản Customer thành công","","","Thanh vien 1",""
+"TC001","Đăng ký & OTP","Verify that a new customer can register an account successfully with valid information and OTP verification","User is not logged in; email `giabao55407@gmail.com` does not exist in the system; user is on `/register`","1. Navigate to the Registration page (`/register`)
+2. Enter `""Vũ""` into **""Họ *""** and `""Bảo""` into **""Tên *""**
+3. Select `""Nam""` for **""Giới tính""**
+4. Enter `""16/02/2006""` into **""Ngày sinh""**
+5. Enter `""0358184222""` into **""Số điện thoại""**
+6. Enter `""giabao55407@gmail.com""` into **""Email *""**
+7. Enter `""123456""` into both **""Mật khẩu *""** and **""Xác nhận mật khẩu *""**
+8. Click **""Gửi mã xác thực""**
+9. Open `giabao55407@gmail.com`, enter the 6-digit OTP on `/verify-otp`, and click verify","First: Vũ, Last: Bảo, Gender: Nam, DOB: 16/02/2006, Phone: 0358184222, Email: giabao55407@gmail.com, Password: 123456","1. After clicking **""Gửi mã xác thực""**, the system sends a 6-digit OTP email to `giabao55407@gmail.com` and redirects to `/verify-otp`.
+2. After entering the valid 6-digit OTP and confirming, the system displays `""Xác thực email thành công. Tài khoản đã được tạo.""` and creates a new `Storage Customer` account (`Active`).","","","Thanh vien 1",""
 "TC002","Đăng ký & OTP","Kiểm tra bỏ trống Họ và Tên khi đăng ký","Đang ở `/register`","1. Để trống ô Họ hoặc Tên
 2. Nhập các trường còn lại hợp lệ
 3. Bấm ""Gửi mã xác thực""","Họ: """", Tên: ""An""","Hệ thống chặn gửi và hiển thị thông báo lỗi yêu cầu nhập họ và tên","","","Thanh vien 1",""
