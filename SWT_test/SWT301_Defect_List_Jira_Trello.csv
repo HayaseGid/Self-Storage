@@ -1,18 +1,19 @@
 ﻿"Defect ID","Related TC","Module","Summary (Tiêu đề lỗi)","Severity","Priority","Steps to Reproduce","Expected Result","Actual Result","Assignee","Status"
-"BUG-001","TC001","Đăng ký & OTP","Gửi OTP đăng ký qua Gmail SMTP bị treo quá 20s và timeout khi deploy lên Render Free","Critical","High","1. Mở trang `/register` trên bản web
-2. Nhập đủ thông tin và bấm ""Gửi mã xác thực""","Gửi email OTP thành công trong 1–2s và chuyển sang `/verify-otp`","Render Free chặn cổng SMTP 587 khiến request treo quá 20s và báo ""Máy chủ phản hồi quá lâu""","Thành viên 1","Closed *(Đã chuyển sang Brevo API)*"
-"BUG-002","TC002","Đăng ký & OTP","Nhập toàn khoảng trắng vào ô Họ và Tên vẫn vượt qua validation phía trình duyệt trước khi gọi API","Minor","Low","1. Vào `/register`
-2. Nhập `""   ""` vào ô Họ, `""   ""` vào ô Tên
-3. Bấm gửi","Thông báo lỗi ngay ở frontend không cần gửi request","Frontend trim nhưng vẫn cần kiểm tra nhất quán trước khi submit","Thành viên 1","Open"
-"BUG-003","TC015","Đăng ký & OTP","Nút ""Gửi lại mã"" ở `/verify-otp` khi F5 lại trang bị reset bộ đếm 60s trên UI dù backend vẫn chặn 429","Minor","Medium","1. Gửi OTP -> sang `/verify-otp`
-2. Nhấn F5 tải lại trang trước khi hết 60s
-3. Bấm ""Gửi lại mã""","UI vẫn hiển thị đúng thời gian đếm ngược còn lại","UI cho bấm nút và hiện thông báo lỗi 429 từ backend","Thành viên 1","Open"
-"BUG-004","TC034","Đăng nhập & Quyền","Token hết hạn khi đang ở trang `/account` chỉ chuyển về `/login` sau khi gọi API mới","Minor","Low","1. Để JWT hết hạn trong `localStorage`
-2. Thao tác trên tab đang mở","Tự động phát hiện và chuyển về `/login` kèm thông báo rõ ràng","Chỉ chuyển về `/login` khi người dùng bấm nút gọi API nhận 401 `TOKEN_INVALID`","Thành viên 1","Closed"
-"BUG-005","TC042","Admin - Cơ sở","Thông báo lỗi khi tạo trùng Mã chi nhánh (Prefix) chưa nêu rõ mã bị trùng","Minor","Low","1. Vào `/admin` tạo cơ sở mới với mã `TD` đã tồn tại
-2. Bấm Lưu","Báo rõ: ""Mã chi nhánh 'TD' đã được sử dụng""","Hiển thị thông báo lỗi chung từ cơ sở dữ liệu","Thành viên 1","Open"
-"BUG-006","TC048","Admin - Kích thước","Ô nhập Diện tích / Giá thuê cho phép gõ ký tự `e` hoặc dấu `-` trên trình duyệt","Minor","Low","1. Mở form tạo Kích thước kho
-2. Gõ `-100` hoặc `1e5` vào ô nhập số","Chặn nhập số âm hoặc ký tự chữ","Input `type=""number""` vẫn cho gõ trước khi submit","Thành viên 1","Open"
+"BUG-001","TC001","Module1 - Auth & Admin","Sending the registration OTP via Gmail SMTP hangs for more than 20s and times out on Render Free","Critical","High","1. Open /register on the deployed web app
+2. Fill in valid information and click ""Gửi mã xác thực""","The OTP email is sent within 1-2s and the user is redirected to /verify-otp","Render Free blocks SMTP port 587, the request hangs for more than 20s and shows ""Máy chủ phản hồi quá lâu""","Lê Hữu Hoàng Anh","Closed (switched to Brevo API)"
+"BUG-002","TC002","Module1 - Auth & Admin","First/Last Name containing only spaces passes the browser validation before the API is called","Minor","Low","1. Go to /register
+2. Enter ""   "" into ""Họ *"" and ""   "" into ""Tên *""
+3. Click ""Gửi mã xác thực""","A field-level error is shown immediately, without submitting","The error ""Vui lòng nhập họ và tên."" only appears after the frontend trims the values on submit","Lê Hữu Hoàng Anh","Open"
+"BUG-003","TC015","Module1 - Auth & Admin","Pressing F5 on /verify-otp resets the 60s resend countdown on the UI although the backend still returns 429","Minor","Medium","1. Send the OTP and go to /verify-otp
+2. Press F5 before 60 seconds have passed
+3. Click ""Gửi lại mã""","The UI keeps showing the correct remaining countdown","The button is enabled and the backend 429 error is shown","Lê Hữu Hoàng Anh","Open"
+"BUG-004","TC034","Module1 - Auth & Admin","An expired token on /account only redirects to /login after a new API call","Minor","Low","1. Let the JWT in localStorage expire
+2. Keep using the open tab","The app detects it and redirects to /login with a clear message","Redirects to /login only when an API call returns 401 TOKEN_INVALID","Lê Hữu Hoàng Anh","Closed"
+"BUG-005","TC042","Module1 - Auth & Admin","The duplicated branch code (Prefix) error does not say which code is duplicated","Minor","Low","1. Log in as Business Operations Manager
+2. Create a new facility with branch code ""TD"" (already used)
+3. Click Save","Clear message: ""Mã chi nhánh 'TD' đã được sử dụng.""","Only ""Mã chi nhánh đã được sử dụng."" is shown, without the duplicated code","Lê Hữu Hoàng Anh","Open"
+"BUG-006","TC048","Module1 - Auth & Admin","Area / rental price inputs allow typing ""e"" or ""-"" in the browser","Minor","Low","1. Open the Unit Size form
+2. Type ""-100"" or ""1e5"" into a number field","Negative numbers and letters cannot be entered","The type=""number"" input accepts them before submit","Lê Hữu Hoàng Anh","Open"
 "BUG-007","TC066","Catalog & Lọc","Khi lọc nhiều điều kiện không có kho phù hợp, bố cục khung sơ đồ bị thu hẹp đột ngột","Minor","Low","1. Vào trang Tìm kho
 2. Chọn tổ hợp lọc không có kho nào khớp","Khung hiển thị giữ chiều cao ổn định với thông báo rỗng căn giữa","Khung co lại sát thanh lọc gây giật giao diện","Thành viên 2","Open"
 "BUG-008","TC075","Giỏ hàng & Giữ chỗ","Khách chưa đăng nhập bấm Thanh toán từ Giỏ hàng không hiển thị nhắc nhở giữ chỗ chỉ có hiệu lực 15p sau khi tạo đơn","Minor","Low","1. Thêm kho vào giỏ khi chưa đăng nhập
@@ -48,3 +49,13 @@
 2. Gõ `300.000` vào ô Phí bồi thường","Tự loại bỏ dấu chấm hoặc hướng dẫn nhập số liền `300000`","Input số không nhận giá trị có dấu phân cách","Thành viên 4","Open"
 "BUG-024","TC214","Trả kho (Move-Out)","Trang chi tiết đơn đã hoàn tất trả kho (`Completed`) chưa hiển thị link tải biên bản kiểm định trả kho dạng PDF","Minor","Low","1. Hoàn tất kiểm định trả kho có khấu trừ phí hư hại
 2. Khách vào xem lại đơn đã trả","Có nút In/Xuất biên bản kiểm định & hoàn cọc","Chỉ hiển thị bảng tóm tắt số tiền hoàn cọc","Thành viên 4","Open"
+"BUG-025","TC063, TC049, TC050","Module2 - Booking & Payment","Long-term discount price band is not applied when the customer selects a 6- or 12-month term","Major","Medium","1. Log in as Customer and add unit TD-U04 (1,000,000 VND/month) to the cart
+2. Open /cart
+3. Select 6 months, then 12 months
+4. Compare the monthly price with the list price","The monthly price is reduced according to the configured long-term price band","The monthly price stays at the list price for every term; there is no discount setting in Price Bands (frontend discountFor() returns 0; backend DiscountRate = 0)","Member 2","Open"
+"BUG-026","TC082","Module2 - Booking & Payment","No advance-booking limit: a start date years in the future is accepted","Major","Medium","1. Log in as Customer and open the cart with TD-U01
+2. Select a start date more than 1 year ahead (e.g. 13/11/2027)
+3. Click ""Book / Hold unit""","The system rejects the date as beyond the allowed advance-booking period","The calendar allows dates up to 31/12 of the current year + 5 and the backend creates the reservation (201 Created)","Member 2","Open"
+"BUG-027","TC028","Module1 - Auth & Admin","Login with a Locked account shows a misleading ""no permission"" message instead of ""account locked""","Minor","Medium","1. System Administrator locks staff2@test.com
+2. Go to /login
+3. Log in with staff2@test.com / 123456","The page says the account is deactivated/locked (""Tài khoản chưa được kích hoạt hoặc đã bị khóa."")","The backend returns 403 Forbid() with no body, so the page shows ""Tài khoản của bạn không có quyền thực hiện thao tác này.""","Lê Hữu Hoàng Anh","Open"
