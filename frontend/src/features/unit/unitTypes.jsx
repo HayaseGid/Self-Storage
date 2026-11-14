@@ -4,7 +4,7 @@
  * Cung cấp: màu, icon, tên tiếng Việt, mô tả ngắn, ảnh minh họa cho từng loại kho
  * (Kho lạnh, Kho mát, Kho tiêu chuẩn, Kho trong nhà, Kho xe vào tận nơi, Kho khác) và phân hạng kích thước
  * (Nhỏ / Vừa / Lớn / Rất lớn). Tên loại kho trong database là tiếng Anh, getUnitTypeKey() nhận diện theo từ khóa.
- * Ảnh thật nằm ở frontend/public/unit-types/ (Unsplash, giấy phép miễn phí), khai báo trong trường `photos`.
+ * Muốn dùng ảnh thật: đặt ảnh vào frontend/public/unit-types/ và điền trường `photo`.
  * Không gọi API. Dùng ở: App.jsx, CartPage, CustomerAccount, FacilityManagerAccount, BusinessPanels, Unit3DViewer...
  * ======================================================================
  */
@@ -18,9 +18,9 @@ import React, { useId } from 'react'
  * Basic Unit, Indoor Unit...). Hàm getUnitTypeKey() nhận diện theo từ khóa nên
  * vẫn chạy đúng nếu sau này đổi tên hoặc thêm loại (ví dụ "Kho lạnh").
  *
- * ẢNH THẬT: mỗi loại có danh sách `photos` (ảnh trong frontend/public/unit-types/).
- * Mỗi kho chọn 1 ảnh trong danh sách theo mã kho, nên các kho cùng loại ít bị trùng ảnh.
- * Để mảng rỗng thì giao diện dùng ảnh minh họa vẽ sẵn.
+ * MUỐN DÙNG ẢNH THẬT: đặt ảnh vào frontend/public/unit-types/ rồi điền đường dẫn
+ * vào trường `photo` của loại tương ứng, ví dụ photo: '/unit-types/cold.jpg'.
+ * Để null thì giao diện dùng ảnh minh họa vẽ sẵn (không phụ thuộc mạng).
  */
 
 export const UNIT_TYPE_STYLES = {
@@ -33,7 +33,7 @@ export const UNIT_TYPE_STYLES = {
     color: '#1d5fd1',
     soft: '#e6efff',
     gradient: ['#cfe2ff', '#8fb8f7'],
-    photos: ['/unit-types/cold-1.jpg', '/unit-types/cold-2.jpg', '/unit-types/cold-3.jpg']
+    photo: null
   },
   climate: {
     key: 'climate',
@@ -44,7 +44,7 @@ export const UNIT_TYPE_STYLES = {
     color: '#0f8f86',
     soft: '#e2f6f3',
     gradient: ['#d3f3ee', '#8fd9cf'],
-    photos: ['/unit-types/climate-1.jpg', '/unit-types/climate-2.jpg']
+    photo: null
   },
   basic: {
     key: 'basic',
@@ -55,7 +55,7 @@ export const UNIT_TYPE_STYLES = {
     color: '#c27a00',
     soft: '#fff3d9',
     gradient: ['#fff0c9', '#ffd37a'],
-    photos: ['/unit-types/basic-1.jpg', '/unit-types/basic-2.jpg', '/unit-types/basic-3.jpg', '/unit-types/basic-4.jpg']
+    photo: null
   },
   indoor: {
     key: 'indoor',
@@ -66,7 +66,7 @@ export const UNIT_TYPE_STYLES = {
     color: '#6b4fd6',
     soft: '#efeaff',
     gradient: ['#e7e0ff', '#b9a8f5'],
-    photos: ['/unit-types/indoor-1.jpg', '/unit-types/indoor-2.jpg', '/unit-types/indoor-3.jpg']
+    photo: null
   },
   driveup: {
     key: 'driveup',
@@ -77,7 +77,7 @@ export const UNIT_TYPE_STYLES = {
     color: '#4a5b6d',
     soft: '#eaeff4',
     gradient: ['#e3e9ef', '#aebdcc'],
-    photos: ['/unit-types/driveup-1.jpg', '/unit-types/driveup-2.jpg', '/unit-types/driveup-3.jpg']
+    photo: null
   },
   other: {
     key: 'other',
@@ -88,7 +88,7 @@ export const UNIT_TYPE_STYLES = {
     color: '#075a9f',
     soft: '#e9f5ff',
     gradient: ['#e2f0fd', '#a9cdef'],
-    photos: ['/unit-types/other-1.jpg', '/unit-types/other-2.jpg']
+    photo: null
   }
 }
 
@@ -259,37 +259,23 @@ export function SizeMeter({ size }) {
   )
 }
 
-/* Chọn 1 ảnh trong danh sách theo mã kho (cùng mã luôn ra cùng ảnh). */
-function pickUnitPhoto(photos, unitCode) {
-  if (!photos || photos.length === 0) return null
-  const code = String(unitCode || '')
-  let hash = 0
-  for (let i = 0; i < code.length; i++) hash = (hash * 31 + code.charCodeAt(i)) >>> 0
-  return photos[hash % photos.length]
-}
-
 /*
  * Ảnh minh họa của kho: cửa cuốn kho có độ rộng theo hạng kích thước,
- * nền và biểu tượng theo loại kho. Nếu loại kho có `photos` thì dùng ảnh thật.
+ * nền và biểu tượng theo loại kho. Nếu loại kho có `photo` thì dùng ảnh thật.
  */
 /**
  * Component ảnh minh họa kho (SVG): mặt tiền + cửa cuốn có độ rộng theo hạng kích thước, màu theo loại,
- * có biển số kho; nếu loại có `photos` thì hiện ảnh thật (chọn theo mã kho) kèm biển số kho.
+ * có biển số kho; nếu loại có `photo` thì hiện ảnh thật.
  * @param {object} props type, size, unitCode, className.
  */
 export function UnitTypeArt({ type, size, unitCode, className = '' }) {
   const style = getUnitTypeStyle(type)
   const info = parseUnitSize(size)
   const reactId = useId()
-  const photo = pickUnitPhoto(style.photos, unitCode)
-  if (photo) {
+  if (style.photo) {
     return (
       <div className={`ut-art ut-art-photo ${className}`.trim()}>
-        <img src={photo} alt={`${style.label}${unitCode ? ` ${unitCode}` : ''}`} loading="lazy" />
-        {unitCode && <span className="ut-art-code" style={{ color: style.color }}>{unitCode}</span>}
-        <span className="ut-art-icon" style={{ color: style.color }}>
-          <UnitTypeIcon typeKey={style.key} size={22} />
-        </span>
+        <img src={style.photo} alt={`${style.label}${unitCode ? ` ${unitCode}` : ''}`} loading="lazy" />
       </div>
     )
   }
