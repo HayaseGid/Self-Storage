@@ -55,6 +55,10 @@ import PaymentResultPage from './pages/payment/PaymentResultPage'
 import DepositConfirm from './features/payment/DepositConfirm'
 import FacilityFloorPlan from './features/facility/FacilityFloorPlan'
 import Unit3DViewer from './features/unit/Unit3DViewer'
+import { boxRequests } from './utils/packing'
+import { countsFromParams, loadBoxCounts, normalizeBoxCounts, saveBoxCounts, writeCountsParams } from './features/unit/boxCounts'
+import ItemCountsInput from './features/unit/ItemCountsInput'
+import { useBoxFit } from './features/unit/useBoxFit'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './api/vnpay'
 import DemoClockWidget from './demoClock/DemoClockWidget'
 import { getTodayDate } from './demoClock/demoClock'
@@ -907,6 +911,8 @@ function FacilityDetailPage({ facility }) {
             highlightIds={filteredUnits.length === units.length ? null : new Set(filteredUnits.map(unit => unit.id))}
             onOpenDetail={unit => navigate(getUnitPath(facility, unit))}
             onBook={unit => navigate(getBookingPath(facility, unit))}
+            otherUnits={facilities.filter(f => f.facilityId !== facility.facilityId).flatMap(f => getStorageUnits(f.name).map(u => ({ facility: f, unit: u })))}
+            onOpenOther={(f, picked) => navigate(getUnitPath(f, picked))}
           />
           <div className="cart-note" role="note" style={{ margin: '18px 0', padding: '14px 16px', borderRadius: 12, background: '#eef5ff', border: '1px solid #c9dcf7' }}>
             <strong>Cần kho lớn hơn các kho đang có, hoặc kích thước đặc biệt?</strong>{' '}
@@ -1020,7 +1026,18 @@ function UnitDetailPage({ facility, unit }) {
               </div>
             </div>
           </div>
-          {show3D && <Unit3DViewer unit={unit} facilityName={facility.name} onClose={() => setShow3D(false)} onBook={unit.available ? () => { setShow3D(false); handleBookClick() } : null} />}
+          {show3D && (
+            <Unit3DViewer
+              unit={unit}
+              facilityName={facility.name}
+              units={getStorageUnits(facility.name)}
+              otherUnits={facilities.filter(f => f.facilityId !== facility.facilityId).flatMap(f => getStorageUnits(f.name).map(u => ({ facility: f, unit: u })))}
+              onOpenOther={(f, picked) => { setShow3D(false); navigate(getUnitPath(f, picked)) }}
+              onClose={() => setShow3D(false)}
+              onOpenDetail={picked => { setShow3D(false); if (picked.id !== unit.id) navigate(getUnitPath(facility, picked)) }}
+              onBook={picked => { setShow3D(false); if (picked.id === unit.id) handleBookClick(); else navigate(getBookingPath(facility, picked)) }}
+            />
+          )}
           <section className="unit-detail-description"><span className="customer-eyebrow">ABOUT THIS UNIT</span><h2>Thông tin về kho</h2><p>{getUnitTypeStyle(unit.type).label} ({unit.type}) tại {facility.name} phù hợp cho nhu cầu lưu trữ cá nhân, hồ sơ, đồ gia dụng và các vật dụng cần không gian riêng biệt. Kho được quản lý và kiểm soát ra vào theo tiêu chuẩn của StoreSpace.</p></section>
         </div>
       </main>
@@ -1947,8 +1964,14 @@ function SearchPage() {
     size: params.get('size') || '',
     price: params.get('price') || '',
     // Mặc định chỉ hiện kho còn trống; khách có thể xem cả kho đang được thuê.
-    all: params.get('all') === '1'
+    all: params.get('all') === '1',
+    // Đồ khách cần gửi (?items=box-m.500,fridge.1&cs=50x40x30): chỉ hiện kho xếp vừa.
+    boxes: countsFromParams(params)
   }
+  const boxTotal = boxRequests(filters.boxes).total
+  const [boxDraft, setBoxDraft] = useState(() => (boxTotal ? filters.boxes : loadBoxCounts()))
+  // Kho xếp vừa số thùng (ước tính ngay, rồi xếp thử thật trong Web Worker; đã chừa lối đi 80 cm).
+  const boxFit = useBoxFit(facilities.flatMap(facility => getStorageUnits(facility.name)), filters.boxes)
   const [query, setQuery] = useState(initial)
   const catalogTypeKeys = getCatalogTypeKeys()
   const districtGroups = getDistrictGroups()
@@ -1964,6 +1987,7 @@ function SearchPage() {
     if (next.size) qs.set('size', next.size)
     if (next.price) qs.set('price', next.price)
     if (next.all) qs.set('all', '1')
+    if (next.boxes) writeCountsParams(qs, next.boxes)
     const text = qs.toString()
     return text ? `/search?${text}` : '/search'
   }
@@ -1980,6 +2004,7 @@ function SearchPage() {
     if (ignore !== 'type' && filters.type && getUnitTypeKey(unit.type) !== filters.type) return false
     if (ignore !== 'size' && filters.size && parseUnitSize(unit.size).sizeClass.key !== filters.size) return false
     if (ignore !== 'price' && priceRule && !priceRule.match(unit.price)) return false
+    if (ignore !== 'boxes' && boxTotal && !boxFit.fits(unit)) return false
     if (keyword) {
       const text = `${unit.id} ${unit.type} ${getUnitTypeStyle(unit.type).label} ${unit.size} ${facility.name} ${facility.location} ${facility.district?.label || ''}`.toLowerCase()
       if (!text.includes(keyword)) return false
@@ -1999,7 +2024,14 @@ function SearchPage() {
   // Đếm số kho khớp các bộ lọc còn lại và điều kiện predicate (hiện số trên từng chip lọc).
   const countWith = (ignore, predicate) => facilities.reduce((n, facility) =>
     n + getStorageUnits(facility.name).filter(unit => unitMatches(facility, unit, ignore) && predicate(facility, unit)).length, 0)
-  const hasFilter = filters.q || filters.type || activeDistrict || filters.size || filters.price
+  const hasFilter = filters.q || filters.type || activeDistrict || filters.size || filters.price || boxTotal
+  // Áp dụng bộ lọc số thùng (và nhớ lại cho cửa sổ xem kho 3D).
+  const applyBoxes = e => {
+    e.preventDefault()
+    const next = normalizeBoxCounts(boxDraft)
+    saveBoxCounts(next)
+    go({ boxes: next })
+  }
 
   // Gửi ô tìm kiếm: cập nhật từ khóa trên URL.
   const submit = e => {
@@ -2078,6 +2110,19 @@ function SearchPage() {
                 </div>
               </div>
             </div>
+            <div className="search-filter-label">Đồ bạn cần gửi</div>
+            <form className="search-box-filter" onSubmit={applyBoxes}>
+              <ItemCountsInput counts={boxDraft} onChange={setBoxDraft} />
+              <button type="submit" className="dashboard-primary-btn">Lọc kho xếp vừa</button>
+              {boxTotal > 0 && <button type="button" className="inline-link" onClick={() => go({ boxes: null })}>Bỏ lọc theo đồ</button>}
+            </form>
+            {boxTotal > 0 && (
+              <p className="search-box-note">
+                {boxFit.pending
+                  ? `Đang xếp thử ${boxTotal.toLocaleString('vi-VN')} món vào từng cỡ kho… Kết quả tạm thời là ước tính theo thể tích.`
+                  : `Chỉ hiện kho xếp vừa ${boxTotal.toLocaleString('vi-VN')} món (đã chừa lối đi 80 cm).`}
+              </p>
+            )}
             <label className="search-available-toggle">
               <input type="checkbox" checked={!filters.all} onChange={e => go({ all: !e.target.checked })} />
               Chỉ hiện kho còn trống
@@ -2095,6 +2140,7 @@ function SearchPage() {
               {filters.type && <> loại <strong>{UNIT_TYPE_STYLES[filters.type].label}</strong>;</>}
               {filters.size && <> kích thước <strong>{SIZE_FILTERS.find(i => i.value === filters.size)?.label}</strong>;</>}
               {priceRule && <> giá <strong>{priceRule.label}</strong>;</>}
+              {boxTotal > 0 && <> xếp vừa <strong>{boxTotal.toLocaleString('vi-VN')} món</strong>;</>}
               {filters.q && <> từ khóa <strong>“{filters.q}”</strong></>}
             </div>
           )}

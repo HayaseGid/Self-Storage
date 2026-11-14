@@ -7,12 +7,15 @@
  * Không gọi API. Dùng ở: App.jsx (trang chi tiết cơ sở), FacilityFloorPlan.
  * ======================================================================
  */
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { getUnitTypeStyle } from './unitTypes'
 import { formatVnd } from '../../services/storageRules'
 import { formatMeters, unitGeometry, unitPlanStatus } from '../../utils/unitGeometry'
 import './Unit3DViewer.css'
 import { PackPlanner, SampleRoom } from './UnitPackPlanner'
+import { gridCapacity, itemType } from '../../utils/packing'
+import { loadBoxCounts, saveBoxCounts } from './boxCounts'
+import { useBoxFit } from './useBoxFit'
 import './UnitPackPlanner.css'
 
 /*
@@ -30,15 +33,43 @@ const DEFAULT_VIEW = { ry: -38, rx: -24, zoom: 1 }
 
 /**
  * Component cửa sổ xem kho 3D.
- * @param {object} props unit (kho), facilityName, onClose, onOpenDetail(unit) (mở chi tiết kho),
- *   onBook(unit) (đặt kho — chỉ hiện khi kho còn trống).
+ * @param {object} props unit (kho mở ban đầu), facilityName, onClose, onOpenDetail(unit) (mở chi tiết kho),
+ *   onBook(unit) (đặt kho — chỉ hiện khi kho còn trống), units (các kho cùng cơ sở, để gợi ý kho vừa đồ của khách),
+ *   otherUnits ([{ facility, unit }] kho ở cơ sở khác, gợi ý khi cơ sở này không có kho vừa),
+ *   onOpenOther(facility, unit) (mở trang kho ở cơ sở khác).
  */
-export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail, onBook }) {
+export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose, onOpenDetail, onBook, units = [], otherUnits = [], onOpenOther }) {
+  // Kho đang xem: ban đầu là kho được mở, đổi khi khách bấm một kho được gợi ý ở sidebar.
+  const [unit, setUnit] = useState(initialUnit)
+  const [counts, setCounts] = useState(loadBoxCounts) // nhớ số thùng khách đã nhập (trong tab đang mở)
+  const [aisleOn, setAisleOn] = useState(true)
+  const [autoRun, setAutoRun] = useState(false)
+  const [packSlot, setPackSlot] = useState(null) // ô ở cột phải để PackPlanner vẽ danh sách đồ + nhập số thùng
+  const [mode, setMode] = useState('empty') // empty | sample | pack
+  useEffect(() => { saveBoxCounts(counts) }, [JSON.stringify(counts)])
+  // Chỉ tính gợi ý khi đang ở tab "Tự xếp thùng" (tab khác truyền danh sách rỗng -> không chạy worker).
+  const packActive = mode === 'pack'
+  // Kho còn trống trong cơ sở xếp vừa đồ của khách (ước tính ngay, rồi xếp thử thật trong Web Worker), rẻ nhất trước.
+  const freeUnits = units.filter(u => unitPlanStatus(u) === 'free')
+  const fit = useBoxFit(packActive ? freeUnits : [], counts, aisleOn)
+  const fitResults = freeUnits
+    .filter(fit.fits)
+    .map(u => ({ unit: u, geo: unitGeometry(u), usedPct: fit.usedPctOf(u) }))
+    .sort((a, b) => a.unit.price - b.unit.price || a.geo.volume - b.geo.volume)
+  // Cơ sở này không có kho vừa -> tìm ở cơ sở khác.
+  const otherFree = otherUnits.filter(x => unitPlanStatus(x.unit) === 'free')
+  const needOther = packActive && fit.total > 0 && !fit.pending && fitResults.length === 0 && otherFree.length > 0
+  const otherFit = useBoxFit(needOther ? otherFree.map(x => x.unit) : [], counts, aisleOn)
+  const otherResults = needOther
+    ? otherFree
+      .filter(x => otherFit.fits(x.unit))
+      .map(x => ({ ...x, geo: unitGeometry(x.unit) }))
+      .sort((a, b) => a.unit.price - b.unit.price || a.geo.volume - b.geo.volume)
+    : []
   const geo = unitGeometry(unit)
   const status = unitPlanStatus(unit)
   const typeStyle = getUnitTypeStyle(unit.type)
   const [view, setView] = useState(DEFAULT_VIEW)
-  const [mode, setMode] = useState('empty') // empty | sample | pack
   const drag = useRef(null)
   const sceneRef = useRef(null)
   const closeRef = useRef(null)
@@ -118,7 +149,7 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
 
   return (
     <div className="u3d-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-      <div className="u3d-modal" role="dialog" aria-modal="true" aria-labelledby="u3d-title">
+      <div className={`u3d-modal${mode === 'pack' ? ' is-pack' : ''}`} role="dialog" aria-modal="true" aria-labelledby="u3d-title">
         <div className="u3d-head">
           <div>
             <span className={`u3d-status ${status}`}>{STATUS_TEXT[status]}</span>
@@ -136,7 +167,21 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
 
         <div className={`u3d-body mode-${mode}`}>
           {mode === 'sample' && <div className="u3d-three"><SampleRoom geo={geo} color={typeStyle.color || '#075a9f'} /></div>}
-          {mode === 'pack' && <div className="u3d-three"><PackPlanner geo={geo} color={typeStyle.color || '#075a9f'} /></div>}
+          {mode === 'pack' && (
+            <div className="u3d-three">
+              <PackPlanner
+                key={unit.id}
+                geo={geo}
+                color={typeStyle.color || '#075a9f'}
+                counts={counts}
+                onCountsChange={next => { setCounts(next); setAutoRun(false) }}
+                aisleOn={aisleOn}
+                onAisleChange={setAisleOn}
+                autoRun={autoRun}
+                slot={packSlot}
+              />
+            </div>
+          )}
           {mode === 'empty' && (
           <div
             ref={sceneRef}
@@ -192,6 +237,7 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
           )}
 
           <aside className="u3d-info">
+            {mode === 'pack' && <div ref={setPackSlot} className="u3d-pack-slot" />}
             <dl>
               <div><dt>Kích thước (rộng × dài)</dt><dd>{formatMeters(geo.width)} × {formatMeters(geo.length)}</dd></div>
               <div><dt>Diện tích</dt><dd>{geo.area.toLocaleString('vi-VN')} m²</dd></div>
@@ -201,6 +247,57 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
               <div><dt>Giá thuê</dt><dd>{formatVnd(unit.price)}đ/tháng</dd></div>
             </dl>
             <p className="u3d-hint">{hintFor(geo)}</p>
+            {mode === 'pack' && units.length > 0 && (
+              <section className="u3d-fit" aria-live="polite">
+                <h3>Kho vừa với đồ của bạn</h3>
+                {!fit.total && <p>Nhập số thùng / đồ ở khung phía trên để xem kho nào trong cơ sở xếp vừa.</p>}
+                {fit.total > 0 && fit.pending && !fitResults.length && <p>Đang xếp thử {fit.total.toLocaleString('vi-VN')} món vào các kho còn trống…</p>}
+                {fit.total > 0 && !fit.pending && !fitResults.length && <p>Không kho trống nào ở cơ sở này chứa đủ {fit.total.toLocaleString('vi-VN')} món{aisleOn ? ' (đã chừa lối đi)' : ''}.</p>}
+                {needOther && otherFit.pending && !otherResults.length && <p>Đang tìm kho vừa ở cơ sở khác…</p>}
+                {needOther && !otherFit.pending && !otherResults.length && <p>Các cơ sở khác cũng chưa có kho trống đủ chỗ. Thử bớt đồ.</p>}
+                {otherResults.length > 0 && (
+                  <>
+                    <p className="u3d-fit-sub">Kho {otherFit.estimated ? 'ước tính vừa' : 'xếp vừa'} ở cơ sở khác, rẻ nhất ở trên:</p>
+                    <ul>
+                      {otherResults.slice(0, 5).map(item => (
+                        <li key={`${item.facility.facilityId}-${item.unit.id}`}>
+                          <button type="button" disabled={!onOpenOther} onClick={() => onOpenOther?.(item.facility, item.unit)}>
+                            <strong>Kho {item.unit.id}</strong>
+                            <em>{formatVnd(item.unit.price)}đ/th</em>
+                            <small>{item.facility.name}</small>
+                            <small>{formatMeters(item.geo.width)} × {formatMeters(item.geo.length)}</small>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {otherResults.length > 5 && <span className="u3d-fit-more">và {otherResults.length - 5} kho khác.</span>}
+                  </>
+                )}
+                {fit.total > 0 && fitResults.length > 0 && (
+                  <>
+                    <p>{fitResults.length} kho còn trống {fit.estimated ? 'ước tính chứa được' : 'xếp vừa'} {fit.total.toLocaleString('vi-VN')} món{aisleOn ? ', đã chừa lối đi' : ''}. Rẻ nhất ở trên:</p>
+                    {fit.pending && <p className="u3d-fit-pending">Đang xếp thử để kiểm tra chính xác…</p>}
+                    <ul>
+                      {fitResults.slice(0, 6).map(item => (
+                        <li key={item.unit.id}>
+                          <button
+                            type="button"
+                            className={item.unit.id === unit.id ? 'current' : ''}
+                            onClick={() => { if (item.unit.id !== unit.id) { setUnit(item.unit); setAutoRun(true) } }}
+                          >
+                            <strong>Kho {item.unit.id}</strong>
+                            <em>{formatVnd(item.unit.price)}đ/th</em>
+                            <small>{formatMeters(item.geo.width)} × {formatMeters(item.geo.length)} · {getUnitTypeStyle(item.unit.type).label}</small>
+                            <small>{item.unit.id === unit.id ? 'Đang xem' : `dùng ~${item.usedPct}%`}</small>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {fitResults.length > 6 && <span className="u3d-fit-more">và {fitResults.length - 6} kho lớn hơn khác.</span>}
+                  </>
+                )}
+              </section>
+            )}
             {mode === 'empty' && <div className="u3d-controls" role="group" aria-label="Điều khiển góc nhìn">
               <button type="button" onClick={() => setView(v => ({ ...v, ry: v.ry - 30 }))} aria-label="Xoay trái">⟲</button>
               <button type="button" onClick={() => setView(v => ({ ...v, ry: v.ry + 30 }))} aria-label="Xoay phải">⟳</button>
@@ -226,9 +323,11 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
  */
 function hintFor(geo) {
   if (geo.band === 'V') return 'Phù hợp gửi ô tô / xe máy, có lối vào rộng.'
-  if (geo.isLocker) return 'Tủ nhỏ: vali, thùng giấy, hồ sơ, đồ dùng cá nhân.'
-  if (geo.area <= 5) return 'Khoảng 20–30 thùng giấy hoặc đồ đạc của một phòng nhỏ.'
-  if (geo.area <= 10) return 'Đồ đạc căn hộ 1 phòng ngủ: giường, tủ, bàn ghế, thùng đồ.'
-  if (geo.area <= 20) return 'Đồ đạc căn hộ 2–3 phòng ngủ hoặc hàng hóa kinh doanh nhỏ.'
-  return 'Đồ đạc cả căn nhà, hàng hóa, thiết bị văn phòng.'
+  const boxes = gridCapacity({ w: geo.width, h: geo.height, l: geo.length }, itemType('box-m'))
+  const use = geo.isLocker ? 'vali, thùng giấy, hồ sơ, đồ dùng cá nhân'
+    : geo.area <= 5 ? 'đồ đạc của một phòng nhỏ'
+      : geo.area <= 10 ? 'đồ đạc căn hộ 1 phòng ngủ: giường, tủ, bàn ghế, thùng đồ'
+        : geo.area <= 20 ? 'đồ đạc căn hộ 2–3 phòng ngủ hoặc hàng hóa kinh doanh nhỏ'
+          : 'đồ đạc cả căn nhà, hàng hóa, thiết bị văn phòng'
+  return `Chất kín được khoảng ${boxes.toLocaleString('vi-VN')} thùng vừa (60×40×40 cm), chưa chừa lối đi. Phù hợp ${use}.`
 }

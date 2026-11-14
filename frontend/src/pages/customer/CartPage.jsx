@@ -403,7 +403,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
       <div className="container">
         <button
           type="button"
-          className="booking-back-link"
+          className="back-link"
           onClick={() => {
             if (step === 'payment') {
               cancelOrder()

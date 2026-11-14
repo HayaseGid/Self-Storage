@@ -4168,3 +4168,13 @@ img { display: block; width: 100%; }
 .vnpay-steps li::before { content: counter(vnp); grid-row: span 2; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: #075a9f; color: #fff; font-size: 13px; font-weight: 800; }
 .vnpay-steps strong { color: #073d70; font-size: 14px; }
 .vnpay-steps span { color: #6d849b; font-size: 12.5px; line-height: 1.5; }
+
+/* Trang Tìm kho: bộ lọc "Số thùng của bạn" */
+.search-box-filter { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 0 0 8px; }
+.search-box-filter .ici { flex: 1 1 520px; max-width: 760px; }
+.search-box-filter .ici input { width: 100%; height: 36px; }
+.search-box-filter label { display: grid; gap: 4px; color: #23475e; font-size: 12.5px; font-weight: 700; }
+.search-box-filter label small { color: #8197ab; font-weight: 500; }
+.search-box-filter input { width: 110px; height: 40px; padding: 0 12px; border: 1px solid #d6e4ef; border-radius: 10px; background: #fff; font: inherit; }
+.search-box-filter .dashboard-primary-btn { min-height: 40px; }
+.search-box-note { margin: 0 0 14px; color: #4f6880; font-size: 12.5px; }
