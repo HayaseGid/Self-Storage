@@ -2,14 +2,14 @@
  * ======================================================================
  * FILE: src/features/unit/UnitPackPlanner.jsx  —  2 CHẾ ĐỘ 3D TRONG CỬA SỔ XEM KHO
  * - SampleRoom: kho có đồ mẫu bày sẵn theo cỡ kho (dùng sampleFurniture trong utils/packing.js).
- * - PackPlanner: khách chọn thùng/đồ, tự kéo thả, xoay, chồng lên nhau, hoặc bấm "Tự xếp giúp tôi"
+ * - PackPlanner: khách nhập số thùng thực tế, tự kéo thả, xoay, chồng lên nhau, hoặc bấm "Xếp thử vào kho này"
  *   (thuật toán Extreme Point Best-Fit). Hiển thị % thể tích đã dùng và còn chứa thêm bao nhiêu thùng.
  * Hình 3D vẽ bằng ThreeUnitScene.jsx. Không gọi API.
  * ======================================================================
  */
 import React, { useEffect, useMemo, useState } from 'react'
 import ThreeUnitScene from './ThreeUnitScene'
-import { PACK_ITEMS, aisleZones, autoPack, describeItems, findPosition, itemType, placeAt, remainingCapacity, sampleFurniture, volumeOf } from '../../utils/packing'
+import { BOX_KEYS, EXACT_PACK_LIMIT, PACK_ITEMS, aisleZones, autoPack, boxRequests, describeItems, findPosition, itemType, placeAt, remainingCapacity, sampleFurniture, volumeOf } from '../../utils/packing'
 
 /*
  * 2 chế độ 3D (Three.js) trong khung xem kho:
@@ -49,17 +49,22 @@ export function SampleRoom({ geo, color }) {
 }
 
 /**
- * Component "Tự xếp thùng": cho khách tự thêm/kéo/xoay/xóa đồ trong kho hoặc tự động xếp.
- * @param {{geo:object, color:string}} props
+ * Định dạng thể tích m³ kiểu Việt Nam (2 chữ số thập phân).
  */
-export function PackPlanner({ geo, color }) {
+const fmtM3 = value => Number(value).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
+
+/**
+ * Component "Tự xếp thùng": cho khách tự thêm/kéo/xoay/xóa đồ trong kho hoặc tự động xếp.
+ * Số thùng thực tế (counts) và "chừa lối đi" (aisleOn) do Unit3DViewer giữ, để sidebar gợi ý kho vừa dùng chung.
+ * @param {object} props geo, color, counts { 'box-s', 'box-m', 'box-l' }, onCountsChange(counts),
+ *   aisleOn, onAisleChange(on), autoRun (true = tự xếp ngay khi mở, dùng khi khách chọn kho được gợi ý).
+ */
+export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAisleChange, autoRun = false }) {
   const room = roomOf(geo)
   const roomVolume = room.w * room.h * room.l
   const [items, setItems] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [message, setMessage] = useState(null) // { tone, text }
-  const [counts, setCounts] = useState({ 'box-s': 0, 'box-m': 10, 'box-l': 0 })
-  const [aisleOn, setAisleOn] = useState(true)
   // Danh sách vùng lối đi (khi bật "chừa lối đi").
   const zones = useMemo(() => (aisleOn ? aisleZones(room, { isLocker: geo.isLocker, vehicle: geo.band === 'V' }) : []), [aisleOn, room.w, room.l, room.h, geo.isLocker, geo.band])
   // Ghép danh sách món với các vùng lối đi (để tính va chạm).
@@ -156,29 +161,36 @@ export function PackPlanner({ geo, color }) {
         return
       }
     }
-    setAisleOn(on)
+    onAisleChange(on)
   }
 
   /**
    * "Tự xếp giúp tôi": xếp số thùng nhỏ/vừa/lớn khách nhập bằng autoPack (chọn biến thể tốt nhất),
    * báo số thùng xếp được và % thể tích kho đã dùng.
    */
+  const boxes = boxRequests(counts)
   const runAutoPack = () => {
-    const requests = Object.entries(counts).map(([key, count]) => ({ ...itemType(key), count }))
-    const total = requests.reduce((n, r) => n + (Number(r.count) || 0), 0)
+    const { requests, total } = boxes
     if (!total) {
       setMessage({ tone: 'err', text: 'Nhập số lượng thùng muốn xếp.' })
       return
     }
-    // Thuật toán Extreme Point Best-Fit (Crainic, Perboli & Tadei 2007): thử vài biến thể, giữ cách xếp được nhiều nhất.
-    const { placed, failed } = autoPack(room, requests, zones, { prefer: 'best' })
-    seq.current += placed.length
-    setItems(placed)
-    setSelectedId(null)
-    setMessage(failed.length
-      ? { tone: 'err', text: `Kho này chỉ xếp được ${placed.length}/${total} thùng. ${failed.length} thùng không vừa — nên chọn kho lớn hơn.` }
-      : { tone: 'ok', text: `Đã xếp gọn ${placed.length} thùng, dùng ${fmtPct(pct(volumeOf(placed), roomVolume))} thể tích kho.` })
+    // Báo "đang xếp" trước rồi mới chạy (thuật toán chạy đồng bộ, nhiều thùng có thể mất vài giây).
+    setMessage({ tone: 'ok', text: `Đang xếp ${total.toLocaleString('vi-VN')} thùng${total > EXACT_PACK_LIMIT ? ', số lượng lớn nên có thể mất vài giây' : ''}…` })
+    setTimeout(() => {
+      // Thuật toán Extreme Point Best-Fit (Crainic, Perboli & Tadei 2007): thử vài biến thể, giữ cách xếp được nhiều nhất.
+      // Số thùng lớn thì chỉ chạy 1 biến thể cho nhanh.
+      const { placed, failed } = autoPack(room, requests, zones, { prefer: total > EXACT_PACK_LIMIT ? 'fit' : 'best' })
+      seq.current += placed.length
+      setItems(placed)
+      setSelectedId(null)
+      setMessage(failed.length
+        ? { tone: 'err', text: `Kho này chỉ xếp được ${placed.length}/${total} thùng. ${failed.length} thùng không vừa — nên chọn kho lớn hơn.` }
+        : { tone: 'ok', text: `Đã xếp gọn ${placed.length} thùng, dùng ${fmtPct(pct(volumeOf(placed), roomVolume))} thể tích kho.` })
+    }, 30)
   }
+  // Mở từ gợi ý ở sidebar: xếp luôn số thùng khách đã nhập vào kho vừa chọn.
+  useEffect(() => { if (autoRun) runAutoPack() }, [])
 
   return (
     <div className="upp">
@@ -186,6 +198,28 @@ export function PackPlanner({ geo, color }) {
       <p className="upp-tip">
         Bấm một thùng để chọn rồi bấm loại thùng bên dưới để <strong>chồng lên</strong> nó · kéo thùng đè lên thùng khác để chồng · rê chuột xem kích thước.
       </p>
+
+      <div className="upp-boxes">
+        <div className="upp-boxes-head">
+          <strong>Bạn có bao nhiêu thùng?</strong>
+          <small>Nhập số thùng thực tế. Cột bên phải sẽ gợi ý các kho còn trống xếp vừa.</small>
+        </div>
+        <div className="upp-auto-row">
+          {BOX_KEYS.map(key => (
+            <label key={key}>
+              {itemType(key).name} <small>{itemType(key).size}</small>
+              <input type="number" min="0" step="1" inputMode="numeric" value={counts[key]} onChange={e => onCountsChange({ ...counts, [key]: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} />
+            </label>
+          ))}
+          <button type="button" className="dashboard-primary-btn" onClick={runAutoPack}>Xếp thử vào kho này</button>
+        </div>
+        <p className="upp-boxes-sum">
+          {boxes.total
+            ? <>Tổng <strong>{boxes.total.toLocaleString('vi-VN')} thùng</strong> · <strong>{fmtM3(boxes.volume)} m³</strong> · bằng <strong>{fmtPct(pct(boxes.volume, roomVolume))}</strong> thể tích kho này{boxes.volume > roomVolume ? ' (vượt sức chứa)' : ''}</>
+            : 'Chưa nhập thùng nào.'}
+        </p>
+        <small>Xếp theo thuật toán Extreme Point Best-Fit (Crainic, Perboli & Tadei, 2007): nhét thùng vào khe trống khít nhất, mỗi thùng được đỡ ít nhất 70% đáy, chồng tối đa tới trần{aisleOn ? ', chừa lối đi' : ''}.</small>
+      </div>
 
       <div className="upp-stats" aria-live="polite">
         <div><span>Số món</span><strong>{items.length}</strong></div>
@@ -215,19 +249,6 @@ export function PackPlanner({ geo, color }) {
         )}
       </div>
 
-      <details className="upp-auto">
-        <summary>Tự xếp giúp tôi</summary>
-        <div className="upp-auto-row">
-          {['box-s', 'box-m', 'box-l'].map(key => (
-            <label key={key}>
-              {itemType(key).name} <small>{itemType(key).size}</small>
-              <input type="number" min="0" max="500" value={counts[key]} onChange={e => setCounts(c => ({ ...c, [key]: Math.max(0, Math.min(500, Number(e.target.value) || 0)) }))} />
-            </label>
-          ))}
-          <button type="button" className="dashboard-primary-btn" onClick={runAutoPack}>Xếp thử</button>
-        </div>
-        <small>Xếp theo thuật toán Extreme Point Best-Fit (Crainic, Perboli & Tadei, 2007): nhét thùng vào khe trống khít nhất, mỗi thùng được đỡ ít nhất 70% đáy, chồng tối đa tới trần{aisleOn ? ', chừa lối đi' : ''}.</small>
-      </details>
     </div>
   )
 }

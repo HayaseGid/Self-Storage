@@ -7,12 +7,13 @@
  * Không gọi API. Dùng ở: App.jsx (trang chi tiết cơ sở), FacilityFloorPlan.
  * ======================================================================
  */
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { getUnitTypeStyle } from './unitTypes'
 import { formatVnd } from '../../services/storageRules'
 import { formatMeters, unitGeometry, unitPlanStatus } from '../../utils/unitGeometry'
 import './Unit3DViewer.css'
 import { PackPlanner, SampleRoom } from './UnitPackPlanner'
+import { EXACT_PACK_LIMIT, PACK_EFFICIENCY, aisleZones, autoPack, boxRequests, gridCapacity, itemType, volumeOf } from '../../utils/packing'
 import './UnitPackPlanner.css'
 
 /*
@@ -30,10 +31,16 @@ const DEFAULT_VIEW = { ry: -38, rx: -24, zoom: 1 }
 
 /**
  * Component cửa sổ xem kho 3D.
- * @param {object} props unit (kho), facilityName, onClose, onOpenDetail(unit) (mở chi tiết kho),
- *   onBook(unit) (đặt kho — chỉ hiện khi kho còn trống).
+ * @param {object} props unit (kho mở ban đầu), facilityName, onClose, onOpenDetail(unit) (mở chi tiết kho),
+ *   onBook(unit) (đặt kho — chỉ hiện khi kho còn trống), units (các kho cùng cơ sở, để gợi ý kho vừa số thùng).
  */
-export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail, onBook }) {
+export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose, onOpenDetail, onBook, units = [] }) {
+  // Kho đang xem: ban đầu là kho được mở, đổi khi khách bấm một kho được gợi ý ở sidebar.
+  const [unit, setUnit] = useState(initialUnit)
+  const [counts, setCounts] = useState({ 'box-s': 0, 'box-m': 10, 'box-l': 0 })
+  const [aisleOn, setAisleOn] = useState(true)
+  const [autoRun, setAutoRun] = useState(false)
+  const fit = useFittingUnits(units, counts, aisleOn)
   const geo = unitGeometry(unit)
   const status = unitPlanStatus(unit)
   const typeStyle = getUnitTypeStyle(unit.type)
@@ -136,7 +143,20 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
 
         <div className={`u3d-body mode-${mode}`}>
           {mode === 'sample' && <div className="u3d-three"><SampleRoom geo={geo} color={typeStyle.color || '#075a9f'} /></div>}
-          {mode === 'pack' && <div className="u3d-three"><PackPlanner geo={geo} color={typeStyle.color || '#075a9f'} /></div>}
+          {mode === 'pack' && (
+            <div className="u3d-three">
+              <PackPlanner
+                key={unit.id}
+                geo={geo}
+                color={typeStyle.color || '#075a9f'}
+                counts={counts}
+                onCountsChange={next => { setCounts(next); setAutoRun(false) }}
+                aisleOn={aisleOn}
+                onAisleChange={setAisleOn}
+                autoRun={autoRun}
+              />
+            </div>
+          )}
           {mode === 'empty' && (
           <div
             ref={sceneRef}
@@ -201,6 +221,37 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
               <div><dt>Giá thuê</dt><dd>{formatVnd(unit.price)}đ/tháng</dd></div>
             </dl>
             <p className="u3d-hint">{hintFor(geo)}</p>
+            {mode === 'pack' && units.length > 0 && (
+              <section className="u3d-fit" aria-live="polite">
+                <h3>Kho vừa với số thùng của bạn</h3>
+                {!fit.total && <p>Nhập số thùng ở khung bên trái để xem kho nào trong cơ sở xếp vừa.</p>}
+                {fit.total > 0 && fit.pending && <p>{fit.estimated ? 'Đang ước tính' : 'Đang xếp thử'} {fit.total.toLocaleString('vi-VN')} thùng vào các kho còn trống…</p>}
+                {fit.estimated && !fit.pending && <p>Trên {EXACT_PACK_LIMIT} thùng nên chỉ ước tính theo thể tích (hiệu suất xếp {Math.round(PACK_EFFICIENCY * 100)}%). Bấm một kho rồi "Xếp thử" để xếp thật.</p>}
+                {fit.total > 0 && !fit.pending && !fit.results.length && <p>Không kho trống nào ở cơ sở này chứa đủ {fit.total.toLocaleString('vi-VN')} thùng{aisleOn ? ' (đã chừa lối đi)' : ''}. Thử bớt thùng hoặc xem cơ sở khác.</p>}
+                {fit.total > 0 && !fit.pending && fit.results.length > 0 && (
+                  <>
+                    <p>{fit.results.length} kho còn trống {fit.estimated ? 'ước tính chứa được' : 'xếp vừa'} {fit.total.toLocaleString('vi-VN')} thùng{aisleOn ? ', đã chừa lối đi' : ''}. Rẻ nhất ở trên:</p>
+                    <ul>
+                      {fit.results.slice(0, 6).map(item => (
+                        <li key={item.unit.id}>
+                          <button
+                            type="button"
+                            className={item.unit.id === unit.id ? 'current' : ''}
+                            onClick={() => { if (item.unit.id !== unit.id) { setUnit(item.unit); setAutoRun(true) } }}
+                          >
+                            <strong>Kho {item.unit.id}</strong>
+                            <em>{formatVnd(item.unit.price)}đ/th</em>
+                            <small>{formatMeters(item.geo.width)} × {formatMeters(item.geo.length)} · {getUnitTypeStyle(item.unit.type).label}</small>
+                            <small>{item.unit.id === unit.id ? 'Đang xem' : `dùng ~${item.usedPct}%`}</small>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {fit.results.length > 6 && <span className="u3d-fit-more">và {fit.results.length - 6} kho lớn hơn khác.</span>}
+                  </>
+                )}
+              </section>
+            )}
             {mode === 'empty' && <div className="u3d-controls" role="group" aria-label="Điều khiển góc nhìn">
               <button type="button" onClick={() => setView(v => ({ ...v, ry: v.ry - 30 }))} aria-label="Xoay trái">⟲</button>
               <button type="button" onClick={() => setView(v => ({ ...v, ry: v.ry + 30 }))} aria-label="Xoay phải">⟳</button>
@@ -226,9 +277,68 @@ export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail
  */
 function hintFor(geo) {
   if (geo.band === 'V') return 'Phù hợp gửi ô tô / xe máy, có lối vào rộng.'
-  if (geo.isLocker) return 'Tủ nhỏ: vali, thùng giấy, hồ sơ, đồ dùng cá nhân.'
-  if (geo.area <= 5) return 'Khoảng 20–30 thùng giấy hoặc đồ đạc của một phòng nhỏ.'
-  if (geo.area <= 10) return 'Đồ đạc căn hộ 1 phòng ngủ: giường, tủ, bàn ghế, thùng đồ.'
-  if (geo.area <= 20) return 'Đồ đạc căn hộ 2–3 phòng ngủ hoặc hàng hóa kinh doanh nhỏ.'
-  return 'Đồ đạc cả căn nhà, hàng hóa, thiết bị văn phòng.'
+  const boxes = gridCapacity({ w: geo.width, h: geo.height, l: geo.length }, itemType('box-m'))
+  const use = geo.isLocker ? 'vali, thùng giấy, hồ sơ, đồ dùng cá nhân'
+    : geo.area <= 5 ? 'đồ đạc của một phòng nhỏ'
+      : geo.area <= 10 ? 'đồ đạc căn hộ 1 phòng ngủ: giường, tủ, bàn ghế, thùng đồ'
+        : geo.area <= 20 ? 'đồ đạc căn hộ 2–3 phòng ngủ hoặc hàng hóa kinh doanh nhỏ'
+          : 'đồ đạc cả căn nhà, hàng hóa, thiết bị văn phòng'
+  return `Chất kín được khoảng ${boxes.toLocaleString('vi-VN')} thùng vừa (60×40×40 cm), chưa chừa lối đi. Phù hợp ${use}.`
+}
+
+/**
+ * Tìm các kho còn trống trong danh sách xếp vừa toàn bộ số thùng khách nhập.
+ * - Đến EXACT_PACK_LIMIT thùng: xếp thử thật bằng autoPack (biến thể 'fit'; nếu 'fit' xếp hết thì nút "Xếp thử" cũng xếp hết).
+ * - Nhiều hơn: ước tính theo thể tích dùng được (trừ lối đi) × PACK_EFFICIENCY, vì xếp thử thật mất quá lâu.
+ * Mỗi cỡ kho chỉ tính 1 lần, chạy từng cỡ một (setTimeout) để không làm đứng giao diện; chờ 250 ms khi khách đang gõ.
+ * @returns {{ total:number, pending:boolean, estimated:boolean, results: Array<{unit, geo, usedPct}> }} results sắp theo giá tăng dần.
+ */
+function useFittingUnits(units, counts, aisleOn) {
+  const [state, setState] = useState({ total: 0, pending: false, estimated: false, results: [] })
+  const unitsKey = units.map(u => `${u.id}:${unitPlanStatus(u)}`).join('|')
+  const countsKey = JSON.stringify(counts)
+  const unitsRef = useRef(units)
+  unitsRef.current = units
+  const groups = useMemo(() => {
+    const map = new Map()
+    unitsRef.current.filter(u => unitPlanStatus(u) === 'free').forEach(u => {
+      const g = unitGeometry(u)
+      const key = `${g.width}|${g.length}|${g.height}|${g.isLocker}|${g.band}`
+      if (!map.has(key)) map.set(key, { geo: g, units: [] })
+      map.get(key).units.push(u)
+    })
+    return [...map.values()].sort((a, b) => a.geo.volume - b.geo.volume)
+  }, [unitsKey])
+
+  useEffect(() => {
+    const { requests, total, volume } = boxRequests(counts)
+    const estimated = total > EXACT_PACK_LIMIT
+    if (!total || !groups.length) { setState({ total, pending: false, estimated, results: [] }); return undefined }
+    setState({ total, pending: true, estimated, results: [] })
+    const out = []
+    let i = 0
+    let timer
+    const step = () => {
+      if (i >= groups.length) {
+        out.sort((a, b) => a.unit.price - b.unit.price || a.geo.volume - b.geo.volume)
+        setState({ total, pending: false, estimated, results: out })
+        return
+      }
+      const { geo: g, units: list } = groups[i++]
+      const room = { w: g.width, h: g.height, l: g.length }
+      const roomVolume = room.w * room.h * room.l
+      if (volume <= roomVolume) { // thể tích đồ lớn hơn kho thì chắc chắn không vừa, khỏi xếp thử
+        const zones = aisleOn ? aisleZones(room, { isLocker: g.isLocker, vehicle: g.band === 'V' }) : []
+        const fits = estimated
+          ? volume <= (roomVolume - volumeOf(zones)) * PACK_EFFICIENCY
+          : !autoPack(room, requests, zones, { prefer: 'fit' }).failed.length
+        if (fits) list.forEach(u => out.push({ unit: u, geo: g, usedPct: Math.round((volume / roomVolume) * 100) }))
+      }
+      timer = setTimeout(step, 0)
+    }
+    timer = setTimeout(step, 250)
+    return () => clearTimeout(timer)
+  }, [groups, countsKey, aisleOn])
+
+  return state
 }

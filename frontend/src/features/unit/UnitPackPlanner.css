@@ -63,3 +63,27 @@
 .upp-aisle { display: inline-flex; align-items: center; gap: 6px; color: #23475e; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .upp-aisle input { width: 16px; height: 16px; accent-color: #f9a825; }
 .upp-tip { margin: 0; color: #6d849b; font-size: 12px; line-height: 1.5; }
+
+/* Khối nhập số thùng thực tế */
+.upp-boxes { display: grid; gap: 6px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid #cfe3f5; background: #f5faff; }
+.upp-boxes-head strong { display: block; color: #073d70; font-size: 14.5px; font-weight: 800; }
+.upp-boxes-head small { color: #6d849b; font-size: 12px; }
+.upp-boxes .upp-auto-row { margin: 4px 0 0; }
+.upp-boxes .upp-auto-row input { background: #fff; }
+.upp-boxes-sum { margin: 0; color: #29577f; font-size: 13px; }
+.upp-boxes-sum strong { color: #073d70; }
+.upp-boxes > small { color: #8197ab; font-size: 11.5px; }
+
+/* Sidebar: kho vừa với số thùng khách nhập */
+.u3d-fit { display: grid; gap: 8px; }
+.u3d-fit h3 { margin: 0; color: #073d70; font-size: 14px; font-weight: 800; }
+.u3d-fit > p { margin: 0; color: #6d849b; font-size: 12.5px; line-height: 1.5; }
+.u3d-fit ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.u3d-fit li button { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 8px 10px; border: 1.5px solid #e1edf7; border-radius: 10px; background: #fff; text-align: left; font: inherit; cursor: pointer; }
+.u3d-fit li button:hover { border-color: #075a9f; background: #f2f8fe; }
+.u3d-fit li button.current { border-color: #22a35a; background: #f3fbf6; cursor: default; }
+.u3d-fit li strong { color: #073d70; font-size: 13px; }
+.u3d-fit li em { color: #075a9f; font-style: normal; font-size: 12.5px; font-weight: 800; text-align: right; }
+.u3d-fit li small { color: #6d849b; font-size: 11.5px; }
+.u3d-fit li small:last-child { text-align: right; }
+.u3d-fit .u3d-fit-more { color: #8197ab; font-size: 12px; }

@@ -128,6 +128,7 @@ export default function FacilityFloorPlan({ facility, units, point = null, highl
         <Unit3DViewer
           unit={selected}
           facilityName={facility.name}
+          units={units}
           onClose={() => setSelected(null)}
           onOpenDetail={onOpenDetail}
           onBook={onBook}

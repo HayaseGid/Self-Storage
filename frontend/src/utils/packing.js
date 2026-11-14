@@ -365,6 +365,35 @@ function packOnce(room, requests, startItems, prefer, maxTop) {
  */
 export const volumeOf = items => items.reduce((n, it) => n + it.w * it.h * it.d, 0)
 
+/* 3 loại thùng khách nhập số lượng thực tế (nhỏ / vừa / lớn). */
+export const BOX_KEYS = ['box-s', 'box-m', 'box-l']
+
+/**
+ * Đổi số thùng khách nhập { 'box-s': n, ... } thành danh sách yêu cầu cho autoPack, kèm tổng số thùng và tổng thể tích (m³).
+ */
+export function boxRequests(counts) {
+  const requests = BOX_KEYS.map(key => ({ ...itemType(key), count: Math.max(0, Math.floor(Number(counts?.[key]) || 0)) }))
+  return {
+    requests,
+    total: requests.reduce((n, r) => n + r.count, 0),
+    volume: requests.reduce((n, r) => n + r.count * r.w * r.h * r.d, 0)
+  }
+}
+
+/* Trên số thùng này, xếp thử đầy đủ (Extreme Point) chạy quá lâu: chỉ chạy 1 biến thể hoặc ước tính theo thể tích. */
+export const EXACT_PACK_LIMIT = 300
+/* Hiệu suất xếp dùng để ước tính khi số thùng lớn (thùng giấy chất trong kho thường đạt 80–90%). */
+export const PACK_EFFICIENCY = 0.8
+
+/**
+ * Số thùng cùng cỡ chất kín được trong phòng nếu xếp thẳng hàng theo lưới (chưa chừa lối đi).
+ * Dùng cho câu gợi ý sức chứa, thay cho con số viết cứng.
+ */
+export function gridCapacity(room, type) {
+  const fit = (a, b) => Math.floor((a + EPS) / b)
+  return fit(room.h, type.h) * Math.max(fit(room.w, type.w) * fit(room.l, type.d), fit(room.w, type.d) * fit(room.l, type.w))
+}
+
 /* Còn xếp thêm được bao nhiêu thùng loại `type` – xếp thử thật bằng EP-BFD (có giới hạn số lượng). */
 /**
  * Ước lượng còn xếp thêm được bao nhiêu món loại `type` (xếp thử thật, tối đa `limit` món).

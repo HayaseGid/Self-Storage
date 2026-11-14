@@ -1020,7 +1020,16 @@ function UnitDetailPage({ facility, unit }) {
               </div>
             </div>
           </div>
-          {show3D && <Unit3DViewer unit={unit} facilityName={facility.name} onClose={() => setShow3D(false)} onBook={unit.available ? () => { setShow3D(false); handleBookClick() } : null} />}
+          {show3D && (
+            <Unit3DViewer
+              unit={unit}
+              facilityName={facility.name}
+              units={getStorageUnits(facility.name)}
+              onClose={() => setShow3D(false)}
+              onOpenDetail={picked => { setShow3D(false); if (picked.id !== unit.id) navigate(getUnitPath(facility, picked)) }}
+              onBook={picked => { setShow3D(false); if (picked.id === unit.id) handleBookClick(); else navigate(getBookingPath(facility, picked)) }}
+            />
+          )}
           <section className="unit-detail-description"><span className="customer-eyebrow">ABOUT THIS UNIT</span><h2>Thông tin về kho</h2><p>{getUnitTypeStyle(unit.type).label} ({unit.type}) tại {facility.name} phù hợp cho nhu cầu lưu trữ cá nhân, hồ sơ, đồ gia dụng và các vật dụng cần không gian riêng biệt. Kho được quản lý và kiểm soát ra vào theo tiêu chuẩn của StoreSpace.</p></section>
         </div>
       </main>
