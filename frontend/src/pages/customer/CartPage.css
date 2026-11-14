@@ -434,37 +434,3 @@
   display: flex;
   gap: 8px;
 }
-
-/* Thanh bước (1 Thông tin đặt kho — 2 Thanh toán cọc).
-   Ghi đè rule chung .booking-step-indicator span (styles.css) vốn biến mọi span thành vòng tròn. */
-.cart-booking-page .booking-step-indicator { gap: 10px; }
-.cart-booking-page .step-item { display: flex; align-items: center; gap: 8px; }
-.cart-booking-page .booking-step-indicator .step-item span {
-  width: auto;
-  height: auto;
-  display: inline;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: #8ba0af;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.cart-booking-page .step-number {
-  width: 30px;
-  height: 30px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border: 1px solid #dce8ef;
-  border-radius: 50%;
-  background: #fff;
-  color: #8ba0af;
-  font-size: 11px;
-  font-weight: 800;
-}
-.cart-booking-page .step-item.active .step-number { border-color: #1684db; background: #1684db; color: #fff; }
-.cart-booking-page .step-item.completed .step-number { border-color: #1684db; background: #e9f5ff; color: #1684db; }
-.cart-booking-page .booking-step-indicator .step-item.active span { color: var(--blue-950); }
-.cart-booking-page .step-line { width: 30px; height: 1px; background: #dce8ef; }
