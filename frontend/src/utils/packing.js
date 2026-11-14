@@ -365,59 +365,6 @@ function packOnce(room, requests, startItems, prefer, maxTop) {
  */
 export const volumeOf = items => items.reduce((n, it) => n + it.w * it.h * it.d, 0)
 
-/* 3 loại thùng khách nhập số lượng thực tế (nhỏ / vừa / lớn). */
-export const BOX_KEYS = ['box-s', 'box-m', 'box-l']
-/* Đồ lớn khách nhập số lượng (chỉ đặt trên sàn). */
-export const BIG_ITEM_KEYS = ['mattress', 'fridge', 'shelf', 'motorbike']
-/* Thùng khách tự nhập kích thước. */
-export const CUSTOM_BOX_KEY = 'box-custom'
-export const DEFAULT_CUSTOM_SIZE = { w: 50, d: 40, h: 30 } // cm: dài × rộng × cao
-/* Mọi loại đồ khách nhập số lượng (thứ tự hiển thị). */
-export const COUNT_KEYS = [...BOX_KEYS, CUSTOM_BOX_KEY, ...BIG_ITEM_KEYS]
-
-/**
- * Loại "thùng tự nhập" theo kích thước khách nhập (cm). w = dài, d = rộng, h = cao (đổi ra m).
- */
-export function customBoxType(size = DEFAULT_CUSTOM_SIZE) {
-  const w = Number(size?.w) || DEFAULT_CUSTOM_SIZE.w
-  const d = Number(size?.d) || DEFAULT_CUSTOM_SIZE.d
-  const h = Number(size?.h) || DEFAULT_CUSTOM_SIZE.h
-  return { key: CUSTOM_BOX_KEY, name: 'Thùng tự nhập', size: `${w}×${d}×${h} cm`, w: w / 100, h: h / 100, d: d / 100, color: '#a8885a' }
-}
-
-/**
- * Đổi đồ khách nhập (counts, xem features/unit/boxCounts.js) thành danh sách yêu cầu cho autoPack,
- * kèm tổng số món, số thùng, số đồ lớn và tổng thể tích (m³).
- */
-export function boxRequests(counts) {
-  const typeOf = key => (key === CUSTOM_BOX_KEY ? customBoxType(counts?.customSize) : itemType(key))
-  const requests = COUNT_KEYS
-    .map(key => ({ ...typeOf(key), count: Math.max(0, Math.floor(Number(counts?.[key]) || 0)) }))
-    .filter(r => r.count > 0)
-  const sum = list => list.reduce((n, r) => n + r.count, 0)
-  return {
-    requests,
-    total: sum(requests),
-    boxes: sum(requests.filter(r => !BIG_ITEM_KEYS.includes(r.key))),
-    big: sum(requests.filter(r => BIG_ITEM_KEYS.includes(r.key))),
-    volume: requests.reduce((n, r) => n + r.count * r.w * r.h * r.d, 0)
-  }
-}
-
-/* Trên số thùng này, xếp thử đầy đủ (Extreme Point) chạy quá lâu: chỉ chạy 1 biến thể hoặc ước tính theo thể tích. */
-export const EXACT_PACK_LIMIT = 300
-/* Hiệu suất xếp dùng để ước tính khi số thùng lớn (thùng giấy chất trong kho thường đạt 80–90%). */
-export const PACK_EFFICIENCY = 0.8
-
-/**
- * Số thùng cùng cỡ chất kín được trong phòng nếu xếp thẳng hàng theo lưới (chưa chừa lối đi).
- * Dùng cho câu gợi ý sức chứa, thay cho con số viết cứng.
- */
-export function gridCapacity(room, type) {
-  const fit = (a, b) => Math.floor((a + EPS) / b)
-  return fit(room.h, type.h) * Math.max(fit(room.w, type.w) * fit(room.l, type.d), fit(room.w, type.d) * fit(room.l, type.w))
-}
-
 /* Còn xếp thêm được bao nhiêu thùng loại `type` – xếp thử thật bằng EP-BFD (có giới hạn số lượng). */
 /**
  * Ước lượng còn xếp thêm được bao nhiêu món loại `type` (xếp thử thật, tối đa `limit` món).

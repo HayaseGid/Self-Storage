@@ -1535,11 +1535,10 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
     ['Họ và tên', user?.name || '—'],
     ['Email', user?.email || '—'],
     ['Loại tài khoản', 'Khách hàng thuê kho'],
-    ['Mã khách hàng', user?.userId ? `KH-${user.userId}` : '—']
+    ['Mã khách hàng', user?.userId ? `KH-${user.userId}` : '—'],
+    ['Mã ra vào cơ sở', accessCode || 'Chưa cấp (Cấp khi nhận bàn giao kho)'],
+    ['Trạng thái mã', accessCode ? (accessStatus === 'Active' ? '✓ Đang hoạt động' : '⚠️ Tạm khóa (Quá hạn thanh toán > 30 ngày)') : 'Chưa cấp']
   ]
-  // Trạng thái hiển thị của mã ra vào: chưa cấp / tạm khóa / đang hoạt động.
-  const accessState = !accessCode ? 'unissued' : accessStatus === 'Locked' ? 'locked' : 'active'
-  const accessBadge = { unissued: 'Chưa cấp', locked: 'Tạm khóa do nợ quá hạn', active: 'Đang hoạt động' }[accessState]
   return (
     <div className="customer-content-page">
       <div className="customer-page-heading">
@@ -1550,77 +1549,112 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
         </div>
       </div>
 
-      <div className="profile-layout">
-        <section className="profile-card">
-          <div className="profile-head">
-            <span className="profile-avatar" aria-hidden="true">{initial}</span>
-            <div>
-              <h2>{user?.name || 'Khách hàng'}</h2>
-              <p>{user?.email}</p>
-              <div className="profile-tags">
-                <span className="profile-tag">Khách hàng thuê kho</span>
-                {user?.userId && <span className="profile-tag">KH-{user.userId}</span>}
+      <section className="profile-card">
+        <div className="profile-head">
+          <span className="profile-avatar" aria-hidden="true">{initial}</span>
+          <div>
+            <h2>{user?.name || 'Khách hàng'}</h2>
+            <p>{user?.email}</p>
+          </div>
+        </div>
+        <dl className="profile-info">
+          {rows.map(([label, value]) => (
+            <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+          ))}
+        </dl>
+
+        <div style={{
+          marginTop: '20px',
+          padding: '18px 20px',
+          background: accessStatus === 'Locked' ? '#fff1f2' : '#f0fdf4',
+          borderRadius: '14px',
+          border: `1px solid ${accessStatus === 'Locked' ? '#fecdd3' : '#bbf7d0'}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '24px' }}>🔢</span>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15px', color: accessStatus === 'Locked' ? '#9f1239' : '#14532d', fontWeight: 700 }}>
+                  MÃ RA VÀO CƠ SỞ (ACCESS CODE)
+                </h3>
+                <small style={{ color: accessStatus === 'Locked' ? '#be123c' : '#166534', fontSize: '12px' }}>
+                  Dùng mở cổng &amp; cửa an ninh cơ sở StoreSpace
+                </small>
               </div>
             </div>
-          </div>
-
-          <h3 className="profile-section-title">Thông tin tài khoản</h3>
-          <dl className="profile-info">
-            {rows.map(([label, value]) => (
-              <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
-            ))}
-          </dl>
-
-          <h3 className="profile-section-title">Hoạt động thuê kho</h3>
-          <div className="profile-stats">
-            <button type="button" onClick={onOpenStorage}><strong>{rentals.length}</strong><span>Tổng đơn đặt kho</span></button>
-            <button type="button" onClick={onOpenStorage}><strong>{activeCount}</strong><span>Kho đang thuê</span></button>
-            <button type="button" onClick={onOpenStorage}><strong>{pendingCount}</strong><span>Chờ thanh toán cọc</span></button>
-          </div>
-          <p className="profile-note">Muốn đổi họ tên, email hoặc mật khẩu, vui lòng liên hệ <a href="mailto:support@storespace.vn">support@storespace.vn</a>. Chức năng tự chỉnh sửa sẽ có khi hệ thống hỗ trợ.</p>
-          <div className="profile-actions">
-            <button type="button" className="dashboard-secondary-btn" onClick={onLogout}>Đăng xuất</button>
-          </div>
-        </section>
-
-        <section className={`access-card is-${accessState}`}>
-          <div className="access-card-head">
-            <span className="access-card-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="4" y="10.5" width="16" height="10" rx="2.5" />
-                <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
-                <path d="M12 14.5v2.5" />
-              </svg>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              borderRadius: '999px',
+              fontSize: '12px',
+              fontWeight: 600,
+              background: accessStatus === 'Locked' ? '#ffe4e6' : '#dcfce7',
+              color: accessStatus === 'Locked' ? '#e11d48' : '#15803d'
+            }}>
+              {accessStatus === 'Locked' ? '● Tạm khóa do nợ quá hạn' : '● Đang hoạt động'}
             </span>
-            <div className="access-card-title">
-              <h3>Mã ra vào cơ sở</h3>
-              <small>Dùng mở cổng &amp; cửa an ninh cơ sở StoreSpace</small>
-            </div>
-            <span className="access-badge">● {accessBadge}</span>
           </div>
 
-          <div className="access-code-box">
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#ffffff',
+            padding: '12px 18px',
+            borderRadius: '10px',
+            border: `1px dashed ${accessStatus === 'Locked' ? '#f43f5e' : '#22c55e'}`
+          }}>
             <div>
-              <span>Mã 6 chữ số cá nhân của bạn</span>
-              <strong className={accessCode ? 'access-code-value' : 'access-code-empty'}>
-                {accessCode || 'Chưa cấp, cấp khi nhận bàn giao kho'}
+              <span style={{ display: 'block', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, letterSpacing: '0.5px' }}>
+                Mã 6 chữ số cá nhân của bạn
+              </span>
+              <strong style={{ fontSize: '24px', letterSpacing: '4px', color: accessStatus === 'Locked' ? '#9f1239' : '#0f172a', fontFamily: 'monospace' }}>
+                {accessCode || 'Chưa cấp'}
               </strong>
             </div>
             {accessCode && (
-              <button type="button" className="access-copy-btn" onClick={handleCopyCode}>
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#334155',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
                 {copied ? '✓ Đã sao chép' : 'Sao chép mã'}
               </button>
             )}
           </div>
 
-          <ul className="access-rules">
-            <li><strong>Định danh cá nhân</strong><span>Mã 6 chữ số này là định danh duy nhất để mở cổng và cửa an ninh cơ sở.</span></li>
-            <li><strong>Chìa khóa ô kho</strong><span>Mỗi ô kho được cấp chìa khóa vật lý riêng, nhân viên bàn giao trực tiếp tại cơ sở.</span></li>
-            <li><strong>Thời hạn hiệu lực</strong><span>Mã hoạt động liên tục trong suốt thời gian có hợp đồng thuê kho hợp lệ.</span></li>
-            <li><strong>Bảo mật &amp; tạm khóa</strong><span>Chậm thanh toán tiền thuê hoặc chi phí phát sinh quá 30 ngày, hệ thống tự động tạm khóa mã.</span></li>
+          <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12.5px', color: '#475569', lineHeight: 1.6 }}>
+            <li>Mã 6 chữ số này là định danh cá nhân duy nhất để mở cổng và cửa an ninh cơ sở.</li>
+            <li><strong>Chìa khóa ô kho:</strong> Mỗi ô kho được cấp chìa khóa vật lý riêng, nhân viên bàn giao trực tiếp tại cơ sở.</li>
+            <li><strong>Thời hạn hiệu lực:</strong> Mã hoạt động liên tục trong suốt thời gian có hợp đồng thuê kho hợp lệ.</li>
+            <li><strong>Quy định bảo mật &amp; tạm khóa:</strong> Nếu chậm thanh toán tiền thuê hoặc chi phí phát sinh quá 30 ngày, hệ thống sẽ tự động tạm khóa mã ra vào cơ sở.</li>
           </ul>
-        </section>
-      </div>
+        </div>
+
+        <div className="profile-stats" style={{ marginTop: '20px' }}>
+          <button type="button" onClick={onOpenStorage}><strong>{rentals.length}</strong><span>Tổng đơn đặt kho</span></button>
+          <button type="button" onClick={onOpenStorage}><strong>{activeCount}</strong><span>Kho đang thuê</span></button>
+          <button type="button" onClick={onOpenStorage}><strong>{pendingCount}</strong><span>Chờ thanh toán cọc</span></button>
+        </div>
+        <p className="profile-note">Muốn đổi họ tên, email hoặc mật khẩu, vui lòng liên hệ <a href="mailto:support@storespace.vn">support@storespace.vn</a>. Chức năng tự chỉnh sửa sẽ có khi hệ thống hỗ trợ.</p>
+        <div className="profile-actions">
+          <button type="button" className="dashboard-secondary-btn" onClick={onLogout}>Đăng xuất</button>
+        </div>
+      </section>
     </div>
   )
 }
