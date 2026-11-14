@@ -367,15 +367,39 @@ export const volumeOf = items => items.reduce((n, it) => n + it.w * it.h * it.d,
 
 /* 3 loại thùng khách nhập số lượng thực tế (nhỏ / vừa / lớn). */
 export const BOX_KEYS = ['box-s', 'box-m', 'box-l']
+/* Đồ lớn khách nhập số lượng (chỉ đặt trên sàn). */
+export const BIG_ITEM_KEYS = ['mattress', 'fridge', 'shelf', 'motorbike']
+/* Thùng khách tự nhập kích thước. */
+export const CUSTOM_BOX_KEY = 'box-custom'
+export const DEFAULT_CUSTOM_SIZE = { w: 50, d: 40, h: 30 } // cm: dài × rộng × cao
+/* Mọi loại đồ khách nhập số lượng (thứ tự hiển thị). */
+export const COUNT_KEYS = [...BOX_KEYS, CUSTOM_BOX_KEY, ...BIG_ITEM_KEYS]
 
 /**
- * Đổi số thùng khách nhập { 'box-s': n, ... } thành danh sách yêu cầu cho autoPack, kèm tổng số thùng và tổng thể tích (m³).
+ * Loại "thùng tự nhập" theo kích thước khách nhập (cm). w = dài, d = rộng, h = cao (đổi ra m).
+ */
+export function customBoxType(size = DEFAULT_CUSTOM_SIZE) {
+  const w = Number(size?.w) || DEFAULT_CUSTOM_SIZE.w
+  const d = Number(size?.d) || DEFAULT_CUSTOM_SIZE.d
+  const h = Number(size?.h) || DEFAULT_CUSTOM_SIZE.h
+  return { key: CUSTOM_BOX_KEY, name: 'Thùng tự nhập', size: `${w}×${d}×${h} cm`, w: w / 100, h: h / 100, d: d / 100, color: '#a8885a' }
+}
+
+/**
+ * Đổi đồ khách nhập (counts, xem features/unit/boxCounts.js) thành danh sách yêu cầu cho autoPack,
+ * kèm tổng số món, số thùng, số đồ lớn và tổng thể tích (m³).
  */
 export function boxRequests(counts) {
-  const requests = BOX_KEYS.map(key => ({ ...itemType(key), count: Math.max(0, Math.floor(Number(counts?.[key]) || 0)) }))
+  const typeOf = key => (key === CUSTOM_BOX_KEY ? customBoxType(counts?.customSize) : itemType(key))
+  const requests = COUNT_KEYS
+    .map(key => ({ ...typeOf(key), count: Math.max(0, Math.floor(Number(counts?.[key]) || 0)) }))
+    .filter(r => r.count > 0)
+  const sum = list => list.reduce((n, r) => n + r.count, 0)
   return {
     requests,
-    total: requests.reduce((n, r) => n + r.count, 0),
+    total: sum(requests),
+    boxes: sum(requests.filter(r => !BIG_ITEM_KEYS.includes(r.key))),
+    big: sum(requests.filter(r => BIG_ITEM_KEYS.includes(r.key))),
     volume: requests.reduce((n, r) => n + r.count * r.w * r.h * r.d, 0)
   }
 }
