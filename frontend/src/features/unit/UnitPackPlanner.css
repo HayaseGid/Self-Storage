@@ -63,6 +63,7 @@
 .upp-aisle { display: inline-flex; align-items: center; gap: 6px; color: #23475e; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .upp-aisle input { width: 16px; height: 16px; accent-color: #f9a825; }
 .upp-tip { margin: 0; color: #6d849b; font-size: 12px; line-height: 1.5; }
+<<<<<<< HEAD
 
 /* Khối nhập số thùng thực tế */
 .upp-boxes { display: grid; gap: 6px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid #cfe3f5; background: #f5faff; }
@@ -136,3 +137,5 @@
 .ici-custom { display: grid; grid-template-columns: minmax(96px, 1fr) 2fr; gap: 8px; align-items: end; margin-bottom: 8px; }
 .ici-size { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .ici-big { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+=======
+>>>>>>> parent of 52945b8 (Update 3d)

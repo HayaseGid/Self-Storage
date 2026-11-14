@@ -1026,6 +1026,7 @@ function UnitDetailPage({ facility, unit }) {
               </div>
             </div>
           </div>
+<<<<<<< HEAD
           {show3D && (
             <Unit3DViewer
               unit={unit}
@@ -1038,6 +1039,9 @@ function UnitDetailPage({ facility, unit }) {
               onBook={picked => { setShow3D(false); if (picked.id === unit.id) handleBookClick(); else navigate(getBookingPath(facility, picked)) }}
             />
           )}
+=======
+          {show3D && <Unit3DViewer unit={unit} facilityName={facility.name} onClose={() => setShow3D(false)} onBook={unit.available ? () => { setShow3D(false); handleBookClick() } : null} />}
+>>>>>>> parent of 52945b8 (Update 3d)
           <section className="unit-detail-description"><span className="customer-eyebrow">ABOUT THIS UNIT</span><h2>Thông tin về kho</h2><p>{getUnitTypeStyle(unit.type).label} ({unit.type}) tại {facility.name} phù hợp cho nhu cầu lưu trữ cá nhân, hồ sơ, đồ gia dụng và các vật dụng cần không gian riêng biệt. Kho được quản lý và kiểm soát ra vào theo tiêu chuẩn của StoreSpace.</p></section>
         </div>
       </main>

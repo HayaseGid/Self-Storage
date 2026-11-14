@@ -7,15 +7,18 @@
  * Không gọi API. Dùng ở: App.jsx (trang chi tiết cơ sở), FacilityFloorPlan.
  * ======================================================================
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { getUnitTypeStyle } from './unitTypes'
 import { formatVnd } from '../../services/storageRules'
 import { formatMeters, unitGeometry, unitPlanStatus } from '../../utils/unitGeometry'
 import './Unit3DViewer.css'
 import { PackPlanner, SampleRoom } from './UnitPackPlanner'
+<<<<<<< HEAD
 import { gridCapacity, itemType } from '../../utils/packing'
 import { loadBoxCounts, saveBoxCounts } from './boxCounts'
 import { useBoxFit } from './useBoxFit'
+=======
+>>>>>>> parent of 52945b8 (Update 3d)
 import './UnitPackPlanner.css'
 
 /*
@@ -33,6 +36,7 @@ const DEFAULT_VIEW = { ry: -38, rx: -24, zoom: 1 }
 
 /**
  * Component cửa sổ xem kho 3D.
+<<<<<<< HEAD
  * @param {object} props unit (kho mở ban đầu), facilityName, onClose, onOpenDetail(unit) (mở chi tiết kho),
  *   onBook(unit) (đặt kho — chỉ hiện khi kho còn trống), units (các kho cùng cơ sở, để gợi ý kho vừa đồ của khách),
  *   otherUnits ([{ facility, unit }] kho ở cơ sở khác, gợi ý khi cơ sở này không có kho vừa),
@@ -66,6 +70,12 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
       .map(x => ({ ...x, geo: unitGeometry(x.unit) }))
       .sort((a, b) => a.unit.price - b.unit.price || a.geo.volume - b.geo.volume)
     : []
+=======
+ * @param {object} props unit (kho), facilityName, onClose, onOpenDetail(unit) (mở chi tiết kho),
+ *   onBook(unit) (đặt kho — chỉ hiện khi kho còn trống).
+ */
+export default function Unit3DViewer({ unit, facilityName, onClose, onOpenDetail, onBook }) {
+>>>>>>> parent of 52945b8 (Update 3d)
   const geo = unitGeometry(unit)
   const status = unitPlanStatus(unit)
   const typeStyle = getUnitTypeStyle(unit.type)
@@ -167,6 +177,7 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
 
         <div className={`u3d-body mode-${mode}`}>
           {mode === 'sample' && <div className="u3d-three"><SampleRoom geo={geo} color={typeStyle.color || '#075a9f'} /></div>}
+<<<<<<< HEAD
           {mode === 'pack' && (
             <div className="u3d-three">
               <PackPlanner
@@ -182,6 +193,9 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
               />
             </div>
           )}
+=======
+          {mode === 'pack' && <div className="u3d-three"><PackPlanner geo={geo} color={typeStyle.color || '#075a9f'} /></div>}
+>>>>>>> parent of 52945b8 (Update 3d)
           {mode === 'empty' && (
           <div
             ref={sceneRef}
@@ -247,6 +261,7 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
               <div><dt>Giá thuê</dt><dd>{formatVnd(unit.price)}đ/tháng</dd></div>
             </dl>
             <p className="u3d-hint">{hintFor(geo)}</p>
+<<<<<<< HEAD
             {mode === 'pack' && units.length > 0 && (
               <section className="u3d-fit" aria-live="polite">
                 <h3>Kho vừa với đồ của bạn</h3>
@@ -298,6 +313,8 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
                 )}
               </section>
             )}
+=======
+>>>>>>> parent of 52945b8 (Update 3d)
             {mode === 'empty' && <div className="u3d-controls" role="group" aria-label="Điều khiển góc nhìn">
               <button type="button" onClick={() => setView(v => ({ ...v, ry: v.ry - 30 }))} aria-label="Xoay trái">⟲</button>
               <button type="button" onClick={() => setView(v => ({ ...v, ry: v.ry + 30 }))} aria-label="Xoay phải">⟳</button>
@@ -323,6 +340,7 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
  */
 function hintFor(geo) {
   if (geo.band === 'V') return 'Phù hợp gửi ô tô / xe máy, có lối vào rộng.'
+<<<<<<< HEAD
   const boxes = gridCapacity({ w: geo.width, h: geo.height, l: geo.length }, itemType('box-m'))
   const use = geo.isLocker ? 'vali, thùng giấy, hồ sơ, đồ dùng cá nhân'
     : geo.area <= 5 ? 'đồ đạc của một phòng nhỏ'
@@ -330,4 +348,11 @@ function hintFor(geo) {
         : geo.area <= 20 ? 'đồ đạc căn hộ 2–3 phòng ngủ hoặc hàng hóa kinh doanh nhỏ'
           : 'đồ đạc cả căn nhà, hàng hóa, thiết bị văn phòng'
   return `Chất kín được khoảng ${boxes.toLocaleString('vi-VN')} thùng vừa (60×40×40 cm), chưa chừa lối đi. Phù hợp ${use}.`
+=======
+  if (geo.isLocker) return 'Tủ nhỏ: vali, thùng giấy, hồ sơ, đồ dùng cá nhân.'
+  if (geo.area <= 5) return 'Khoảng 20–30 thùng giấy hoặc đồ đạc của một phòng nhỏ.'
+  if (geo.area <= 10) return 'Đồ đạc căn hộ 1 phòng ngủ: giường, tủ, bàn ghế, thùng đồ.'
+  if (geo.area <= 20) return 'Đồ đạc căn hộ 2–3 phòng ngủ hoặc hàng hóa kinh doanh nhỏ.'
+  return 'Đồ đạc cả căn nhà, hàng hóa, thiết bị văn phòng.'
+>>>>>>> parent of 52945b8 (Update 3d)
 }

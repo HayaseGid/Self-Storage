@@ -129,9 +129,12 @@ export default function FacilityFloorPlan({ facility, units, point = null, highl
         <Unit3DViewer
           unit={selected}
           facilityName={facility.name}
+<<<<<<< HEAD
           units={units}
           otherUnits={otherUnits}
           onOpenOther={onOpenOther}
+=======
+>>>>>>> parent of 52945b8 (Update 3d)
           onClose={() => setSelected(null)}
           onOpenDetail={onOpenDetail}
           onBook={onBook}

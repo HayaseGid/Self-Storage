@@ -112,13 +112,11 @@
   font-weight: 700;
 }
 
-.uc-foot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 12px; margin-top: auto; }
+.uc-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: auto; }
 .uc-price small { display: block; color: #8197ab; font-size: 11px; font-weight: 700; }
 .uc-price strong { font: 800 19px 'Be Vietnam Pro', sans-serif; color: #075a9f; }
 .uc-price span { color: #8197ab; font-size: 12px; font-weight: 600; }
-.uc-foot .unit-button { width: auto; margin: 0; min-height: 42px; padding: 0 16px; flex: none; white-space: nowrap; }
-/* Thẻ hẹp: cụm nút xuống dòng dưới giá thay vì bị ép tràn ra ngoài thẻ. */
-.uc-foot .uc-actions { flex: none; margin-left: auto; }
+.uc-foot .unit-button { width: auto; margin: 0; min-height: 42px; padding: 0 16px; }
 
 /* ===== Bộ lọc loại kho (chip có icon) ===== */
 .uc-type-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }

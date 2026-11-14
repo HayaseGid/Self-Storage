@@ -365,6 +365,7 @@ function packOnce(room, requests, startItems, prefer, maxTop) {
  */
 export const volumeOf = items => items.reduce((n, it) => n + it.w * it.h * it.d, 0)
 
+<<<<<<< HEAD
 /* 3 loại thùng khách nhập số lượng thực tế (nhỏ / vừa / lớn). */
 export const BOX_KEYS = ['box-s', 'box-m', 'box-l']
 /* Đồ lớn khách nhập số lượng (chỉ đặt trên sàn). */
@@ -418,6 +419,8 @@ export function gridCapacity(room, type) {
   return fit(room.h, type.h) * Math.max(fit(room.w, type.w) * fit(room.l, type.d), fit(room.w, type.d) * fit(room.l, type.w))
 }
 
+=======
+>>>>>>> parent of 52945b8 (Update 3d)
 /* Còn xếp thêm được bao nhiêu thùng loại `type` – xếp thử thật bằng EP-BFD (có giới hạn số lượng). */
 /**
  * Ước lượng còn xếp thêm được bao nhiêu món loại `type` (xếp thử thật, tối đa `limit` món).
