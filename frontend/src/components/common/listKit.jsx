@@ -1,42 +1,48 @@
 /**
  * ======================================================================
  * FILE: src/components/common/listKit.jsx  —  BỘ CÔNG CỤ DANH SÁCH DÙNG CHUNG CHO MỌI VAI TRÒ
- * Gồm:
- * - Đánh dấu bản ghi "Mới" (tạo trong NEW_HOURS = 48 giờ), lưu id đã xem ở localStorage 'storespace_seen_items_v1'.
- * - <Pager>: thanh phân trang ("Hiển thị 1–5 trong 345", nút Trước/Sau, số trang). Mọi danh sách 5 mục/trang.
- * - useClientPaging(): chia trang cho danh sách nhỏ có sẵn ở frontend.
- * - useServerList(): danh sách phân trang ở BACKEND (?page=&pageSize=&q=&status=&sort=...) -> { items, total, statusCounts };
- *   backend chưa hỗ trợ (404/405 hoặc trả mảng) thì tự lọc/sắp xếp/chia trang ở frontend từ dữ liệu dự phòng.
- * - <Code>/<UnitCodes>: hiển thị mã đơn / mã kho / mã HĐ dạng thẻ nổi bật.
- * - <FilterChips>, <SortSelect>: nút lọc có số đếm và ô chọn sắp xếp.
- * API: chỉ useServerList gọi apiGet(path?query) với path do nơi dùng truyền vào
- * (vd /api/operations/reservations, /api/admin/users ...).
+ * CHỨC NĂNG: Gom các mảnh giao diện + hook để mọi danh sách (khách, staff, manager, business, admin) trông
+ *   và hoạt động giống nhau: phân trang 5 mục/trang, đánh dấu bản ghi "Mới" (tạo trong 48 giờ, id đã xem lưu
+ *   localStorage 'storespace_seen_items_v1'), hiển thị mã đơn/kho/HĐ dạng thẻ, nút lọc có số đếm, ô sắp xếp,
+ *   và hook danh sách phân trang ở BACKEND có chế độ dự phòng chia trang ở frontend khi backend chưa hỗ trợ.
+ * THÀNH PHẦN CHÍNH:
+ *   - NEW_HOURS, DEFAULT_PAGE_SIZE : hằng số (48 giờ, 5 mục/trang).
+ *   - getSeenSet / isItemSeen / markItemSeen / markAllItemsSeen / isNewItem / NewBadge / rowClass : nhãn "Mới".
+ *   - parseTime / newestFirst / fmtDateTimeShort / timeAgo : tiện ích thời gian + sắp xếp mới nhất lên đầu.
+ *   - Code / UnitCodes : thẻ mã đơn / mã kho / mã HĐ.
+ *   - Pager : thanh phân trang ("Hiển thị 1–5 trong 345", Trước / Sau, số trang).
+ *   - useClientPaging : chia trang mảng có sẵn ở frontend.
+ *   - useServerList   : danh sách phân trang ở backend (+ dự phòng ở frontend).
+ *   - FilterChips / SortSelect : nút lọc có số đếm / ô chọn sắp xếp.
+ * DÙNG Ở: src/components/common/DataGrid.jsx, src/hooks/opsLists.js, src/pages (admin/AdminAccount,
+ *   business/BusinessPanels, customer/CustomerAccount, manager/FacilityManagerAccount, staff/FacilityStaffAccount),
+ *   src/features (contract/ContractCard, notification/CustomerNotifications, payment/PendingPayments,
+ *   return/ReturnInspection, return/StaffReturns).
+ * PHỤ THUỘC: react, src/api/api (apiGet), ./listKit.css; localStorage.
+ * API: chỉ useServerList gọi GET {path}?page=&pageSize=&q=&status=&sort=&... với path do nơi dùng truyền vào
+ *   (vd /api/operations/reservations, /api/admin/users ...).
+ * LUỒNG: Trang gọi useServerList({ path, q, status, sort }) -> GET path?query -> { items, total, statusCounts }
+ *   -> trang vẽ items + <Pager {...pagerProps}/> -> bấm số trang -> setPage -> gọi lại API.
+ *   Backend trả mảng / 404 -> chuyển mode 'client', lọc / sắp xếp / cắt trang từ fallback.rows.
  * ======================================================================
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { apiGet } from '../../api/api'
 import './listKit.css'
 
-/*
- * BỘ CÔNG CỤ DANH SÁCH DÙNG CHUNG (file THÊM MỚI) - mọi actor dùng chung để giao diện thống nhất:
- *   <Pager>            thanh phân trang: số trang, "Hiển thị 1–5 trong 345", nút Trước / Sau.
- *   useServerList()    danh sách phân trang ở BACKEND (?page=&pageSize=&q=&status=&sort=) -> { items, total, statusCounts }.
- *                      Backend chưa có API mới (404) thì tự chia trang ở frontend từ dữ liệu sẵn có (fallback) để trang không vỡ.
- *   useClientPaging()  chia trang cho danh sách nhỏ đã có sẵn ở frontend (việc được giao, nhật ký, thông báo...).
- *   Code               mã quan trọng (mã đơn, mã kho, mã HĐ) in đậm dạng thẻ, dễ dò bằng mắt.
- *   isNewItem / NewBadge / rowClass: bản ghi mới tạo (trong NEW_HOURS giờ) được tô sáng + nhãn "Mới", luôn xếp lên đầu.
- */
-
+// Bản ghi tạo trong vòng NEW_HOURS giờ được coi là "Mới".
 export const NEW_HOURS = 48
 /* Số mục mỗi trang dùng chung cho mọi danh sách (không cho chọn số dòng để giao diện gọn, thống nhất). */
 export const DEFAULT_PAGE_SIZE = 5
 
 /* ---------- Mới / nổi bật ---------- */
 
+// Key localStorage lưu danh sách id bản ghi đã tắt nhãn "Mới".
 const SEEN_STORAGE_KEY = 'storespace_seen_items_v1'
 
 /**
  * Đọc tập id bản ghi người dùng đã bấm "đã xem" (tắt nhãn Mới) từ localStorage.
+ * @returns {Set<string>}
  */
 export function getSeenSet() {
   try {
@@ -56,6 +62,8 @@ export function isItemSeen(id) {
 
 /**
  * Đánh dấu 1 id là đã xem (giữ tối đa 2000 id) và phát sự kiện 'storespace:seen_updated' để các nhãn Mới cập nhật.
+ * Được gọi khi bấm nhãn "Mới" (NewBadge) hoặc khi Manager/Staff mở chi tiết bản ghi.
+ * @param {string|number} id khóa bản ghi.
  */
 export function markItemSeen(id) {
   if (!id) return
@@ -72,7 +80,9 @@ export function markItemSeen(id) {
 }
 
 /**
- * Đánh dấu nhiều id là đã xem cùng lúc và phát sự kiện 'storespace:seen_updated'.
+ * Đánh dấu nhiều id là đã xem cùng lúc và phát sự kiện 'storespace:seen_updated'
+ * (Manager/Staff dùng cho nút "Đánh dấu đã xem tất cả").
+ * @param {Array<string|number>} ids danh sách khóa bản ghi.
  */
 export function markAllItemsSeen(ids) {
   if (!ids || !ids.length) return
@@ -86,10 +96,10 @@ export function markAllItemsSeen(ids) {
   } catch { }
 }
 
-// Backend trả giờ UTC không kèm "Z" -> tự thêm để không lệch 7 tiếng
 /**
  * Parse thời điểm từ backend thành milisecond. Hỗ trợ "YYYY-MM-DD HH:mm", "YYYY-MM-DD" (00:00 giờ máy);
- * giờ UTC không kèm "Z" thì tự thêm "Z" để không lệch 7 tiếng.
+ * backend trả giờ UTC không kèm "Z" thì tự thêm "Z" để không lệch 7 tiếng.
+ * @param {string|Date} value thời điểm.
  * @returns {number} NaN nếu không parse được.
  */
 export function parseTime(value) {
@@ -102,6 +112,8 @@ export function parseTime(value) {
 
 /**
  * Kiểm tra bản ghi có còn "mới" không: tạo trong `hours` giờ gần đây và chưa bị đánh dấu đã xem.
+ * @param {string} createdAt thời điểm tạo. @param {number} hours số giờ coi là mới. @param {string|null} id khóa bản ghi.
+ * @returns {boolean}
  */
 export function isNewItem(createdAt, hours = NEW_HOURS, id = null) {
   const itemId = id || (createdAt ? String(createdAt) : null)
@@ -112,11 +124,11 @@ export function isNewItem(createdAt, hours = NEW_HOURS, id = null) {
   return age >= -60000 && age < hours * 3600000
 }
 
-/* Mới nhất lên đầu: theo createdAt, không có thì theo id giảm dần. */
 /**
  * Sắp xếp mới nhất lên đầu: theo ngày tạo (hàm date), nếu không có ngày thì theo id giảm dần.
- * @param {object[]} rows
+ * @param {object[]} rows danh sách dòng (không bị sửa, trả mảng mới).
  * @param {{date?:Function, id?:Function}} options hàm lấy ngày / id của mỗi dòng.
+ * @returns {object[]} mảng đã sắp xếp.
  */
 export function newestFirst(rows, { date = r => r?.createdAt, id = r => r?.id } = {}) {
   return [...(rows || [])].sort((a, b) => {
@@ -140,8 +152,8 @@ export function newestFirst(rows, { date = r => r?.createdAt, id = r => r?.id } 
  */
 export function NewBadge({ createdAt, id, show, label = 'Mới', onDismiss }) {
   const [, setTick] = useState(0)
+  // Chạy 1 lần khi mount: nghe sự kiện 'storespace:seen_updated' để vẽ lại (ẩn/hiện nhãn cho đúng); gỡ khi unmount.
   useEffect(() => {
-    // Khi có sự kiện 'storespace:seen_updated' thì vẽ lại để ẩn/hiện nhãn cho đúng.
     const handler = () => setTick(t => t + 1)
     window.addEventListener('storespace:seen_updated', handler)
     return () => window.removeEventListener('storespace:seen_updated', handler)
@@ -174,9 +186,10 @@ export function NewBadge({ createdAt, id, show, label = 'Mới', onDismiss }) {
   )
 }
 
-/* Thêm vào className của dòng / thẻ: 'ss-row-new' khi bản ghi mới tạo */
 /**
  * Trả về className cho dòng/thẻ: thêm 'ss-row-new' (tô sáng) nếu bản ghi còn mới và chưa xem.
+ * @param {string} createdAt thời điểm tạo. @param {string} extra class có sẵn. @param {string|null} id khóa bản ghi.
+ * @returns {string} chuỗi className.
  */
 export function rowClass(createdAt, extra = '', id = null) {
   const itemId = id || (createdAt ? String(createdAt) : null)
@@ -193,9 +206,9 @@ export function fmtDateTimeShort(value) {
   return new Date(t).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-/* Thời gian tương đối ngắn: "5 phút trước", "3 giờ trước", "2 ngày trước" */
 /**
  * Thời gian tương đối: "vừa xong", "5 phút trước", "3 giờ trước", "2 ngày trước"; quá 30 ngày thì hiện ngày.
+ * @param {string|Date} value thời điểm. @returns {string}
  */
 export function timeAgo(value) {
   const t = parseTime(value)
@@ -212,18 +225,18 @@ export function timeAgo(value) {
 
 /* ---------- Mã quan trọng ---------- */
 
-/* kind: 'order' (mã đơn) | 'unit' (mã kho) | 'contract' (mã HĐ) | undefined */
 /**
  * Component hiển thị 1 mã quan trọng dạng thẻ in đậm (kind: 'order' mã đơn | 'unit' mã kho | 'contract' mã HĐ).
+ * @param {{children, kind?, title?, className?}} props children = nội dung mã (rỗng -> hiện "—").
  */
 export function Code({ children, kind, title, className = '' }) {
   if (children == null || children === '') return <span className="ss-muted">—</span>
   return <span className={`ss-code${kind ? ` ss-code-${kind}` : ''} ${className}`.trim()} title={title}>{children}</span>
 }
 
-/* Danh sách mã kho: mỗi mã một thẻ */
 /**
  * Component hiển thị danh sách mã kho, mỗi mã 1 thẻ; quá `max` mã thì hiện "+N".
+ * @param {{units: string[]|string, max?: number}} props units = mảng hoặc chuỗi "A01, A02".
  */
 export function UnitCodes({ units, max = 4 }) {
   const list = (Array.isArray(units) ? units : String(units || '').split(','))
@@ -243,6 +256,7 @@ export function UnitCodes({ units, max = 4 }) {
 
 /**
  * Tính các số trang cần hiển thị trên thanh phân trang (trang đầu, cuối, quanh trang hiện tại, chèn "…").
+ * Được gọi bởi Pager. @param {number} page trang hiện tại. @param {number} pageCount tổng số trang.
  * @returns {Array<number|string>} số trang hoặc khóa 'gap-N' cho dấu "…".
  */
 function pageWindow(page, pageCount) {
@@ -261,7 +275,9 @@ function pageWindow(page, pageCount) {
 
 /**
  * Component thanh phân trang: thông tin "Hiển thị từ–đến trong tổng", nút Trước / Sau và các số trang.
- * @param {object} props page, pageCount, total, pageSize, onPage, unit, loading, compact.
+ * @param {object} props page, pageCount, total, pageSize, onPage(p) (bấm số trang / Trước / Sau),
+ *   unit (đơn vị đếm, mặc định 'dòng'), loading, compact. Thường truyền thẳng pagerProps của useClientPaging / useServerList.
+ * Ẩn hoàn toàn khi total = 0 và không đang tải.
  */
 export function Pager({ page, pageCount, total, pageSize, onPage, unit = 'dòng', loading = false, compact = false }) {
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1
@@ -306,6 +322,7 @@ export function useClientPaging(rows, { pageSize = DEFAULT_PAGE_SIZE, resetKey =
   const total = list.length
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
   const current = Math.min(page, pageCount)
+  // Chạy khi resetKey / pageSize đổi (vd đổi bộ lọc): quay về trang 1.
   useEffect(() => { setPage(1) }, [resetKey, pageSize])
   // Cắt ra các dòng của trang hiện tại.
   const pageRows = useMemo(() => list.slice((current - 1) * pageSize, current * pageSize), [list, current, pageSize])
@@ -331,9 +348,13 @@ export function useClientPaging(rows, { pageSize = DEFAULT_PAGE_SIZE, resetKey =
 
 /**
  * Hook trì hoãn (debounce): chỉ cập nhật giá trị sau `delay` ms người dùng ngừng gõ (tránh gọi API liên tục).
+ * Được gọi bởi useServerList cho từ khóa q.
+ * @param {any} value giá trị gốc. @param {number} delay số ms chờ.
+ * @returns {any} giá trị đã trì hoãn.
  */
 function useDebounced(value, delay = 300) {
   const [debounced, setDebounced] = useState(value)
+  // Mỗi khi value đổi: hẹn giờ cập nhật; nếu value đổi tiếp trước khi hết giờ thì hủy hẹn cũ.
   useEffect(() => {
     const id = window.setTimeout(() => setDebounced(value), delay)
     return () => window.clearTimeout(id)
@@ -349,22 +370,14 @@ const toQuery = params => Object.entries(params)
   .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(Array.isArray(v) ? v.join(',') : v)}`)
   .join('&')
 
-/*
- * useServerList({ path, q, status, sort, extra, pageSize, reloadKey, enabled, fallback })
- *   path      : '/api/operations/reservations'
- *   q, status, sort, extra: tham số lọc (extra: { facilityId, email, ... })
- *   reloadKey : đổi giá trị -> tải lại trang hiện tại (vd sau khi bàn giao / làm mới)
- *   fallback  : { rows, match(row, { q, status }), compare(a, b, sort), statusOf(row) }
- *               dùng khi backend chưa có API phân trang (404 / trả mảng) -> chia trang ở frontend.
- * Trả về { items, total, page, pageCount, pageSize, statusCounts, loading, error, mode, setPage, setPageSize, pagerProps, reload }
- */
 /**
  * Hook danh sách phân trang ở backend.
  * API: GET {path}?page=&pageSize=&q=&status=&sort=&...extra  -> { items, total, pageCount, statusCounts, page }
- * - Đổi bộ lọc -> tự về trang 1; từ khóa q được debounce 300ms; đổi reloadKey -> tải lại.
+ * - Đổi bộ lọc -> tự về trang 1; từ khóa q được debounce 300ms; đổi reloadKey -> tải lại trang hiện tại.
  * - Backend trả mảng (bản cũ) hoặc 404/405 -> chuyển sang chế độ dự phòng ('client') dùng fallback.rows.
- * @param {object} options path, q, status, sort, extra, pageSize, reloadKey, enabled,
- *   fallback { rows, match(row,{q,status}), compare(a,b,sort), statusOf(row) }.
+ * Được dùng bởi hooks/opsLists.js (useOpsList), AdminAccount, FacilityStaffAccount.
+ * @param {object} options path (vd '/api/operations/reservations'), q, status, sort, extra ({ facilityId, email, ... }),
+ *   pageSize, reloadKey, enabled, fallback { rows, match(row,{q,status}), compare(a,b,sort), statusOf(row) }.
  * @returns {{items,total,page,pageCount,pageSize,statusCounts,loading,error,mode,setPage,setPageSize,reload,pagerProps}}
  */
 export function useServerList({ path, q = '', status = '', sort = 'newest', extra = {}, pageSize: initialSize = DEFAULT_PAGE_SIZE, reloadKey = 0, enabled = true, fallback = null }) {
@@ -379,9 +392,9 @@ export function useServerList({ path, q = '', status = '', sort = 'newest', extr
   const lastFilterKey = useRef(filterKey)
   const fallbackRef = useRef(fallback)
   fallbackRef.current = fallback
-  const [useFallback, setUseFallback] = useState(false)
+  const [useFallback, setUseFallback] = useState(false) // true khi backend chưa hỗ trợ -> chia trang ở frontend
 
-  // Đổi bộ lọc -> về trang 1
+  // Chạy khi filterKey đổi (từ khóa đã debounce, trạng thái, sắp xếp, extra, pageSize): về trang 1.
   useEffect(() => {
     if (lastFilterKey.current !== filterKey) {
       lastFilterKey.current = filterKey
@@ -389,6 +402,8 @@ export function useServerList({ path, q = '', status = '', sort = 'newest', extr
     }
   }, [filterKey])
 
+  // Chạy khi trang / bộ lọc / reloadKey / tick đổi: gọi GET {path}?query và cập nhật state.
+  // Nếu backend trả mảng hoặc 404/405 thì bật chế độ dự phòng. Cờ cancelled bỏ qua kết quả của request cũ.
   useEffect(() => {
     if (!enabled || useFallback) return undefined
     let cancelled = false
@@ -417,7 +432,6 @@ export function useServerList({ path, q = '', status = '', sort = 'newest', extr
     return () => { cancelled = true }
   }, [enabled, useFallback, path, page, pageSize, debouncedQ, statusKey, sort, extraKey, reloadKey, tick])
 
-  // Chế độ dự phòng: lọc + sắp xếp + chia trang ở frontend
   // Chế độ dự phòng: lọc theo từ khóa, đếm theo trạng thái, lọc trạng thái, sắp xếp, rồi cắt trang ngay ở frontend.
   const fallbackResult = useMemo(() => {
     if (!useFallback || !fallback) return null
@@ -459,9 +473,8 @@ export function useServerList({ path, q = '', status = '', sort = 'newest', extr
 
 /* ---------- Nút lọc có số đếm ---------- */
 
-/* options: [[value, label]] hoặc [{ value, label }] ; counts: { VALUE: n } ; value '' = Tất cả */
 /**
- * Component dãy nút lọc (chip) có số đếm. value '' hoặc 'all' = Tất cả.
+ * Component dãy nút lọc (chip) có số đếm. value '' hoặc 'all' = Tất cả; key dạng "A,B" cộng dồn số đếm của A và B.
  * @param {object} props options ([[value,label]] hoặc [{value,label}]), value, onChange, counts ({ MÃ: số }), total.
  */
 export function FilterChips({ options = [], value, onChange, counts, total, className = '' }) {

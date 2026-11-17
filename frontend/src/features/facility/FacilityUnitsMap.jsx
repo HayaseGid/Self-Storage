@@ -1,11 +1,20 @@
 /**
  * ======================================================================
- * FILE: src/features/facility/FacilityUnitsMap.jsx  —  BẢN ĐỒ CÁC KHO BÊN TRONG 1 CƠ SỞ (vẽ trên bản đồ thật Leaflet)
- * - Lấy tọa độ cơ sở làm "Cổng vào", dựng khu nhà kho ngay phía sau cổng.
- * - Mỗi khu kích thước (S/M/L/xe) là 1 ô màu nhạt; mỗi kho là 1 chấm (đỏ đã thuê, xanh còn trống, xám bảo trì).
- * - Rê chuột xem nhanh thông tin, bấm chấm -> onSelect(unit) (mở xem 3D).
- * DB chưa có tọa độ từng kho nên vị trí trong khu là minh họa tự động. Không gọi API.
- * Dùng ở: FacilityFloorPlan.jsx.
+ * FILE: src/features/facility/FacilityUnitsMap.jsx  —  BẢN ĐỒ CÁC KHO TRONG 1 CƠ SỞ (LEAFLET)
+ * CHỨC NĂNG: Vẽ các kho BÊN TRONG một cơ sở thẳng trên bản đồ thật (Leaflet + OpenStreetMap). Lấy tọa độ cơ sở
+ *   (Facility.Latitude/Longitude) làm "Cổng vào", dựng khu nhà kho ngay phía sau (phía bắc) cổng. Mỗi khu kích thước
+ *   (S / M / L / xe) là 1 ô màu nhạt; mỗi kho là 1 chấm (đỏ = đã thuê, xanh = còn trống, xám = bảo trì).
+ *   Rê chuột xem nhanh thông tin, bấm chấm -> onSelect(unit) (mở xem 3D). Kho không khớp bộ lọc bị làm mờ.
+ *   Database chưa có tọa độ từng kho nên vị trí kho trong khu được xếp tự động (minh họa).
+ * THÀNH PHẦN CHÍNH:
+ *   - layoutUnits(units): tính vị trí (mét) của từng kho và từng khu quanh cổng vào.
+ *   - FacilityUnitsMap (default export): component bản đồ.
+ *   - BAND_LABELS: export lại từ utils/unitGeometry.
+ * DÙNG Ở: features/facility/FacilityFloorPlan.jsx.
+ * PHỤ THUỘC: ./FacilityMap (loadLeaflet), utils/unitGeometry, services/storageRules (formatVnd), FacilityUnitsMap.css.
+ * API: Không gọi API backend (chỉ tải Leaflet và ô bản đồ OpenStreetMap).
+ * LUỒNG: FacilityFloorPlan truyền units + point -> layoutUnits (mét) -> toLatLng đổi ra vĩ độ/kinh độ -> vẽ khu,
+ *   chấm kho, ghim "Cổng vào" -> khách bấm chấm -> onSelect(unit) -> FacilityFloorPlan mở Unit3DViewer.
  * ======================================================================
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
@@ -14,13 +23,7 @@ import { formatVnd } from '../../services/storageRules'
 import { BAND_LABELS, BAND_ORDER, formatMeters, unitGeometry, unitPlanStatus } from '../../utils/unitGeometry'
 import './FacilityUnitsMap.css'
 
-/*
- * Bản đồ các kho BÊN TRONG một cơ sở, vẽ thẳng trên bản đồ thật (Leaflet + OpenStreetMap).
- * - Lấy tọa độ cơ sở (Facility.Latitude/Longitude) làm cổng vào, dựng khu nhà kho ngay phía sau cổng.
- * - Mỗi khu kích thước (S / M / L / xe) là một ô màu nhạt; mỗi kho là một chấm:
- *   đỏ = đã thuê, xanh = còn trống, xám = bảo trì. Rê chuột xem nhanh, bấm chấm -> onSelect(unit) (mở 3D).
- * Database chưa có tọa độ từng kho nên vị trí kho trong khu được xếp tự động (minh họa), quanh vị trí thật của cơ sở.
- */
+/* Màu chấm theo trạng thái kho và màu ô theo khu kích thước. */
 const COLORS = { free: '#22a35a', rented: '#e53935', off: '#9aa8b5' }
 const ZONE_COLORS = { S: '#4c9be8', M: '#7b61d6', L: '#f08c2e', V: '#5b6b7a' }
 const SPACING = { S: 3.2, M: 4.6, L: 6, V: 7.5 } // khoảng cách giữa 2 kho (m)
@@ -32,10 +35,12 @@ const SETBACK = 10 // từ cổng vào tới mép khu nhà kho (m)
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch])
 const STATUS_TEXT = { free: 'Còn trống', rented: 'Đã có người thuê', off: 'Đang bảo trì' }
 
-/* Xếp kho theo khu, tính bằng mét quanh cổng vào (x: đông +, y: bắc +). */
 /**
- * Tính bố cục các kho theo khu, đơn vị mét quanh cổng vào (x: hướng đông, y: hướng bắc):
- * mỗi khu là lưới gần vuông, các khu đặt cạnh nhau, cách cổng SETBACK mét.
+ * Tính bố cục các kho theo khu, đơn vị mét quanh cổng vào (x: hướng đông +, y: hướng bắc +):
+ * mỗi khu là lưới gần vuông (số cột = ceil(√(số kho × 1,4)), hơi bè ngang), kho trong khu sắp theo diện tích rồi mã;
+ * các khu đặt cạnh nhau theo thứ tự S, M, L, V, căn giữa quanh cổng, cách cổng SETBACK mét về phía bắc.
+ * Gán thêm item.x, item.y (tâm chấm kho) cho từng kho.
+ * @param {object[]} units danh sách kho.
  * @returns {{zones: object[], building: {x0,x1,y0,y1}}}
  */
 export function layoutUnits(units) {
@@ -77,7 +82,9 @@ export function layoutUnits(units) {
 
 /**
  * Component bản đồ các kho trong cơ sở: tạo bản đồ 1 lần, vẽ khu + chấm kho + cổng vào, làm mờ kho không khớp bộ lọc.
- * @param {object} props facility, units, point (tọa độ cơ sở), highlightIds, onSelect(unit), height.
+ * Trả null nếu cơ sở không có tọa độ hợp lệ. Được gọi bởi FacilityFloorPlan.
+ * @param {object} props facility, units, point (tọa độ cơ sở), highlightIds (Set mã kho khớp bộ lọc),
+ *   onSelect(unit) (bấm chấm kho), height (px).
  */
 export default function FacilityUnitsMap({ facility, units, point, highlightIds = null, onSelect, height = 480 }) {
   const boxRef = useRef(null)
@@ -95,7 +102,7 @@ export default function FacilityUnitsMap({ facility, units, point, highlightIds 
   const plan = useMemo(() => layoutUnits(units), [units])
   const unitsKey = units.map(u => `${u.id}:${u.status}:${u.available}`).join('|')
 
-  // Tạo bản đồ một lần.
+  // Tạo bản đồ một lần khi mount (cho phóng to tới mức 21, ảnh tile phóng từ mức 19). Cleanup: xóa bản đồ.
   useEffect(() => {
     let cancelled = false
     loadLeaflet()
@@ -119,7 +126,8 @@ export default function FacilityUnitsMap({ facility, units, point, highlightIds 
     }
   }, [])
 
-  // Vẽ khu nhà kho + chấm kho.
+  // Vẽ khu nhà kho + chấm kho + cổng vào. Chạy khi bản đồ sẵn sàng, tọa độ cơ sở hoặc trạng thái kho đổi;
+  // xóa lớp cũ rồi vẽ lại, cuối cùng căn khung nhìn vừa cả khu nhà kho.
   useEffect(() => {
     const map = mapRef.current
     const L = window.L
@@ -130,7 +138,8 @@ export default function FacilityUnitsMap({ facility, units, point, highlightIds 
 
     const mPerDegLat = 111320
     const mPerDegLng = 111320 * Math.cos((lat * Math.PI) / 180)
-    // Đổi tọa độ mét (x,y) quanh cổng vào thành [vĩ độ, kinh độ].
+    // Đổi tọa độ mét (x,y) quanh cổng vào thành [vĩ độ, kinh độ]: 1 độ vĩ ≈ 111.320 m; 1 độ kinh ≈ 111.320 × cos(vĩ độ) m
+    // (kinh tuyến hẹp dần về phía cực). Đủ chính xác cho khoảng cách vài chục mét.
     const toLatLng = (x, y) => [lat + y / mPerDegLat, lng + x / mPerDegLng]
     // Thêm 1 lớp (hình chữ nhật/chấm/ghim) lên bản đồ và ghi nhớ để xóa khi vẽ lại.
     const add = layer => { layer.addTo(map); layersRef.current.push(layer); return layer }
@@ -170,7 +179,7 @@ export default function FacilityUnitsMap({ facility, units, point, highlightIds 
     map.fitBounds(L.latLngBounds([toLatLng(b.x0 - 4, -4), toLatLng(b.x1 + 4, b.y1 + 4)]), { padding: [24, 24], maxZoom: 20 })
   }, [ready, lat, lng, unitsKey])
 
-  // Làm mờ kho không khớp bộ lọc.
+  // Làm mờ kho không khớp bộ lọc: chạy khi highlightIds hoặc danh sách kho đổi, chỉ đổi style chấm (không vẽ lại).
   useEffect(() => {
     markersRef.current.forEach((marker, id) => {
       const dim = highlightIds && !highlightIds.has(id)

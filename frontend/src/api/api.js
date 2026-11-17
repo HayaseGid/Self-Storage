@@ -1,29 +1,30 @@
 /**
  * ======================================================================
- * FILE: src/api/api.js  —  TẦNG GỌI HTTP (HTTP CLIENT) DÙNG CHUNG CHO TOÀN BỘ FRONTEND
- * Tương đương: lớp "client" gọi tới các Controller của backend ASP.NET Core.
- *
- * Công dụng:
- * - Là cửa ngõ DUY NHẤT để frontend gọi REST API backend (mọi file khác đều gọi qua
- *   apiGet / apiPost / apiPut / apiDelete ở đây, không gọi fetch trực tiếp).
- * - Tự gắn header xác thực: "Authorization: Bearer <JWT>" (nếu user có token)
- *   hoặc "X-User-Email" (phiên cũ chưa có JWT).
- * - Tự gắn header "X-Simulated-Date" khi đang bật Demo Clock (giả lập ngày).
- * - Tự đặt timeout 20 giây, đổi mọi lỗi (mạng, timeout, HTTP 4xx/5xx) thành ApiError
- *   có câu thông báo tiếng Việt để giao diện hiển thị.
- * - Khi backend trả 401 + code TOKEN_INVALID: xóa phiên đăng nhập và chuyển về /login.
- *
- * Luồng 1 request:
- *   Component -> apiGet('/api/...') -> apiRequest() -> fetch(VITE_API_URL + path)
- *   -> Backend Middleware (JwtIdentityMiddleware) -> Controller -> Service -> Repository -> DB
- *   -> JSON trả về -> apiRequest() parse JSON -> trả data (hoặc ném ApiError) -> Component.
- *
- * Cấu hình: VITE_API_URL trong file .env (mặc định http://localhost:5046).
- * Phiên đăng nhập lưu ở localStorage key 'storespace_current_user' ({ email, role, token, ... }).
+ * FILE: src/api/api.js  —  HTTP CLIENT DÙNG CHUNG (CỬA NGÕ GỌI BACKEND)
+ * CHỨC NĂNG: Là nơi DUY NHẤT trong frontend gọi fetch() tới REST API backend ASP.NET Core.
+ *   Mọi file khác chỉ gọi apiGet / apiPost / apiPut / apiDelete ở đây. File tự gắn header
+ *   xác thực (Bearer JWT hoặc X-User-Email cho phiên cũ), header giả lập ngày của Demo Clock,
+ *   timeout 20 giây, và đổi mọi lỗi (mất mạng, timeout, HTTP 4xx/5xx) thành ApiError có câu
+ *   thông báo tiếng Việt. Khi backend trả 401 + code TOKEN_INVALID thì xóa phiên và chuyển về /login.
+ * THÀNH PHẦN CHÍNH:
+ *   - ApiError    : lớp lỗi có message tiếng Việt + status + code + data.
+ *   - apiRequest  : hàm lõi gửi request (mọi hàm bên dưới đều gọi hàm này).
+ *   - apiGet / apiPost / apiPut / apiDelete : 4 hàm tắt theo phương thức HTTP.
+ * DÙNG Ở: gần như toàn bộ frontend — src/App.jsx, các file trong src/api (catalogApi, vnpay,
+ *   otpService, lateFees, contractEmail), src/services (afterDeposit, policies), src/store/cart.js,
+ *   src/components/common/listKit.jsx, các trang src/pages/* và các feature src/features/*.
+ * PHỤ THUỘC: src/demoClock/demoClock.js (SIMULATED_DATE_HEADER, getSimulatedDateISO);
+ *   biến môi trường VITE_API_URL (mặc định http://localhost:5046); localStorage key
+ *   'storespace_current_user' ({ email, role, token, ... }).
+ * API: Không gọi endpoint cố định — gọi bất kỳ đường dẫn nào được truyền vào (path).
+ * LUỒNG: Component -> apiGet('/api/...') -> apiRequest() gắn header -> fetch(VITE_API_URL + path)
+ *   -> Backend (JwtIdentityMiddleware -> Controller -> Service -> DB) -> JSON trả về
+ *   -> apiRequest() parse JSON -> trả data (hoặc ném ApiError) -> Component hiển thị.
  * ======================================================================
  */
 import { SIMULATED_DATE_HEADER, getSimulatedDateISO } from '../demoClock/demoClock'
 
+// Địa chỉ gốc backend (bỏ dấu "/" thừa ở cuối), key localStorage lưu phiên đăng nhập, timeout mặc định (ms).
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5046').replace(/\/+$/, '')
 const CURRENT_USER_KEY = 'storespace_current_user'
 const REQUEST_TIMEOUT_MS = 20000
@@ -77,7 +78,6 @@ const TIMEOUT_MESSAGE = 'Máy chủ phản hồi quá lâu. Vui lòng thử lạ
 /* Các tiêu đề lỗi mặc định (tiếng Anh) của ASP.NET Core: không hiển thị cho người dùng. */
 const GENERIC_ENGLISH = /^(bad request|unauthorized|forbidden|not found|conflict|internal server error|method not allowed|unsupported media type|one or more validation errors occurred\.?|an error occurred while processing your request\.?)$/i
 
-/* Dịch các thông báo kiểm tra dữ liệu mặc định của ASP.NET Core sang tiếng Việt. */
 /**
  * Dịch câu lỗi kiểm tra dữ liệu (model validation) tiếng Anh mặc định của ASP.NET Core
  * sang tiếng Việt, ví dụ "The Email field is required." -> "Vui lòng nhập trường Email.".
@@ -248,6 +248,8 @@ export async function apiRequest(path, { method = 'GET', body, headers = {}, tim
 
 /**
  * Gửi request GET (đọc dữ liệu). Ví dụ: apiGet('/api/catalog/state').
+ * @param {string} path đường dẫn API bắt đầu bằng '/api/...'.
+ * @returns {Promise<any>} dữ liệu JSON backend trả về; ném ApiError nếu lỗi.
  */
 export function apiGet(path) {
   return apiRequest(path)
@@ -255,6 +257,9 @@ export function apiGet(path) {
 
 /**
  * Gửi request POST kèm body JSON (tạo mới / thực hiện hành động). Ví dụ: apiPost('/api/reservation', {...}).
+ * @param {string} path đường dẫn API.
+ * @param {object} body dữ liệu gửi lên (tự JSON.stringify).
+ * @returns {Promise<any>} dữ liệu JSON backend trả về; ném ApiError nếu lỗi.
  */
 export function apiPost(path, body) {
   return apiRequest(path, { method: 'POST', body })
@@ -262,6 +267,9 @@ export function apiPost(path, body) {
 
 /**
  * Gửi request PUT kèm body JSON (cập nhật dữ liệu). Ví dụ: apiPut('/api/admin/users/5', {...}).
+ * @param {string} path đường dẫn API.
+ * @param {object} body dữ liệu cập nhật.
+ * @returns {Promise<any>} dữ liệu JSON backend trả về; ném ApiError nếu lỗi.
  */
 export function apiPut(path, body) {
   return apiRequest(path, { method: 'PUT', body })
@@ -269,6 +277,8 @@ export function apiPut(path, body) {
 
 /**
  * Gửi request DELETE (xóa dữ liệu). Ví dụ: apiDelete('/api/unit-types/3').
+ * @param {string} path đường dẫn API của bản ghi cần xóa.
+ * @returns {Promise<any>} dữ liệu JSON backend trả về (thường null); ném ApiError nếu lỗi.
  */
 export function apiDelete(path) {
   return apiRequest(path, { method: 'DELETE' })

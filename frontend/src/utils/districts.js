@@ -1,20 +1,27 @@
 /**
  * ======================================================================
- * FILE: src/utils/districts.js  —  TÁCH KHU VỰC (QUẬN / HUYỆN / TP. THỦ ĐỨC...) TỪ ĐỊA CHỈ CƠ SỞ
- * Công dụng: phục vụ bộ lọc "theo khu vực" ở trang chủ / danh sách cơ sở. Không gọi API.
- * Giải pháp tạm ở frontend: nếu backend trả sẵn trường district/districtName thì ưu tiên dùng.
- * Dùng ở: App.jsx, ContractCard, BusinessFacilityForm, BusinessPanels.
+ * FILE: src/utils/districts.js  —  TÁCH KHU VỰC (QUẬN / HUYỆN) TỪ ĐỊA CHỈ CƠ SỞ
+ * CHỨC NĂNG: Đoán khu vực (quận / huyện / TP. Thủ Đức...) của một cơ sở kho từ địa chỉ dạng chữ
+ *   (vd "123 Lê Lợi, Quận 1, TP.HCM" / "456 Cộng Hòa, Tân Bình, TP.HCM") và gom danh sách cơ sở theo khu vực,
+ *   phục vụ bộ lọc "theo khu vực" ở trang chủ / danh sách cơ sở và hiển thị khu vực trên hợp đồng, trang doanh nghiệp.
+ *   Đây là giải pháp TẠM ở frontend vì database chưa có cột khu vực riêng: nếu backend trả sẵn trường
+ *   districtName (hoặc district đã gắn sẵn) thì ưu tiên dùng giá trị đó.
+ * THÀNH PHẦN CHÍNH:
+ *   - slugifyDistrict(label): đổi tên khu vực thành slug không dấu ("Quận 7" -> "quan-7").
+ *   - extractDistrict(address, facilityName): đoán khu vực từ địa chỉ / tên cơ sở.
+ *   - getFacilityDistrict(facility): khu vực của 1 cơ sở (ưu tiên dữ liệu backend).
+ *   - groupFacilitiesByDistrict(list): gom và sắp xếp cơ sở theo khu vực.
+ * DÙNG Ở: src/App.jsx, features/contract/ContractCard.jsx, pages/business/BusinessFacilityForm.jsx,
+ *   pages/business/BusinessPanels.jsx.
+ * PHỤ THUỘC: Không import gì (chỉ dùng biểu thức chính quy).
+ * API: Không gọi API (dữ liệu cơ sở lấy sẵn từ GET /api/catalog/state ở nơi khác).
+ * LUỒNG: App có danh sách facility -> groupFacilitiesByDistrict -> getFacilityDistrict / extractDistrict cho từng
+ *   cơ sở -> nhóm [{slug, label, facilities}] -> hiển thị bộ lọc khu vực; người dùng chọn slug -> lọc cơ sở.
  * ======================================================================
  */
-/*
- * Tách khu vực (quận / huyện / TP. Thủ Đức...) từ địa chỉ cơ sở để lọc theo khu vực.
- *
- * Đây là giải pháp TẠM ở frontend: database chưa có cột khu vực riêng.
- * Địa chỉ mẫu có dạng "123 Lê Lợi, Quận 1, TP.HCM" / "456 Cộng Hòa, Tân Bình, TP.HCM".
- * Khi backend thêm cột District cho Facility, chỉ cần trả về trường `district`
- * trong /api/catalog/state, hàm getFacilityDistrict() sẽ ưu tiên dùng giá trị đó.
- */
 
+/* Các mẫu nhận diện đoạn địa chỉ: tên thành phố, quốc gia (bị bỏ qua), phường/xã (không phải khu vực),
+   và tiền tố quận/huyện/thị xã/thành phố (nhóm 1 = tiền tố, nhóm 2 = tên). */
 const CITY_PATTERN = /^(?:tp\.?|thành phố|thanh pho)?\s*(?:hcm|hồ chí minh|ho chi minh|sài gòn|sai gon|hà nội|ha noi|đà nẵng|da nang|cần thơ|can tho|hải phòng|hai phong)\.?$/i
 const COUNTRY_PATTERN = /^(?:việt nam|viet nam|vietnam|vn)$/i
 const WARD_PATTERN = /^(?:phường|phuong|p\.|xã|xa|thị trấn|thi tran)\s/i
@@ -45,12 +52,13 @@ function normalizeLabel(prefix, rest) {
   return name
 }
 
-/* Trả về { label, slug } hoặc null nếu không xác định được. */
 /**
  * Đoán khu vực từ địa chỉ (và tên cơ sở nếu cần). Thứ tự thử:
  *  1. Đoạn địa chỉ có tiền tố Quận/Huyện/TP (kể cả viết tắt Q.7, Q7).
  *  2. Đoạn cuối không phải số nhà / phường (vd "Tân Bình").
  *  3. Đọc từ tên cơ sở (vd "StoreSpace Quận 3").
+ * Đoạn tên thành phố / quốc gia bị loại trước khi xét.
+ * @param {string} address địa chỉ cơ sở. @param {string} facilityName tên cơ sở (dự phòng).
  * @returns {{label:string, slug:string}|null}
  */
 export function extractDistrict(address, facilityName = '') {
@@ -101,17 +109,15 @@ export function extractDistrict(address, facilityName = '') {
 }
 
 /**
- * Lấy khu vực của 1 cơ sở: ưu tiên districtName từ backend, không có thì tách từ địa chỉ.
+ * Lấy khu vực của 1 cơ sở: ưu tiên districtName từ backend, không có thì tách từ location / address (và tên).
+ * @param {object} facility cơ sở ({ districtName, location, address, name }).
+ * @returns {{label:string, slug:string}|null}
  */
 export function getFacilityDistrict(facility) {
   if (facility?.districtName) return { label: facility.districtName, slug: slugifyDistrict(facility.districtName) }
   return extractDistrict(facility?.location || facility?.address, facility?.name)
 }
 
-/*
- * Gom danh sách cơ sở theo khu vực, sắp theo tên (Quận 1, Quận 2... trước, rồi tên chữ).
- * Trả về [{ slug, label, facilities: [...] }]. Cơ sở không xác định được khu vực vào nhóm "Khác".
- */
 /**
  * Gom danh sách cơ sở theo khu vực, sắp thứ tự: Quận 1, Quận 2... trước, rồi tên chữ theo ABC,
  * nhóm "Khu vực khác" (không xác định được) xếp cuối.

@@ -1,16 +1,38 @@
 /**
  * ======================================================================
- * FILE: src/features/contract/ContractRenewal.jsx  —  GIA HẠN HỢP ĐỒNG (phía KHÁCH HÀNG)
- * Backend: ContractRenewalsController (+ VnPayController khi trả qua VNPay).
- *   GET  /api/contract-renewals/mine           -> điều kiện + báo giá từng hợp đồng (backend tính, frontend chỉ hiển thị)
+ * FILE: src/features/contract/ContractRenewal.jsx  —  GIA HẠN HỢP ĐỒNG (PHÍA KHÁCH HÀNG)
+ * CHỨC NĂNG: Toàn bộ giao diện + logic gia hạn hợp đồng của khách: tải điều kiện & báo giá gia hạn (backend tính,
+ *   frontend chỉ hiển thị), khối nhắc "Gia hạn hợp đồng" đầu tab Hợp đồng, hộp thoại chọn kỳ gia hạn + hình thức trả,
+ *   thanh toán (VNPay hoặc mô phỏng), hoàn tất và mở màn hình ký phụ lục gia hạn.
+ *   Khi gia hạn: trả ngay tiền thuê THÁNG ĐẦU của kỳ mới (Monthly) hoặc TOÀN BỘ kỳ mới (Upfront), cộng cọc bổ sung nếu
+ *   giá tăng; cọc cũ được chuyển sang kỳ mới. Khách tiếp tục dùng kho, không cần bàn giao lại.
+ * THÀNH PHẦN CHÍNH:
+ *   - fmtIsoDate (export): đổi ngày ISO -> 'dd/MM/yyyy' (nhiều file khác import).
+ *   - useContractRenewals (export hook): tải dữ liệu gia hạn của khách.
+ *   - payRenewal (export): thanh toán 1 yêu cầu gia hạn (mô phỏng hoặc VNPay).
+ *   - finishRenewal (export): báo "Gia hạn thành công" rồi yêu cầu mở màn hình ký phụ lục.
+ *   - RenewalSection (export component): khối nhắc gia hạn (chờ thanh toán / sắp hết hạn / đã gia hạn chờ ký).
+ *   - RenewalModal (export component): hộp thoại gia hạn 3 bước.
+ *   - money, addMonthsIso, minutesLeft: hàm tiện ích nội bộ.
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx (useContractRenewals, RenewalSection, RenewalModal, fmtIsoDate),
+ *   src/features/notification/HeaderNotificationBell.jsx (useContractRenewals),
+ *   src/features/contract/ContractCard.jsx và src/features/payment/PendingPayments.jsx (fmtIsoDate).
+ * PHỤ THUỘC: api/api (apiGet, apiPost), services/storageRules (formatVnd), components/common/Dialog (useDialog),
+ *   ../payment/DepositConfirm, api/vnpay (SIMULATED_PAYMENT_ENABLED, startVnPayPayment),
+ *   services/afterDeposit (announceRenewalSuccess, focusContract, requestContractSign), ContractSignFlow.css,
+ *   ContractRenewal.css.
+ * API (ContractRenewalsController, + VnPayController khi trả qua VNPay):
+ *   GET  /api/contract-renewals/mine           -> { items, rules }: điều kiện + báo giá từng hợp đồng
  *   POST /api/contract-renewals                -> { reservationId, months, paymentPlan, expectedAmount } tạo yêu cầu chờ thanh toán
+ *        paymentPlan: "Monthly" (trả ngay tháng đầu kỳ mới) | "Upfront" (trả ngay toàn bộ kỳ mới) — mặc định giữ hình thức cũ
  *   POST /api/vnpay/create                     -> thanh toán qua VNPay (kind 'renewal')
- *   POST /api/contract-renewals/{id}/pay-demo  -> thanh toán mô phỏng (khi VITE_ALLOW_SIMULATED_PAYMENT=true)
+ *   POST /api/contract-renewals/{id}/pay-demo  -> thanh toán mô phỏng (chỉ khi VITE_ALLOW_SIMULATED_PAYMENT=true)
  *   POST /api/contract-renewals/{id}/finalize  -> hoàn tất gia hạn khi đã trả tiền
  *   POST /api/contract-renewals/{id}/cancel    -> hủy yêu cầu gia hạn chưa thanh toán
- * Luồng: Gia hạn -> chọn số tháng + hình thức trả (Monthly/Upfront) -> xác nhận & thanh toán
- * -> "Gia hạn thành công, vui lòng ký phụ lục" -> mở màn hình ký phụ lục. Khách tiếp tục dùng kho, không bàn giao lại.
- * Dùng ở: CustomerAccount, ContractCard, PendingPayments, HeaderNotificationBell.
+ * LUỒNG: bấm "Gia hạn" -> RenewalModal: chọn số tháng + hình thức trả -> "Tiếp tục" -> tick 2 ô DepositConfirm
+ *   -> "Thanh toán" -> submit(): POST /api/contract-renewals -> payRenewal() (VNPay: chuyển trang; mô phỏng: pay-demo)
+ *   -> finishRenewal(): dialog "Gia hạn thành công, vui lòng ký phụ lục" -> requestContractSign(contractId)
+ *   (ghi sessionStorage + phát sự kiện mở tab Hợp đồng) -> CustomerAccount mở ContractSignFlow để ký phụ lục.
  * ======================================================================
  */
 import React, { useCallback, useEffect, useState } from 'react'
@@ -23,30 +45,25 @@ import { announceRenewalSuccess, focusContract, requestContractSign } from '../.
 import './ContractSignFlow.css'
 import './ContractRenewal.css'
 
-/*
- * GIA HẠN HỢP ĐỒNG (khách hàng).
- *   GET  /api/contract-renewals/mine            -> điều kiện + báo giá từng hợp đồng (backend tính, frontend chỉ hiển thị)
- *   POST /api/contract-renewals                 -> { reservationId, months, paymentPlan, expectedAmount } tạo yêu cầu gia hạn chờ thanh toán
- *     paymentPlan: "Monthly" (trả ngay tháng đầu kỳ mới) | "Upfront" (trả ngay toàn bộ kỳ mới) — mặc định giữ hình thức cũ
- *   POST /api/vnpay/create { reservationIds }   -> thanh toán qua VNPay (như đặt cọc)
- *   POST /api/contract-renewals/{id}/pay-demo   -> thanh toán mô phỏng (chỉ khi VITE_ALLOW_SIMULATED_PAYMENT=true)
- *   POST /api/contract-renewals/{id}/finalize | cancel
- *
- * Luồng: Gia hạn -> chọn số tháng -> xác nhận + thanh toán (tiền thuê THÁNG ĐẦU của kỳ mới + cọc bổ sung nếu giá tăng;
- * cọc cũ được chuyển sang kỳ mới; các tháng sau trả hằng tháng) -> "Gia hạn thành công, vui lòng ký phụ lục gia hạn"
- * -> OK -> mở màn hình ký phụ lục gia hạn. Khách tiếp tục dùng kho, không cần bàn giao lại.
- */
-
 /**
- * Định dạng tiền làm tròn kèm "đ".
+ * Định dạng số tiền (làm tròn) thành chuỗi kiểu Việt Nam kèm "đ".
+ * @param {number|string} value số tiền.
+ * @returns {string}
  */
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
 /**
- * Đổi ngày ISO thành 'dd/MM/yyyy' (rỗng -> '—'). Được export cho nhiều file khác dùng.
+ * Đổi ngày ISO ('2026-05-01...') thành 'dd/MM/yyyy' (rỗng -> '—').
+ * @param {string} iso ngày dạng ISO.
+ * @returns {string}
+ * Được dùng bởi: file này, ContractCard, PendingPayments, CustomerAccount.
  */
 export const fmtIsoDate = iso => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—')
 /**
  * Tính ngày kết thúc sau `months` tháng kể từ ngày ISO (trừ 1 ngày), dùng hiển thị hết tháng đầu của kỳ gia hạn.
+ * Tính theo UTC để không bị lệch múi giờ.
+ * @param {string} iso ngày bắt đầu dạng ISO.
+ * @param {number} months số tháng cộng thêm.
+ * @returns {string|null} ngày 'yyyy-MM-dd', null nếu không có ngày bắt đầu.
  */
 const addMonthsIso = (iso, months) => {
   if (!iso) return null
@@ -56,14 +73,19 @@ const addMonthsIso = (iso, months) => {
   return date.toISOString().slice(0, 10)
 }
 /**
- * Số phút còn lại tới một thời điểm ISO (không âm).
+ * Số phút còn lại tới một thời điểm ISO (không âm), dùng hiện "còn N phút" giữ yêu cầu gia hạn chờ thanh toán.
+ * @param {string} iso thời điểm hết hạn.
+ * @returns {number}
  */
 const minutesLeft = iso => Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 60000))
 
 /**
- * Hook: tải thông tin gia hạn của khách (điều kiện, báo giá, yêu cầu đang chờ, đã gia hạn).
+ * Hook: tải thông tin gia hạn của khách (điều kiện, báo giá, yêu cầu đang chờ, đã gia hạn) một lần khi mount.
  * API: GET /api/contract-renewals/mine  -> { items: [...], rules }
  * @returns {{loading, error, data, items, rules, byReservation, reload}}
+ *   items: mảng thông tin gia hạn theo từng hợp đồng; rules: luật gia hạn; byReservation(id): tìm item theo đơn;
+ *   reload(): gọi lại API.
+ * Được gọi bởi: CustomerAccount (tab Hợp đồng, truyền vào RenewalSection / ContractCard), HeaderNotificationBell (nhắc gia hạn).
  */
 export function useContractRenewals() {
   const [state, setState] = useState({ loading: true, error: '', data: null })
@@ -81,6 +103,7 @@ export function useContractRenewals() {
           : error.message
       }))
   }, [])
+  // Chạy 1 lần khi component dùng hook được mount: tải dữ liệu gia hạn.
   useEffect(() => { reload() }, [reload])
 
   const items = Array.isArray(state.data?.items) ? state.data.items : []
@@ -89,15 +112,15 @@ export function useContractRenewals() {
   return { ...state, items, rules: state.data?.rules || null, byReservation, reload }
 }
 
-/*
- * Thanh toán một yêu cầu gia hạn đang chờ. Trả về:
- *   { redirected: true }  -> đã chuyển sang VNPay (VNPay chuyển về /payment-result)
- *   { contractId, ... }   -> thanh toán mô phỏng xong, gia hạn đã hoàn tất
- */
 /**
- * Thanh toán 1 yêu cầu gia hạn đang chờ: chế độ demo thì cho chọn mô phỏng, không thì chuyển sang VNPay.
- * API: POST /api/contract-renewals/{reservationId}/pay-demo  (mô phỏng)  |  POST /api/vnpay/create (VNPay)
- * @returns {Promise<object>} { redirected: true } nếu đã chuyển sang VNPay; kết quả gia hạn nếu thanh toán mô phỏng.
+ * Thanh toán 1 yêu cầu gia hạn đang chờ: nếu bật chế độ demo thì hỏi khách chọn "Mô phỏng" hay "Qua VNPay",
+ * không thì chuyển thẳng sang VNPay (VNPay sẽ chuyển về /payment-result).
+ * API: POST /api/contract-renewals/{reservationId}/pay-demo  (mô phỏng)  |  POST /api/vnpay/create (VNPay, kind 'renewal')
+ * @param {object} dialog đối tượng từ useDialog() (confirm/alert).
+ * @param {{reservationId:number, amount:number, label:string}} info đơn gia hạn, số tiền, nhãn hiện ở trang VNPay.
+ * @returns {Promise<object>} { redirected: true } nếu đã chuyển sang VNPay; { contractId, ... } nếu thanh toán mô phỏng
+ *   xong (gia hạn đã hoàn tất).
+ * Được gọi bởi: RenewalModal.submit, RenewalSection.continuePay.
  */
 export async function payRenewal(dialog, { reservationId, amount, label }) {
   const demo = SIMULATED_PAYMENT_ENABLED && await dialog.confirm({
@@ -112,9 +135,13 @@ export async function payRenewal(dialog, { reservationId, amount, label }) {
   return { redirected: true }
 }
 
-/* Gia hạn xong: "Gia hạn thành công, vui lòng ký phụ lục gia hạn" -> OK -> mở màn hình ký. */
 /**
- * Sau khi gia hạn xong: hiện thông báo "Gia hạn thành công" rồi yêu cầu mở màn hình ký phụ lục gia hạn.
+ * Sau khi gia hạn xong: hiện thông báo "Gia hạn thành công, vui lòng ký phụ lục gia hạn" (announceRenewalSuccess),
+ * khách bấm OK -> requestContractSign(contractId) ghi sessionStorage + phát sự kiện để CustomerAccount mở màn hình ký.
+ * @param {object} dialog từ useDialog().
+ * @param {{contractId, contractNumber, renewedFromContractNumber}} result kết quả gia hạn từ backend.
+ * @param {number} [amount] số tiền đã trả (0/rỗng thì không hiện).
+ * Được gọi bởi: RenewalModal.submit, RenewalSection.continuePay (khi thanh toán mô phỏng / hoàn tất thành công).
  */
 export async function finishRenewal(dialog, result, amount) {
   await announceRenewalSuccess(dialog, {
@@ -125,11 +152,16 @@ export async function finishRenewal(dialog, result, amount) {
   if (result.contractId) requestContractSign(result.contractId)
 }
 
-/* Khối "Gia hạn hợp đồng" ở đầu trang Hợp đồng: chờ thanh toán, sắp hết hạn, đã gia hạn (chờ ký phụ lục). */
 /**
- * Component khối "Gia hạn hợp đồng" đầu trang Hợp đồng: yêu cầu gia hạn chờ thanh toán, hợp đồng sắp hết hạn
- * (nút Gia hạn), hợp đồng đã gia hạn (chờ ký phụ lục).
- * @param {object} props renewals (kết quả useContractRenewals), onRenew(item) (mở RenewalModal), onChanged().
+ * Khối "Gia hạn hợp đồng" đầu tab Hợp đồng, gồm 3 loại thẻ: yêu cầu gia hạn chờ thanh toán (nút Hủy / Thanh toán /
+ * Hoàn tất), hợp đồng sắp hết hạn (nút Gia hạn), hợp đồng đã gia hạn (nút Ký phụ lục nếu chưa ký).
+ * Bấm vào thẻ -> focusContract() cuộn tới thẻ hợp đồng tương ứng. Không có gì để hiện thì trả null.
+ * @param {object} props
+ * @param {object} props.renewals kết quả useContractRenewals().
+ * @param {Function} props.onRenew onRenew(item): bấm "Gia hạn hợp đồng" -> cha mở RenewalModal.
+ * @param {Function} [props.onChanged] gọi sau khi thanh toán / hủy để cha tải lại danh sách đơn.
+ * API: POST /api/contract-renewals/{id}/finalize, POST /api/contract-renewals/{id}/cancel, payRenewal().
+ * Được gọi bởi: CustomerAccount (đầu tab Hợp đồng).
  */
 export function RenewalSection({ renewals, onRenew, onChanged }) {
   const dialog = useDialog()
@@ -147,6 +179,8 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
   // Tải lại dữ liệu gia hạn và báo cha tải lại dữ liệu đơn.
   const refresh = () => { renewals.reload(); onChanged?.() }
 
+  // Chia item thành 3 nhóm: pending (yêu cầu gia hạn chờ thanh toán/hoàn tất), active (sắp hết hạn, có thể gia hạn
+  // hoặc bị chặn kèm lý do), renewed (đã gia hạn bằng phụ lục, còn hiệu lực).
   const pending = renewals.items.filter(item => item.pendingRenewal && !item.renewedBy)
   // Chỉ nhắc các hợp đồng sắp hết hạn; hợp đồng còn xa vẫn gia hạn được bằng nút "Gia hạn" trên thẻ hợp đồng.
   const soonDays = Math.max(30, Number(rules?.renewalNoticeDays || 0) + 30)
@@ -158,7 +192,9 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
 
   /**
    * Tiếp tục yêu cầu gia hạn đang chờ: đã trả thì hoàn tất, chưa trả thì thanh toán.
+   * Chạy khi bấm nút "Thanh toán ..." / "Hoàn tất gia hạn" trên thẻ chờ thanh toán.
    * API: POST /api/contract-renewals/{id}/finalize  hoặc  payRenewal() (pay-demo / VNPay).
+   * Thành công -> refresh() + finishRenewal() (mở ký phụ lục); lỗi -> dialog báo lỗi.
    */
   const continuePay = async item => {
     const p = item.pendingRenewal
@@ -179,8 +215,8 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
   }
 
   /**
-   * Hủy yêu cầu gia hạn chưa thanh toán (hỏi xác nhận trước).
-   * API: POST /api/contract-renewals/{id}/cancel
+   * Hủy yêu cầu gia hạn chưa thanh toán (hỏi xác nhận trước). Chạy khi bấm nút "Hủy" trên thẻ chờ thanh toán.
+   * API: POST /api/contract-renewals/{id}/cancel; xong thì refresh() dữ liệu.
    */
   const cancelPending = async item => {
     const ok = await dialog.confirm({
@@ -278,28 +314,38 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
   )
 }
 
-/* Hộp thoại gia hạn: 1) chọn kỳ  2) xác nhận & thanh toán  3) ký phụ lục (mở màn hình ký sau khi thanh toán). */
 /**
- * Component hộp thoại gia hạn 3 bước: 1) chọn kỳ + hình thức trả, 2) xác nhận & thanh toán, 3) ký phụ lục.
- * @param {object} props item (thông tin gia hạn của hợp đồng, có quotes), onClose, onDone(result).
+ * Hộp thoại gia hạn 3 bước: 1) 'plan' chọn kỳ (số tháng) + hình thức trả, xem bảng giá từng kho;
+ * 2) 'pay' xác nhận bằng DepositConfirm (tick 2 ô) & thanh toán; 3) ký phụ lục (mở màn hình ký sau khi thanh toán,
+ * không nằm trong hộp thoại này). Nhấn Esc hoặc bấm nền tối để đóng.
+ * @param {object} props
+ * @param {object} props.item thông tin gia hạn của 1 hợp đồng (reservationId, contractNumber, facility, endDate,
+ *   daysLeft, paymentPlan, quotes: [{ months, monthly, rent, amountDueMonthly, amountDueUpfront, units, ... }]).
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} [props.onDone] onDone(result) sau khi gia hạn xong; onDone(null) khi đã tạo yêu cầu nhưng thanh toán lỗi.
+ * API: POST /api/contract-renewals, rồi payRenewal() (pay-demo hoặc POST /api/vnpay/create).
+ * Được gọi bởi: CustomerAccount (khi bấm "Gia hạn" trên ContractCard hoặc RenewalSection).
  */
 export function RenewalModal({ item, onClose, onDone }) {
   const dialog = useDialog()
   const quotes = Array.isArray(item.quotes) ? item.quotes : []
+  // Số tháng gia hạn đang chọn: mặc định bằng số tháng của hợp đồng hiện tại (nếu có báo giá), không thì báo giá đầu.
   const [months, setMonths] = useState(() => (quotes.find(q => q.months === item.months) || quotes[0])?.months ?? null)
-  const [step, setStep] = useState('plan')
+  const [step, setStep] = useState('plan') // 'plan' (chọn kỳ) | 'pay' (xác nhận & thanh toán)
   // Khách chọn lại hình thức trả; chọn sẵn hình thức của hợp đồng hiện tại
   const [paymentPlan, setPaymentPlan] = useState(item.paymentPlan === 'Upfront' ? 'Upfront' : 'Monthly')
   const [agreed, setAgreed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [override, setOverride] = useState(null) // báo giá mới nếu bảng giá vừa đổi
+  // Báo giá đang áp dụng: ưu tiên báo giá mới backend trả về (override) nếu cùng số tháng.
   const quote = (override && override.months === months ? override : null) || quotes.find(q => q.months === months) || null
-  // Số tiền trả ngay theo hình thức trả (backend tính: amountDueMonthly / amountDueUpfront)
-  // Số tiền phải trả ngay của 1 báo giá theo hình thức trả đang chọn (Upfront: cả kỳ; Monthly: tháng đầu).
+  // Số tiền phải trả ngay của 1 báo giá theo hình thức trả đang chọn (backend tính sẵn:
+  // Upfront -> amountDueUpfront = cả kỳ; Monthly -> amountDueMonthly = tháng đầu).
   const dueOf = q => (q ? Number(paymentPlan === 'Upfront' ? (q.amountDueUpfront ?? q.amountDue) : (q.amountDueMonthly ?? q.amountDue)) : 0)
   const amountDue = dueOf(quote)
 
+  // Chạy khi mở hộp thoại và khi submitting đổi: gắn phím Esc để đóng; gỡ khi đóng.
   useEffect(() => {
     // Nhấn Esc để đóng hộp thoại (khi không đang gửi).
     const onKey = event => { if (event.key === 'Escape' && !submitting) onClose() }
@@ -308,7 +354,7 @@ export function RenewalModal({ item, onClose, onDone }) {
   }, [onClose, submitting])
 
   /**
-   * Tạo yêu cầu gia hạn rồi thanh toán ngay.
+   * Tạo yêu cầu gia hạn rồi thanh toán ngay. Chạy khi bấm nút "Thanh toán ..." ở bước 'pay'.
    * API: POST /api/contract-renewals  body { reservationId, months, paymentPlan, expectedAmount }, sau đó payRenewal().
    * Nếu giá vừa đổi, backend trả báo giá mới -> cập nhật và bắt xác nhận lại; nếu đã tạo yêu cầu nhưng thanh toán lỗi
    * thì báo yêu cầu vẫn được giữ trong thời gian giữ chỗ.
@@ -337,6 +383,7 @@ export function RenewalModal({ item, onClose, onDone }) {
     }
   }
 
+  // Dữ liệu cho thanh bước và bảng tiền: firstMonthEnd = ngày cuối tháng đầu kỳ mới; laterMonths = số tháng trả sau.
   const steps = [['plan', 'Chọn kỳ gia hạn'], ['pay', 'Xác nhận & thanh toán'], ['sign', 'Ký phụ lục gia hạn']]
   const stepIndex = steps.findIndex(([key]) => key === step)
   const firstMonthEnd = quote ? addMonthsIso(quote.startDate, 1) : null

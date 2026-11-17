@@ -1,19 +1,34 @@
 /**
  * ======================================================================
  * FILE: src/features/payment/PendingPayments.jsx  —  TRUNG TÂM THANH TOÁN & HÓA ĐƠN CỦA KHÁCH HÀNG
- * Gồm:
- * - usePendingDeposits / PendingDepositBar: nhắc các đơn CHƯA ĐẶT CỌC (khách thoát VNPay giữa chừng hoặc chưa bấm
- *   thanh toán) kèm đồng hồ đếm ngược giờ giữ kho; hiện ở header mọi trang và đầu trang tài khoản.
- * - CustomerPaymentCenter: trang "Thanh toán & Hóa đơn":
- *    1. Khoản cần trả ngay: cọc giữ kho / gia hạn chờ thanh toán, tiền thuê định kỳ đến hạn, phí trễ hạn.
- *    2. Tóm tắt công nợ & hoàn tiền.
- *    3. Lịch sử giao dịch (phân trang) và tiến trình hoàn cọc.
- * Luồng API:
- * - Thanh toán: startVnPayPayment() -> POST /api/vnpay/create (kind 'deposit' | 'renewal' | 'rent').
- * - Phí trễ hạn: useLateFees() -> GET /api/late-fees/mine.
- * - Hủy đặt chỗ / gửi lại hoàn tiền: CancelReservationModal, retryRefund() -> /api/reservation-cancellations/...
- * Dữ liệu đơn (reservations) do CustomerAccount tải từ GET /api/customer-reservations/mine rồi truyền vào.
- * Dùng ở: CustomerAccount, HeaderNotificationBell.
+ * CHỨC NĂNG: Gom mọi thứ liên quan tới tiền của khách:
+ *   - Thanh nhắc các đơn CHƯA ĐẶT CỌC (khách thoát VNPay giữa chừng hoặc chưa bấm thanh toán) kèm đồng hồ đếm ngược
+ *     giờ giữ kho; hiện dưới header mọi trang và đầu trang tài khoản.
+ *   - Trang "Thanh toán & Hóa đơn": 1) cọc giữ kho / gia hạn chờ thanh toán, 2) hóa đơn tiền thuê định kỳ + phí trễ hạn,
+ *     3) số liệu tóm tắt công nợ & hoàn tiền, 4) lịch sử giao dịch (phân trang) kèm tiến trình hoàn cọc.
+ * THÀNH PHẦN CHÍNH:
+ *   - parseUtc, fmtLeft (export): đọc giờ UTC của backend; định dạng thời gian còn lại.
+ *   - useNow (export hook): thời điểm hiện tại, tự cập nhật theo chu kỳ (đồng hồ đếm ngược).
+ *   - pendingDepositsOf (export): lọc đơn chờ cọc còn hạn giữ kho.
+ *   - usePendingDeposits (export hook): danh sách đơn chờ cọc + now.
+ *   - PendingDepositBar (export component): thanh nhắc đơn chưa đặt cọc.
+ *   - CustomerPaymentCenter (export component): trang "Thanh toán & Hóa đơn".
+ *   - money, fmtTime, fmtDate, abandonedNote, unitsOf, historyStatus: hàm tiện ích nội bộ.
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx (CustomerPaymentCenter, PendingDepositBar, pendingDepositsOf),
+ *   src/features/notification/HeaderNotificationBell.jsx (PendingDepositBar, fmtLeft, usePendingDeposits).
+ * PHỤ THUỘC: components/common/listKit (Code, NewBadge, Pager, rowClass, useClientPaging...), services/storageRules
+ *   (formatReservationCode), components/common/Dialog (useDialog), api/vnpay (startVnPayPayment), api/lateFees
+ *   (lateFeePolicyText, useLateFees), ../contract/ContractRenewal (fmtIsoDate), ../booking/CancelReservation
+ *   (CancelReservationModal, retryRefund), PendingPayments.css.
+ * API:
+ *   - POST /api/vnpay/create (qua startVnPayPayment; kind 'deposit' | 'renewal' | 'rent') — chuyển sang trang VNPay.
+ *   - GET /api/late-fees/mine (qua useLateFees) — phí trễ hạn và kỳ tiền thuê quá hạn.
+ *   - GET /api/reservation-cancellations/{id}/quote, POST /api/reservation-cancellations/{id} (qua CancelReservationModal),
+ *     POST /api/reservation-cancellations/{id}/refund-retry (qua retryRefund).
+ *   Dữ liệu đơn (reservations) do CustomerAccount tải từ GET /api/customer-reservations/mine rồi truyền vào.
+ * LUỒNG: CustomerAccount truyền reservations -> usePendingDeposits lọc đơn chờ cọc + đếm ngược; useLateFees tải phí trễ
+ *   -> khách bấm "Thanh toán qua VNPay" (payWithVnPay) hoặc "Đóng ..." (payRentBill: dialog xác nhận) -> startVnPayPayment
+ *   -> POST /api/vnpay/create -> trình duyệt chuyển sang VNPay -> VNPay trả về /payment-result (PaymentResultPage xử lý).
  * ======================================================================
  */
 import React, { useEffect, useState } from 'react'
@@ -27,25 +42,18 @@ import { fmtIsoDate } from '../contract/ContractRenewal'
 import CancelReservationModal, { retryRefund } from '../booking/CancelReservation'
 import './PendingPayments.css'
 
-/*
- * TRUNG TÂM THANH TOÁN & HÓA ĐƠN CỦA KHÁCH (PendingPayments.jsx)
- *   - usePendingDeposits / PendingDepositBar: đơn chưa đặt cọc (khách thoát VNPay giữa chừng, hoặc chưa bấm thanh toán)
- *     -> thanh nhắc có đồng hồ đếm ngược giờ giữ kho, hiện ở header mọi trang + đầu trang tài khoản.
- *   - CustomerPaymentCenter: trang "Thanh toán & Hóa đơn" hợp nhất:
- *     1. Khoản cần thanh toán ngay (Cọc giữ kho + Tiền thuê định kỳ đến hạn + Phí trễ hạn)
- *     2. Số liệu tóm tắt công nợ & hoàn tiền
- *     3. Lịch sử giao dịch dạng bảng & tiến trình hoàn cọc
- */
-
 /**
- * Định dạng tiền làm tròn kèm "đ".
+ * Định dạng số tiền (làm tròn) thành chuỗi kiểu Việt Nam kèm "đ".
+ * @param {number|string} n số tiền.
+ * @returns {string}
  */
 const money = n => `${new Intl.NumberFormat('vi-VN').format(Math.round(Number(n || 0)))}đ`
 
-/* Backend trả giờ UTC không kèm "Z" (giống fmtUtc của trang khách) -> tự thêm Z */
 /**
- * Parse thời điểm UTC từ backend (tự thêm "Z" nếu thiếu để không lệch 7 tiếng).
+ * Đọc thời điểm UTC từ backend. Backend trả giờ UTC không kèm "Z" -> tự thêm "Z" nếu thiếu để không bị lệch 7 tiếng.
+ * @param {string} value chuỗi thời điểm.
  * @returns {number} milisecond (NaN nếu rỗng).
+ * Được gọi bởi: pendingDepositsOf, fmtDate, CustomerPaymentCenter (sắp xếp lịch sử).
  */
 export function parseUtc(value) {
   if (!value) return NaN
@@ -53,18 +61,25 @@ export function parseUtc(value) {
   return Date.parse(/Z|[+-]\d{2}:?\d{2}$/.test(text) ? text : `${text}Z`)
 }
 /**
- * Định dạng milisecond thành "HH:mm dd/MM".
+ * Định dạng milisecond thành "HH:mm dd/MM" (giờ hết hạn giữ kho).
+ * @param {number} ms
+ * @returns {string}
  */
 const fmtTime = ms => new Date(ms).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
 /**
- * Định dạng thời điểm UTC thành ngày giờ đầy đủ theo vi-VN (không hợp lệ -> "—").
+ * Định dạng thời điểm UTC thành ngày giờ đầy đủ theo vi-VN (không hợp lệ -> "—"); dùng cho cột "Ngày" của lịch sử.
+ * @param {string} value
+ * @returns {string}
  */
 const fmtDate = value => {
   const ms = parseUtc(value)
   return Number.isNaN(ms) ? '—' : new Date(ms).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 /**
- * Định dạng thời gian còn lại: "mm:ss" hoặc "H giờ mm phút"; hết giờ -> "hết giờ".
+ * Định dạng thời gian còn lại: "mm:ss" (dưới 1 giờ) hoặc "H giờ mm phút"; hết giờ -> "hết giờ".
+ * @param {number} ms số milisecond còn lại.
+ * @returns {string}
+ * Được gọi bởi: PendingDepositBar, CustomerPaymentCenter, HeaderNotificationBell.
  */
 export function fmtLeft(ms) {
   if (ms <= 0) return 'hết giờ'
@@ -79,9 +94,12 @@ export function fmtLeft(ms) {
  * Hook trả về thời điểm hiện tại, tự cập nhật mỗi `intervalMs` ms (dùng cho đồng hồ đếm ngược).
  * @param {number} intervalMs chu kỳ cập nhật.
  * @param {boolean} enabled false thì không chạy bộ đếm.
+ * @returns {number} Date.now() mới nhất.
+ * Được gọi bởi: usePendingDeposits.
  */
 export function useNow(intervalMs = 1000, enabled = true) {
   const [now, setNow] = useState(() => Date.now())
+  // Chạy khi intervalMs / enabled đổi: bật setInterval cập nhật now; tắt bộ đếm khi unmount hoặc enabled = false.
   useEffect(() => {
     if (!enabled) return undefined
     const id = window.setInterval(() => setNow(Date.now()), intervalMs)
@@ -90,11 +108,13 @@ export function useNow(intervalMs = 1000, enabled = true) {
   return now
 }
 
-/* Đơn đang chờ đặt cọc (chưa có giao dịch thành công), còn trong giờ giữ kho; hết giờ thì tự biến mất. */
 /**
- * Lọc các đơn đang chờ đặt cọc (chưa có giao dịch thành công) và còn trong giờ giữ kho, sắp theo hạn sớm nhất.
+ * Lọc các đơn đang chờ đặt cọc (status 'Pending Deposit', chưa có giao dịch thành công) và còn trong giờ giữ kho,
+ * thêm trường expiresAtMs, sắp theo hạn sớm nhất. Đơn hết giờ thì tự biến mất khỏi danh sách.
  * @param {object[]} rentals danh sách đơn của khách.
  * @param {number} now thời điểm hiện tại (ms).
+ * @returns {object[]}
+ * Được gọi bởi: usePendingDeposits, CustomerAccount.
  */
 export function pendingDepositsOf(rentals, now = Date.now()) {
   return (Array.isArray(rentals) ? rentals : [])
@@ -105,8 +125,10 @@ export function pendingDepositsOf(rentals, now = Date.now()) {
 }
 
 /**
- * Hook: danh sách đơn chờ cọc + thời điểm hiện tại (chỉ chạy đồng hồ khi có đơn chờ cọc).
+ * Hook: danh sách đơn chờ cọc + thời điểm hiện tại (chỉ chạy đồng hồ 1 giây/lần khi có đơn chờ cọc).
+ * @param {object[]} rentals danh sách đơn của khách.
  * @returns {{list:object[], now:number}}
+ * Được gọi bởi: PendingDepositBar, CustomerPaymentCenter, HeaderNotificationBell.
  */
 export function usePendingDeposits(rentals) {
   const has = (Array.isArray(rentals) ? rentals : []).some(r => r?.status === 'Pending Deposit' && r.paymentStatus !== 'Completed')
@@ -114,9 +136,10 @@ export function usePendingDeposits(rentals) {
   return { list: has ? pendingDepositsOf(rentals, now) : [], now }
 }
 
-/* Lần thanh toán trước chưa xong (mở VNPay rồi thoát / thất bại) */
 /**
- * Câu ghi chú khi lần thanh toán trước chưa xong (mở VNPay rồi thoát / thất bại / bị hủy).
+ * Câu ghi chú khi lần thanh toán trước chưa xong (mở VNPay rồi thoát / thất bại / bị hủy), dựa trên paymentStatus.
+ * @param {object} item đơn chờ cọc.
+ * @returns {string|null} null nếu chưa từng thử thanh toán.
  */
 const abandonedNote = item => {
   if (item.paymentStatus === 'Pending') return 'Bạn đã mở trang VNPay nhưng chưa hoàn tất thanh toán.'
@@ -125,18 +148,22 @@ const abandonedNote = item => {
   return null
 }
 /**
- * Ghép danh sách số kho của đơn (chưa có thì "Chưa phân kho").
+ * Ghép danh sách số kho của đơn thành chuỗi "A01, A02" (chưa có thì "Chưa phân kho").
+ * @param {object} item đơn.
+ * @returns {string}
  */
 const unitsOf = item => (item.units?.length ? item.units.map(u => u.number).join(', ') : item.unitId) || 'Chưa phân kho'
 
-/*
- * Thanh nhắc đơn chưa đặt cọc.
- *   onPay(): mở trang Thanh toán. variant 'header' (dưới header trang chủ) | 'inline' (trong trang tài khoản).
- */
 /**
- * Component thanh nhắc đơn chưa đặt cọc: số đơn, tổng tiền cọc, giờ hết hạn giữ kho và thời gian còn lại
- * (tô đỏ khi còn dưới 5 phút).
- * @param {object} props rentals, onPay() (mở trang thanh toán), variant ('header'|'inline'), actionLabel.
+ * Thanh nhắc đơn chưa đặt cọc: số đơn, tổng tiền cọc, giờ hết hạn giữ kho của đơn sớm nhất và thời gian còn lại
+ * (tô đỏ khi còn dưới 5 phút). Không có đơn chờ cọc thì trả null.
+ * @param {object} props
+ * @param {object[]} props.rentals danh sách đơn của khách.
+ * @param {Function} props.onPay bấm nút -> mở trang Thanh toán.
+ * @param {'header'|'inline'} [props.variant='header'] 'header' (dưới header mọi trang) | 'inline' (trong trang tài khoản).
+ * @param {string} [props.actionLabel] chữ trên nút.
+ * @returns {JSX.Element|null}
+ * Được gọi bởi: HeaderNotificationBell (variant header), CustomerAccount (variant inline).
  */
 export function PendingDepositBar({ rentals, onPay, variant = 'header', actionLabel = 'Xem & thanh toán' }) {
   const { list, now } = usePendingDeposits(rentals)
@@ -173,6 +200,8 @@ export function PendingDepositBar({ rentals, onPay, variant = 'header', actionLa
 
 /**
  * Trạng thái hiển thị của 1 dòng lịch sử giao dịch: "Thành công", "Đang hoàn ...", "Đã hoàn ...".
+ * @param {object} item đơn trong lịch sử (refundAmount, refundStatus).
+ * @returns {{label:string, tone:'ok'|'info'|'warn'}} chữ và màu chip.
  */
 const historyStatus = item => {
   if (Number(item.refundAmount) > 0) {
@@ -184,17 +213,25 @@ const historyStatus = item => {
 }
 
 /**
- * Component trang "Thanh toán & Hóa đơn" của khách.
- * @param {object} props reservations (đơn của khách), onChanged() (tải lại dữ liệu), renderRefund(item)
- *   (vẽ tiến trình hoàn cọc), onOpenContract(reservationId) (mở hợp đồng liên quan).
+ * Trang "Thanh toán & Hóa đơn" của khách: khoản cọc / gia hạn chờ thanh toán, hóa đơn tiền thuê & phí trễ hạn,
+ * thẻ tóm tắt, bảng lịch sử giao dịch (phân trang) và hộp thoại hủy đặt chỗ.
+ * @param {object} props
+ * @param {object[]} props.reservations đơn của khách (CustomerAccount tải từ GET /api/customer-reservations/mine).
+ * @param {Function} [props.onChanged] gọi để cha tải lại dữ liệu (sau khi hủy đơn / gửi lại hoàn tiền).
+ * @param {Function} [props.renderRefund] renderRefund(item) — cha vẽ tiến trình hoàn cọc (RefundTimeline).
+ * @param {Function} [props.onOpenContract] onOpenContract(reservationId) — mở hợp đồng liên quan ở tab Hợp đồng.
+ * API: GET /api/late-fees/mine (useLateFees), POST /api/vnpay/create (payWithVnPay, payRentBill),
+ *   POST /api/reservation-cancellations/{id}/refund-retry (retry).
+ * @returns {JSX.Element}
+ * Được gọi bởi: CustomerAccount (mục "Thanh toán").
  */
 export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, onOpenContract }) {
   const dialog = useDialog()
-  const [paying, setPaying] = useState(null)
-  const [payingRentId, setPayingRentId] = useState(null)
-  const [cancelRental, setCancelRental] = useState(null)
-  const [retrying, setRetrying] = useState(null)
-  const [openRefund, setOpenRefund] = useState(null)
+  const [paying, setPaying] = useState(null) // chuỗi reservationId đang chuyển sang VNPay (khóa các nút thanh toán cọc)
+  const [payingRentId, setPayingRentId] = useState(null) // đơn đang đóng tiền thuê
+  const [cancelRental, setCancelRental] = useState(null) // đơn đang mở CancelReservationModal
+  const [retrying, setRetrying] = useState(null) // đơn đang gửi lại yêu cầu hoàn tiền
+  const [openRefund, setOpenRefund] = useState(null) // đơn đang mở dòng tiến trình hoàn cọc
   const { list: pending, now } = usePendingDeposits(reservations)
   const lateFees = useLateFees()
 
@@ -210,6 +247,7 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
 
   /**
    * Thanh toán tiền cọc / gia hạn cho 1 hoặc nhiều đơn qua VNPay.
+   * Chạy khi bấm "Thanh toán qua VNPay" (1 đơn) hoặc "Thanh toán tất cả" (mọi đơn chờ cọc).
    * API: POST /api/vnpay/create (qua startVnPayPayment), kind = 'renewal' nếu toàn đơn gia hạn, ngược lại 'deposit'.
    */
   const payWithVnPay = async items => {
@@ -226,9 +264,9 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
     }
   }
 
-  /* Đóng hóa đơn tiền thuê định kỳ + phí trễ hạn trực tiếp tại Trung tâm Thanh toán */
   /**
    * Đóng hóa đơn tiền thuê định kỳ + phí trễ hạn của 1 hợp đồng: hỏi xác nhận rồi chuyển sang VNPay.
+   * Chạy khi bấm nút "Đóng ..." trên thẻ hóa đơn tiền thuê.
    * API: POST /api/vnpay/create (qua startVnPayPayment, kind 'rent').
    */
   const payRentBill = async rental => {
@@ -257,6 +295,7 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
 
   /**
    * Gửi lại yêu cầu hoàn tiền cho 1 đơn đã hủy rồi tải lại dữ liệu.
+   * Chạy khi bấm "Gửi lại yêu cầu hoàn tiền" trong dòng tiến trình hoàn (refundStatus = 'Pending').
    * API: POST /api/reservation-cancellations/{id}/refund-retry (qua retryRefund).
    */
   const retry = async item => {
@@ -266,6 +305,7 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
     onChanged?.()
   }
 
+  // rentBills: hợp đồng chưa kết thúc có tiền thuê đến hạn hoặc phí trễ chưa đóng; các tổng dùng cho tiêu đề và thẻ tóm tắt.
   const all = Array.isArray(reservations) ? reservations : []
   const rentBills = all.filter(r => {
     const ended = ['Completed', 'Cancelled', 'Expired'].includes(r.status)
@@ -277,6 +317,7 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
   const totalDueNow = pendingTotal + rentDueTotal
   const totalDueCount = pending.length + rentBills.length
 
+  // Lịch sử: đơn đã thanh toán thành công hoặc có hoàn tiền, mới nhất lên đầu, phân trang phía client (useClientPaging).
   const history = all
     .filter(r => r.paymentStatus === 'Completed' || Number(r.refundAmount) > 0)
     .sort((a, b) => (parseUtc(b.paymentDate) || 0) - (parseUtc(a.paymentDate) || 0))

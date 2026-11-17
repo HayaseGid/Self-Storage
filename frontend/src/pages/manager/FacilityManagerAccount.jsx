@@ -1,10 +1,29 @@
 /**
  * ======================================================================
- * FILE: src/pages/manager/FacilityManagerAccount.jsx  —  TRANG LÀM VIỆC CỦA QUẢN LÝ CƠ SỞ (Facility Manager, route /manager)
- * Mục (menu ManagerNav.jsx): Tổng quan & báo cáo · Kho cơ sở (tạo/sửa/xóa kho, sắp xếp, lọc) · Sự cố kho · Nhân sự
- * (thêm/gỡ nhân viên, giao/đổi người phụ trách đơn) · Đơn đặt chỗ · Hợp đồng · Công nợ & phí trễ · Khiếu nại kiểm kho
- * · Đặc tính kho (loại kho + kích thước tại cơ sở) · Bảng giá (ManagerPriceTable.jsx).
- * Luồng API:
+ * FILE: src/pages/manager/FacilityManagerAccount.jsx  —  TRANG LÀM VIỆC CỦA QUẢN LÝ CƠ SỞ
+ * CHỨC NĂNG: Toàn bộ màn hình của Facility Manager (người quản lý 1 cơ sở kho). Bên trái là menu ManagerNav.jsx,
+ *   bên phải hiện nội dung theo mục đang chọn (activeTab): Tổng quan & báo cáo · Kho cơ sở (tạo/sửa/xóa kho, sắp xếp, lọc)
+ *   · Sự cố kho · Nhân sự (thêm/gỡ nhân viên, giao/đổi người phụ trách đơn) · Đơn đặt chỗ · Hợp đồng
+ *   · Công nợ & phí trễ · Khiếu nại kiểm kho · Đặc tính kho (loại kho + kích thước tại cơ sở) · Bảng giá.
+ * THÀNH PHẦN CHÍNH: (xem JSDoc từng hàm bên dưới)
+ *   - Hàm định dạng: fmtMoney, fmtDate, fmtDateTime, pad, compareNatural, unitSizeValue, todayStr, formatUnitLocation.
+ *   - Bảng nhãn: RES_STATUS_MAP, UNIT_STATUS_MAP, PAY_STATUS_MAP (trạng thái -> chữ + màu) và component Badge.
+ *   - loadFreshUnits / saveFreshUnits: nhớ "kho vừa tạo" trong sessionStorage để tô nổi bật.
+ *   - Hộp thoại (modal): UnitFormModal (tạo/sửa kho), UnitDetailModal (chi tiết kho), TypeModal / SizeModal (loại / size kho),
+ *     AddStaffModal, StaffHistoryModal, OwnerModal (giao người phụ trách đơn), ManagerContractModal (xem hợp đồng).
+ *   - Tab con (mỗi mục menu 1 component): FacilityPropertiesTab (Đặc tính kho), LateFeesTab (Công nợ & phí trễ),
+ *     UnitReportsTab (Sự cố kho), FacilityStaffTab (Nhân sự), FacilityContractsTab (Hợp đồng),
+ *     FacilityReservationsTab (Đơn đặt chỗ). Tổng quan, Kho cơ sở viết thẳng trong component trang;
+ *     Bảng giá = ManagerPriceTable.jsx; Khiếu nại kiểm kho = ManagerReturnInspectionsTab (features/return).
+ *   - FacilityManagerDashboard (export default): component trang, tải dữ liệu (loadState) và ghép các tab.
+ * DÙNG Ở: src/App.jsx (import tên FacilityManagerDashboard, hiện cho tài khoản role FACILITY_MANAGER).
+ * PHỤ THUỘC: api/api.js, mappers/operationsState, components/common (Dialog, PriceInput, listKit), services/storageRules,
+ *   features/contract/ContractDocument, features/unit/unitTypes, features/return/ReturnInspection, hooks/opsLists,
+ *   demoClock (ngày "hôm nay" giả lập), ManagerNav.jsx, ManagerPriceTable.jsx, styles/fmanagerstyles.css.
+ * LUỒNG: Vào trang -> loadState() gọi GET /api/operations/state (+ loại/size/khung giá) -> mapOperationsState() ra dữ liệu
+ *   dùng chung -> người dùng bấm mục trên ManagerNav -> đổi activeTab -> hiện tab tương ứng; thao tác trong tab gọi API
+ *   rồi gọi lại loadState({ silent: true }) / onChanged() để làm mới.
+ * API:
  *   GET    /api/operations/state?email=...                         (OperationsController) -> dữ liệu vận hành -> mapOperationsState()
  *   POST   /api/operations/units  |  PUT /api/operations/units/{unitNumber}               -> tạo / sửa kho
  *   DELETE /api/storage-units/{unitId}                              (StorageUnitController) -> xóa kho chưa có lịch sử
@@ -50,17 +69,23 @@ import ManagerNav from './ManagerNav' // [THÊM] menu trái gom nhóm + số vi�
 import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, markAllItemsSeen, markItemSeen, newestFirst, rowClass, timeAgo, useClientPaging } from '../../components/common/listKit' // [THÊM] phân trang + làm nổi mã
 import { CONTRACT_SORTS, RESERVATION_SORTS, UNIT_SORTS, useOpsList } from '../../hooks/opsLists' // [THÊM] danh sách phân trang ở backend
 
-/* Formatters */
+/* ===== HÀM ĐỊNH DẠNG DÙNG CHUNG TRONG FILE ===== */
 /**
- * Định dạng tiền kiểu Việt Nam kèm "đ".
+ * Định dạng số tiền kiểu Việt Nam kèm "đ" (null/0 -> "0đ").
+ * @param {number} n số tiền.
+ * @returns {string} vd "1.500.000đ".
  */
 const fmtMoney = (n) => new Intl.NumberFormat('vi-VN').format(n || 0) + 'đ'
 /**
- * Đổi ngày ISO thành 'dd/MM/yyyy' (rỗng -> '—').
+ * Đổi ngày ISO ('2026-05-10' hoặc '2026-05-10T...') thành 'dd/MM/yyyy'; rỗng -> '—'.
+ * @param {string} s chuỗi ngày.
+ * @returns {string}
  */
 const fmtDate = (s) => (s ? String(s).slice(0, 10).split('-').reverse().join('/') : '—')
 /**
- * Định dạng ngày giờ theo vi-VN (không hợp lệ -> '—').
+ * Định dạng ngày giờ dạng "dd/MM, HH:mm" theo vi-VN; rỗng hoặc không hợp lệ -> '—'.
+ * @param {string} s chuỗi ngày giờ.
+ * @returns {string}
  */
 const fmtDateTime = (s) => {
   if (!s) return '—'
@@ -68,12 +93,14 @@ const fmtDateTime = (s) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
 }
 /**
- * Thêm số 0 phía trước cho đủ 2 chữ số.
+ * Thêm số 0 phía trước cho đủ 2 chữ số (vd 5 -> "05"), dùng khi ghép ngày/tháng.
+ * @param {number} n
+ * @returns {string}
  */
 const pad = (n) => String(n).padStart(2, '0')
 
-/* ===== SORT BẢNG KHO ===== */
-// Thứ tự trạng thái theo mức cần chú ý (dùng khi sort cột Trạng thái)
+/* ===== SẮP XẾP BẢNG KHO ===== */
+// Thứ tự trạng thái theo mức cần chú ý (số nhỏ = cần chú ý hơn), dùng khi sắp xếp cột Trạng thái
 const UNIT_STATUS_ORDER = {
   RESERVED: 1, BOOKING: 1,
   PENDING_INSPECTION: 2, NEEDS_INSPECTION: 2,
@@ -83,23 +110,28 @@ const UNIT_STATUS_ORDER = {
   INACTIVE: 6
 }
 
-// So sánh mã có số theo kiểu tự nhiên: Q1-U2 < Q1-U10
 /**
- * So sánh mã có số theo kiểu tự nhiên (Q1-U2 < Q1-U10), không phân biệt hoa thường.
+ * So sánh 2 mã có số theo kiểu tự nhiên (Q1-U2 đứng trước Q1-U10), không phân biệt hoa thường.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number} âm nếu a đứng trước b, dương nếu sau, 0 nếu bằng (dùng cho Array.sort).
  */
 const compareNatural = (a, b) =>
   String(a ?? '').localeCompare(String(b ?? ''), 'vi', { numeric: true, sensitivity: 'base' })
 
-// Size so theo diện tích thật, không theo chữ
 /**
- * Giá trị kích thước để sắp xếp kho: theo diện tích thật (m²), không theo chữ.
+ * Giá trị kích thước để sắp xếp kho: theo diện tích thật (m²; thiếu thì dùng thể tích), không theo chữ của tên size.
+ * @param {object} u kho (areaM2 / volumeM3 / sizeM2).
+ * @returns {number}
  */
 const unitSizeValue = (u) => Number(u.areaM2 ?? 0) || Number(u.volumeM3 ?? u.sizeM2 ?? 0)
 
 /**
- * "Hôm nay" dạng 'YYYY-MM-DD' theo Demo Clock.
+ * Ngày "hôm nay" dạng 'YYYY-MM-DD' lấy từ Demo Clock (đồng hồ giả lập để demo, có thể khác ngày thật).
+ * @returns {string}
  */
 const todayStr = () => getTodayISO()
+/** Trạng thái đơn đặt chỗ -> { chữ hiển thị, tone màu } cho component Badge. */
 const RES_STATUS_MAP = {
   PENDING_PAYMENT: { label: 'Chờ trả cọc', tone: 'warn' },
   PENDING_CONFIRMATION: { label: 'Chờ xác nhận cọc', tone: 'warn' },
@@ -111,6 +143,7 @@ const RES_STATUS_MAP = {
   EXPIRED: { label: 'Hết hạn giữ chỗ', tone: 'bad' }
 }
 
+/** Trạng thái kho -> { chữ hiển thị, tone màu } cho component Badge. */
 const UNIT_STATUS_MAP = {
   AVAILABLE: { label: 'Còn trống', tone: 'ok' },
   BOOKING: { label: 'Đang giữ chỗ chờ cọc', tone: 'warn' },
@@ -121,18 +154,23 @@ const UNIT_STATUS_MAP = {
   INACTIVE: { label: 'Ngừng sử dụng', tone: 'warn' }
 }
 
+/** Trạng thái thanh toán cọc -> { chữ hiển thị, tone màu } cho component Badge. */
 const PAY_STATUS_MAP = {
   PENDING: { label: 'Chưa thanh toán', tone: 'warn' },
   PENDING_CONFIRMATION: { label: 'Chờ xác nhận', tone: 'warn' },
   PAID: { label: 'Đã thanh toán cọc', tone: 'ok' }
 }
 
-/* Kho vừa tạo được nhớ trong phiên làm việc (theo từng cơ sở) để hiển thị nổi bật. */
+/* Kho vừa tạo được nhớ trong phiên làm việc (sessionStorage, theo từng cơ sở) để tô nổi bật trong bảng kho.
+   FRESH_UNITS_KEY: khóa lưu trữ; FRESH_TTL_MS: chỉ giữ 12 giờ. */
 const FRESH_UNITS_KEY = 'storespace_fresh_units'
 const FRESH_TTL_MS = 12 * 60 * 60 * 1000
 
 /**
- * Đọc danh sách kho vừa tạo của 1 cơ sở trong phiên làm việc (sessionStorage, chỉ giữ 12 giờ) để tô nổi bật.
+ * Đọc danh sách kho vừa tạo của 1 cơ sở từ sessionStorage (bỏ các mục quá 12 giờ).
+ * @param {string|number} facilityKey khóa cơ sở.
+ * @returns {Array<{createdAt: string}>} danh sách kho mới (lỗi đọc -> mảng rỗng).
+ * Được gọi khi trang khởi tạo / đổi cơ sở để biết kho nào cần tô "mới".
  */
 function loadFreshUnits(facilityKey) {
   try {
@@ -144,7 +182,10 @@ function loadFreshUnits(facilityKey) {
 }
 
 /**
- * Lưu danh sách kho vừa tạo của 1 cơ sở vào sessionStorage.
+ * Ghi danh sách kho vừa tạo của 1 cơ sở vào sessionStorage (giữ nguyên dữ liệu của cơ sở khác).
+ * @param {string|number} facilityKey khóa cơ sở.
+ * @param {Array} list danh sách kho mới cần lưu.
+ * Được gọi sau khi tạo kho thành công hoặc khi Manager đánh dấu đã xem.
  */
 function saveFreshUnits(facilityKey, list) {
   try {
@@ -156,11 +197,12 @@ function saveFreshUnits(facilityKey, list) {
   }
 }
 
-/* Mã kho dự kiến (chỉ để xem trước, hệ thống cấp mã thật khi lưu vào DB). */
 /**
- * Dự đoán mã kho tiếp theo (chỉ để xem trước; mã thật do backend cấp khi lưu).
- * @param {string} prefix tiền tố mã kho của cơ sở.
- * @param {object[]} units các kho hiện có.
+ * Dự đoán mã kho tiếp theo, vd đã có Q1-U07 thì trả "Q1-U08" (chỉ để xem trước trong form tạo kho;
+ * mã thật do backend cấp khi lưu vào DB).
+ * @param {string} prefix tiền tố mã kho của cơ sở (vd "Q1").
+ * @param {object[]} units các kho hiện có (dùng trường id = mã kho).
+ * @returns {string|null} mã dự kiến, hoặc null nếu cơ sở chưa có tiền tố.
  */
 function previewNextUnitCode(prefix, units) {
   if (!prefix) return null
@@ -173,10 +215,11 @@ function previewNextUnitCode(prefix, units) {
   return `${codePrefix}${String(max + 1).padStart(2, '0')}`
 }
 
-/* Badge Component */
-// [FM11] Vị trí kho: Tầng · Dãy/Khu · Ghi chú (cột Floor / Zone / LocationNote trong StorageUnit)
 /**
- * Ghép vị trí kho thành chuỗi "Tầng · Dãy/Khu · Ghi chú" (cột Floor / Zone / LocationNote).
+ * Ghép vị trí kho thành chuỗi "Tầng · Dãy/Khu · Ghi chú" (cột Floor / Zone / LocationNote của bảng StorageUnit),
+ * bỏ qua phần trống.
+ * @param {object} unit kho.
+ * @returns {string} vd "Tầng 1 · Dãy A"; không có gì -> ''.
  */
 function formatUnitLocation(unit) {
   if (!unit) return ''
@@ -184,26 +227,41 @@ function formatUnitLocation(unit) {
 }
 
 /**
- * Component nhãn trạng thái có màu (tra nhãn + tone trong bảng map).
+ * Nhãn trạng thái có màu: tra chữ + tone trong bảng map, rồi vẽ <span class="fm-badge fm-{tone}">.
+ * @param {object} props
+ * @param {object} props.map bảng tra (RES_STATUS_MAP / UNIT_STATUS_MAP / PAY_STATUS_MAP).
+ * @param {string} props.value mã trạng thái; không có trong map thì hiện nguyên mã, màu 'info'.
  */
 function Badge({ map, value }) {
   const item = map[value] || { label: value, tone: 'info' }
   return <span className={`fm-badge fm-${item.tone}`}>{item.label}</span>
 }
 
-/* Modal Tạo/Chỉnh Sửa Kho */
+/* =========================================================
+   MODAL TẠO / CHỈNH SỬA KHO
+   ========================================================= */
 /**
- * Component hộp thoại tạo / sửa kho: loại kho, size, giá thuê (khóa theo biểu giá nếu cơ sở đã có giá cho loại + size,
- * không thì nhập và so với giá tham chiếu trung vị), trạng thái, vị trí; tóm tắt thay đổi khi sửa.
- * @param {object} props facilityDbId, nextUnitCode, editingUnit (null khi tạo), onClose, onSave(unitData),
- *   unitTypes, unitSizes, rentalRates, facilityUnits, dialog.
+ * Hộp thoại tạo / sửa kho: chọn loại kho, size, giá thuê, trạng thái, vị trí (tầng, dãy, ghi chú).
+ * Giá thuê bị khóa theo biểu giá nếu cơ sở đã có giá cho cặp loại + size; nếu chưa thì Manager tự nhập và được so
+ * với giá tham chiếu (trung vị các kho cùng loại). Khi sửa: tô các trường đã đổi và hiện bảng tóm tắt thay đổi để xác nhận.
+ * Không tự gọi API — chỉ gọi onSave(unitData); trang cha (handleSaveUnit) mới gọi POST/PUT /api/operations/units.
+ * @param {object} props
+ * @param {number} props.facilityDbId mã cơ sở trong DB (để tìm biểu giá).
+ * @param {string} props.nextUnitCode mã kho dự kiến (chỉ hiển thị khi tạo mới).
+ * @param {object|null} props.editingUnit kho đang sửa; null = tạo kho mới.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {(unitData: object) => Promise} props.onSave lưu dữ liệu kho.
+ * @param {Array} props.unitTypes / props.unitSizes danh sách loại / size đang Active tại cơ sở.
+ * @param {Array} props.rentalRates biểu giá của các cơ sở.
+ * @param {Array} [props.facilityUnits=[]] các kho của cơ sở (tính giá tham chiếu).
+ * @param {object} props.dialog hộp thoại xác nhận dùng chung (useDialog).
+ * Được mở khi bấm "Tạo kho" hoặc "Sửa kho" ở mục Kho cơ sở.
  */
 function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSave, unitTypes, unitSizes, rentalRates, facilityUnits = [], dialog }) {
   const currentType = unitTypes.find(item => item.name === editingUnit?.type)
   const currentSize = unitSizes.find(item => item.dimensions === editingUnit?.size)
 
-  // Giá trị ban đầu của kho đang sửa: dùng để điền sẵn form và so sánh thay đổi.
-  // Giá trị ban đầu của kho đang sửa (để điền sẵn form và so sánh thay đổi).
+  // Giá trị ban đầu của kho đang sửa (để điền sẵn form và so sánh thay đổi); null khi tạo mới.
   const original = useMemo(() => editingUnit ? {
     typeId: String(editingUnit.unitTypeId ?? currentType?.unitTypeId ?? ''),
     sizeId: String(editingUnit.unitSizeId ?? editingUnit.sizeId ?? currentSize?.unitSizeId ?? ''),
@@ -243,10 +301,12 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
   const referencePrice = rate ? null : (medianPrice(sameTypeSize.map(u => u.pricePerMonth)) ?? medianPrice(sameType.map(u => u.pricePerMonth)))
   const referenceLabel = sameTypeSize.length ? 'giá kho cùng loại & size' : 'giá kho cùng loại'
 
+  // Trạng thái chọn được; nếu kho đang ở trạng thái hệ thống tự đặt (Giữ chỗ, Đang thuê...) thì vẫn hiện nhưng khóa.
   const statusOptions = EDITABLE_UNIT_STATUSES.includes(status)
     ? EDITABLE_UNIT_STATUSES
     : [status, ...EDITABLE_UNIT_STATUSES]
 
+  // Danh sách thay đổi khi sửa kho: mỗi phần tử [nhãn, giá trị cũ, giá trị mới] (dùng cho hộp xác nhận và tô trường đổi).
   const changes = original ? [
     typeId !== original.typeId && ['Loại kho', unitTypes.find(t => String(t.unitTypeId) === original.typeId)?.name || '—', selectedType?.name || '—'],
     sizeId !== original.sizeId && ['Size', unitSizes.find(s => String(s.unitSizeId) === original.sizeId)?.dimensions || '—', selectedSize?.dimensions || '—'],
@@ -259,7 +319,7 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
   // Kiểm tra 1 trường (theo nhãn) có bị thay đổi so với ban đầu không (để tô đánh dấu).
   const changedField = label => changes.some(change => change[0] === label)
 
-  // Khôi phục toàn bộ form về giá trị ban đầu của kho.
+  // Bấm "Khôi phục giá trị ban đầu": đưa toàn bộ form về giá trị ban đầu của kho và xóa lỗi.
   const resetToOriginal = () => {
     if (!original) return
     setTypeId(original.typeId)
@@ -273,8 +333,9 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
   }
 
   /**
-   * Lưu kho: kiểm tra loại/size, kiểm tra giá (validateMonthlyPrice), hỏi xác nhận (kèm cảnh báo lệch giá / danh sách thay đổi),
-   * rồi gọi onSave (-> handleSaveUnit gọi API).
+   * Bấm nút "Tạo kho" / "Lưu thay đổi" (submit form): kiểm tra loại/size, kiểm tra giá (validateMonthlyPrice),
+   * hỏi xác nhận (kèm cảnh báo lệch giá hoặc danh sách thay đổi), rồi gọi onSave
+   * (trang cha handleSaveUnit gọi POST/PUT /api/operations/units). Cập nhật state error, saving.
    */
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -446,12 +507,21 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
    POPUP CHI TIẾT KHO
    ========================================================= */
 /**
- * Component hộp thoại chi tiết kho: thông tin, vị trí, giá, trạng thái, khóa (đơn đang giữ), hợp đồng hiện tại,
- * nút Sửa / Xóa.
- * @param {object} props unit, facility, lock (kết quả getUnitLock), contract, onClose, onEdit, onDelete.
+ * Hộp thoại chi tiết 1 kho: thông tin cơ sở, loại, size, vị trí, giá, trạng thái, hợp đồng đang hiệu lực,
+ * các đơn đặt chỗ liên quan; nút "Sửa kho" / "Xóa kho" bị khóa khi kho đang thuê hoặc đang có đơn giữ chỗ.
+ * Không gọi API (chỉ báo lên trang cha qua onEdit / onDelete).
+ * @param {object} props
+ * @param {object} props.unit kho đang xem.
+ * @param {object} props.facility cơ sở (tên, địa chỉ, điện thoại).
+ * @param {object} props.lock kết quả getUnitLock(): { locked, reason, reservations }.
+ * @param {object|null} props.contract hợp đồng đang hiệu lực của kho (nếu có).
+ * @param {Function} props.onClose đóng hộp thoại (bấm nền tối, nút Đóng, hoặc phím Esc).
+ * @param {(unit) => void} props.onEdit bấm "Sửa kho" -> trang cha mở UnitFormModal.
+ * @param {(unit) => void} props.onDelete bấm "Xóa kho" -> trang cha hỏi xác nhận rồi gọi DELETE.
+ * Được mở khi bấm vào 1 dòng trong bảng Kho cơ sở.
  */
 function UnitDetailModal({ unit, facility, lock, contract, onClose, onEdit, onDelete }) {
-  // Nhấn Esc để đóng
+  // Chạy khi hộp thoại mở: lắng nghe phím Esc để đóng; gỡ lắng nghe khi hộp thoại đóng.
   useEffect(() => {
     // Nhấn Esc để đóng hộp thoại.
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -588,15 +658,15 @@ function UnitDetailModal({ unit, facility, lock, contract, onClose, onEdit, onDe
 }
 
 /* =========================================================
-   THIẾT LẬP ĐẶC TÍNH KHO (Facility Manager)
-   Loại kho + Kích thước kho tại cơ sở, gộp trong 1 màn hình.
-   Dùng API sẵn có của backend:
+   THIẾT LẬP ĐẶC TÍNH KHO (mục "Đặc tính kho" của Facility Manager)
+   Loại kho + Kích thước kho tại cơ sở, gộp trong 1 màn hình (component FacilityPropertiesTab bên dưới).
+   Các hàm/hằng tiền tố "fp" chỉ dùng cho phần này. API backend:
      GET/POST/PUT/DELETE /api/unit-types   (?facilityId=...)
      GET/POST/PUT/DELETE /api/unit-sizes   (?facilityId=...)
      DELETE /api/operations/facilities/{fid}/rates/{typeId}/{sizeId}
    ========================================================= */
 
-// Nhóm size theo DB (bảng SizeCategory). Dùng khi backend không gửi kèm.
+// Nhóm size chuẩn giống bảng SizeCategory trong DB (tiền tố mã, chiều cao, khoảng thể tích m³). Dùng khi backend không gửi kèm.
 const FP_SIZE_CATEGORIES = [
   { id: 1, name: 'Small', prefix: 'S', heightM: 2.5, minVolume: 2.25, maxVolume: 24 },
   { id: 2, name: 'Medium', prefix: 'M', heightM: 2.5, minVolume: 24.01, maxVolume: 48 },
@@ -623,7 +693,11 @@ const fpArray = (d) => (Array.isArray(d) ? d : Array.isArray(d?.items) ? d.items
 
 /* ---------- Chuẩn hóa dữ liệu backend ---------- */
 /**
- * Chuẩn hóa 1 loại kho từ backend (id, tên, mô tả, trạng thái tại cơ sở, số đơn đã dùng).
+ * Chuẩn hóa 1 loại kho từ backend về 1 dạng thống nhất (backend có thể trả unitTypeID / unitTypeId / id...).
+ * @param {object} raw dữ liệu thô từ GET /api/unit-types.
+ * @returns {{id:number, name:string, description:string, isActive:boolean, reservationCount:number}}
+ *   isActive = trạng thái tại cơ sở; reservationCount = số đơn đã dùng loại này.
+ * Được gọi bởi loadFacilityCatalog.
  */
 function normalizeType(raw = {}) {
   return {
@@ -636,7 +710,11 @@ function normalizeType(raw = {}) {
 }
 
 /**
- * Chuẩn hóa 1 kích thước từ backend (mã size, tên hiển thị, rộng/dài/cao, diện tích, thể tích, trạng thái tại cơ sở).
+ * Chuẩn hóa 1 kích thước từ backend. Nếu thiếu sizeCode/displayName thì tách từ chuỗi dimensions dạng "M1: Kho vừa";
+ * thiếu diện tích/thể tích thì tự tính từ rộng × dài (× cao).
+ * @param {object} raw dữ liệu thô từ GET /api/unit-sizes.
+ * @returns {object} { id, sizeCode, displayName, label, widthM, lengthM, heightM, areaM2, volumeM3, isActive, reservationCount }.
+ * Được gọi bởi loadFacilityCatalog.
  */
 function normalizeSize(raw = {}) {
   const code = raw.sizeCode ?? String(raw.dimensions || '').split(':')[0].trim()
@@ -659,11 +737,13 @@ function normalizeSize(raw = {}) {
   }
 }
 
-/* Tải loại kho + kích thước kèm trạng thái tại cơ sở (parent gọi hàm này) */
 /**
- * Tải loại kho + kích thước kèm trạng thái tại cơ sở.
+ * Tải song song danh sách loại kho + kích thước kèm trạng thái Active tại cơ sở, chuẩn hóa và sắp xếp
+ * (loại theo id, size theo mã tự nhiên S1, S2, ..., M1...).
  * API: GET /api/unit-types?facilityId=  +  GET /api/unit-sizes?facilityId=
+ * @param {number} facilityId mã cơ sở.
  * @returns {Promise<{types: object[], sizes: object[]}>}
+ * Được gọi bởi reloadFacilityCatalog() trong FacilityManagerDashboard (khi mở trang, và sau khi lưu loại/size).
  */
 async function loadFacilityCatalog(facilityId) {
   const [types, sizes] = await Promise.all([
@@ -677,7 +757,10 @@ async function loadFacilityCatalog(facilityId) {
 }
 
 /**
- * Tìm nhóm size chuẩn (Small/Medium/Large/Vehicle) theo chữ cái đầu của mã size.
+ * Tìm nhóm size chuẩn (Small/Medium/Large/Vehicle) theo chữ cái đầu của mã size (vd "M2" -> Medium).
+ * @param {string} code mã size.
+ * @param {Array} categories danh sách nhóm (FP_SIZE_CATEGORIES hoặc từ backend).
+ * @returns {object|null} nhóm tìm được, không có thì null.
  */
 const fpCategoryOf = (code, categories) =>
   categories.find(c => String(code || '').toUpperCase().startsWith(c.prefix)) || null
@@ -686,8 +769,15 @@ const fpCategoryOf = (code, categories) =>
    MODAL LOẠI KHO
    ========================================================= */
 /**
- * Component hộp thoại thêm/sửa loại kho tại cơ sở: tên, mô tả, Active/Deactive (không cho tắt khi còn kho đang dùng).
- * @param {object} props editing, types, activeUnits, facilityName, onClose, onSave(payload).
+ * Hộp thoại thêm / sửa loại kho tại cơ sở: tên, mô tả, trạng thái Active/Deactive
+ * (không cho chuyển Deactive khi còn kho đang dùng loại này). Không tự gọi API, chỉ gọi onSave.
+ * @param {object} props
+ * @param {object|null} props.editing loại kho đang sửa; null = thêm mới.
+ * @param {Array} props.types các loại kho hiện có (kiểm tra trùng tên, dự đoán mã mới).
+ * @param {number} props.activeUnits số kho đang dùng loại này tại cơ sở.
+ * @param {string} props.facilityName tên cơ sở (hiển thị trong thông báo).
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {(payload: {typeName, description, isActive}) => Promise} props.onSave lưu (FacilityPropertiesTab gọi POST/PUT /api/unit-types).
  */
 function TypeModal({ editing, types, activeUnits, facilityName, onClose, onSave }) {
   const isNew = !editing
@@ -699,7 +789,8 @@ function TypeModal({ editing, types, activeUnits, facilityName, onClose, onSave 
   const [saving, setSaving] = useState(false)
   const lockPause = !isNew && editing.isActive && activeUnits > 0
 
-  // Kiểm tra (tên bắt buộc, độ dài, trùng tên, không tắt khi còn kho dùng, có thay đổi) rồi gọi onSave.
+  // Bấm "Thêm loại kho" / "Lưu thay đổi": kiểm tra (tên bắt buộc, độ dài, trùng tên, không tắt khi còn kho dùng,
+  // có thay đổi) rồi gọi onSave; lỗi từ server hiện vào state error.
   const submit = async (e) => {
     e.preventDefault()
     const n = fpClean(name)
@@ -781,9 +872,18 @@ function TypeModal({ editing, types, activeUnits, facilityName, onClose, onSave 
    MODAL KÍCH THƯỚC KHO
    ========================================================= */
 /**
- * Component hộp thoại thêm/sửa kích thước: nhóm size, mã (gợi ý tự động), tên hiển thị, rộng × dài × cao,
- * kiểm tra thể tích theo nhóm chuẩn, cảnh báo quá cỡ.
- * @param {object} props editing, sizes, categories, activeUnits, hasRates, facilityName, onClose, onSave(payload).
+ * Hộp thoại thêm / sửa kích thước kho: chọn nhóm size, mã (tự gợi ý mã kế tiếp), tên hiển thị, rộng × dài;
+ * kiểm tra diện tích có thuộc khoảng của nhóm chuẩn không, cảnh báo quá cỡ (phải đặt riêng).
+ * Khi size đã có biểu giá hoặc kho đang dùng thì khóa kích thước. Không tự gọi API, chỉ gọi onSave.
+ * @param {object} props
+ * @param {object|null} props.editing size đang sửa; null = thêm mới.
+ * @param {Array} props.sizes các size hiện có (gợi ý mã, kiểm tra trùng).
+ * @param {Array} props.categories nhóm size chuẩn.
+ * @param {number} props.activeUnits số kho đang dùng size này.
+ * @param {boolean} props.hasRates size đã có trong biểu giá của cơ sở.
+ * @param {string} props.facilityName tên cơ sở.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {(payload) => Promise} props.onSave lưu (FacilityPropertiesTab gọi POST/PUT /api/unit-sizes).
  */
 function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facilityName, onClose, onSave }) {
   const isNew = !editing
@@ -822,7 +922,8 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
     return `${cat.prefix}${max + 1}`
   }, [sizes, cat])
 
-  // Kiểm tra (tên, mã đúng dạng nhóm + số, không trùng, kích thước hợp lệ theo nhóm...) rồi gọi onSave.
+  // Bấm "Lưu" (submit): kiểm tra tên, mã đúng dạng nhóm + số, không trùng, kích thước hợp lệ theo nhóm,
+  // không quá cỡ... rồi gọi onSave; lỗi hiện vào state error.
   const submit = async (e) => {
     e.preventDefault()
     const n = fpClean(name)
@@ -951,13 +1052,25 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
 }
 
 /* =========================================================
-   MÀN HÌNH CHÍNH
+   TAB "ĐẶC TÍNH KHO" (màn hình chính của phần Loại kho + Kích thước)
    ========================================================= */
 /**
- * Component tab "Đặc tính kho": 2 chế độ xem Loại kho / Kích thước, thống kê Active/Deactive, lọc, tìm kiếm,
- * thêm/sửa, bật-tắt tại cơ sở, xóa (tự xóa mức giá liên quan trước).
- * API: GET/POST/PUT /api/unit-types, /api/unit-sizes; DELETE /api/operations/facilities/{id}/rates/{typeId}/{sizeId}.
- * @param {object} props facilityId, facilityName, catalog, loading, error, facilityUnits, rentalRates, dialog, onChanged, showToast.
+ * Tab "Đặc tính kho": 2 chế độ xem Loại kho / Kích thước, đếm Active/Deactive, lọc, tìm kiếm,
+ * thêm/sửa (mở TypeModal / SizeModal), bật-tắt tại cơ sở, xóa (tự xóa mức giá liên quan trước).
+ * API: POST/PUT/DELETE /api/unit-types[/{id}], /api/unit-sizes[/{id}];
+ *      DELETE /api/operations/facilities/{id}/rates/{typeId}/{sizeId}. (Dữ liệu GET do trang cha tải sẵn.)
+ * @param {object} props
+ * @param {number} props.facilityId mã cơ sở (null -> báo chưa gán cơ sở).
+ * @param {string} props.facilityName tên cơ sở.
+ * @param {{types: Array, sizes: Array}} props.catalog loại + size đã chuẩn hóa (từ loadFacilityCatalog).
+ * @param {boolean} props.loading / props.error trạng thái tải catalog.
+ * @param {Array} props.facilityUnits các kho của cơ sở (đếm mức sử dụng).
+ * @param {Array} props.rentalRates biểu giá (đếm mức giá liên quan).
+ * @param {Array} [props.sizeCategories] nhóm size từ backend; thiếu thì dùng FP_SIZE_CATEGORIES.
+ * @param {object} props.dialog hộp thoại xác nhận dùng chung.
+ * @param {Function} props.showToast hiện thông báo nhỏ góc màn hình.
+ * @param {Function} props.onChanged gọi sau mỗi thay đổi để trang cha tải lại catalog + dữ liệu.
+ * Được hiển thị khi activeTab = 'unitTypes'.
  */
 function FacilityPropertiesTab({
   facilityId,
@@ -972,10 +1085,10 @@ function FacilityPropertiesTab({
   showToast = () => {},
   onChanged = async () => {}
 }) {
-  const [view, setView] = useState('types')
-  const [filter, setFilter] = useState('all')
-  const [query, setQuery] = useState('')
-  const [modal, setModal] = useState(null) // { kind: 'type' | 'size', row }
+  const [view, setView] = useState('types') // 'types' = xem Loại kho, 'sizes' = xem Kích thước
+  const [filter, setFilter] = useState('all') // 'all' | 'on' (Active) | 'off' (Deactive)
+  const [query, setQuery] = useState('') // từ khóa tìm kiếm
+  const [modal, setModal] = useState(null) // hộp thoại đang mở: { kind: 'type' | 'size', row } (row null = thêm mới)
 
   const categories = sizeCategories?.length ? sizeCategories : FP_SIZE_CATEGORIES
   const isTypes = view === 'types'
@@ -1021,7 +1134,7 @@ function FacilityPropertiesTab({
   const label = (row) => (isTypes ? `loại kho #${row.id} "${row.name}"` : `kích thước ${row.sizeCode} "${row.displayName}"`)
   const base = isTypes ? '/api/unit-types' : '/api/unit-sizes'
 
-  // Đổi chế độ xem (Loại kho / Kích thước) và xóa bộ lọc.
+  // Bấm tab "Loại kho" / "Kích thước kho": đổi chế độ xem và xóa bộ lọc, từ khóa.
   const switchView = (v) => { setView(v); setFilter('all'); setQuery('') }
 
   /* ----- Body gửi backend (luôn kèm facilityID để BE chỉ đổi trạng thái tại cơ sở này) ----- */
@@ -1038,8 +1151,9 @@ function FacilityPropertiesTab({
 
   /* ----- Lưu từ modal ----- */
   /**
-   * Lưu loại kho từ hộp thoại (sửa hoặc thêm mới) rồi tải lại và báo.
+   * Lưu loại kho từ TypeModal (sửa hoặc thêm mới), đóng hộp thoại, gọi onChanged() để tải lại rồi hiện toast.
    * API: PUT /api/unit-types/{id}  |  POST /api/unit-types
+   * Được TypeModal gọi qua prop onSave; lỗi được ném ra để modal hiện.
    */
   const saveType = async (payload) => {
     const row = modal.row
@@ -1052,8 +1166,9 @@ function FacilityPropertiesTab({
   }
 
   /**
-   * Lưu kích thước từ hộp thoại (sửa hoặc thêm mới) rồi tải lại và báo.
+   * Lưu kích thước từ SizeModal (sửa hoặc thêm mới), đóng hộp thoại, gọi onChanged() để tải lại rồi hiện toast.
    * API: PUT /api/unit-sizes/{id}  |  POST /api/unit-sizes
+   * Được SizeModal gọi qua prop onSave; lỗi được ném ra để modal hiện.
    */
   const saveSize = async (payload) => {
     const row = modal.row
@@ -1067,7 +1182,7 @@ function FacilityPropertiesTab({
 
   /* ----- Ngừng / bật lại tại cơ sở ----- */
   /**
-   * Chuyển Active/Deactive 1 loại/size tại cơ sở (chặn tắt khi còn kho đang dùng; hỏi xác nhận).
+   * Bấm nút "Active"/"Deactive" ở 1 dòng: chuyển trạng thái loại/size tại cơ sở (chặn tắt khi còn kho đang dùng; hỏi xác nhận).
    * API: PUT /api/unit-types/{id} hoặc /api/unit-sizes/{id}  body { ..., isActive, facilityID }
    */
   const toggle = async (row) => {
@@ -1102,7 +1217,8 @@ function FacilityPropertiesTab({
 
   /* ----- Xóa: tự xóa mức giá của cơ sở trước, rồi mới xóa loại / size ----- */
   /**
-   * Xóa 1 loại/size: chặn nếu còn kho hoặc đã có đơn; hỏi xác nhận; xóa các mức giá liên quan trước rồi mới xóa.
+   * Bấm nút "Xóa" ở 1 dòng: chặn (và giải thích) nếu còn kho hoặc đã có đơn; hỏi xác nhận; xóa các mức giá liên quan
+   * trước rồi mới xóa loại/size; dù lỗi vẫn gọi onChanged() để bảng khớp với dữ liệu thật.
    * API: DELETE /api/operations/facilities/{facilityId}/rates/{unitTypeId}/{unitSizeId} rồi DELETE /api/unit-types|unit-sizes/{id}
    */
   const remove = async (row) => {
@@ -1292,22 +1408,30 @@ const STAFF_STATUS_MAP = {
 }
 
 /**
- * Component nhãn trạng thái nhân viên tại cơ sở.
+ * Nhãn trạng thái nhân viên tại cơ sở (Active / Inactive) theo STAFF_STATUS_MAP.
+ * @param {{status: string}} props status = 'Active' | 'Inactive' (khác thì hiện nguyên chữ).
  */
 function StaffStatusBadge({ status }) {
   const item = STAFF_STATUS_MAP[status] || { label: status || '—', className: 'fp-badge' }
   return <span className={item.className}>{item.label}</span>
 }
 
-// Ngày hẹn bàn giao của đơn (yyyy-mm-dd) và nhãn hiển thị
 /**
- * Ngày hẹn bàn giao của đơn ('YYYY-MM-DD'), không có thì lấy ngày bắt đầu.
+ * Ngày hẹn bàn giao của đơn dạng 'YYYY-MM-DD' (dùng để so sánh / nhóm theo ngày); không có thì lấy ngày bắt đầu thuê.
+ * @param {object} r đơn đặt chỗ (appointmentDate, startDate).
+ * @returns {string}
  */
 const appointmentKey = (r) => String(r.appointmentDate || r.startDate || '').slice(0, 10)
 
 /**
- * Component hộp thoại thêm nhân viên vào cơ sở: tìm và chọn từ danh sách Staff có thể thêm.
- * @param {object} props facilityName, candidates, onClose, onSave(candidate).
+ * Hộp thoại thêm nhân viên vào cơ sở: ô tìm theo tên/email + danh sách chọn các tài khoản Facility Staff chưa thuộc cơ sở.
+ * Không tự gọi API, chỉ gọi onSave (FacilityStaffTab gọi POST /api/operations/facilities/{id}/staff).
+ * @param {object} props
+ * @param {string} props.facilityName tên cơ sở.
+ * @param {Array<{fullName, email, wasInactive}>} props.candidates nhân viên có thể thêm.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {(candidate) => Promise} props.onSave thêm nhân viên đã chọn.
+ * Được mở khi bấm "Thêm nhân viên" ở tab Nhân sự.
  */
 function AddStaffModal({ facilityName, candidates, onClose, onSave }) {
   const [email, setEmail] = useState('')
@@ -1319,7 +1443,7 @@ function AddStaffModal({ facilityName, candidates, onClose, onSave }) {
     `${c.fullName} ${c.email}`.toLowerCase().includes(query.trim().toLowerCase()))
   const selected = candidates.find(c => c.email === email)
 
-  // Gửi lựa chọn nhân viên (bắt buộc chọn) qua onSave và hiện lỗi nếu có.
+  // Bấm "Thêm vào cơ sở": bắt buộc đã chọn nhân viên, gọi onSave; lỗi hiện vào state error.
   const submit = async (e) => {
     e.preventDefault()
     if (!selected) return setError('Vui lòng chọn một nhân viên.')
@@ -1383,10 +1507,15 @@ function AddStaffModal({ facilityName, candidates, onClose, onSave }) {
 }
 
 /**
- * Component hộp thoại lịch sử bàn giao của 1 nhân viên.
- * @param {object} props staff, items, onClose.
+ * Hộp thoại lịch sử công việc (các lượt bàn giao) của 1 nhân viên tại cơ sở. Không gọi API.
+ * @param {object} props
+ * @param {object} props.staff nhân viên ({ fullName }).
+ * @param {Array<{id, at, text}>} props.items các mục lịch sử (lọc sẵn từ state.activity).
+ * @param {Function} props.onClose đóng (bấm nền tối, nút Đóng hoặc phím Esc).
+ * Được mở khi bấm "Lịch sử" ở 1 dòng nhân viên.
  */
 function StaffHistoryModal({ staff, items, onClose }) {
+  // Chạy khi hộp thoại mở: lắng nghe phím Esc; gỡ khi đóng.
   useEffect(() => {
     // Nhấn Esc để đóng hộp thoại.
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -1421,7 +1550,8 @@ function StaffHistoryModal({ staff, items, onClose }) {
   )
 }
 
-/* [MANAGER-TOOLS] Việc giao cho nhân viên (HandoverTask) – giá trị khớp CHECK trong DB */
+/* Việc giao cho nhân viên (bảng HandoverTask) – các giá trị khớp ràng buộc CHECK trong DB.
+   TASK_TYPE_LABEL: loại việc -> chữ tiếng Việt; TASK_STATUS_MAP: trạng thái việc -> chữ + class màu. */
 const TASK_TYPE_LABEL = { 'Move In': 'Nhận kho', 'Move Out': 'Trả kho', Inspection: 'Kiểm tra kho', Support: 'Hỗ trợ khách' }
 const TASK_STATUS_MAP = {
   Scheduled: { label: 'Đã lên lịch', className: 'fp-badge fp-badge-active' },
@@ -1430,28 +1560,37 @@ const TASK_STATUS_MAP = {
   Cancelled: { label: 'Đã hủy', className: 'fp-badge fp-badge-deactive' }
 }
 /**
- * Việc còn mở (Đã lên lịch hoặc Đang làm).
+ * Kiểm tra 1 việc còn mở (Đã lên lịch hoặc Đang làm) hay đã xong/hủy.
+ * @param {{status: string}} t việc (HandoverTask).
+ * @returns {boolean}
  */
 const isOpenTask = t => t.status === 'Scheduled' || t.status === 'In Progress'
 
-/* [AUTO-ASSIGN] Giờ hẹn dạng "HH:mm" -> số phút (giờ hẹn "Cả ngày" thì null) */
 /**
- * Đổi giờ hẹn "HH:mm" thành số phút trong ngày ("Cả ngày" -> null).
+ * Đổi giờ hẹn "HH:mm" thành số phút trong ngày (vd "09:30" -> 570); giờ "Cả ngày" hoặc rỗng -> null.
+ * @param {string} value giờ hẹn.
+ * @returns {number|null}
+ * Dùng trong OwnerModal để phát hiện trùng giờ.
  */
 const toMinutes = (value) => {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(value || ''))
   return m ? Number(m[1]) * 60 + Number(m[2]) : null
 }
+// Hai lịch hẹn cách nhau dưới 60 phút thì coi là trùng giờ.
 const CONFLICT_MINUTES = 60
 
-/* [AUTO-ASSIGN] Modal giao / đổi người phụ trách đơn.
-   Hiện số việc trong ngày hẹn và cảnh báo trùng giờ của từng nhân viên (GET .../workload),
-   tự chọn sẵn người ít việc nhất, không trùng giờ. */
 /**
- * Component hộp thoại giao / đổi người phụ trách đơn: hiện số việc trong ngày và cảnh báo trùng giờ (±60 phút)
- * của từng nhân viên, tự chọn sẵn người ít việc nhất không trùng giờ.
- * API: GET /api/manager-tools/facilities/{facilityId}/workload?date=
- * @param {object} props facilityId, reservation, currentOwnerId, onClose, onSave({ staffUserId, scheduledDate, scheduledTime }).
+ * Hộp thoại giao / đổi người phụ trách 1 đơn đặt chỗ: chọn ngày hẹn, xem số lần hẹn trong ngày + trong tuần
+ * và cảnh báo trùng giờ (±60 phút) của từng nhân viên; tự chọn sẵn người ít việc nhất, không trùng giờ.
+ * API: GET /api/manager-tools/facilities/{facilityId}/workload?date=  (tải lại khi đổi ngày).
+ * @param {object} props
+ * @param {number} props.facilityId mã cơ sở.
+ * @param {object} props.reservation đơn cần giao (id, customerName, appointmentDate, appointmentTime).
+ * @param {number|null} props.currentOwnerId người đang phụ trách (null = chưa giao).
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {(data: {staffUserId, scheduledDate, scheduledTime}) => Promise} props.onSave lưu
+ *   (FacilityStaffTab gọi PUT /api/manager-tools/reservations/{id}/owner).
+ * Được mở khi bấm "Giao người" / "Đổi người" ở tab Nhân sự.
  */
 function OwnerModal({ facilityId, reservation, currentOwnerId, onClose, onSave }) {
   const baseDate = String(reservation.appointmentDate || '').slice(0, 10)
@@ -1464,6 +1603,8 @@ function OwnerModal({ facilityId, reservation, currentOwnerId, onClose, onSave }
   const [saving, setSaving] = useState(false)
   const apptMinutes = toMinutes(reservation.appointmentTime)
 
+  // Chạy khi mở hộp thoại và mỗi khi đổi ngày: GET .../workload?date= lấy lịch việc của từng nhân viên.
+  // Cờ cancelled bỏ qua kết quả cũ nếu người dùng đổi ngày liên tục.
   useEffect(() => {
     let cancelled = false
     setWorkload(null)
@@ -1474,28 +1615,27 @@ function OwnerModal({ facilityId, reservation, currentOwnerId, onClose, onSave }
     return () => { cancelled = true }
   }, [facilityId, date])
 
-  // Việc của nhân viên trùng giờ hẹn (±60 phút), không tính việc của chính đơn này
   // Các việc của nhân viên trùng giờ hẹn với đơn (±60 phút), không tính việc của chính đơn này.
   const conflictsOf = (st) => apptMinutes == null ? [] : st.tasks.filter(t => {
     if (Number(t.reservationId) === Number(reservation.id)) return false
     const m = toMinutes(t.scheduledTime)
     return m != null && Math.abs(m - apptMinutes) < CONFLICT_MINUTES
   })
-  // Số lần hẹn trong ngày, không tính chính đơn này
-  // Số lượt hẹn trong ngày của nhân viên (không tính chính đơn này).
+  // Số lượt hẹn trong ngày của nhân viên (đếm theo đơn, không tính chính đơn này).
   const loadOf = (st) => new Set(st.tasks.filter(t => Number(t.reservationId) !== Number(reservation.id)).map(t => t.reservationId ?? `t${t.taskId}`)).size
 
+  // Xếp hạng nhân viên: không trùng giờ trước, rồi ít việc trong ngày, ít việc trong tuần, rồi theo tên.
   const ranked = (workload || []).map(st => ({ ...st, load: loadOf(st), conflicts: conflictsOf(st) }))
     .sort((a, b) => (a.conflicts.length > 0) - (b.conflicts.length > 0) || a.load - b.load || a.weekCount - b.weekCount || a.fullName.localeCompare(b.fullName, 'vi'))
 
-  // Chọn sẵn người phù hợp nhất (ưu tiên người khác người phụ trách hiện tại)
+  // Chạy khi tải xong workload: chọn sẵn người đứng đầu bảng xếp hạng (ưu tiên người khác người phụ trách hiện tại)
   useEffect(() => {
     if (!workload) return
     const best = ranked.find(st => st.userId !== currentOwnerId && st.conflicts.length === 0) || ranked.find(st => st.userId !== currentOwnerId) || ranked[0]
     setStaffUserId(best ? String(best.userId) : '')
   }, [workload])
 
-  // Gửi lựa chọn người phụ trách (bắt buộc chọn) qua onSave.
+  // Bấm "Giao việc" / "Đổi người": bắt buộc chọn nhân viên, gọi onSave (chỉ gửi ngày mới nếu người dùng đổi ngày).
   const submit = async (e) => {
     e.preventDefault()
     if (!staffUserId) return setError('Vui lòng chọn nhân viên.')
@@ -1566,7 +1706,8 @@ function OwnerModal({ facilityId, reservation, currentOwnerId, onClose, onSave }
   )
 }
 
-/* [AUTO-ASSIGN] Tab "Báo cáo sự cố kho": Staff gửi qua POST /api/staff-tools/unit-reports */
+/* Dùng cho tab "Sự cố kho" (báo cáo do Staff gửi qua POST /api/staff-tools/unit-reports).
+   REPORT_RESULT_MAP: kết quả kiểm tra -> nhãn; DB_UNIT_STATUS_LABEL: trạng thái kho dạng DB -> chữ tiếng Việt. */
 const REPORT_RESULT_MAP = {
   Damaged: { label: 'Hư hỏng', className: 'fm-badge fm-warn' },
   Good: { label: 'Bình thường', className: 'fm-badge fm-ok' }
@@ -1588,21 +1729,25 @@ const LATE_FEE_STATUS = {
 }
 
 /**
- * Component tab "Công nợ & phí trễ": tóm tắt, danh sách hợp đồng đang nợ (tiền thuê quá hạn, phí trễ, phí khác),
- * miễn phí trễ hạn có ghi lý do.
+ * Tab "Công nợ & phí trễ": thẻ tóm tắt, danh sách hợp đồng (lọc "Đang nợ" / "Tất cả", có phân trang) với tiền thuê
+ * quá hạn, phí trễ, phí khác; Manager có thể miễn 1 khoản phí trễ (bắt buộc ghi lý do).
  * API: GET /api/late-fees/facilities/{facilityId}  |  PUT /api/late-fees/charges/{chargeId}/waive
- * @param {object} props facilityId, showToast.
+ * @param {object} props
+ * @param {number} props.facilityId mã cơ sở.
+ * @param {Function} [props.showToast] hiện thông báo nhỏ.
+ * Được hiển thị khi activeTab = 'lateFees'.
  */
 function LateFeesTab({ facilityId, showToast = () => {} }) {
-  const [data, setData] = useState(null)
+  const [data, setData] = useState(null) // kết quả API: { items, summary, policy }
   const [error, setError] = useState('')
-  const [filter, setFilter] = useState('open')
-  const [busy, setBusy] = useState(null)
-  const [waiving, setWaiving] = useState(null) // { it, fee, reason, error }
+  const [filter, setFilter] = useState('open') // 'open' = chỉ hợp đồng đang nợ, 'all' = tất cả
+  const [busy, setBusy] = useState(null) // khoản phí đang gửi yêu cầu miễn
+  const [waiving, setWaiving] = useState(null) // hộp thoại miễn phí đang mở: { it, fee, reason, error }
 
   /**
-   * Tải công nợ & phí trễ của cơ sở.
-   * API: GET /api/late-fees/facilities/{facilityId}
+   * Tải công nợ & phí trễ của cơ sở (backend tự cộng phí trễ tới hôm nay trước khi trả).
+   * API: GET /api/late-fees/facilities/{facilityId}. Lỗi 404 = backend chưa có controller.
+   * Được gọi khi mở tab / đổi cơ sở và sau khi miễn phí.
    */
   const load = async () => {
     if (facilityId == null) return
@@ -1614,17 +1759,19 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
       setError(err.status === 404 ? 'Backend chưa có LateFeesController (chép file rồi chạy lại backend).' : err.message)
     }
   }
+  // Chạy khi mở tab và khi facilityId đổi: tải danh sách công nợ.
   useEffect(() => { load() }, [facilityId])
 
   const items = data?.items || []
   // Hợp đồng còn nợ (có kỳ thuê quá hạn, phí trễ chưa đóng hoặc phí khác chưa đóng).
   const isOpen = it => it.overdueRent?.length > 0 || Number(it.lateFeeUnpaid) > 0 || Number(it.otherUnpaid) > 0
   const visible = items.filter(it => filter === 'all' || isOpen(it))
+  // Phân trang phía trình duyệt (listKit); đổi bộ lọc thì quay về trang 1.
   const paging = useClientPaging(visible, { resetKey: filter })
   const s = data?.summary
 
   /**
-   * Miễn 1 khoản phí trễ hạn (bắt buộc ghi lý do) rồi tải lại.
+   * Bấm "Xác nhận miễn phí" trong hộp thoại miễn: bắt buộc ghi lý do, gửi yêu cầu, đóng hộp thoại, hiện toast rồi tải lại.
    * API: PUT /api/late-fees/charges/{chargeId}/waive  body { reason }
    */
   const submitWaive = async (e) => {
@@ -1782,21 +1929,26 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
 }
 
 /**
- * Component tab "Sự cố kho": danh sách báo cáo tình trạng kho của nhân viên (lọc Hư hỏng / Cần xử lý / Tất cả),
- * xem ảnh, mở lại kho sau khi sửa xong.
+ * Tab "Sự cố kho": danh sách báo cáo tình trạng kho do nhân viên gửi (lọc Cần xử lý / Hư hỏng / Tất cả, có phân trang),
+ * xem ảnh phóng to, nút "Mở lại kho" khi kho đã sửa xong.
  * API: GET /api/manager-tools/facilities/{facilityId}/unit-reports  |  PUT /api/staff-tools/units/{unitId}/status
- * @param {object} props facilityId, showToast, onChanged.
+ * @param {object} props
+ * @param {number} props.facilityId mã cơ sở.
+ * @param {Function} [props.showToast] hiện thông báo nhỏ.
+ * @param {Function} [props.onChanged] gọi sau khi mở lại kho để trang cha tải lại danh sách kho.
+ * Được hiển thị khi activeTab = 'reports'.
  */
 function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async () => {} }) {
   const dialog = useDialog()
-  const [reports, setReports] = useState(null)
+  const [reports, setReports] = useState(null) // null = đang tải; mảng báo cáo (mới nhất trước)
   const [error, setError] = useState('')
-  const [filter, setFilter] = useState('damaged')
-  const [preview, setPreview] = useState(null)
+  const [filter, setFilter] = useState('damaged') // 'open' (cần xử lý) | 'damaged' | 'all'
+  const [preview, setPreview] = useState(null) // đường dẫn ảnh đang xem phóng to
 
   /**
    * Tải báo cáo sự cố của cơ sở.
    * API: GET /api/manager-tools/facilities/{facilityId}/unit-reports
+   * Được gọi khi mở tab, bấm "Tải lại", và sau khi mở lại kho.
    */
   const load = async () => {
     if (facilityId == null) return
@@ -1809,9 +1961,10 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
       setError(err.message)
     }
   }
+  // Chạy khi mở tab và khi facilityId đổi: tải báo cáo.
   useEffect(() => { load() }, [facilityId])
 
-  // Mỗi kho chỉ cần xử lý báo cáo mới nhất
+  // Mỗi kho chỉ cần xử lý báo cáo mới nhất: ghi lại taskId của báo cáo đầu tiên (mới nhất) cho từng kho
   const latestByUnit = new Map()
   ;(reports || []).forEach(r => { if (!latestByUnit.has(r.unitId)) latestByUnit.set(r.unitId, r.taskId) })
   // Báo cáo cần xử lý: hư hỏng, là báo cáo mới nhất của kho và kho vẫn đang Bảo trì / Chờ kiểm tra.
@@ -1826,7 +1979,7 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
   }
 
   /**
-   * Mở lại kho đã sửa xong (chuyển "Còn trống", hỏi xác nhận) rồi tải lại.
+   * Bấm "Mở lại kho" ở 1 báo cáo: hỏi xác nhận, chuyển kho sang "Còn trống", rồi tải lại báo cáo + dữ liệu trang.
    * API: PUT /api/staff-tools/units/{unitId}/status  body { status: 'Available' }
    */
   const reopenUnit = async (r) => {
@@ -1928,27 +2081,36 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
 }
 
 /**
- * Component tab "Nhân sự": danh sách nhân viên (thêm / gỡ / xem lịch sử), đơn chờ bàn giao kèm người phụ trách
- * (giao / đổi người), danh sách việc đã giao.
+ * Tab "Nhân sự": danh sách nhân viên (thêm / gỡ / xem lịch sử), đơn chờ bàn giao kèm người phụ trách
+ * (giao / đổi người qua OwnerModal), danh sách việc đã giao (lọc còn mở / đã xong / tất cả).
  * API: GET /api/manager-tools/facilities/{id}/tasks, PUT /api/manager-tools/reservations/{id}/owner,
  *      DELETE /api/manager-tools/facilities/{id}/staff/{userId}, POST /api/operations/facilities/{id}/staff
- * @param {object} props facilityId, facilityName, staffList, staffUsers, activity, awaitingHandoverList, assignVersion,
- *   onChanged, showToast.
+ * @param {object} props
+ * @param {number} props.facilityId / props.facilityName mã + tên cơ sở.
+ * @param {Array} props.staffList nhân viên thuộc cơ sở (id, fullName, email, status).
+ * @param {Array} props.staffUsers mọi tài khoản Facility Staff (để chọn khi thêm).
+ * @param {Array} props.activity nhật ký hoạt động (lọc lịch sử từng nhân viên).
+ * @param {Array} props.awaitingHandoverList đơn đã cọc đang chờ bàn giao.
+ * @param {number} props.assignVersion tăng mỗi lần hệ thống tự phân công -> tab tải lại việc.
+ * @param {Function} props.showToast hiện thông báo nhỏ.
+ * @param {Function} props.onChanged gọi để trang cha tải lại dữ liệu sau khi thêm/gỡ nhân viên.
+ * Được hiển thị khi activeTab = 'staff'.
  */
 function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers = [], activity = [], awaitingHandoverList = [], assignVersion = 0, showToast = () => {}, onChanged = async () => {} }) {
-  const [filter, setFilter] = useState('all')
-  const [showAdd, setShowAdd] = useState(false)
-  const [historyStaff, setHistoryStaff] = useState(null)
-  // [MANAGER-TOOLS] việc đã giao + giao việc + gỡ nhân viên
+  const [filter, setFilter] = useState('all') // lọc nhân viên theo trạng thái
+  const [showAdd, setShowAdd] = useState(false) // đang mở AddStaffModal
+  const [historyStaff, setHistoryStaff] = useState(null) // nhân viên đang xem lịch sử (StaffHistoryModal)
+  // Việc đã giao + giao việc + gỡ nhân viên
   const dialog = useDialog()
-  const [tasks, setTasks] = useState([])
+  const [tasks, setTasks] = useState([]) // việc (HandoverTask) tại cơ sở
   const [tasksError, setTasksError] = useState('')
-  const [ownerDraft, setOwnerDraft] = useState(null) // [AUTO-ASSIGN] { reservation, currentOwnerId }
-  const [taskFilter, setTaskFilter] = useState('open')
+  const [ownerDraft, setOwnerDraft] = useState(null) // OwnerModal đang mở: { reservation, currentOwnerId }
+  const [taskFilter, setTaskFilter] = useState('open') // 'open' | 'done' | 'all'
 
   /**
    * Tải các việc đã giao tại cơ sở.
    * API: GET /api/manager-tools/facilities/{facilityId}/tasks
+   * Được gọi khi mở tab, khi assignVersion đổi, và sau khi giao / đổi người / gỡ nhân viên.
    */
   const loadTasks = async () => {
     if (facilityId == null) return
@@ -1970,9 +2132,8 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
   const visibleTasks = tasks.filter(t => taskFilter === 'all' || (taskFilter === 'open' ? isOpenTask(t) : !isOpenTask(t)))
   const taskPaging = useClientPaging(visibleTasks, { resetKey: taskFilter })
 
-  // [AUTO-ASSIGN] Giao / đổi người phụ trách đơn: PUT /api/manager-tools/reservations/{id}/owner
   /**
-   * Giao / đổi người phụ trách đơn rồi tải lại việc.
+   * OwnerModal bấm "Giao việc" / "Đổi người": giao / đổi người phụ trách đơn, đóng hộp thoại, tải lại việc, hiện toast.
    * API: PUT /api/manager-tools/reservations/{reservationId}/owner  body { staffUserId, scheduledDate, scheduledTime }
    */
   const changeOwner = async (body) => {
@@ -1985,7 +2146,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
   const reservationOf = (id) => awaitingHandoverList.find(r => Number(r.id) === Number(id))
 
   /**
-   * Gỡ nhân viên khỏi cơ sở (hỏi xác nhận; backend từ chối nếu còn việc chưa xong).
+   * Bấm "Gỡ" ở thẻ nhân viên: hỏi xác nhận rồi gỡ nhân viên khỏi cơ sở (chuyển Inactive; backend từ chối nếu còn việc chưa xong).
    * API: DELETE /api/manager-tools/facilities/{facilityId}/staff/{userId}
    */
   const removeStaff = async (st) => {
@@ -2008,8 +2169,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
     }
   }
 
-  // Lịch sử bàn giao tại cơ sở, mới nhất trước
-  // Lịch sử bàn giao tại cơ sở, mới nhất trước.
+  // Lịch sử bàn giao tại cơ sở, mới nhất trước (lọc từ state.activity theo tên cơ sở).
   const facilityActivity = useMemo(
     () => activity
       .filter(a => a.facilityId === facilityName)
@@ -2030,8 +2190,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
     .filter(s => filter === 'all' || (filter === 'active' ? s.status === 'Active' : s.status !== 'Active'))
     .sort((a, b) => Number(b.status === 'Active') - Number(a.status === 'Active') || a.fullName.localeCompare(b.fullName, 'vi'))
 
-  // Nhân viên có thể thêm: Staff đang Active nhưng chưa làm (hoặc đang Inactive) tại cơ sở này
-  // Danh sách nhân viên có thể thêm: Staff chưa làm (hoặc đang Inactive) tại cơ sở này.
+  // Danh sách nhân viên có thể thêm (cho AddStaffModal): Staff chưa làm (hoặc đang Inactive) tại cơ sở này.
   const candidates = useMemo(() => {
     const byEmail = new Map(staffList.map(s => [String(s.email).toLowerCase(), s]))
     return staffUsers
@@ -2048,7 +2207,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
   const upcomingPaging = useClientPaging(upcoming)
 
   /**
-   * Thêm nhân viên vào cơ sở (403 -> báo không có quyền) rồi tải lại.
+   * AddStaffModal bấm "Thêm vào cơ sở": thêm nhân viên (lỗi 403 -> báo không có quyền), đóng hộp thoại, tải lại, hiện toast.
    * API: POST /api/operations/facilities/{facilityId}/staff  body { staffEmail }
    */
   const addStaff = async (candidate) => {
@@ -2274,9 +2433,10 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
 const DAY_MS = 24 * 60 * 60 * 1000
 const EXPIRING_DAYS = 30
 
-// Số ngày còn lại tới ngày kết thúc (âm = đã quá hạn)
 /**
- * Số ngày còn lại tới ngày kết thúc hợp đồng (âm = đã quá hạn), tính theo Demo Clock.
+ * Số ngày còn lại tới ngày kết thúc hợp đồng (âm = đã quá hạn), tính theo "hôm nay" của Demo Clock.
+ * @param {string} endDate ngày kết thúc (ISO).
+ * @returns {number|null} null nếu ngày không hợp lệ.
  */
 function daysLeft(endDate) {
   const end = new Date(String(endDate || '').slice(0, 10) + 'T00:00:00')
@@ -2288,6 +2448,8 @@ function daysLeft(endDate) {
 /**
  * Giai đoạn hợp đồng: 'renewed' (đã gia hạn), 'closed' (đã kết thúc), 'expired' (quá hạn),
  * 'expiring' (sắp hết hạn trong EXPIRING_DAYS ngày), 'active' (đang hiệu lực).
+ * @param {object} c hợp đồng (status, endDate).
+ * @returns {string} khóa trong CONTRACT_PHASE_MAP.
  */
 function contractPhase(c) {
   // [MAIN-9] Hợp đồng đã gia hạn (ContractRenewalsController đặt "Renewed") hoặc đã kết thúc
@@ -2310,9 +2472,15 @@ const CONTRACT_PHASE_MAP = {
   closed: { label: 'Đã kết thúc', className: 'fp-badge' }
 }
 
-// Chuyển dữ liệu hợp đồng của Manager sang dạng `group` mà ContractDocument cần
 /**
- * Chuyển dữ liệu hợp đồng của Manager sang dạng `group` mà ContractDocument cần để in văn bản hợp đồng.
+ * Chuyển dữ liệu hợp đồng của Manager sang dạng `group` mà ContractDocument cần để in văn bản hợp đồng
+ * (tìm loại/size/giá từng kho, tính tiền thuê tháng, tổng tiền, tiền cọc).
+ * @param {object} c hợp đồng.
+ * @param {object} r đơn đặt chỗ tương ứng (có thể thiếu).
+ * @param {Array} facilityUnits các kho của cơ sở.
+ * @param {string} facilityName tên cơ sở.
+ * @returns {object} { key, code, title, rentals: [ {...} ] }.
+ * Được gọi bởi ManagerContractModal.
  */
 function buildContractGroup(c, r, facilityUnits, facilityName) {
   const numbers = (c.unitNumbers?.length ? c.unitNumbers : [c.unitId]).filter(Boolean)
@@ -2343,10 +2511,18 @@ function buildContractGroup(c, r, facilityUnits, facilityName) {
 }
 
 /**
- * Component hộp thoại xem văn bản hợp đồng (ContractDocument) cho Manager, có In / Lưu PDF.
- * @param {object} props contract, reservation, facility, facilityUnits, onClose.
+ * Hộp thoại xem văn bản hợp đồng (ContractDocument) ở chế độ chỉ xem cho Manager: tóm tắt tiền, mã đơn,
+ * thông tin ra vào, giai đoạn hợp đồng; có nút In / Lưu PDF. Không gọi API.
+ * @param {object} props
+ * @param {object} props.contract hợp đồng đang xem.
+ * @param {object} props.reservation đơn đặt chỗ tương ứng.
+ * @param {object} props.facility cơ sở.
+ * @param {Array} props.facilityUnits các kho của cơ sở.
+ * @param {Function} props.onClose đóng (nền tối, nút ×, phím Esc).
+ * Được mở khi bấm "Xem hợp đồng" ở tab Hợp đồng.
  */
 function ManagerContractModal({ contract, reservation, facility, facilityUnits, onClose }) {
+  // Chạy khi hộp thoại mở: bắt phím Esc và khóa cuộn trang nền; khi đóng thì trả lại như cũ.
   useEffect(() => {
     // Nhấn Esc để đóng hộp thoại.
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -2419,6 +2595,7 @@ function ManagerContractModal({ contract, reservation, facility, facilityUnits, 
   )
 }
 
+// Nút lọc tab Hợp đồng: [mã giai đoạn gửi backend, nhãn]. PHASE_CODE đổi giai đoạn (contractPhase) sang mã này.
 const CONTRACT_FILTERS = [
   ['', 'Tất cả'],
   ['ACTIVE', 'Đang hiệu lực'],
@@ -2429,22 +2606,32 @@ const CONTRACT_FILTERS = [
 ]
 const PHASE_CODE = { active: 'ACTIVE', expiring: 'EXPIRING', expired: 'EXPIRED', renewed: 'RENEWED', closed: 'CLOSED' }
 /**
- * Tính tổng các giá trị trong object đếm.
+ * Cộng tất cả giá trị trong object đếm theo trạng thái (vd { ACTIVE: 3, EXPIRED: 1 } -> 4), dùng cho nút "Tất cả".
+ * @param {object} counts
+ * @returns {number}
  */
 const sumCounts = counts => Object.values(counts || {}).reduce((a, b) => a + b, 0)
 
-/* [SỬA] Hợp đồng: lọc + chia trang ở backend (GET /api/operations/contracts), mới tạo lên đầu và được tô sáng. */
 /**
- * Component tab "Hợp đồng": lọc theo giai đoạn, tìm kiếm, sắp xếp, phân trang ở backend, xem văn bản hợp đồng.
- * API: GET /api/operations/contracts (qua useOpsList)
- * @param {object} props facility, facilityName, contracts, reservations, facilityUnits, reloadKey.
+ * Tab "Hợp đồng" (chỉ xem): lọc theo giai đoạn, tìm kiếm, sắp xếp, phân trang ở backend; hợp đồng mới tạo nằm đầu
+ * và được tô sáng; bấm "Xem hợp đồng" mở ManagerContractModal.
+ * API: GET /api/operations/contracts (qua hook useOpsList, hooks/opsLists.js).
+ * @param {object} props
+ * @param {object} props.facility cơ sở ({ facilityId, name }).
+ * @param {string} props.facilityName tên cơ sở.
+ * @param {Array} props.contracts hợp đồng từ state (dự phòng khi API danh sách lỗi).
+ * @param {Array} props.reservations đơn đặt chỗ (ghép thanh toán, liên hệ khách).
+ * @param {Array} props.facilityUnits các kho của cơ sở.
+ * @param {*} props.reloadKey đổi giá trị -> useOpsList tải lại.
+ * Được hiển thị khi activeTab = 'contracts'.
  */
 function FacilityContractsTab({ facility, facilityName, contracts = [], reservations = [], facilityUnits = [], reloadKey }) {
-  const [filter, setFilter] = useState('')
-  const [query, setQuery] = useState('')
-  const [sort, setSort] = useState('newest')
-  const [viewing, setViewing] = useState(null)
+  const [filter, setFilter] = useState('') // mã giai đoạn đang lọc ('' = tất cả)
+  const [query, setQuery] = useState('') // từ khóa tìm kiếm
+  const [sort, setSort] = useState('newest') // kiểu sắp xếp (CONTRACT_SORTS)
+  const [viewing, setViewing] = useState(null) // hợp đồng đang mở xem
 
+  // Danh sách phân trang từ backend; tự tải lại khi query/filter/sort/reloadKey đổi.
   const list = useOpsList('contracts', {
     q: query, status: filter, sort, facilityId: facility?.facilityId,
     reloadKey, fallbackRows: contracts, statusOf: c => PHASE_CODE[contractPhase(c)],
@@ -2550,6 +2737,7 @@ function FacilityContractsTab({ facility, facilityName, contracts = [], reservat
   )
 }
 
+// Nút lọc tab Đơn đặt chỗ: [các trạng thái gửi backend (phân cách dấu phẩy), nhãn].
 const MANAGER_RES_FILTERS = [
   ['', 'Tất cả'],
   ['PENDING_APPROVAL,CONFIRMED', 'Chờ bàn giao'],
@@ -2559,18 +2747,25 @@ const MANAGER_RES_FILTERS = [
   ['CANCELLED,EXPIRED', 'Hủy / hết hạn']
 ]
 
-/* [THÊM] Đơn đặt chỗ tại cơ sở: mọi đơn của khách, lọc + chia trang ở backend (GET /api/operations/reservations). */
 /**
- * Component tab "Đơn đặt chỗ": mọi đơn của khách tại cơ sở, lọc trạng thái, tìm kiếm, sắp xếp, phân trang ở backend.
- * API: GET /api/operations/reservations (qua useOpsList)
- * @param {object} props facility, facilityName, reservations, contracts, reloadKey, onOpenContracts.
+ * Tab "Đơn đặt chỗ" (chỉ xem): mọi đơn của khách tại cơ sở, lọc trạng thái, tìm kiếm, sắp xếp, phân trang ở backend;
+ * bấm 1 dòng (hoặc Enter) để mở/đóng dòng chi tiết (email, tiền thuê, giao dịch, hợp đồng).
+ * API: GET /api/operations/reservations (qua hook useOpsList).
+ * @param {object} props
+ * @param {object} props.facility / props.facilityName cơ sở và tên.
+ * @param {Array} props.reservations đơn từ state (dự phòng khi API danh sách lỗi).
+ * @param {Array} props.contracts hợp đồng (tìm hợp đồng của từng đơn).
+ * @param {*} props.reloadKey đổi giá trị -> tải lại.
+ * @param {Function} [props.onOpenContracts] bấm "Mở mục Hợp đồng →" -> trang cha chuyển sang tab Hợp đồng.
+ * Được hiển thị khi activeTab = 'reservations'.
  */
 function FacilityReservationsTab({ facility, facilityName, reservations = [], contracts = [], reloadKey, onOpenContracts }) {
-  const [filter, setFilter] = useState('')
-  const [query, setQuery] = useState('')
-  const [sort, setSort] = useState('newest')
-  const [open, setOpen] = useState(null)
+  const [filter, setFilter] = useState('') // trạng thái đang lọc ('' = tất cả)
+  const [query, setQuery] = useState('') // từ khóa tìm kiếm
+  const [sort, setSort] = useState('newest') // kiểu sắp xếp (RESERVATION_SORTS)
+  const [open, setOpen] = useState(null) // id đơn đang mở dòng chi tiết
 
+  // Danh sách phân trang từ backend; tự tải lại khi query/filter/sort/reloadKey đổi.
   const list = useOpsList('reservations', {
     q: query, status: filter, sort, facilityId: facility?.facilityId,
     reloadKey, fallbackRows: reservations, enabled: facility?.facilityId != null
@@ -2661,25 +2856,32 @@ function FacilityReservationsTab({ facility, facilityName, reservations = [], co
 }
 
 /* =========================================================
-   MAIN DASHBOARD COMPONENT
+   COMPONENT TRANG CHÍNH (export default)
    ========================================================= */
 /**
- * Component gốc trang Facility Manager: tải dữ liệu, lọc theo cơ sở được giao, menu, các tab, tạo/sửa/xóa kho,
- * báo cáo, toast, đăng xuất.
- * @param {object} props embedded, currentUser, navigate, currentUserKey.
+ * Component gốc trang Facility Manager: tải dữ liệu vận hành, lọc theo cơ sở được giao, vẽ menu ManagerNav
+ * và tab đang chọn; tự xử lý mục Tổng quan và Kho cơ sở (tạo/sửa/xóa kho, lọc, sắp xếp), toast thông báo.
+ * API chính: GET /api/operations/state?email=, POST/PUT /api/operations/units, DELETE /api/storage-units/{id},
+ *   GET /api/price-bands, GET /api/manager-tools/facilities/{id}/reports, POST .../auto-assign (xem khối FILE ở đầu).
+ * @param {object} props
+ * @param {boolean} [props.embedded=false] trang được nhúng trong layout khác (ẩn phần khung riêng).
+ * @param {object} props.currentUser tài khoản đang đăng nhập (cần email để tải state).
+ * @param {Function} [props.navigate] hàm chuyển trang của App.
+ * @param {string} [props.currentUserKey] khóa lưu tài khoản hiện tại trong storage.
+ * Được dùng bởi: src/App.jsx (role FACILITY_MANAGER).
  */
 export default function FacilityManagerDashboard({ embedded = false, currentUser = null, navigate = null, currentUserKey = 'storespace_current_user' }) {
   const dialog = useDialog()
   const [db, setDb] = useState({ facilities: [], units: [], reservations: [], contracts: [], staff: [], unitTypes: [], unitSizes: [], rentalRates: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState('overview')
-  const [editingUnit, setEditingUnit] = useState(null)
-  const [showUnitModal, setShowUnitModal] = useState(false)
-  const [unitFilter, setUnitFilter] = useState('all')
-  const [unitSort, setUnitSort] = useState({ key: null, dir: 'asc' })
-  const [freshUnits, setFreshUnits] = useState([])
-  const [highlightUnitId, setHighlightUnitId] = useState(null)
+  const [activeTab, setActiveTab] = useState('overview') // mục menu đang mở (key trong ManagerNav)
+  const [editingUnit, setEditingUnit] = useState(null) // kho đang sửa (null = tạo mới)
+  const [showUnitModal, setShowUnitModal] = useState(false) // đang mở UnitFormModal
+  const [unitFilter, setUnitFilter] = useState('all') // lọc nhanh bảng kho: all | fresh | booked | available
+  const [unitSort, setUnitSort] = useState({ key: null, dir: 'asc' }) // cột đang sắp xếp (key null = mặc định)
+  const [freshUnits, setFreshUnits] = useState([]) // kho vừa tạo (nhãn "Mới"), đồng bộ sessionStorage
+  const [highlightUnitId, setHighlightUnitId] = useState(null) // mã kho cần cuộn tới + nháy sáng
   const [toast, setToast] = useState('')
   const toastTimer = useRef(null)
   const [viewingUnitId, setViewingUnitId] = useState(null)
@@ -2689,8 +2891,10 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
 
   const manager = currentUser
   /**
-   * Tải dữ liệu vận hành; silent = true thì tải ngầm (không che trang).
+   * Tải toàn bộ dữ liệu vận hành của Manager rồi chuẩn hóa bằng mapOperationsState() và lưu vào state `db`.
    * API: GET /api/operations/state?email=...
+   * @param {{silent?: boolean}} [options] silent = true thì tải ngầm (không hiện màn hình "Đang tải").
+   * Được gọi khi vào trang / đổi email, và sau mỗi thao tác tạo/sửa/xóa (silent).
    */
   const loadState = async ({ silent = false } = {}) => {
     if (!manager?.email) {
@@ -2712,21 +2916,24 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     }
   }
 
+  // Chạy khi vào trang và khi email Manager đổi: tải dữ liệu vận hành.
   useEffect(() => {
     loadState()
   }, [manager?.email])
 
+  // Cơ sở do Manager này quản lý (so email quản lý; không khớp thì lấy cơ sở đầu tiên).
   const managedFacility = db.facilities.find(facility =>
     facility.managerEmail?.toLowerCase() === manager?.email?.toLowerCase()
   ) || db.facilities[0]
   const facilityName = managedFacility?.name || 'Chưa được gán cơ sở'
   const facilityKey = String(managedFacility?.facilityId ?? '')
 
+  // Chạy khi biết / đổi cơ sở: đọc danh sách kho vừa tạo từ sessionStorage.
   useEffect(() => {
     if (facilityKey) setFreshUnits(loadFreshUnits(facilityKey))
   }, [facilityKey])
 
-  // Cuộn tới và nháy sáng dòng kho vừa tạo.
+  // Chạy khi highlightUnitId hoặc activeTab đổi: ở tab Kho thì cuộn tới dòng kho vừa tạo, sau 4 giây bỏ nháy sáng.
   useEffect(() => {
     if (!highlightUnitId || activeTab !== 'units') return
     const timer = window.setTimeout(() => {
@@ -2736,7 +2943,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     return () => { window.clearTimeout(timer); window.clearTimeout(clear) }
   }, [highlightUnitId, activeTab])
 
-  // Hiện thông báo nhỏ (toast) trong 3 giây.
+  // Hiện thông báo nhỏ (toast) trong 3 giây; được truyền xuống các tab con qua prop showToast.
   const showToast = message => {
     setToast(message)
     window.clearTimeout(toastTimer.current)
@@ -2756,7 +2963,8 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
   const unitLocks = useMemo(() => new Map(facilityUnits.map(unit => [unit.id, getUnitLock(unit, facilityReservations)])), [facilityUnits, facilityReservations])
   const nextUnitCode = previewNextUnitCode(managedFacility?.unitCodePrefix, facilityUnits)
 
-  // [PHÂN TRANG] Danh mục kho: lọc + chia trang ở backend (GET /api/operations/units), mới thêm lên đầu
+  // Danh mục kho (tab Kho cơ sở): tìm kiếm, lọc trạng thái, sắp xếp, chia trang ở backend
+  // (GET /api/operations/units qua useOpsList), kho mới thêm lên đầu; chỉ tải khi đang ở tab 'units'.
   const [unitQuery, setUnitQuery] = useState('')
   const [unitStatusFilter, setUnitStatusFilter] = useState('')
   const [unitListSort, setUnitListSort] = useState('newest')
@@ -2795,7 +3003,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     }
   }, [facilityUnits, facilityReservations, facilityContracts])
 
-  // Mở form sửa kho (chặn nếu kho đang bị khóa vì đã có đơn).
+  // Bấm "Sửa kho": mở UnitFormModal ở chế độ sửa (chặn và giải thích nếu kho đang bị khóa vì đã có đơn).
   const openEditUnit = async unit => {
     const lock = unitLocks.get(unit.id)
     if (lock?.locked) {
@@ -2806,7 +3014,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     setShowUnitModal(true)
   }
 
-  // Bỏ đánh dấu "Mới" của 1 kho.
+  // Bỏ đánh dấu "Mới" của 1 kho (cập nhật state + sessionStorage); gọi khi bấm bỏ nhãn hoặc sau khi xóa kho.
   const dismissFreshUnit = unitNumber => {
     const next = freshUnits.filter(item => item.unitNumber !== unitNumber)
     setFreshUnits(next)
@@ -2817,6 +3025,8 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
    * Lưu kho từ form: sửa (báo nếu giá được lưu theo biểu giá) hoặc tạo mới (ghi nhớ kho mới, chuyển tab Kho, tô sáng,
    * hỏi "Tạo thêm kho" / "Xem kho vừa tạo").
    * API: PUT /api/operations/units/{unitNumber}  |  POST /api/operations/units
+   * @param {object} unitData dữ liệu từ UnitFormModal (loại, size, giá, trạng thái, vị trí).
+   * Được UnitFormModal gọi qua prop onSave.
    */
   const handleSaveUnit = async (unitData) => {
     const request = {
@@ -2926,13 +3136,13 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
       return true
     })
 
-    // Mã đơn nhỏ nhất đang giữ kho (null = kho chưa có đơn)
     // Mã đơn nhỏ nhất đang giữ kho (null = kho chưa có đơn), dùng để sắp xếp cột "Đơn".
     const firstResId = (u) => {
       const ids = (unitLocks.get(u.id)?.reservations || []).map(r => Number(r.id)).filter(Number.isFinite)
       return ids.length ? Math.min(...ids) : null
     }
 
+    // Hàm so sánh cho từng cột sắp xếp (khóa = unitSort.key).
     const comparators = {
       // So sánh theo mã kho (tự nhiên).
       code: (a, b) => compareNatural(a.id, b.id),
@@ -2972,8 +3182,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     })
   }, [facilityUnits, unitFilter, freshIds, unitLocks, unitSort])
 
-  // Bấm tiêu đề cột: tăng dần → giảm dần → về mặc định
-  // Bấm tiêu đề cột: tăng dần -> giảm dần -> về mặc định.
+  // Bấm tiêu đề cột bảng kho: đổi unitSort theo vòng tăng dần -> giảm dần -> về mặc định.
   const toggleUnitSort = (key) => {
     setUnitSort(current => {
       if (current.key !== key) return { key, dir: 'asc' }
@@ -3006,21 +3215,21 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     .map(item => ({ ...item, unit: facilityUnits.find(unit => unit.id === item.unitNumber) }))
     .filter(item => item.unit)
 
-  /* Popup chi tiết kho */
+  /* Popup chi tiết kho: kho đang xem + hợp đồng còn hiệu lực của kho đó (ngày kết thúc >= hôm nay) */
   const viewingUnit = viewingUnitId ? facilityUnits.find(u => u.id === viewingUnitId) : null
   const viewingContract = viewingUnit
     ? facilityContracts.find(c => c.unitId === viewingUnit.id && String(c.endDate || '').slice(0, 10) >= todayStr())
     : null
 
-  // Từ hộp chi tiết kho chuyển sang form sửa kho.
+  // Bấm "Sửa kho" trong UnitDetailModal: đóng hộp chi tiết rồi mở form sửa kho.
   const openEditFromDetail = (unit) => {
     setViewingUnitId(null)
     openEditUnit(unit)
   }
 
-  /* Xóa kho: chỉ kho chưa từng có đơn / bàn giao / hỗ trợ. Kho đã có lịch sử → chuyển "Ngừng sử dụng" */
   /**
-   * Xóa kho (chỉ kho chưa từng có đơn / bàn giao / hỗ trợ; hỏi xác nhận). Lỗi thì gợi ý chuyển "Ngừng sử dụng".
+   * Bấm "Xóa kho" trong UnitDetailModal: hỏi xác nhận rồi xóa hẳn kho (backend chỉ cho xóa kho chưa từng có
+   * đơn / bàn giao / hỗ trợ). Thành công: đóng hộp, bỏ nhãn "Mới", tải lại. Lỗi: gợi ý chuyển "Ngừng sử dụng".
    * API: DELETE /api/storage-units/{unitId}
    */
   const handleDeleteUnit = async (unit) => {
@@ -3067,12 +3276,11 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     }
   }
 
-  // Tải khi vào trang (form tạo kho cần danh sách) và mỗi lần mở tab
+  // Chạy khi vào trang (form tạo kho cần danh sách) và mỗi lần mở / rời tab "Đặc tính kho" hoặc "Bảng giá"
   useEffect(() => {
     if (catalogFacilityId != null) reloadFacilityCatalog()
   }, [catalogFacilityId, activeTab === 'unitTypes' || activeTab === 'prices'])
 
-  // Form Tạo / Sửa kho: chỉ loại kho Active tại cơ sở (giữ loại hiện tại của kho đang sửa)
   // Danh sách loại kho cho form tạo/sửa kho: chỉ loại Active tại cơ sở (giữ loại hiện tại của kho đang sửa).
   const unitTypesForUnitForm = useMemo(() => {
     if (!facilityCatalog.types.length) return db.unitTypes || []
@@ -3082,7 +3290,6 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
       .map(t => ({ unitTypeId: t.id, name: t.isActive ? t.name : `${t.name} (ngừng dùng)`, description: t.description }))
   }, [facilityCatalog.types, db.unitTypes, editingUnit])
 
-  // Form Tạo / Sửa kho: chỉ kích thước Active tại cơ sở
   // Danh sách kích thước cho form tạo/sửa kho: chỉ kích thước Active tại cơ sở (giữ size hiện tại của kho đang sửa).
   const unitSizesForUnitForm = useMemo(() => {
     if (!facilityCatalog.sizes.length) return db.unitSizes || []
@@ -3096,9 +3303,10 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
       }))
   }, [facilityCatalog.sizes, db.unitSizes, editingUnit])
 
-  /* ===== [MANAGER-TOOLS] BÁO CÁO THỰC THU: GET /api/manager-tools/facilities/{id}/reports ===== */
+  /* ===== BÁO CÁO THỰC THU 6 THÁNG (mục Tổng quan): GET /api/manager-tools/facilities/{id}/reports?months=6 ===== */
   const [report, setReport] = useState(null)
   const [reportError, setReportError] = useState('')
+  // Chạy khi đang ở mục Tổng quan và khi cơ sở / dữ liệu (db) đổi: tải báo cáo; cờ cancelled bỏ kết quả cũ.
   useEffect(() => {
     if (activeTab !== 'overview' || managedFacility?.facilityId == null) return
     let cancelled = false
@@ -3108,7 +3316,8 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     return () => { cancelled = true }
   }, [activeTab, managedFacility?.facilityId, db])
 
-  /* ===== [AUTO-ASSIGN] TỰ PHÂN CÔNG mỗi khi trang tải dữ liệu =====
+  /* ===== TỰ PHÂN CÔNG mỗi khi trang tải dữ liệu (useEffect chạy khi cơ sở hoặc db đổi) =====
+     assignInfo.version tăng sau mỗi lần -> FacilityStaffTab (prop assignVersion) tải lại danh sách việc.
      POST /api/manager-tools/facilities/{id}/auto-assign: đơn đã cọc chưa có người -> giao cho nhân viên phù hợp nhất.
      unassigned = đơn chưa giao được (không có nhân viên / tất cả trùng giờ) -> cảnh báo ở Tổng quan. */
   const [assignInfo, setAssignInfo] = useState({ unassigned: [], version: 0 })
@@ -3125,9 +3334,10 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     return () => { cancelled = true }
   }, [managedFacility?.facilityId, db])
 
-  /* ===== [FM11] BẢNG GIÁ TẠI CƠ SỞ ===== */
+  /* ===== BẢNG GIÁ TẠI CƠ SỞ (dữ liệu truyền cho ManagerPriceTable) ===== */
   // Khung giá nhóm (S/M/L...) do Business Operations đặt: GET /api/price-bands trả { bands, unassignedSizes }
   const [priceBands, setPriceBands] = useState([])
+  // Chạy khi mở mục "Bảng giá": tải khung giá; lỗi thì dùng khung giá có sẵn trong db (từ /api/operations/state).
   useEffect(() => {
     if (activeTab !== 'prices') return
     let cancelled = false
@@ -3148,8 +3358,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     return () => { cancelled = true }
   }, [activeTab])
 
-  // Loại kho / kích thước đang Active tại cơ sở (lấy từ tab Thiết lập đặc tính kho)
-  // Loại kho đang Active tại cơ sở cho bảng giá.
+  // Loại kho đang Active tại cơ sở cho bảng giá (lấy từ catalog của tab Đặc tính kho; chưa có thì dùng db).
   const priceTableTypes = useMemo(() => facilityCatalog.types.length
     ? facilityCatalog.types.filter(t => t.isActive).map(t => ({ unitTypeId: t.id, name: t.name }))
     : (db.unitTypes || []), [facilityCatalog.types, db.unitTypes])
@@ -3171,7 +3380,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
   }
   const managerName = manager?.name || manager?.fullName || 'Facility Manager'
 
-  // Vẽ danh sách mã đơn đang giữ 1 kho.
+  // Vẽ ô "Đơn" của bảng kho: các mã đơn đang giữ kho kèm trạng thái (và hạn giữ chỗ nếu chờ cọc).
   const renderReservationCodes = unit => {
     const lock = unitLocks.get(unit.id)
     if (!lock?.reservations.length) return <span className="fm-muted">—</span>

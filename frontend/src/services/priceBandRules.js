@@ -1,31 +1,30 @@
 /**
  * ======================================================================
  * FILE: src/services/priceBandRules.js  —  QUY TẮC KIỂM TRA KHI TẠO/SỬA KHUNG GIÁ (NHÓM SIZE)
- * Giống hệt quy tắc backend PriceBandRulesController: frontend kiểm tra trước để báo lỗi ngay khi nhập,
- * backend kiểm tra lại khi lưu (API /api/price-band-rules).
- * Quy tắc:
- *  1. 0 < "từ" < "đến" (cho cả diện tích và giá).
- *  2. Khoảng diện tích các nhóm không chồng nhau (chạm mép được phép).
- *  3. Nhóm lớn hơn phải có giá sàn VÀ giá trần cao hơn nhóm nhỏ hơn.
- *  4. Nhóm có kho đang được đặt/đang thuê: khóa khung, không được ngừng sử dụng (chỉ đổi tên).
- *  5. Nhóm đã có size: khung mới phải chứa hết diện tích các size và các mức giá đang áp dụng.
- *  Nhóm xe (V) là nhóm đặc biệt, chỉ so sánh với nhóm đặc biệt.
- * Dùng ở: pages/business/BusinessPriceBands.jsx.
+ * CHỨC NĂNG: Kiểm tra dữ liệu khung giá (nhóm kích thước S/M/L/V...) ngay khi Business Operations nhập,
+ *   theo đúng quy tắc của backend PriceBandRulesController.cs (backend kiểm tra lại khi lưu), và sinh
+ *   các dòng gợi ý giới hạn hiển thị dưới ô nhập. Quy tắc:
+ *    1. 0 < "từ" < "đến" (cho cả diện tích và giá).
+ *    2. Khoảng diện tích các nhóm không chồng nhau (chạm mép được phép).
+ *    3. Nhóm lớn hơn phải có giá sàn VÀ giá trần cao hơn nhóm nhỏ hơn.
+ *    4. Nhóm có kho đang được đặt/đang thuê: khóa khung, không được ngừng sử dụng (chỉ đổi tên).
+ *    5. Nhóm đã có size: khung mới phải chứa hết diện tích các size và các mức giá đang áp dụng tại các cơ sở.
+ *    Nhóm xe (V) là nhóm đặc biệt, chỉ so sánh với nhóm đặc biệt.
+ * THÀNH PHẦN CHÍNH:
+ *   - validateBand  : trả danh sách câu lỗi (rỗng = hợp lệ).
+ *   - bandHints     : trả các dòng gợi ý giới hạn cho form.
+ *   - isSpecialBand : kiểm tra nhóm đặc biệt "V".
+ *   - neighbours    : (nội bộ) tìm nhóm liền kề nhỏ hơn / lớn hơn.
+ * DÙNG Ở: src/pages/business/BusinessPriceBands.jsx (validateBand, bandHints).
+ * PHỤ THUỘC: ./storageRules (formatVnd).
+ * API: Không gọi API (dữ liệu nhóm do trang tải từ GET /api/price-band-rules rồi truyền vào).
+ * LUỒNG: Người dùng gõ vào form khung giá -> trang gọi bandHints() hiện gợi ý; bấm Lưu -> validateBand()
+ *   -> có lỗi thì hiện ngay, không lỗi mới gửi API lưu.
  * ======================================================================
- */
-/*
- * Quy tắc khóa chặt khung giá / nhóm size (giống hệt backend PriceBandRulesController.cs).
- * Frontend kiểm tra trước để báo lỗi ngay khi nhập; backend kiểm tra lại khi lưu.
- *
- *  1. 0 < từ < đến (diện tích và giá).
- *  2. Diện tích các nhóm không chồng lên nhau (chạm mép thì được).
- *  3. Nhóm lớn hơn phải có giá sàn VÀ giá trần cao hơn nhóm nhỏ hơn.
- *  4. Nhóm có kho đang được đặt / đang thuê: khóa khung, không ngừng sử dụng (chỉ đổi tên).
- *  5. Nhóm đã có size: khung mới phải chứa hết diện tích các size và giá đang áp dụng tại các cơ sở.
- *  Nhóm xe (V) là nhóm đặc biệt, chỉ so với nhóm đặc biệt.
  */
 import { formatVnd } from './storageRules'
 
+// Sai số cho phép khi so sánh diện tích (m²), tránh lỗi làm tròn số thực.
 const TOL = 0.005
 /**
  * Định dạng số tiền kèm "đ".
@@ -40,9 +39,9 @@ const area = v => `${Number(v).toLocaleString('vi-VN', { maximumFractionDigits: 
  */
 export const isSpecialBand = code => String(code || '').toUpperCase() === 'V'
 
-/* candidate: { code, minArea, maxArea, minPrice, maxPrice, isActive } (số); current: dòng rules của nhóm đang sửa hoặc null */
 /**
  * Kiểm tra dữ liệu khung giá trước khi lưu theo 5 quy tắc ở đầu file.
+ * Được gọi bởi BusinessPriceBands khi bấm Lưu nhóm size. Không gọi API.
  * @param {{code, minArea, maxArea, minPrice, maxPrice, isActive}} candidate dữ liệu đang nhập.
  * @param {object[]} ruleBands danh sách các nhóm hiện có (từ GET /api/price-band-rules).
  * @param {object|null} current nhóm đang sửa (null khi tạo mới); có cờ locked, sizeAreaMin/Max, rateMin/Max.
@@ -91,6 +90,9 @@ export function validateBand(candidate, ruleBands = [], current = null) {
 
 /**
  * Tìm nhóm liền kề nhỏ hơn và lớn hơn (theo diện tích) của nhóm đang xét.
+ * Được gọi bởi validateBand và bandHints.
+ * @param {{minArea:number, maxArea:number}} c nhóm đang xét.
+ * @param {object[]} others các nhóm cùng loại (thường / đặc biệt) còn lại.
  * @returns {{smaller:object|null, larger:object|null}}
  */
 function neighbours(c, others) {
@@ -99,11 +101,14 @@ function neighbours(c, others) {
   return { smaller, larger }
 }
 
-/* Gợi ý giới hạn cho form (hiển thị dưới các ô nhập). */
 /**
  * Sinh các dòng gợi ý giới hạn để hiển thị dưới ô nhập trong form khung giá
  * (phải chứa size/giá hiện có, so sánh với nhóm nhỏ hơn/lớn hơn liền kề, liệt kê các nhóm hiện có).
- * @returns {string[]}
+ * Được gọi bởi BusinessPriceBands mỗi lần form render.
+ * @param {object} candidate dữ liệu đang nhập (code, minArea, maxArea...).
+ * @param {object[]} ruleBands các nhóm hiện có.
+ * @param {object|null} current nhóm đang sửa (null khi tạo mới).
+ * @returns {string[]} các dòng gợi ý (rỗng nếu nhóm đang bị khóa).
  */
 export function bandHints(candidate, ruleBands = [], current = null) {
   const code = String(candidate.code || current?.code || '').toUpperCase()

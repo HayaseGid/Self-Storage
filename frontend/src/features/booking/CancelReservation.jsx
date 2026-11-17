@@ -1,12 +1,25 @@
 /**
  * ======================================================================
- * FILE: src/features/booking/CancelReservation.jsx  —  KHÁCH HỦY ĐẶT KHO (đã cọc, chưa nhận kho) + HOÀN CỌC
- * Backend: ReservationCancellationsController.
+ * FILE: src/features/booking/CancelReservation.jsx  —  KHÁCH HỦY ĐẶT KHO + HOÀN CỌC THEO CHÍNH SÁCH
+ * CHỨC NĂNG: Hộp thoại để khách tự hủy đơn đặt kho (đã cọc hoặc đang chờ cọc, chưa nhận kho). Hiện báo giá hoàn cọc do
+ *   backend tính (số ngày còn tới ngày nhận kho, % và số tiền được hoàn, bảng các mức hoàn), cho chọn lý do, tick
+ *   đồng ý rồi hủy ngay — không cần ai duyệt. Đơn trả qua VNPay thì tiền hoàn về đúng thẻ / tài khoản đã thanh toán
+ *   (API hoàn tiền VNPay). Có thêm hàm gửi lại yêu cầu hoàn tiền khi lần hoàn trước bị lỗi.
+ * THÀNH PHẦN CHÍNH:
+ *   - CancelReservationModal (default export): hộp thoại hủy đặt kho.
+ *   - tierLabel (export): tạo nhãn cho 1 mức trong bảng chính sách hoàn cọc.
+ *   - retryRefund (export): gửi lại yêu cầu hoàn tiền.
+ *   - money, fmtIso, REASONS: tiện ích định dạng + danh sách lý do hủy.
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx, src/features/payment/PendingPayments.jsx.
+ * PHỤ THUỘC: api/api (apiGet, apiPost), components/common/Dialog (useDialog), services/storageRules (formatVnd),
+ *   ../contract/ContractSignFlow.css (khung hộp thoại csf-*), CancelReservation.css.
+ * API (ReservationCancellationsController):
  *   GET  /api/reservation-cancellations/{id}/quote        -> có hủy được không, số ngày trước ngày nhận, % & số tiền hoàn
  *   POST /api/reservation-cancellations/{id}              -> body { reason, expectedRefund } : hủy ngay, không cần duyệt
  *   POST /api/reservation-cancellations/{id}/refund-retry -> gửi lại yêu cầu hoàn tiền (VNPay lỗi lần trước)
- * Thanh toán qua VNPay thì hoàn về đúng thẻ/tài khoản đã trả.
- * Dùng ở: CustomerAccount, PendingPayments.
+ * LUỒNG: khách bấm "Hủy đặt kho" / "Hủy đặt chỗ" -> mở CancelReservationModal -> load(): GET .../quote -> hiện số tiền hoàn
+ *   -> chọn lý do + tick đồng ý -> bấm "Hủy & hoàn ..." -> submit(): dialog xác nhận -> POST .../{id} -> onDone(result)
+ *   (cha tải lại dữ liệu) -> dialog báo kết quả hoàn tiền. Nếu hoàn lỗi: mục Thanh toán -> retryRefund() -> POST .../refund-retry.
  * ======================================================================
  */
 import React, { useEffect, useState } from 'react'
@@ -16,28 +29,27 @@ import { formatVnd } from '../../services/storageRules'
 import '../contract/ContractSignFlow.css'
 import './CancelReservation.css'
 
-/*
- * KHÁCH HỦY ĐẶT KHO (đã cọc, chưa nhận kho) + HOÀN CỌC THEO CHÍNH SÁCH.
- *   GET  /api/reservation-cancellations/{id}/quote   -> có hủy được không, hoàn bao nhiêu %
- *   POST /api/reservation-cancellations/{id}         -> { reason, expectedRefund }
- *   POST /api/reservation-cancellations/{id}/refund-retry
- * Hủy ngay, không cần duyệt. Trả qua VNPay thì hoàn về thẻ / tài khoản đã thanh toán (API hoàn tiền VNPay).
- */
-
 /**
- * Định dạng tiền làm tròn kèm "đ".
+ * Định dạng số tiền (làm tròn) thành chuỗi kiểu Việt Nam kèm "đ".
+ * @param {number|string} value số tiền.
+ * @returns {string}
  */
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
 /**
- * Đổi ngày ISO thành 'dd/MM/yyyy'.
+ * Đổi ngày ISO thành 'dd/MM/yyyy' (rỗng -> '—').
+ * @param {string} iso ngày dạng ISO.
+ * @returns {string}
  */
 const fmtIso = iso => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—')
+/** Các lý do hủy cho khách chọn trong ô select; chọn "Lý do khác" thì nội dung ô ghi chú là lý do. */
 const REASONS = ['Không còn nhu cầu thuê', 'Đã tìm được kho khác', 'Muốn đổi thời gian / kích thước kho', 'Lý do khác']
 
 /**
  * Tạo nhãn mô tả cho 1 mức hoàn tiền trong bảng chính sách (vd "Hủy trước 3–6 ngày").
  * @param {object[]} tiers các mức { minDaysBefore, refundPercent } đã sắp giảm dần.
  * @param {number} index vị trí mức cần mô tả.
+ * @returns {string} mức đầu: "từ N ngày trở lên"; mức minDaysBefore = 0: "dưới N ngày"; còn lại: khoảng "a–b ngày".
+ * Được gọi bởi: CancelReservationModal (vẽ bảng "Chính sách hoàn cọc khi hủy").
  */
 export function tierLabel(tiers, index) {
   const t = tiers[index]
@@ -48,21 +60,29 @@ export function tierLabel(tiers, index) {
 }
 
 /**
- * Hộp thoại hủy đặt kho: hiện báo giá hoàn tiền theo chính sách, chọn lý do, tick đồng ý rồi xác nhận hủy.
- * @param {object} props rental (đơn cần hủy, có reservationId), onClose, onDone(result) (gọi sau khi hủy thành công).
+ * Hộp thoại hủy đặt kho: tải báo giá hoàn tiền theo chính sách, chọn lý do, tick đồng ý rồi xác nhận hủy.
+ * Nếu đơn không được hủy (quote.eligible = false) thì chỉ hiện lý do backend trả về.
+ * @param {object} props
+ * @param {object} props.rental đơn cần hủy (reservationId, reservationCode, contractNumber, facility, units, startDate).
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} [props.onDone] onDone(result) — gọi sau khi hủy thành công để cha tải lại dữ liệu.
+ * API: GET /api/reservation-cancellations/{id}/quote, POST /api/reservation-cancellations/{id}.
+ * Được gọi bởi: CustomerAccount (các nút "Hủy đặt kho" ở tab Hợp đồng và trong ContractDetailModal),
+ *   PendingPayments (nút "Hủy đặt chỗ" ở khoản chờ đặt cọc).
  */
 export default function CancelReservationModal({ rental, onClose, onDone }) {
   const dialog = useDialog()
-  const [quote, setQuote] = useState(null)
+  const [quote, setQuote] = useState(null) // báo giá hủy: eligible, daysBefore, depositPaid, refundPercent, refundAmount, tiers...
   const [loadError, setLoadError] = useState('')
-  const [reason, setReason] = useState(REASONS[0])
-  const [note, setNote] = useState('')
+  const [reason, setReason] = useState(REASONS[0]) // lý do chọn trong select
+  const [note, setNote] = useState('') // ghi chú thêm (hoặc lý do khi chọn "Lý do khác")
   const [agreed, setAgreed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   /**
-   * Tải báo giá hủy/hoàn tiền.
+   * Tải báo giá hủy/hoàn tiền vào state quote (404 không kèm message -> báo backend chưa có chức năng).
+   * Chạy khi mở hộp thoại (useEffect bên dưới) và khi bấm "Thử lại".
    * API: GET /api/reservation-cancellations/{reservationId}/quote
    */
   const load = () => {
@@ -73,8 +93,10 @@ export default function CancelReservationModal({ rental, onClose, onDone }) {
         ? 'Backend chưa có chức năng hủy đặt kho. Hãy chép ReservationCancellationsController.cs vào backend/Controllers rồi chạy lại backend.'
         : err.message))
   }
+  // Chạy khi mở hộp thoại / đổi đơn (reservationId): tải báo giá.
   useEffect(load, [rental.reservationId])
 
+  // Chạy khi mở hộp thoại và khi submitting đổi: gắn phím Esc để đóng; gỡ khi đóng.
   useEffect(() => {
     // Nhấn Esc để đóng hộp thoại (khi không đang gửi).
     const onKey = event => { if (event.key === 'Escape' && !submitting) onClose() }
@@ -84,6 +106,8 @@ export default function CancelReservationModal({ rental, onClose, onDone }) {
 
   /**
    * Xác nhận hủy: hỏi lại bằng dialog, gửi yêu cầu hủy, báo kết quả hoàn tiền (thành công / còn chờ hoàn).
+   * Chạy khi bấm nút "Hủy & hoàn ..." / "Hủy đặt kho" (chỉ bật khi đơn được hủy và đã tick đồng ý).
+   * expectedRefund gửi kèm để backend so khớp: nếu số tiền hoàn đã đổi thì backend từ chối và trả báo giá mới.
    * API: POST /api/reservation-cancellations/{reservationId}  body { reason, expectedRefund }
    * Nếu backend trả báo giá mới (số tiền thay đổi) thì cập nhật báo giá và bắt tick đồng ý lại.
    */
@@ -121,6 +145,7 @@ export default function CancelReservationModal({ rental, onClose, onDone }) {
     }
   }
 
+  // Bảng các mức hoàn cọc; activeTier = mức áp dụng cho đơn này (mức đầu tiên có daysBefore >= minDaysBefore).
   const tiers = quote?.tiers || []
   const activeTier = tiers.findIndex(t => quote && quote.daysBefore >= t.minDaysBefore)
 
@@ -217,12 +242,14 @@ export default function CancelReservationModal({ rental, onClose, onDone }) {
   )
 }
 
-/* Gửi lại yêu cầu hoàn tiền (VNPay lỗi lần trước). */
 /**
- * Gửi lại yêu cầu hoàn tiền cho đơn đã hủy (khi lần hoàn trước qua VNPay bị lỗi) và báo kết quả.
+ * Gửi lại yêu cầu hoàn tiền cho đơn đã hủy (khi lần hoàn trước qua VNPay bị lỗi) và báo kết quả bằng dialog
+ * (thành công / vẫn chưa hoàn được / lỗi gửi). Không ném lỗi ra ngoài.
  * API: POST /api/reservation-cancellations/{reservationId}/refund-retry
  * @param {object} dialog từ useDialog().
- * @param {number} reservationId
+ * @param {number} reservationId mã đơn đã hủy.
+ * @returns {Promise<void>}
+ * Được gọi bởi: PendingPayments (nút "Gửi lại yêu cầu hoàn tiền" trong lịch sử giao dịch); CustomerAccount cũng import.
  */
 export async function retryRefund(dialog, reservationId) {
   try {

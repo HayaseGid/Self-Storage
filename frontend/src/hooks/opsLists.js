@@ -1,24 +1,28 @@
 /**
  * ======================================================================
- * FILE: src/hooks/opsLists.js  —  HOOK DANH SÁCH VẬN HÀNH CÓ PHÂN TRANG Ở BACKEND (Staff / Manager dùng chung)
+ * FILE: src/hooks/opsLists.js  —  HOOK DANH SÁCH VẬN HÀNH CÓ PHÂN TRANG Ở BACKEND
+ * CHỨC NĂNG: Cung cấp hook useOpsList để màn hình Staff / Manager lấy danh sách ĐƠN ĐẶT KHO, KHO hoặc
+ *   HỢP ĐỒNG có tìm kiếm, lọc trạng thái, sắp xếp và phân trang do backend thực hiện. Mỗi dòng được map
+ *   bằng đúng hàm của mappers/operationsState.js nên các màn hình cũ dùng lại được. Nếu backend chưa có
+ *   API phân trang (404) thì tự lọc / sắp xếp / chia trang ở frontend từ fallbackRows (dữ liệu /state đang có).
+ * THÀNH PHẦN CHÍNH:
+ *   - RESERVATION_SORTS / UNIT_SORTS / CONTRACT_SORTS : các lựa chọn sắp xếp [giá trị, nhãn] cho ô chọn.
+ *   - useOpsList : hook chính.
+ *   - DEFAULT_MATCH / COMPARE (nội bộ): hàm tìm kiếm và so sánh dùng khi phải chia trang ở frontend.
+ * DÙNG Ở: src/pages/manager/FacilityManagerAccount.jsx, src/pages/staff/FacilityStaffAccount.jsx.
+ * PHỤ THUỘC: react (useMemo), src/components/common/listKit (useServerList, parseTime),
+ *   src/mappers/operationsState (mapReservation, mapUnit, mapContract).
  * API: GET /api/operations/reservations | units | contracts
- *      ?page=&pageSize=&q=&status=&sort=&facilityId=&typeId=   (OperationsController)
- * Mỗi dòng backend trả về được map bằng chính hàm của mappers/operationsState.js (mapReservation/mapUnit/mapContract).
- * Nếu backend chưa có API phân trang (404) -> tự lọc/sắp xếp/chia trang ở frontend từ fallbackRows.
- * Dùng ở: FacilityManagerAccount, FacilityStaffAccount.
+ *      ?page=&pageSize=&q=&status=&sort=&facilityId=&typeId=   (OperationsController), gọi qua useServerList.
+ * LUỒNG: Manager gõ ô tìm kiếm / đổi trạng thái / sắp xếp -> state trang đổi -> useOpsList(kind, {...})
+ *   -> useServerList gọi GET /api/operations/{kind}?... -> items map sang dạng frontend -> bảng + Pager hiển thị.
  * ======================================================================
  */
 import { useMemo } from 'react'
 import { parseTime, useServerList } from '../components/common/listKit'
 import { mapContract, mapReservation, mapUnit } from '../mappers/operationsState'
 
-/*
- * DANH SÁCH VẬN HÀNH CÓ PHÂN TRANG Ở BACKEND (file THÊM MỚI) - Staff / Manager / Business dùng chung.
- *   GET /api/operations/reservations | units | contracts ?page=&pageSize=&q=&status=&sort=&facilityId=&typeId=
- * Mỗi dòng được chuyển đổi bằng đúng hàm của /state (mapReservation / mapUnit / mapContract) nên các màn hình cũ dùng lại được.
- * Backend chưa chạy bản mới (404) -> tự chia trang ở frontend từ fallbackRows (dữ liệu /state đang có).
- */
-
+// Các lựa chọn sắp xếp cho từng loại danh sách: [giá trị gửi backend (sort), nhãn hiển thị].
 export const RESERVATION_SORTS = [
   ['newest', 'Mới đặt nhất'],
   ['appointment', 'Lịch hẹn gần nhất'],
@@ -42,6 +46,7 @@ export const CONTRACT_SORTS = [
   ['code', 'Mã HĐ A→Z']
 ]
 
+// Hàm map dòng backend -> object frontend tương ứng với từng loại danh sách.
 const MAPPERS = { reservations: mapReservation, units: mapUnit, contracts: mapContract }
 
 /**
@@ -57,6 +62,7 @@ const byTime = (a, b) => (parseTime(b) || 0) - (parseTime(a) || 0)
  */
 const byText = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), 'vi', { numeric: true })
 
+// Hàm tìm kiếm mặc định theo từng loại (chỉ dùng khi chia trang ở frontend). q đã là chữ thường.
 const DEFAULT_MATCH = {
   /**
    * Tìm kiếm đơn đặt kho: khớp mã đơn, tên/email/SĐT khách hoặc số kho.
@@ -72,6 +78,7 @@ const DEFAULT_MATCH = {
   contracts: (c, q) => [c.contractNumber, c.reservationCode, c.customerName, c.customerEmail, ...(c.unitNumbers || [])].some(v => text(v).includes(q))
 }
 
+// Hàm so sánh để sắp xếp theo từng loại (chỉ dùng khi chia trang ở frontend), nhận thêm tham số sort.
 const COMPARE = {
   /**
    * Sắp xếp đơn đặt kho theo lựa chọn: lịch hẹn gần/xa nhất, cũ nhất, mã đơn, mặc định mới đặt nhất.
@@ -105,16 +112,15 @@ const COMPARE = {
   }
 }
 
-/*
- * useOpsList('reservations', { q, status, sort, facilityId, typeId, pageSize, reloadKey, fallbackRows, statusOf, match })
- *   statusOf(row): mã trạng thái của dòng khi chia trang ở frontend (mặc định row.status)
- */
 /**
  * Hook lấy 1 danh sách vận hành có tìm kiếm / lọc / sắp xếp / phân trang.
+ * Ví dụ: useOpsList('reservations', { q, status, sort, facilityId, pageSize, reloadKey, fallbackRows }).
  * API: GET /api/operations/{kind}?page=&pageSize=&q=&status=&sort=&facilityId=&typeId=
+ * Được dùng bởi các bảng Đơn / Kho / Hợp đồng trong FacilityManagerAccount và FacilityStaffAccount.
  * @param {'reservations'|'units'|'contracts'} kind loại danh sách.
  * @param {object} options q (từ khóa), status, sort, facilityId, typeId, pageSize, reloadKey (đổi để tải lại),
- *   enabled, fallbackRows (dữ liệu dự phòng khi backend chưa hỗ trợ), statusOf, match (hàm tìm kiếm riêng).
+ *   enabled, fallbackRows (dữ liệu dự phòng khi backend chưa hỗ trợ), statusOf (lấy mã trạng thái của dòng
+ *   khi chia trang ở frontend, mặc định row.status), match (hàm tìm kiếm riêng).
  * @returns {object} kết quả của useServerList (page, total, setPage...) với items đã map sang dạng frontend.
  */
 export function useOpsList(kind, {

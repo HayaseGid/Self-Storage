@@ -1,11 +1,21 @@
 /**
  * ======================================================================
- * FILE: src/pages/manager/ManagerPriceTable.jsx  —  FACILITY MANAGER: BẢNG GIÁ CỦA CƠ SỞ
- * Manager đặt giá cụ thể cho từng cặp loại kho + size (S1, S2, M1...) tại cơ sở mình, nhưng giá phải nằm trong
- * khung giá của nhóm (S/M/L...) do Business Operations đặt (services/priceBands.js).
- * Lưu giá -> áp dụng cho mọi kho cùng loại + size của cơ sở.
- * API: PUT /api/operations/facilities/{facilityId}/rates  body { unitTypeID, unitSizeID, basePrice }  (OperationsController)
- * Dữ liệu (units, rentalRates, unitTypes, unitSizes, priceBands) do FacilityManagerAccount tải và truyền vào.
+ * FILE: src/pages/manager/ManagerPriceTable.jsx  —  BẢNG GIÁ CỦA CƠ SỞ (FACILITY MANAGER)
+ * CHỨC NĂNG: Mục "Bảng giá" trên trang Quản lý cơ sở. Manager đặt giá thuê / tháng cho từng cặp loại kho + size
+ *   (S1, S2, M1...) tại cơ sở mình. Giá phải nằm trong khung giá của nhóm (S/M/L...) do Business Operations đặt
+ *   (kiểm tra bằng services/priceBands.js). Lưu giá -> áp dụng cho mọi kho cùng loại + size của cơ sở và kho tạo sau;
+ *   đơn đã đặt giữ giá cũ.
+ * THÀNH PHẦN CHÍNH:
+ *   - money(value): định dạng số tiền kèm "đ".
+ *   - ManagerPriceTable (export default): bảng giá + ô nhập giá mới cho từng dòng + khối "Thêm giá" cho cặp loại/size mới.
+ * DÙNG Ở: src/pages/manager/FacilityManagerAccount.jsx (khi activeTab = 'prices').
+ * PHỤ THUỘC: api/api.js (apiPut), components/common/PriceInput (ô nhập tiền), services/storageRules (formatVnd),
+ *   services/priceBands (checkPriceInBand, findBand, formatArea, formatBandPrice, getArea),
+ *   pages/business/BusinessPriceBands.css (dùng chung giao diện với trang khung giá của Business).
+ * API: PUT /api/operations/facilities/{facilityId}/rates  body { unitTypeID, unitSizeID, basePrice }.
+ * LUỒNG: FacilityManagerAccount tải sẵn units, rentalRates, unitTypes, unitSizes, priceBands rồi truyền vào ->
+ *   bảng gộp thành các dòng "loại|size" -> Manager nhập giá -> bấm "Lưu giá" -> save() kiểm tra khung + hỏi xác nhận
+ *   -> PUT .../rates -> gọi onChanged() để trang tải lại dữ liệu -> bảng hiện giá mới.
  * ======================================================================
  */
 import React, { useMemo, useState } from 'react'
@@ -15,29 +25,34 @@ import { formatVnd } from '../../services/storageRules'
 import { checkPriceInBand, findBand, formatArea, formatBandPrice, getArea } from '../../services/priceBands'
 import '../business/BusinessPriceBands.css'
 
-/*
- * Facility Manager: bảng giá của cơ sở.
- * Manager đặt giá cụ thể cho từng loại kho + size (S1, S2, M1...) tại cơ sở mình,
- * nhưng chỉ trong khung giá của nhóm (S/M/L...) do Business Operations đặt.
- * Lưu giá -> áp dụng cho mọi kho cùng loại + size của cơ sở (PUT /api/operations/facilities/{id}/rates).
- */
-
 /**
- * Định dạng tiền kèm "đ".
+ * Định dạng số tiền thành chuỗi VNĐ có dấu chấm ngăn cách, thêm "đ" ở cuối (null/0 -> "0đ").
+ * @param {number|string} value số tiền.
+ * @returns {string} vd "1.200.000đ".
  */
 const money = value => `${formatVnd(value || 0)}đ`
 
 /**
- * Component bảng giá của cơ sở: liệt kê từng cặp loại + size (từ bảng giá đã có và từ kho thực tế), khung giá nhóm,
- * giá đang áp dụng, ô nhập giá mới; thêm dòng giá cho cặp loại + size mới.
- * @param {object} props facility, units, rentalRates, unitTypes, unitSizes, priceBands, dialog, onChanged() (tải lại dữ liệu).
+ * Bảng giá của cơ sở: liệt kê từng cặp loại + size (lấy từ mức giá đã lưu và từ kho thực tế), khung giá nhóm,
+ * giá đang áp dụng, ô nhập giá mới cho từng dòng; cuối bảng có khối thêm giá cho cặp loại + size chưa có kho.
+ * Gọi API PUT /api/operations/facilities/{facilityId}/rates khi lưu.
+ * @param {object} props
+ * @param {object} props.facility cơ sở của Manager ({ facilityId, name }); null -> hiện thông báo chưa phân công.
+ * @param {Array} props.units các kho của cơ sở (unitTypeId, sizeId/unitSizeId, pricePerMonth).
+ * @param {Array} props.rentalRates mức giá đã lưu (facilityId, unitTypeId, unitSizeId, price).
+ * @param {Array} props.unitTypes danh sách loại kho ({ unitTypeId, name }).
+ * @param {Array} props.unitSizes danh sách size ({ unitSizeId, dimensions, volume }).
+ * @param {Array} props.priceBands khung giá nhóm do Business đặt ({ code, name, minArea, maxArea, minPrice, maxPrice }).
+ * @param {object} props.dialog hộp thoại dùng chung của trang (dialog.alert / dialog.confirm trả Promise).
+ * @param {Function} [props.onChanged] gọi sau khi lưu giá thành công để trang cha tải lại dữ liệu.
+ * Được dùng bởi: FacilityManagerAccount.jsx (mục "Bảng giá").
  */
 export default function ManagerPriceTable({ facility, units, rentalRates, unitTypes, unitSizes, priceBands, dialog, onChanged }) {
-  const [drafts, setDrafts] = useState({})
-  const [savingKey, setSavingKey] = useState('')
-  const [newTypeId, setNewTypeId] = useState('')
-  const [newSizeId, setNewSizeId] = useState('')
-  const [newPrice, setNewPrice] = useState('')
+  const [drafts, setDrafts] = useState({}) // giá đang nhập (chưa lưu) theo khóa dòng "loại|size"
+  const [savingKey, setSavingKey] = useState('') // khóa dòng đang gửi lên server (để hiện "Đang lưu...")
+  const [newTypeId, setNewTypeId] = useState('') // khối "Thêm giá": loại kho đã chọn
+  const [newSizeId, setNewSizeId] = useState('') // khối "Thêm giá": size đã chọn
+  const [newPrice, setNewPrice] = useState('') // khối "Thêm giá": giá đã nhập
 
   const facilityId = facility?.facilityId
   /**
@@ -86,7 +101,8 @@ export default function ManagerPriceTable({ facility, units, rentalRates, unitTy
   }
 
   /**
-   * Lưu giá mới cho 1 dòng: kiểm tra trong khung giá, hỏi xác nhận rồi gửi lên backend và tải lại dữ liệu.
+   * Lưu giá mới cho 1 dòng: kiểm tra trong khung giá, hỏi xác nhận rồi gửi lên backend, xóa giá nháp và tải lại dữ liệu.
+   * Được gọi khi bấm nút "Lưu giá" ở 1 dòng, hoặc từ addRow() khi bấm "Thêm giá".
    * API: PUT /api/operations/facilities/{facilityId}/rates  body { unitTypeID, unitSizeID, basePrice }
    * @param {object} row dòng bảng giá.
    * @param {number} [explicitPrice] giá truyền thẳng (khi thêm dòng mới), mặc định lấy giá đang nhập.
@@ -121,11 +137,13 @@ export default function ManagerPriceTable({ facility, units, rentalRates, unitTy
     }
   }
 
+  // Thông tin cho khối "Thêm giá": size đã chọn, khung giá nhóm của size đó, và giá đã nhập có hợp lệ không.
   const newSize = unitSizes.find(s => String(s.unitSizeId) === newSizeId)
   const newBand = findBand(priceBands, newSize?.dimensions)
   const newCheck = newPrice ? checkPriceInBand(priceBands, newSize?.dimensions, newPrice) : { ok: true }
 
-  // Thêm giá cho 1 cặp loại + size chưa có trong bảng (báo nếu đã có), dùng lại hàm save.
+  // Bấm nút "Thêm giá": thêm giá cho 1 cặp loại + size chưa có trong bảng (báo nếu đã có), dùng lại hàm save
+  // (PUT .../rates); lưu xong thì xóa trắng 3 ô chọn/nhập.
   const addRow = async () => {
     if (!newTypeId || !newSizeId || !newPrice) return
     const key = `${newTypeId}|${newSizeId}`

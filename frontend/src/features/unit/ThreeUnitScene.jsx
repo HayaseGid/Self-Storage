@@ -1,28 +1,37 @@
 /**
  * ======================================================================
- * FILE: src/features/unit/ThreeUnitScene.jsx  —  CẢNH 3D CỦA MỘT KHO BẰNG THƯ VIỆN THREE.JS
- * Three.js được nạp từ CDN (unpkg) khi cần — cần Internet; lỗi thì vẫn xem được chế độ "Kho trống".
- * - mode "sample": xem kho có đồ mẫu (chỉ xoay/phóng to, rê chuột để xem tên + kích thước đồ).
- * - mode "pack": khách tự xếp — bấm chọn món, kéo trên sàn để di chuyển (tự chồng lên món bên dưới,
- *   bám lưới 5 cm, hít mép 12 cm); món chuyển ĐỎ = vị trí không hợp lệ, thả ra sẽ quay về chỗ cũ.
- * Đơn vị mét; x = rộng, y = cao, z = dài; hai vách ở x = 0 và z = 0. Không gọi API backend.
- * Dùng ở: UnitPackPlanner.jsx.
+ * FILE: src/features/unit/ThreeUnitScene.jsx  —  CẢNH 3D CỦA MỘT KHO (THREE.JS)
+ * CHỨC NĂNG: Vẽ một kho dạng 3D bằng thư viện Three.js: sàn kẻ ô 0,5 m, 2 vách, cửa cuốn, số đo, các món đồ
+ *   và vùng lối đi (vạch vàng). Three.js được nạp từ CDN (unpkg) khi cần, giống cách nạp Leaflet cho bản đồ —
+ *   cần Internet; lỗi thì vẫn xem được chế độ "Kho trống" (CSS 3D ở Unit3DViewer).
+ *   - mode "sample": xem kho có đồ mẫu (chỉ xoay / phóng to, rê chuột để xem tên + kích thước đồ).
+ *   - mode "pack": khách tự xếp — bấm chọn món, KÉO trên sàn để di chuyển (tự chồng lên món bên dưới,
+ *     bám lưới 5 cm, hít mép 12 cm); món chuyển ĐỎ = vị trí không hợp lệ (ra ngoài kho / quá trần / đỡ < 70%),
+ *     thả ra sẽ quay về chỗ cũ.
+ *   Đơn vị mét; x = rộng (W), y = cao (H), z = dài (L); hai vách ở x = 0 và z = 0.
+ * THÀNH PHẦN CHÍNH:
+ *   - loadThree(): nạp Three.js 1 lần.
+ *   - makeLabel, buildItem: dựng nhãn chữ và mô hình món đồ.
+ *   - sizeText(item): chuỗi kích thước "Rộng × Sâu × Cao cm".
+ *   - ThreeUnitScene (default export): component cảnh 3D.
+ * DÙNG Ở: features/unit/UnitPackPlanner.jsx (SampleRoom và PackPlanner).
+ * PHỤ THUỘC: react, utils/packing.js (magnetSnap, placeAt), Three.js r128 từ https://unpkg.com (window.THREE).
+ * API: Không gọi API backend (chỉ tải script Three.js từ CDN).
+ * LUỒNG: mount -> loadThree -> dựng renderer / camera / ánh sáng / sàn / vách -> setReady(true) -> useEffect vẽ lối đi
+ *   và các món -> khách kéo món: onMoveEvt tính vị trí (snap -> magnetSnap -> placeAt) -> thả: onUp gọi onMove(id, pos)
+ *   -> PackPlanner cập nhật items -> cảnh vẽ lại.
  * ======================================================================
  */
 import React, { useEffect, useRef, useState } from 'react'
 import { magnetSnap, placeAt } from '../../utils/packing'
 
-/*
- * Cảnh 3D của một kho bằng Three.js (nạp từ CDN khi cần, giống cách nạp Leaflet cho bản đồ).
- *  - mode "sample": xem kho có đồ mẫu bày sẵn (chỉ xoay / phóng to, rê chuột xem tên đồ).
- *  - mode "pack":   khách tự xếp: bấm chọn món, KÉO trên sàn để di chuyển (tự chồng lên món bên dưới),
- *                   món đỏ = vị trí không hợp lệ (ra ngoài kho / quá trần) -> thả ra sẽ quay về chỗ cũ.
- * Đơn vị: mét. Kho: x = rộng (W), y = cao (H), z = dài (L); hai vách ở x = 0 và z = 0.
- */
+/* Địa chỉ CDN của Three.js và Promise nạp dùng chung (để nhiều cảnh không nạp script nhiều lần). */
 const THREE_URL = 'https://unpkg.com/three@0.128.0/build/three.min.js'
 let threePromise = null
 /**
  * Nạp thư viện Three.js từ CDN một lần duy nhất (dùng chung Promise), trả về window.THREE.
+ * Chèn thẻ <script> vào <head>; nạp lỗi thì xóa Promise để lần sau thử lại.
+ * Được gọi trong useEffect khởi tạo của ThreeUnitScene.
  * @returns {Promise<object>}
  */
 export function loadThree() {
@@ -39,7 +48,7 @@ export function loadThree() {
   return threePromise
 }
 
-const SNAP = 0.05
+const SNAP = 0.05 // bước lưới khi kéo món: 5 cm
 /**
  * Làm tròn tọa độ theo lưới 5 cm (SNAP).
  */
@@ -54,6 +63,7 @@ const clamp = (v, min, max) => Math.min(max, Math.max(min, v))
  * @param {object} THREE thư viện Three.js.
  * @param {string} text nội dung nhãn.
  * @param {{bg?, fg?, scale?}} options màu nền, màu chữ, tỉ lệ.
+ * @returns {object} THREE.Sprite luôn quay mặt về camera, vẽ đè lên trên (depthTest: false).
  */
 function makeLabel(THREE, text, { bg = '#073d70', fg = '#ffffff', scale = 0.32 } = {}) {
   const canvas = document.createElement('canvas')
@@ -83,10 +93,11 @@ function makeLabel(THREE, text, { bg = '#073d70', fg = '#ffffff', scale = 0.32 }
   return sprite
 }
 
-/* Một món đồ: hộp có viền; vài món có thêm chi tiết (bánh xe, băng keo, ngăn kệ). */
 /**
  * Dựng mô hình 3D của 1 món đồ: hộp có viền; một số món có chi tiết riêng (ô tô/xe có bánh,
  * kệ có ngăn, đèn có chụp, ghế có chân, thùng có băng keo). Gắn itemId vào userData để chọn bằng chuột.
+ * Lưu ý: Three.js đặt vật theo TÂM, còn dữ liệu món dùng góc (x, y, z), nên vị trí nhóm = góc + nửa kích thước.
+ * @param {object} THREE thư viện. @param {object} item món { id, key, name, color, x, y, z, w, h, d }.
  * @returns {object} THREE.Group đặt đúng vị trí trong kho.
  */
 function buildItem(THREE, item) {
@@ -162,7 +173,8 @@ function buildItem(THREE, item) {
  */
 const cm = v => Math.round(v * 100)
 /**
- * Mô tả kích thước món đồ: "Rộng × Sâu × Cao cm".
+ * Mô tả kích thước món đồ: "Rộng × Sâu × Cao cm" (dùng cho tooltip khi rê chuột).
+ * @param {{w,h,d}} it món đồ (m). @returns {string}
  */
 export const sizeText = it => `Rộng ${cm(it.w)} × Sâu ${cm(it.d)} × Cao ${cm(it.h)} cm`
 
@@ -171,6 +183,9 @@ export const sizeText = it => `Rộng ${cm(it.w)} × Sâu ${cm(it.d)} × Cao ${c
  * xử lý chuột/cảm ứng để xoay, phóng to, chọn và kéo món.
  * @param {object} props geo (hình học kho), color (màu loại kho), mode ('sample'|'pack'), items, zones (lối đi),
  *   selectedId, onSelect(id), onMove(id, {x,y,z}), height (chiều cao khung).
+ * Các giá trị props mới nhất được giữ trong ref (itemsRef, zonesRef, propsRef) để trình xử lý sự kiện chuột
+ * (gắn 1 lần) luôn đọc được dữ liệu hiện tại mà không phải gắn lại.
+ * Được gọi bởi SampleRoom (mode="sample") và PackPlanner (mode="pack").
  */
 export default function ThreeUnitScene({ geo, color = '#075a9f', mode = 'sample', items = [], zones = [], selectedId = null, onSelect, onMove, height = 440 }) {
   const boxRef = useRef(null)
@@ -179,14 +194,15 @@ export default function ThreeUnitScene({ geo, color = '#075a9f', mode = 'sample'
   const zonesRef = useRef(zones)
   zonesRef.current = zones
   const propsRef = useRef({ mode, selectedId, onSelect, onMove })
-  const [error, setError] = useState('')
-  const [ready, setReady] = useState(false)
+  const [error, setError] = useState('') // lỗi nạp Three.js (hiện thông báo thay cho cảnh)
+  const [ready, setReady] = useState(false) // true khi cảnh đã dựng xong, các effect vẽ món mới chạy
   const [hover, setHover] = useState(null) // { name, size, x, y }
   itemsRef.current = items
   propsRef.current = { mode, selectedId, onSelect, onMove }
   const room = { w: geo.width, h: geo.height, l: geo.length }
 
-  // Khởi tạo cảnh một lần cho mỗi kho.
+  // Khởi tạo cảnh một lần cho mỗi kho (chạy lại khi kích thước kho hoặc màu đổi): nạp Three.js, dựng renderer,
+  // camera, ánh sáng, sàn, vách, cửa, số đo, vòng lặp vẽ. Cleanup: dừng vòng lặp, giải phóng bộ nhớ GPU, gỡ canvas.
   useEffect(() => {
     let disposed = false
     const host = boxRef.current
@@ -279,7 +295,8 @@ export default function ThreeUnitScene({ geo, color = '#075a9f', mode = 'sample'
       const target = new THREE.Vector3(W / 2, H * 0.32, L / 2)
       const baseRadius = Math.max(W, L, H * 1.3) * 2.3 + 1
       const orbit = { theta: Math.PI / 4, phi: 0.95, radius: baseRadius, min: baseRadius * 0.35, max: baseRadius * 2.2 }
-      // Đặt lại vị trí camera theo toạ độ cầu (theta, phi, radius) quanh tâm kho.
+      // Đặt lại vị trí camera theo toạ độ cầu (theta, phi, radius) quanh tâm kho:
+      // theta = góc xoay ngang, phi = góc từ trục đứng (nhỏ = nhìn từ trên), radius = khoảng cách (phóng to/thu nhỏ).
       const placeCamera = () => {
         camera.position.set(
           target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
@@ -332,7 +349,8 @@ export default function ThreeUnitScene({ geo, color = '#075a9f', mode = 'sample'
     }
   }, [geo.width, geo.length, geo.height, color])
 
-  // Lối đi chừa lại: vạch vàng trên sàn.
+  // Lối đi chừa lại: vạch vàng trên sàn + nhãn "Lối đi". Chạy khi cảnh sẵn sàng hoặc vùng lối đi đổi
+  // (so bằng chuỗi zonesKey); xóa và giải phóng vạch cũ rồi vẽ lại. Các vạch không "bắt" chuột (raycast rỗng).
   const zonesKey = zones.map(z => `${z.x},${z.z},${z.w},${z.d}`).join('|')
   useEffect(() => {
     const c = ctx.current
@@ -360,7 +378,7 @@ export default function ThreeUnitScene({ geo, color = '#075a9f', mode = 'sample'
     })
   }, [ready, zonesKey])
 
-  // Vẽ lại các món khi danh sách / lựa chọn thay đổi.
+  // Vẽ lại các món khi danh sách / lựa chọn thay đổi; món đang chọn được tô sáng xanh và viền đậm.
   useEffect(() => {
     const c = ctx.current
     if (!ready || !c) return
@@ -381,7 +399,8 @@ export default function ThreeUnitScene({ geo, color = '#075a9f', mode = 'sample'
     })
   }, [ready, items, selectedId])
 
-  // Chuột / cảm ứng: xoay, phóng to, chọn & kéo món.
+  // Chuột / cảm ứng: xoay, phóng to, chọn & kéo món. Gắn sự kiện pointer lên canvas khi cảnh sẵn sàng
+  // (và khi kích thước kho đổi), gỡ ở cleanup. action = thao tác đang diễn ra: null | 'orbit' (xoay) | 'drag' (kéo món).
   useEffect(() => {
     const c = ctx.current
     if (!ready || !c) return undefined
@@ -525,7 +544,7 @@ export default function ThreeUnitScene({ geo, color = '#075a9f', mode = 'sample'
     c.orbit.theta = clamp(c.orbit.theta + delta, -0.25, Math.PI / 2 + 0.25)
     c.placeCamera()
   }
-  // Nút "Góc mặc định": đưa camera về góc nhìn ban đầu.
+  // Nút "Đặt lại": đưa camera về góc nhìn ban đầu (radius gốc = min / 0.35).
   const resetView = () => {
     const c = ctx.current
     if (!c) return

@@ -1,30 +1,48 @@
 /**
  * ======================================================================
- * FILE: src/pages/customer/CustomerAccount.jsx  —  TRANG TÀI KHOẢN KHÁCH HÀNG (route /customer)
- * Gồm các tab (component con trong cùng file):
- * - Tổng quan (trong CustomerDashboard): việc cần làm ngay, thông báo mới, số liệu.
- * - Kho của tôi (MyStoragePage): bảng/thẻ các kho đã đặt, chi tiết kho, mã truy cập, tác vụ nhanh.
- * - Hợp đồng (ContractPage): hợp đồng chờ ký / đang thuê / đang trả kho / đã kết thúc; ký, gia hạn, trả kho, đóng tiền.
- * - Thanh toán (CustomerPaymentCenter ở features/payment/PendingPayments.jsx) + RefundTimeline (tiến trình hoàn cọc).
- * - Thông báo (CustomerNotificationsPage) · Hồ sơ (ProfilePage, chỉ xem).
- * Luồng dữ liệu / API:
- * - Danh sách đơn (customerRentals) do App.jsx tải: GET /api/customer-reservations/mine, truyền vào qua props;
- *   onReloadRentals() để tải lại.
- * - Chữ ký hợp đồng: GET/POST /api/contracts/{contractId}/signature (ContractsController).
- * - Tạo hợp đồng sau cọc (thử lại): POST /api/reservation-confirmations/mine (qua confirmAfterDeposit).
- * - Gia hạn: /api/contract-renewals/... (ContractRenewal.jsx) · Trả kho: /api/unit-returns/... (UnitReturn.jsx)
- * - Kiểm kho: /api/return-inspections/mine · Phí trễ hạn: /api/late-fees/mine · Chính sách: /api/policies
- * - Thanh toán: POST /api/vnpay/create (qua startVnPayPayment) · Email hợp đồng: POST /api/email/send-contract
- * Dùng ở: App.jsx (role CUSTOMER).
+ * FILE: src/pages/customer/CustomerAccount.jsx  —  KHU TÀI KHOẢN KHÁCH HÀNG (route /customer)
+ * CHỨC NĂNG: Trang "cổng khách hàng" sau khi đăng nhập với vai trò khách. Có menu trái và 6 mục (tab):
+ *   Tổng quan, Kho của tôi, Hợp đồng, Thanh toán, Thông báo, Hồ sơ. Khách xem kho đang thuê + mã ra vào,
+ *   ký hợp đồng online sau khi đặt cọc, gia hạn, báo trả kho, đóng tiền thuê / phí trễ hạn, xem tiến trình hoàn cọc.
+ *   Dữ liệu đơn thuê (customerRentals) do App.jsx tải sẵn và truyền vào qua props; file này không tự tải danh sách đơn.
+ *   Tên class CSS được giữ nguyên như file gốc trước khi tách; các hàm / dữ liệu dùng chung nhận từ App.jsx qua props.
+ * THÀNH PHẦN CHÍNH:
+ *   - CustomerDashboard (export default): khung trang, menu trái + badge, tab Tổng quan (việc cần làm ngay, số liệu,
+ *     kho chính, công nợ, hợp đồng, hoạt động gần đây), điều hướng theo thông báo, đăng xuất.
+ *   - MyStoragePage:  tab "Kho của tôi" — bảng (DataGrid) / thẻ, thẻ ra vào + mã PIN, hộp chi tiết kho, nút tác vụ nhanh.
+ *   - ContractPage:   tab "Hợp đồng" — 4 tab con (chờ nhận kho / đang thuê / trả kho / đã kết thúc), ký hợp đồng,
+ *     gia hạn, trả kho, hủy đặt, đóng tiền thuê.
+ *   - RefundTimeline: tiến trình hoàn cọc khi hủy đơn (truyền vào CustomerPaymentCenter để hiển thị trong tab Thanh toán).
+ *   - ProfilePage:    tab "Hồ sơ" (chỉ xem) + mã ra vào cơ sở 6 chữ số.
+ *   - NavIcon:        icon SVG cho từng mục menu.
+ *   - Hằng số: RENTAL_STATUS_TONES (màu nhãn trạng thái), RENTAL_STATUS_FILTERS (bộ lọc trạng thái), STORAGE_VIEW_KEY.
+ * DÙNG Ở: src/App.jsx (component route /customer tải đơn của khách rồi render CustomerDashboard).
+ * PHỤ THUỘC:
+ *   - features/contract: ContractSignFlow (màn hình ký), ContractDetailModal, ContractCard, ContractModal (luồng ký cũ),
+ *     ContractRenewal (useContractRenewals, RenewalSection, RenewalModal).
+ *   - features/return: UnitReturn (useUnitReturns, ReturnSection, ReturnRequestModal), ReturnInspection (useMyInspections).
+ *   - features/payment/PendingPayments (CustomerPaymentCenter = tab Thanh toán, PendingDepositBar, pendingDepositsOf).
+ *   - features/booking/CancelReservation (CancelReservationModal), features/notification/CustomerNotifications.
+ *   - services/afterDeposit (sự kiện mở tab, yêu cầu ký / gia hạn / cuộn tới hợp đồng lưu trong sessionStorage),
+ *     services/customerNoticeData (useCustomerNotifications), services/policies (usePolicies).
+ *   - api/api (apiGet, apiPost), api/vnpay (startVnPayPayment), api/lateFees (useLateFees), api/contractEmail (sendContractEmail).
+ *   - components/common: DataGrid, Dialog (useDialog), listKit (Code, FilterChips, Pager, UnitCodes, newestFirst, useClientPaging).
+ * API (gọi trực tiếp trong file hoặc qua hàm / hook đã import):
+ *   - GET  /api/contracts/{contractId}/signature       : xem trạng thái chữ ký hợp đồng.
+ *   - POST /api/contracts/{contractId}/signature       : ký hợp đồng (ảnh chữ ký + phiên bản điều khoản).
+ *   - POST /api/reservation-confirmations/mine         : xác nhận đơn đã cọc + tạo hợp đồng (qua confirmAfterDeposit).
+ *   - POST /api/vnpay/create                           : đóng tiền thuê / phí trễ hạn qua VNPay (qua startVnPayPayment).
+ *   - POST /api/email/send-contract                    : gửi bản hợp đồng qua email sau khi ký (qua sendContractEmail).
+ *   - Qua hook: GET /api/contract-renewals/mine, GET /api/unit-returns/mine, GET /api/late-fees/mine,
+ *     GET /api/return-inspections/mine, GET /api/policies.
+ *   - Danh sách đơn: App.jsx gọi GET /api/customer-reservations/mine; onReloadRentals() để App tải lại.
+ * LUỒNG:
+ *   - App.jsx truyền customerRentals -> CustomerDashboard tính việc cần làm / thông báo -> khách bấm menu -> setActiveSection
+ *     -> hiển thị tab tương ứng. Khi thao tác làm đổi dữ liệu (ký, gia hạn, trả kho...) -> gọi onReloadRentals() -> App tải lại.
+ *   - Nơi khác (CartPage, PaymentResultPage, thông báo) mở tab bằng sự kiện OPEN_SECTION_EVENT / sessionStorage
+ *     (services/afterDeposit) -> CustomerDashboard đổi tab, ContractPage cuộn tới / mở ký đúng hợp đồng.
  * ======================================================================
  */
-// ============================================================
-// CUSTOMER ACCOUNT / CUSTOMER DASHBOARD
-// ============================================================
-// NOTE:
-// - Class names are intentionally kept 100% the same as the original file.
-// - Only the customer-related components were moved here.
-// - Shared data/functions are received from App.jsx via props.
 
 import React, { useEffect, useState } from 'react'
 import ContractModal from '../../features/contract/ContractModal'
@@ -55,8 +73,9 @@ import { Code, FilterChips, Pager, UnitCodes, newestFirst, useClientPaging } fro
 import './CustomerAccount.css'
 
 /**
- * Component icon SVG cho từng mục menu bên trái của trang khách (overview, storage, contract, payment...).
- * @param {{name: string}} props tên mục.
+ * Vẽ icon SVG 18x18 cho một mục menu bên trái của trang khách. Được CustomerDashboard gọi khi vẽ menu.
+ * @param {{name: string}} props name: 'overview' | 'storage' | 'contract' | 'payment' | 'notifications' | 'profile' | 'search'.
+ * @returns {JSX.Element|null} thẻ <svg>, hoặc null nếu tên không khớp.
  */
 function NavIcon({ name }) {
   switch (name) {
@@ -120,15 +139,18 @@ function NavIcon({ name }) {
   }
 }
 
-/* Chuyển 'dd/mm/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày. */
 /**
- * Đổi ngày 'dd/MM/yyyy' thành số yyyymmdd để sắp xếp đúng theo ngày (sai định dạng -> null).
+ * Đổi ngày 'dd/MM/yyyy' thành số yyyymmdd (vd '05/03/2026' -> 20260305) để sắp xếp đúng theo ngày.
+ * Dùng làm sortValue cho cột "Kỳ thuê" trong bảng Kho của tôi.
+ * @param {string} value chuỗi ngày dạng dd/MM/yyyy.
+ * @returns {number|null} số để so sánh, hoặc null nếu sai định dạng.
  */
 const dateSortValue = value => {
   const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(value || ''))
   return match ? Number(`${match[3]}${match[2]}${match[1]}`) : null
 }
 
+/** Màu nhãn (class CSS dg-pill) theo trạng thái đơn: warn = vàng, info = xanh dương, ok = xanh lá, muted = xám. */
 const RENTAL_STATUS_TONES = {
   'Pending Deposit': 'warn',
   Paid: 'info',
@@ -138,6 +160,7 @@ const RENTAL_STATUS_TONES = {
   Expired: 'muted'
 }
 
+/** Các lựa chọn của bộ lọc "Trạng thái" trong bảng Kho của tôi: giá trị status từ backend -> nhãn tiếng Việt. */
 const RENTAL_STATUS_FILTERS = [
   { value: 'Pending Deposit', label: 'Chờ thanh toán cọc' },
   { value: 'Paid', label: 'Đã cọc · Đang tạo hợp đồng' },
@@ -147,41 +170,53 @@ const RENTAL_STATUS_FILTERS = [
   { value: 'Cancelled', label: 'Đã hủy' }
 ]
 
+/** Khóa localStorage nhớ kiểu hiển thị tab Kho của tôi ('grid' = bảng, 'cards' = thẻ). */
 const STORAGE_VIEW_KEY = 'storespace_my_storage_view'
 
 /**
- * Component tab "Kho của tôi": hiển thị các kho/đơn của khách dạng Bảng (DataGrid có lọc trạng thái, cơ sở) hoặc Thẻ
- * (phân trang 5 thẻ), hộp chi tiết kho, mã truy cập (sao chép được), tác vụ nhanh theo trạng thái.
- * Tải thêm qua hook: useContractRenewals, useUnitReturns, useLateFees.
- * @param {object} props customerRental, customerRentals, facilities, onRentalsChanged(), onOpenPayment(),
- *   onOpenContract(reservationId), onSignContract(rental).
+ * Vẽ tab "Kho của tôi": thẻ ra vào nhanh (tối đa 3 kho đang thuê, có mã PIN sao chép được), danh sách mọi đơn
+ * dạng Bảng (DataGrid có tìm kiếm, lọc trạng thái / cơ sở, sắp xếp) hoặc dạng Thẻ (5 thẻ / trang),
+ * hộp chi tiết kho và các nút tác vụ nhanh theo trạng thái (đóng cọc, ký HĐ, đóng phí, gia hạn, báo trả kho).
+ * Đọc / ghi localStorage (STORAGE_VIEW_KEY) để nhớ kiểu hiển thị.
+ * Tải thêm qua hook: useContractRenewals (GET /api/contract-renewals/mine), useUnitReturns (GET /api/unit-returns/mine),
+ * useLateFees (GET /api/late-fees/mine). Mở RenewalModal (gia hạn) và ReturnRequestModal (báo trả kho).
+ * Được CustomerDashboard hiển thị khi activeSection === 'storage'.
+ * @param {object} props
+ * @param {object} [props.customerRental] một đơn (dạng cũ, dùng khi không có customerRentals).
+ * @param {Array} props.customerRentals danh sách đơn / kho của khách (do App.jsx tải).
+ * @param {Array} props.facilities danh sách cơ sở (lấy ảnh, địa chỉ).
+ * @param {() => void} props.onRentalsChanged yêu cầu App tải lại danh sách đơn sau khi gia hạn / trả kho.
+ * @param {() => void} props.onOpenPayment chuyển sang tab Thanh toán.
+ * @param {(reservationId) => void} props.onOpenContract chuyển sang tab Hợp đồng và cuộn tới hợp đồng của đơn.
+ * @param {(rental) => void} props.onSignContract chuyển sang tab Hợp đồng và mở màn hình ký.
  */
 function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsChanged, onOpenPayment, onOpenContract, onSignContract }) {
-  const [selectedRental, setSelectedRental] = useState(null)
+  const [selectedRental, setSelectedRental] = useState(null) // đơn đang mở trong hộp "Chi tiết kho" (null = đóng)
   const renewals = useContractRenewals()
   const returns = useUnitReturns()
   const lateFees = useLateFees()
   const dialog = useDialog()
-  const [renewItem, setRenewItem] = useState(null)
-  const [returnItem, setReturnItem] = useState(null)
-  const [copiedId, setCopiedId] = useState(null)
+  const [renewItem, setRenewItem] = useState(null) // thông tin gia hạn đang mở RenewalModal
+  const [returnItem, setReturnItem] = useState(null) // thông tin trả kho đang mở ReturnRequestModal
+  const [copiedId, setCopiedId] = useState(null) // id thẻ vừa bấm "Sao chép mã" (để hiện "Đã sao chép")
+  // Kiểu hiển thị: đọc lựa chọn cũ từ localStorage, mặc định là bảng.
   const [view, setView] = useState(() => {
     try { return localStorage.getItem(STORAGE_VIEW_KEY) === 'cards' ? 'cards' : 'grid' } catch { return 'grid' }
   })
-  // Đổi kiểu hiển thị (bảng / thẻ) và nhớ lựa chọn vào localStorage.
+  // Khi bấm nút "Bảng" / "Thẻ": đổi kiểu hiển thị và nhớ lựa chọn vào localStorage.
   const changeView = next => {
     setView(next)
     try { localStorage.setItem(STORAGE_VIEW_KEY, next) } catch { /* bỏ qua */ }
   }
 
-  // Đã cập nhật: Hiển thị nhiều kho (kho Staff vừa bàn giao + Kho mẫu)
+  // Chuẩn hóa thành mảng đơn: ưu tiên customerRentals; nếu không có thì dùng 1 đơn customerRental.
   const rentals = Array.isArray(customerRentals)
     ? customerRentals.filter(Boolean)
     : customerRental
       ? [customerRental]
       : []
   const activeRentals = rentals.filter(rental => rental.status === 'Handed Over')
-  // [THÊM] Kiểu thẻ: mới nhất lên đầu, chia trang 5 thẻ / trang
+  // Kiểu thẻ: sắp đơn mới nhất lên đầu rồi chia trang (5 thẻ / trang) bằng useClientPaging.
   const cardPaging = useClientPaging(newestFirst(rentals, { id: r => r.reservationId }))
 
   // Tính tổng phí trễ hạn chưa đóng (không đang chờ VNPay) của 1 đơn.
@@ -189,7 +224,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
     .filter(f => f.status === 'Unpaid' && !f.pendingPayment)
     .reduce((n, f) => n + Number(f.amount || 0), 0)
 
-  // Sao chép mã truy cập / mã PIN vào clipboard và hiện "Đã chép" trong 1,8 giây.
+  // Khi bấm "Sao chép mã" trên thẻ ra vào: chép mã PIN vào clipboard, hiện "Đã sao chép" trong 1,8 giây.
   const copyPin = (id, text) => {
     if (!text) return
     try {
@@ -199,7 +234,8 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
     } catch { /* bỏ qua */ }
   }
 
-  // Mở hộp thoại báo trả kho cho 1 kho nếu đủ điều kiện; không đủ thì báo lý do.
+  // Khi bấm "Báo trả kho": nếu backend cho phép (info.eligible) thì mở ReturnRequestModal;
+  // nếu không thì hiện hộp thoại nêu lý do (lỗi tải, đang tải, hoặc lý do từ backend).
   const openReturnFor = rental => {
     const info = returns.byReservation(rental.reservationId)
     if (info?.eligible) {
@@ -215,16 +251,17 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
     }
   }
 
-  /* Tác vụ nhanh theo trạng thái thực tế của từng kho:
-     - Chưa đặt cọc -> Đóng tiền cọc (trỏ sang Thanh toán)
-     - Có hợp đồng chưa ký -> Ký hợp đồng (trỏ sang Hợp đồng & mở luồng ký)
-     - Có tiền thuê / phí trễ đến hạn -> Đóng tiền thuê (trỏ sang Thanh toán)
-     - Đang thuê -> Xem hợp đồng, Gia hạn, Báo trả kho */
   /**
-   * Vẽ các nút tác vụ nhanh theo trạng thái thực tế của kho: Đóng tiền cọc, Ký hợp đồng, Đóng phí, Hợp đồng,
-   * Gia hạn, Báo trả kho / Đang trả kho.
-   * @param {object} rental đơn/kho.
-   * @param {{stopProp?:boolean, closeDetail?:boolean}} options stopProp: chặn click lan ra dòng; closeDetail: đóng hộp chi tiết.
+   * Vẽ các nút tác vụ nhanh theo trạng thái thực tế của 1 kho (dùng trong hộp "Chi tiết kho"):
+   *   - Chưa đặt cọc (Pending Deposit)        -> "Đóng tiền cọc" (sang tab Thanh toán)
+   *   - Có hợp đồng chưa ký (Confirmed / phụ lục gia hạn) -> "Ký hợp đồng" (sang tab Hợp đồng, mở màn hình ký)
+   *   - Có tiền thuê đến hạn hoặc phí trễ hạn  -> "Đóng phí (số tiền)" (sang tab Thanh toán)
+   *   - Có hợp đồng                            -> "Hợp đồng" (sang tab Hợp đồng, cuộn tới thẻ)
+   *   - Đang thuê (Handed Over)                -> "Gia hạn" (mở RenewalModal), "Báo trả kho" / "Đang trả kho"
+   * @param {object} rental đơn / kho cần vẽ nút.
+   * @param {{stopProp?:boolean, closeDetail?:boolean}} options stopProp: chặn click lan ra phần tử cha (dòng bảng);
+   *   closeDetail: đóng hộp chi tiết trước khi chạy hành động.
+   * @returns {JSX.Element}
    */
   const renderUnitActions = (rental, { stopProp = false, closeDetail = false } = {}) => {
     // Bọc hàm xử lý nút: chặn lan sự kiện / đóng hộp chi tiết (nếu cần) rồi chạy hàm.
@@ -813,33 +850,47 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
 }
 
 /**
- * Component tab "Hợp đồng": chia tab Chờ ký & nhận kho / Đang thuê / Trả kho / Đã kết thúc; khối Gia hạn và Trả kho;
- * ký hợp đồng (ContractSignFlow), xem chi tiết (ContractDetailModal), gia hạn (RenewalModal), báo trả kho,
- * hủy đặt kho, đóng tiền thuê; tự tạo hợp đồng cho đơn đã cọc nếu lần trước lỗi; tự cuộn/mở theo yêu cầu từ thông báo.
- * API: GET/POST /api/contracts/{contractId}/signature, POST /api/reservation-confirmations/mine, POST /api/vnpay/create.
- * @param {object} props customerRental, customerRentals, getCurrentUser(), facilities, onRentalsChanged(), onOpenPayment().
+ * Vẽ tab "Hợp đồng" với 4 tab con (FilterChips):
+ *   - 'pending' : đơn đã cọc — hợp đồng chờ ký, đang tạo hợp đồng, đã ký chờ nhận kho (có nút hủy đặt kho);
+ *   - 'active'  : hợp đồng đang thuê (kèm khối Gia hạn RenewalSection), danh sách ContractCard có tìm kiếm + phân trang;
+ *   - 'returns' : kho đang trả / chờ quyết toán, hoàn cọc (ReturnSection);
+ *   - 'ended'   : hợp đồng đã kết thúc.
+ * Tác vụ: ký hợp đồng (ContractSignFlow -> signGroupContracts), xem chi tiết (ContractDetailModal), gia hạn (RenewalModal),
+ * báo trả kho (ReturnRequestModal), hủy đặt kho (CancelReservationModal), đóng tiền thuê (payRent).
+ * Tự động: tạo hợp đồng cho đơn đã cọc nếu lần trước lỗi; cuộn tới / mở ký / mở gia hạn theo yêu cầu từ thông báo
+ * hoặc trang khác (đọc sessionStorage qua services/afterDeposit, nghe sự kiện OPEN_SECTION_EVENT).
+ * API: GET/POST /api/contracts/{contractId}/signature, POST /api/reservation-confirmations/mine, POST /api/vnpay/create,
+ *      POST /api/email/send-contract; qua hook: contract-renewals, unit-returns, return-inspections, late-fees, policies.
+ * Được CustomerDashboard hiển thị khi activeSection === 'contract'.
+ * @param {object} props
+ * @param {object} [props.customerRental] một đơn (dạng cũ).
+ * @param {Array} props.customerRentals danh sách đơn của khách.
+ * @param {() => object} props.getCurrentUser lấy khách đang đăng nhập (tên, email dùng trong hợp đồng / email).
+ * @param {Array} [props.facilities] danh sách cơ sở (lấy địa chỉ in trên hợp đồng).
+ * @param {() => void} props.onRentalsChanged yêu cầu App tải lại danh sách đơn.
+ * @param {() => void} props.onOpenPayment chuyển sang tab Thanh toán.
  */
 function ContractPage({ customerRental, customerRentals, getCurrentUser, facilities = [], onRentalsChanged, onOpenPayment }) {
-  // Danh sách hợp đồng đã bàn giao. Hợp đồng chờ ký trước bàn giao (đơn "Confirmed") được ký ở khu
-  // "Hợp đồng chờ ký" phía trên, theo nhóm (một hợp đồng có thể gồm nhiều kho).
+  // Danh sách hợp đồng đã bàn giao (đang thuê / đã kết thúc) cho tab 'active' và 'ended'. Hợp đồng chờ ký trước
+  // bàn giao (đơn "Confirmed") được xử lý riêng ở tab 'pending' (mỗi đơn = 1 hợp đồng, có thể gồm nhiều kho).
   const rentals = Array.isArray(customerRentals)
     ? customerRentals.filter(rental => rental?.contractId && rental.status !== 'Confirmed')
     : customerRental
       ? customerRental.contractId ? [customerRental] : []
       : []
-  const [signatures, setSignatures] = useState({})
-  const [signatureErrors, setSignatureErrors] = useState({})
-  const [loadedSignatures, setLoadedSignatures] = useState({})
-  const [openRental, setOpenRental] = useState(null)
-  const [signGroup, setSignGroup] = useState(null)
-  const [detail, setDetail] = useState(null) // { group, signature?, mail? }
+  const [signatures, setSignatures] = useState({}) // contractId -> { image, signerName, signedAt } (null = chưa ký)
+  const [signatureErrors, setSignatureErrors] = useState({}) // contractId -> thông báo lỗi khi tải chữ ký
+  const [loadedSignatures, setLoadedSignatures] = useState({}) // contractId -> true khi đã tải xong trạng thái chữ ký
+  const [openRental, setOpenRental] = useState(null) // đơn đang mở ContractModal (luồng ký cũ trên ContractCard)
+  const [signGroup, setSignGroup] = useState(null) // nhóm hợp đồng đang mở màn hình ký ContractSignFlow
+  const [detail, setDetail] = useState(null) // { group, signature?, mail? } — đang mở ContractDetailModal
   const renewals = useContractRenewals()
-  const [renewItem, setRenewItem] = useState(null)
-  const [cancelRental, setCancelRental] = useState(null)
+  const [renewItem, setRenewItem] = useState(null) // thông tin gia hạn đang mở RenewalModal
+  const [cancelRental, setCancelRental] = useState(null) // đơn đang mở CancelReservationModal
   const returns = useUnitReturns()
-  const inspections = useMyInspections() // [14] kết quả kiểm kho
-  const lateFees = useLateFees() // [7a] phí trễ hạn tiền thuê
-  // Lấy thông tin phí trễ hạn của 1 đơn (kèm chính sách).
+  const inspections = useMyInspections() // kết quả kiểm kho khi trả kho (GET /api/return-inspections/mine)
+  const lateFees = useLateFees() // phí trễ hạn tiền thuê (GET /api/late-fees/mine)
+  // Lấy thông tin phí trễ hạn của 1 đơn, kèm chính sách tính phí (để ContractCard hiển thị).
   const lateFeeOf = rental => {
     const item = lateFees.byReservation(rental.reservationId)
     return item ? { ...item, policy: lateFees.policy } : null
@@ -848,22 +899,25 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const lateUnpaidOf = rental => (lateFeeOf(rental)?.lateFees || [])
     .filter(f => f.status === 'Unpaid' && !f.pendingPayment)
     .reduce((n, f) => n + Number(f.amount || 0), 0)
-  const [returnItem, setReturnItem] = useState(null)
-  const [creatingContracts, setCreatingContracts] = useState(false)
+  const [returnItem, setReturnItem] = useState(null) // thông tin trả kho đang mở ReturnRequestModal
+  const [creatingContracts, setCreatingContracts] = useState(false) // đang gọi API tạo hợp đồng sau cọc
   const policies = usePolicies()
   const dialog = useDialog()
   const customer = getCurrentUser()
   const customerName = customer?.name
 
-  /* Đóng tiền thuê: sau khi nhận kho (toàn bộ hoặc tháng đầu) / từng kỳ khi đang thuê.
-     Backend quyết định đóng được bao nhiêu (GET/POST /api/rent-payments, POST /api/vnpay/create). */
+  // Mã đơn đang chuyển sang VNPay đóng tiền thuê (để nút hiện trạng thái đang xử lý).
   const [payingRent, setPayingRent] = useState(null)
   /**
-   * Đóng tiền thuê (tháng đầu / cả kỳ / kỳ đến hạn) + phí trễ hạn qua VNPay sau khi khách xác nhận.
+   * Đóng tiền thuê qua VNPay. Chạy khi bấm nút đóng tiền thuê trên ContractCard (onPayRent).
+   * Số tiền = rental.rentPayableNow (backend tính: tháng đầu / cả kỳ khi nhận kho, hoặc kỳ đến hạn khi đang thuê)
+   * + phí trễ hạn chưa đóng; VNPay thu chung 1 giao dịch. Hỏi xác nhận -> startVnPayPayment -> trình duyệt sang VNPay
+   * (kết quả xử lý ở /payment-result). Lỗi thì báo và mở khóa nút.
    * API: POST /api/vnpay/create (qua startVnPayPayment, kind 'rent').
+   * @param {object} rental đơn / hợp đồng cần đóng tiền.
    */
   const payRent = async rental => {
-    // [7a] tiền thuê đóng được ngay + phí trễ hạn chưa đóng (VNPay thu chung 1 giao dịch)
+    // Tiền thuê đóng được ngay + phí trễ hạn chưa đóng (VNPay thu chung 1 giao dịch)
     const rentAmount = Number(rental.rentPayableNow || 0)
     const lateAmount = lateUnpaidOf(rental)
     const amount = rentAmount + lateAmount
@@ -889,14 +943,15 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
 
   /*
    * Hợp đồng ký online NGAY SAU KHI khách đặt cọc (không còn bước Facility Manager duyệt).
-   * Backend: MỘT đơn đặt chỗ (có thể nhiều kho, đặt từ giỏ hàng) = MỘT hợp đồng (ContractNumber),
-   * nên mỗi nhóm ở đây là một đơn; danh sách kho nằm trong rental.units (Phụ lục 01).
+   * Backend: MỘT đơn đặt chỗ = MỘT hợp đồng (ContractNumber), nên mỗi "nhóm" ở đây là một đơn;
+   * nếu đơn có nhiều kho thì danh sách kho nằm trong rental.units (Phụ lục 01).
+   * (Đặt từ giỏ hàng: CartPage tạo mỗi kho một đơn riêng -> mỗi kho một hợp đồng.)
    */
   const allRentals = Array.isArray(customerRentals) ? customerRentals.filter(Boolean) : []
   // Số kho trong 1 đơn (mặc định 1).
   const unitCountOf = r => (r.units?.length || r.unitCount || 1)
-  // Phụ lục gia hạn: lấy hợp đồng gốc từ API danh sách đặt chỗ, hoặc từ API gia hạn (nếu backend dùng API cũ).
-  // Lấy thông tin hợp đồng gốc nếu đơn là phụ lục gia hạn (từ dữ liệu đơn hoặc API gia hạn).
+  // Nếu đơn là phụ lục gia hạn: lấy thông tin hợp đồng gốc từ dữ liệu đơn (renewedFrom),
+  // nếu không có thì lấy từ API gia hạn (GET /api/contract-renewals/mine); không phải phụ lục -> null.
   const renewedFromOf = r => r.renewedFrom || renewals.byReservation(r.reservationId)?.renewedFrom || null
   // Kiểm tra đơn có phải phụ lục gia hạn không.
   const isRenewalRental = r => Boolean(r.isRenewal || renewedFromOf(r))
@@ -916,7 +971,10 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const facilityAddressOf = group => facilities.find(f => f.name === group.rentals[0].facility)?.location
   // Kiểm tra hợp đồng của đơn đã được ký chưa (theo chữ ký đã tải hoặc trạng thái hợp đồng).
   const isSignedRental = r => Boolean(signatures[String(r.contractId)]) || r.contractStatus === 'Signed' || r.contractStatus === 'Active'
-  // Chờ ký: hợp đồng mới (đã cọc) + phụ lục gia hạn chưa ký (khách vẫn đang dùng kho nên đơn ở trạng thái "Handed Over").
+  // Chia đơn của tab 'pending' thành 4 nhóm:
+  // toSign: hợp đồng mới (đã cọc) + phụ lục gia hạn chưa ký (khách vẫn đang dùng kho nên đơn ở trạng thái "Handed Over").
+  // preparing: đã xác nhận nhưng hợp đồng chưa được tạo; waitingApproval: đã cọc ("Paid"), chưa xác nhận/tạo hợp đồng;
+  // signedBeforeHandover: đã ký, chờ ngày nhận kho.
   const toSign = allRentals.filter(r => r.contractId && !isSignedRental(r) &&
     (r.status === 'Confirmed' || (r.status === 'Handed Over' && isRenewalRental(r))))
   const preparing = allRentals.filter(r => r.status === 'Confirmed' && !r.contractId)
@@ -924,7 +982,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const signedBeforeHandover = allRentals.filter(r => r.status === 'Confirmed' && r.contractId && isSignedRental(r))
 
   /*
-   * [SỬA] Chia trang Hợp đồng thành các tab để khách thấy ngay mình đang ở đâu:
+   * Trang Hợp đồng chia thành các tab để khách thấy ngay mình đang ở đâu:
    *   pending  - đã cọc: chờ ký / đang tạo hợp đồng / đã ký chờ nhận kho
    *   active   - đang thuê (kèm gia hạn)
    *   returns  - đang trả kho / chờ quyết toán, hoàn cọc
@@ -933,6 +991,8 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const activeRentals = rentals.filter(r => r.status === 'Handed Over')
   const endedRentals = rentals.filter(r => r.status !== 'Handed Over')
   const pendingCountAll = toSign.length + preparing.length + waitingApproval.length + signedBeforeHandover.length
+  // Đếm số kho "đang trả" cho tab 'returns': có yêu cầu trả kho và còn việc dở dang (kiểm kho chưa quyết toán,
+  // yêu cầu chưa hoàn tất, khách còn nợ, hoặc tiền hoàn cọc chưa về).
   const returnsInProgress = returns.items.filter(i => {
     if (!i.request) return false
     const insp = inspections.byReservation(i.reservationId)
@@ -941,6 +1001,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
       Number(i.request.amountOwed) > 0 ||
       (Number(i.request.refundAmount) > 0 && i.request.refundStatus !== 'Completed')
   }).length
+  // Tab con đang mở: có đơn chờ xử lý thì mở 'pending' trước, không thì 'active'.
   const [contractTab, setContractTab] = useState(() => (pendingCountAll > 0 ? 'pending' : 'active'))
   // Xác định tab chứa 1 đơn (active / pending / ended) để chuyển tab trước khi cuộn tới thẻ hợp đồng.
   const tabOfReservation = id => {
@@ -951,14 +1012,13 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     return 'ended'
   }
 
-  /*
-   * Không còn bước Manager duyệt: đơn đã cọc ("Paid") được xác nhận + tạo hợp đồng ngay.
-   * Thường đã làm lúc thanh toán; ở đây tự thử lại nếu lần đó lỗi mạng.
-   */
   /**
-   * Xác nhận đơn đã cọc + tạo hợp đồng (thử lại khi lần trước lỗi); tạo được thì tải lại danh sách.
+   * Xác nhận đơn đã cọc ("Paid") + tạo hợp đồng. Không còn bước Manager duyệt: việc này thường đã làm ngay lúc
+   * thanh toán cọc; ở đây là bước thử lại nếu lần đó lỗi mạng. Tạo được hợp đồng nào thì gọi onRentalsChanged() để tải lại.
+   * Được gọi: tự động bởi useEffect bên dưới khi có đơn "Paid", hoặc khi khách bấm "Tạo hợp đồng ngay".
    * API: POST /api/reservation-confirmations/mine (qua confirmAfterDeposit)
-   * @param {Array} ids mã các đơn; showResult = true thì báo lỗi bằng pop-up.
+   * @param {Array} ids mã các đơn cần tạo hợp đồng.
+   * @param {boolean} [showResult=false] true thì báo lỗi bằng hộp thoại (khi khách tự bấm).
    */
   const createPendingContracts = async (ids, showResult = false) => {
     setCreatingContracts(true)
@@ -973,21 +1033,27 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
       })
     }
   }
+  // Chạy khi danh sách đơn "Paid" (đã cọc, chưa có hợp đồng) đổi: tự gọi tạo hợp đồng cho các đơn đó (không hiện lỗi).
   const waitingKey = waitingApproval.map(r => r.reservationId).join(',')
   useEffect(() => {
     if (waitingKey) createPendingContracts(waitingKey.split(','))
   }, [waitingKey])
 
   // Mở từ thông báo / chỗ khác: cuộn tới đúng thẻ hợp đồng khi danh sách đã hiển thị.
+  // focusTick tăng mỗi lần có sự kiện mở tab -> chạy lại effect cuộn bên dưới.
   const [focusTick, setFocusTick] = useState(0)
+  // Chạy 1 lần khi mount: đăng ký nghe sự kiện OPEN_SECTION_EVENT (gỡ khi unmount).
   useEffect(() => {
     // Khi có sự kiện mở tab Hợp đồng: tăng biến đếm để chạy lại logic cuộn tới thẻ hợp đồng.
     const onOpen = () => setFocusTick(t => t + 1)
     window.addEventListener(OPEN_SECTION_EVENT, onOpen)
     return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
   }, [])
+  // Chạy khi focusTick hoặc danh sách hợp đồng đổi: đọc mã đơn cần cuộn tới từ sessionStorage
+  // ('storespace_focus_contract', do focusContract() ghi) -> chuyển đúng tab con -> chờ 350ms cho danh sách vẽ xong
+  // -> cuộn tới thẻ `contract-{id}`; nếu thẻ nằm ở trang khác thì xóa ô tìm, nhảy tới đúng trang rồi thử lại sau 200ms.
   useEffect(() => {
-    // [SỬA] Thẻ hợp đồng cần mở nằm ở tab khác -> chuyển tab trước rồi mới cuộn tới
+    // Thẻ hợp đồng cần mở nằm ở tab khác -> chuyển tab trước rồi mới cuộn tới
     let pending = null
     try { pending = sessionStorage.getItem('storespace_focus_contract') } catch { /* bỏ qua */ }
     const targetTab = pending ? tabOfReservation(pending) : null
@@ -1017,12 +1083,15 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
 
   // Thông báo "Kho sắp hết hạn" -> "Gia hạn ngay": mở hộp thoại gia hạn của đúng hợp đồng.
   const [renewTick, setRenewTick] = useState(0)
+  // Chạy 1 lần khi mount: nghe sự kiện OPEN_SECTION_EVENT để kiểm tra lại yêu cầu gia hạn.
   useEffect(() => {
     // Khi có sự kiện mở tab Hợp đồng: tăng biến đếm để kiểm tra yêu cầu mở hộp thoại gia hạn.
     const onOpen = () => setRenewTick(t => t + 1)
     window.addEventListener(OPEN_SECTION_EVENT, onOpen)
     return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
   }, [])
+  // Chạy khi dữ liệu gia hạn tải xong hoặc renewTick đổi: đọc mã đơn cần gia hạn từ sessionStorage (RENEW_REQUEST_KEY),
+  // xóa yêu cầu (takeRenewalRequest) và mở RenewalModal nếu hợp đồng đủ điều kiện, chưa có gia hạn đang chờ.
   useEffect(() => {
     let wanted = null
     try { wanted = sessionStorage.getItem(RENEW_REQUEST_KEY) } catch { /* bỏ qua */ }
@@ -1032,14 +1101,18 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     if (item?.eligible && !item.pendingRenewal) setRenewItem(item)
   }, [renewals.data, renewTick])
 
-  // "Gia hạn thành công, vui lòng ký phụ lục gia hạn" -> OK: mở màn hình ký đúng hợp đồng khi dữ liệu đã có.
+  // "Gia hạn thành công, vui lòng ký phụ lục gia hạn" / "Ký hợp đồng ngay" -> mở màn hình ký đúng hợp đồng khi dữ liệu đã có.
+  // signRequest = contractId cần ký (đọc từ sessionStorage qua peekContractSignRequest).
   const [signRequest, setSignRequest] = useState(() => peekContractSignRequest())
+  // Chạy 1 lần khi mount: nghe sự kiện OPEN_SECTION_EVENT để đọc lại yêu cầu ký.
   useEffect(() => {
     // Khi có sự kiện mở tab Hợp đồng: đọc lại yêu cầu mở màn hình ký hợp đồng.
     const onOpen = () => setSignRequest(peekContractSignRequest())
     window.addEventListener(OPEN_SECTION_EVENT, onOpen)
     return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
   }, [])
+  // Chạy khi có yêu cầu ký hoặc trạng thái hợp đồng đổi: tìm đơn có contractId đó; chưa có trong danh sách thì
+  // yêu cầu App tải lại; có rồi thì xóa yêu cầu và mở ContractSignFlow (nếu hợp đồng chưa ký).
   useEffect(() => {
     if (!signRequest) return
     const target = allRentals.find(r => String(r.contractId) === String(signRequest))
@@ -1056,9 +1129,14 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   }, [signRequest, allRentals.map(r => `${r.contractId}:${r.contractStatus}`).join(',')])
 
   /**
-   * Ký tất cả hợp đồng trong nhóm đang ký; ký xong gửi email hợp đồng, mở chi tiết, báo thành công và tải lại.
+   * Ký tất cả hợp đồng trong nhóm đang ký (signGroup). Được ContractSignFlow gọi khi khách vẽ chữ ký và bấm ký.
+   * Ký từng hợp đồng -> lưu chữ ký vào state `signatures` -> có lỗi thì ném Error (ContractSignFlow hiển thị lỗi);
+   * ký xong: đóng màn hình ký -> gửi bản hợp đồng qua email (lỗi email không làm hỏng việc ký) -> mở ContractDetailModal
+   * kèm kết quả gửi mail -> hộp thoại thành công (hợp đồng mới: hẹn ngày nhận kho; phụ lục gia hạn: tiếp tục dùng kho)
+   * -> tải lại dữ liệu gia hạn + danh sách đơn.
    * API: POST /api/contracts/{contractId}/signature  body { signatureImage, termsVersion, acceptedTerms }
    *      POST /api/email/send-contract (qua sendContractEmail)
+   * @param {{image: string, termsVersion?: string}} payload ảnh chữ ký (data URL) và phiên bản điều khoản đã đồng ý.
    */
   const signGroupContracts = async ({ image, termsVersion }) => {
     const done = []
@@ -1114,8 +1192,10 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   const keyOf = rental => String(rental.contractId)
 
   /**
-   * Tải lại trạng thái chữ ký của 1 hợp đồng.
+   * Tải lại trạng thái chữ ký của 1 hợp đồng (khi bấm "Tải lại" trên ContractCard sau lỗi tải).
+   * Cập nhật signatures / signatureErrors / loadedSignatures của hợp đồng đó.
    * API: GET /api/contracts/{contractId}/signature
+   * @param {object} rental đơn có contractId.
    */
   const reloadSignature = async rental => {
     const contractId = keyOf(rental)
@@ -1141,6 +1221,9 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     }
   }
 
+  // Chạy khi đổi khách hoặc danh sách hợp đồng (tab đang thuê / đã kết thúc) đổi: tải song song trạng thái chữ ký
+  // của mọi hợp đồng (GET /api/contracts/{id}/signature) rồi ghi đè 3 state chữ ký. `cancelled` bỏ kết quả cũ nếu
+  // effect chạy lại trước khi tải xong.
   useEffect(() => {
     let cancelled = false
     Promise.all(rentals.map(async rental => {
@@ -1178,8 +1261,11 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   }, [customerName, rentals.map(keyOf).join(',')])
 
   /**
-   * Ký 1 hợp đồng từ hộp thoại ContractModal (luồng cũ) và cập nhật chữ ký.
+   * Ký 1 hợp đồng từ hộp thoại ContractModal (luồng ký cũ, mở bằng nút ký trên ContractCard) và cập nhật chữ ký,
+   * rồi đóng hộp thoại. Lưu ý: dùng termsVersion cố định 'storage-rental-v1' (khác CONTRACT_TERMS_VERSION của luồng mới).
    * API: POST /api/contracts/{contractId}/signature
+   * @param {object} rental đơn có contractId.
+   * @param {{image: string}} record chữ ký do ContractModal trả về.
    */
   const handleSign = async (rental, record) => {
     const contractId = keyOf(rental)
@@ -1202,9 +1288,11 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     setOpenRental(null)
   }
 
+  // Số hợp đồng (đang thuê / đã kết thúc) đã tải xong trạng thái mà chưa có chữ ký.
   const pendingCount = rentals.filter(r => loadedSignatures[keyOf(r)] && !signatures[keyOf(r)]).length
 
-  // [SỬA] Danh sách hợp đồng của tab đang mở: tìm + mới nhất lên đầu + chia trang
+  // Danh sách hợp đồng của tab đang mở ('active' / 'ended'): lọc theo ô tìm (mã HĐ, mã đơn, cơ sở, mã kho)
+  // + mới nhất lên đầu + chia trang (về trang 1 khi đổi tab hoặc đổi từ khóa).
   const [contractQuery, setContractQuery] = useState('')
   const tabRentals = contractTab === 'ended' ? endedRentals : activeRentals
   const listedContracts = newestFirst(tabRentals.filter(r => {
@@ -1445,9 +1533,11 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   )
 }
 
-/* Tiến trình hoàn cọc khi khách hủy: tạo yêu cầu -> gửi cổng thanh toán -> cổng xác nhận đã hoàn. */
 /**
- * Định dạng thời điểm UTC (tự thêm "Z" nếu thiếu) thành "HH:mm dd/MM/yyyy".
+ * Định dạng thời điểm backend trả về (giờ UTC) thành giờ Việt Nam "HH:mm dd/MM/yyyy" để hiển thị.
+ * Nếu chuỗi chưa có múi giờ thì tự thêm "Z" (coi là UTC). Dùng trong RefundTimeline.
+ * @param {string} iso thời điểm dạng ISO.
+ * @returns {string} chuỗi đã định dạng, hoặc '' nếu rỗng / không hợp lệ.
  */
 const fmtUtc = iso => {
   if (!iso) return ''
@@ -1456,9 +1546,15 @@ const fmtUtc = iso => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 /**
- * Component tiến trình hoàn cọc khi hủy đặt kho: tạo yêu cầu -> gửi cổng thanh toán -> cổng xác nhận đã hoàn
- * (có ghi chú khi VNPay sandbox phải hoàn mô phỏng).
- * @param {object} props item (đơn có thông tin hoàn tiền), formatMoney.
+ * Vẽ tiến trình hoàn cọc khi khách hủy đặt kho: (1) đã hủy đơn, tạo yêu cầu hoàn -> (2) gửi lệnh hoàn sang VNPay
+ * (chỉ khi cọc trả qua VNPay) -> (3) VNPay xác nhận đã hoàn / hoàn mô phỏng. Kèm ghi chú giải thích, đặc biệt khi
+ * VNPay sandbox không cho hoàn nên backend ghi nhận hoàn mô phỏng (mã hoàn bắt đầu bằng "SIM-").
+ * Không gọi API. Được CustomerDashboard truyền vào CustomerPaymentCenter qua prop renderRefund (tab Thanh toán).
+ * @param {object} props
+ * @param {object} props.item đơn đã hủy có các trường refundStatus, refundProvider, refundAmount, refundReference,
+ *   refundRequestedAt, refundLastAttempt(At), refundCompletedAt, cancelledAt.
+ * @param {(n: number) => string} props.formatMoney hàm định dạng tiền.
+ * @returns {JSX.Element}
  */
 function RefundTimeline({ item, formatMoney }) {
   const done = item.refundStatus === 'Completed'
@@ -1477,7 +1573,7 @@ function RefundTimeline({ item, formatMoney }) {
       note: done ? `${fmtUtc(item.refundCompletedAt)}${item.refundReference ? ` · Mã hoàn ${item.refundReference}` : ''}` : 'Đang chờ',
       state: done ? 'done' : 'todo'
     }
-  ].filter(Boolean)
+  ].filter(Boolean) // bỏ bước VNPay (false) khi đơn không trả qua VNPay
   return (
     <div className={`refund-box ${done ? 'ok' : 'pending'}`}>
       <div className="refund-box-head">
@@ -1505,25 +1601,34 @@ function RefundTimeline({ item, formatMoney }) {
   )
 }
 
-/* [SỬA] Trang Thanh toán cũ (CustomerPaymentPage) đã thay bằng CustomerPaymentCenter trong PendingPayments.jsx */
+/* Tab Thanh toán: trang cũ (CustomerPaymentPage) đã được thay bằng CustomerPaymentCenter trong
+   features/payment/PendingPayments.jsx (đóng cọc, tiền thuê, phí trễ hạn, lịch sử giao dịch, hoàn cọc). */
 
-/* Hồ sơ tài khoản (chỉ xem). Backend hiện chưa có API sửa hồ sơ / đổi mật khẩu. */
 /**
- * Component tab "Hồ sơ" (chỉ xem): thông tin tài khoản, số kho đang thuê / chờ cọc, mã truy cập cơ sở (sao chép được).
- * Backend chưa có API sửa hồ sơ / đổi mật khẩu.
- * @param {object} props user, rentals, onLogout(), onOpenStorage().
+ * Vẽ tab "Hồ sơ" (chỉ xem): thông tin tài khoản (tên, email, mã KH), thống kê đơn (tổng / đang thuê / chờ cọc),
+ * nút đăng xuất và thẻ "Mã ra vào cơ sở" 6 chữ số (sao chép được, có trạng thái Chưa cấp / Tạm khóa / Đang hoạt động).
+ * Không gọi API — backend hiện chưa có API sửa hồ sơ / đổi mật khẩu (khách phải liên hệ email hỗ trợ).
+ * Được CustomerDashboard hiển thị khi activeSection === 'profile'.
+ * @param {object} props
+ * @param {object} props.user người đang đăng nhập (name, email, userId, accessCode?, accessCodeStatus?).
+ * @param {Array} props.rentals danh sách đơn của khách.
+ * @param {() => void} props.onLogout đăng xuất.
+ * @param {() => void} props.onOpenStorage chuyển sang tab Kho của tôi (khi bấm ô thống kê).
+ * @returns {JSX.Element}
  */
 function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
   const [copied, setCopied] = useState(false)
   const activeCount = rentals.filter(item => item.status === 'Handed Over').length
   const pendingCount = rentals.filter(item => item.status === 'Pending Deposit').length
-  const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase()
+  const initial = (user?.name || user?.email || '?').trim().charAt(0).toUpperCase() // chữ cái đầu làm avatar
 
+  // Mã ra vào cơ sở: ưu tiên mã trên tài khoản, rồi mã khách trong đơn, rồi quyền truy cập loại 'Access Code' của đơn.
+  // Trạng thái mã: lấy từ đơn mới nhất có trạng thái, rồi từ tài khoản; không có thì suy ra (có mã = Active).
   const accessCode = user?.accessCode || rentals.find(r => r.customerAccessCode)?.customerAccessCode || rentals.flatMap(r => r.accesses || []).find(a => a.accessType === 'Access Code')?.accessValue || null
   const latestAccessStatus = rentals.find(r => r.customerAccessCodeStatus)?.customerAccessCodeStatus
   const accessStatus = latestAccessStatus || user?.accessCodeStatus || (accessCode ? 'Active' : 'Unissued')
 
-  // Sao chép mã truy cập cơ sở vào clipboard và hiện "Đã chép" 2 giây.
+  // Khi bấm "Sao chép mã": chép mã ra vào cơ sở vào clipboard và hiện "Đã sao chép" trong 2 giây.
   const handleCopyCode = () => {
     if (!accessCode) return
     navigator.clipboard.writeText(accessCode)
@@ -1626,19 +1731,37 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
 }
 
 /**
- * Component khung trang khách hàng: menu trái (có số thông báo), các tab, Tổng quan (việc cần làm ngay, thông báo),
- * tính thông báo (useCustomerNotifications), đánh dấu đã xem khi mở tab, điều hướng theo thông báo, đăng xuất.
- * @param {object} props facilities, storageUnits, customerRental, customerRentals, getCurrentUser(), navigate,
- *   currentUserKey, onReloadRentals().
+ * Khung trang tài khoản khách hàng (export default, route /customer).
+ * - Menu trái: Tổng quan, Kho của tôi, Thuê thêm kho (sang /search), Hợp đồng, Thanh toán, Thông báo, Hồ sơ, Đăng xuất;
+ *   mỗi mục có badge số việc / thông báo chưa xem.
+ * - Tab Tổng quan: "Việc cần xử lý ngay" (đóng cọc, ký HĐ, đóng tiền thuê, kho sắp hết hạn), xem trước thông báo,
+ *   4 ô số liệu, kho chính, công nợ, hợp đồng, điều hướng nhanh, hoạt động đặt thuê gần đây.
+ * - Các tab khác render MyStoragePage / ContractPage / CustomerPaymentCenter / CustomerNotificationsPage / ProfilePage.
+ * Tính thông báo bằng useCustomerNotifications (từ đơn + gia hạn + chính sách + trả kho + kiểm kho), đánh dấu đã xem
+ * khi mở tab tương ứng. Nghe sự kiện OPEN_SECTION_EVENT để trang khác mở đúng tab.
+ * Tab mở đầu tiên lấy từ sessionStorage (takeCustomerSection), mặc định 'overview'.
+ * Được App.jsx render cho route /customer.
+ * @param {object} props
+ * @param {Array} props.facilities danh sách cơ sở.
+ * @param {Array} [props.storageUnits] danh sách kho (App truyền vào nhưng file này hiện không dùng).
+ * @param {object} [props.customerRental] một đơn (dạng cũ).
+ * @param {Array} props.customerRentals danh sách đơn của khách (App tải từ GET /api/customer-reservations/mine).
+ * @param {() => object} props.getCurrentUser lấy người đang đăng nhập.
+ * @param {(path: string) => void} props.navigate chuyển trang.
+ * @param {string} props.currentUserKey khóa localStorage lưu phiên đăng nhập (xóa khi đăng xuất).
+ * @param {() => void} props.onReloadRentals yêu cầu App tải lại danh sách đơn.
+ * @returns {JSX.Element}
  */
 function CustomerDashboard({ facilities, storageUnits, customerRental, customerRentals, getCurrentUser, navigate, currentUserKey, onReloadRentals }) {
   const user = getCurrentUser()
-  // Đã cập nhật: Danh sách kho đang thuê, kho Staff vừa bàn giao đứng đầu (05/10/2026)
+  // Chuẩn hóa thành mảng đơn (ưu tiên customerRentals; không có thì dùng 1 đơn customerRental).
   const rentals = Array.isArray(customerRentals)
     ? customerRentals.filter(Boolean)
     : customerRental
       ? [customerRental]
       : []
+  // Các nhóm đơn dùng cho Tổng quan / badge: đang thuê, kho chính (đang thuê đầu tiên), chờ cọc, đến hạn tiền thuê,
+  // hợp đồng chưa ký, kho còn ≤ 30 ngày; kèm tổng tiền cần đóng ngay (cọc + tiền thuê).
   const activeRentals = rentals.filter(item => item.status === 'Handed Over')
   const rental = activeRentals[0] || rentals[0] || null
   const unpaidReservations = rentals.filter(item =>
@@ -1661,30 +1784,34 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
     (item.status === 'Confirmed' || item.status === 'Paid')
   )
   const expiringRentals = activeRentals.filter(item => item.remainingDays <= 30)
+  // Tab đang mở: lấy yêu cầu mở tab đã lưu trong sessionStorage (vd sau khi trả cọc -> 'contract'), mặc định 'overview'.
   const [activeSection, setActiveSection] = useState(() => takeCustomerSection('overview'))
 
-  // Thông báo: tính từ đơn thuê + gia hạn + chính sách; mở mục nào thì thông báo của mục đó được tính là đã xem.
+  // Thông báo: tính từ đơn thuê + gia hạn + chính sách + trả kho + kiểm kho; mở mục nào thì thông báo của mục đó được tính là đã xem.
   const renewalsForNotices = useContractRenewals()
   const policiesForNotices = usePolicies()
   const returnsForNotices = useUnitReturns()
-  const inspectionsForNotices = useMyInspections() // [THÊM 14]
+  const inspectionsForNotices = useMyInspections() // kết quả kiểm kho chờ khách xác nhận
   const notices = useCustomerNotifications({
     email: user?.email,
     rentals,
     renewals: renewalsForNotices.data,
     policies: policiesForNotices,
     returns: returnsForNotices.data,
-    inspections: inspectionsForNotices.data // [THÊM 14]
+    inspections: inspectionsForNotices.data
   })
+  // Chạy khi đổi tab hoặc danh sách thông báo đổi: mở tab Hợp đồng / Thanh toán / Kho -> đánh dấu thông báo của tab đó đã xem.
   const noticeIdsKey = notices.notifications.map(n => n.id).join('|')
   useEffect(() => {
     if (['contract', 'payment', 'storage'].includes(activeSection)) notices.markSection(activeSection)
   }, [activeSection, noticeIdsKey])
-  // Dữ liệu đặt chỗ thay đổi (gia hạn, ký, thanh toán) -> tải lại thông tin gia hạn cho thông báo.
+  // Chạy khi trạng thái đơn / hợp đồng đổi (gia hạn, ký, thanh toán), bỏ qua lần đầu: tải lại dữ liệu gia hạn,
+  // trả kho, kiểm kho để thông báo luôn đúng.
   const rentalsKey = rentals.map(r => `${r.reservationId}:${r.status}:${r.contractStatus}`).join(',')
   const firstRentalsKey = React.useRef(rentalsKey)
   useEffect(() => { if (rentalsKey !== firstRentalsKey.current) { renewalsForNotices.reload(); returnsForNotices.reload(); inspectionsForNotices.reload() } }, [rentalsKey])
-  // Mở đúng nơi xử lý của 1 thông báo (ký hợp đồng, gia hạn, chuyển tab, cuộn tới thẻ hợp đồng).
+  // Khi bấm nút hành động của 1 thông báo: ghi yêu cầu vào sessionStorage (ký hợp đồng / gia hạn / cuộn tới thẻ
+  // hợp đồng, qua services/afterDeposit) rồi chuyển sang tab cần mở; ContractPage đọc yêu cầu đó để xử lý.
   const openNotice = item => {
     const action = item.action || {}
     if (action.signContractId) requestContractSign(action.signContractId)
@@ -1692,7 +1819,8 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
     if (action.section) setActiveSection(action.section)
     if (action.focusReservationId && !action.renewReservationId && !action.signContractId) focusContract(action.focusReservationId)
   }
-  // [THÊM] Đơn chưa đặt cọc + Hóa đơn tiền thuê đến hạn đều hiện badge ở mục Thanh toán
+  // Tập id cho badge mục Thanh toán: thông báo thanh toán chưa xem + đơn chưa đặt cọc (không tính phụ lục gia hạn)
+  // + hóa đơn tiền thuê đến hạn. Dùng Set để không đếm trùng.
   const paymentBadgeIds = new Set([
     ...notices.notifications.filter(n => n.section === 'payment' && !notices.isSeen(n.id)).map(n => n.id),
     ...pendingDepositsOf(rentals).filter(r => !r.isRenewal).map(r => `deposit:${r.reservationId}`),
@@ -1705,7 +1833,8 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
       ? <span className="cnav-badge" aria-label={`${count} thông báo mới`}>{count > 9 ? '9+' : count}</span>
       : null
   }
-  // Mở tab theo yêu cầu (vd sau khi gia hạn: tab Hợp đồng để ký phụ lục).
+  // Chạy 1 lần khi mount: nghe sự kiện OPEN_SECTION_EVENT để mở tab theo yêu cầu từ nơi khác
+  // (vd sau khi gia hạn: tab Hợp đồng để ký phụ lục). Gỡ khi unmount.
   useEffect(() => {
     // Nhận sự kiện 'storespace:open-section' để chuyển sang tab được yêu cầu.
     const onOpen = event => { if (event.detail) setActiveSection(event.detail) }
@@ -1713,25 +1842,28 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
     return () => window.removeEventListener(OPEN_SECTION_EVENT, onOpen)
   }, [])
 
-  // Chuyển sang tab Hợp đồng và cuộn tới thẻ hợp đồng của đơn.
+  // Chuyển sang tab Hợp đồng và cuộn tới thẻ hợp đồng của đơn (focusContract ghi mã đơn vào sessionStorage).
+  // Dùng bởi nút "Hợp đồng" trong Kho của tôi, Tổng quan và tab Thanh toán.
   const openContractForReservation = reservationId => {
     if (reservationId) focusContract(reservationId)
     setActiveSection('contract')
   }
 
-  // Chuyển sang tab Hợp đồng và mở màn hình ký cho hợp đồng của đơn.
+  // Chuyển sang tab Hợp đồng và mở màn hình ký cho hợp đồng của đơn (requestContractSign ghi contractId vào sessionStorage).
+  // Dùng bởi nút "Ký hợp đồng" trong Kho của tôi và "Ký hợp đồng ngay" ở Tổng quan.
   const signContractForRental = targetRental => {
     if (targetRental?.contractId) requestContractSign(targetRental.contractId)
     setActiveSection('contract')
   }
 
-  // Đăng xuất: xóa phiên khỏi localStorage và về trang chủ.
+  // Khi bấm "Đăng xuất" (menu trái hoặc tab Hồ sơ): xóa phiên đăng nhập khỏi localStorage (currentUserKey) và về trang chủ.
   const logout = () => {
     localStorage.removeItem(currentUserKey)
     navigate('/')
   }
 
-  // Danh sách việc cần xử lý ngay trong trang Tổng quan
+  // Danh sách "Việc cần xử lý ngay" ở tab Tổng quan (hiện tối đa 4): đơn chờ cọc, hợp đồng chờ ký,
+  // tiền thuê đến hạn, kho sắp hết hạn. Mỗi việc có nút dẫn tới đúng tab xử lý.
   const urgentTasks = [
     ...unpaidReservations.map(item => ({
       id: `dep-${item.reservationId}`,
@@ -1915,7 +2047,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
           </div>
         </div>
 
-        {/* [THÊM] Đơn chưa đặt cọc: nhắc ở đầu mọi mục (trừ mục Thanh toán vì ở đó đã có khối "Cần thanh toán") */}
+        {/* Đơn chưa đặt cọc: thanh nhắc ở đầu mọi mục (trừ mục Thanh toán vì ở đó đã có khối "Cần thanh toán") */}
         {activeSection !== 'payment' && (
           <PendingDepositBar rentals={rentals} variant="inline" onPay={() => setActiveSection('payment')} actionLabel="Thanh toán ngay" />
         )}
@@ -2407,5 +2539,5 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
   )
 }
 
-// Export only the main customer dashboard to App.jsx.
+// Chỉ export component khung CustomerDashboard cho App.jsx; các tab con là component nội bộ của file này.
 export default CustomerDashboard

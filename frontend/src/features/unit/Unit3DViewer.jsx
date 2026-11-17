@@ -1,10 +1,24 @@
 /**
  * ======================================================================
- * FILE: src/features/unit/Unit3DViewer.jsx  —  CỬA SỔ XEM KHO DẠNG 3D
- * 3 chế độ: "Kho trống" (CSS 3D, đúng tỉ lệ dài×rộng×cao, sàn kẻ ô 1 m, người cao 1,7 m để so sánh),
- * "Có đồ mẫu" (SampleRoom - Three.js), "Tự xếp thùng" (PackPlanner - Three.js).
- * Điều khiển: kéo chuột/vuốt để xoay, lăn chuột hoặc nút +/− để phóng to, phím mũi tên để xoay, Esc để đóng.
- * Không gọi API. Dùng ở: App.jsx (trang chi tiết cơ sở), FacilityFloorPlan.
+ * FILE: src/features/unit/Unit3DViewer.jsx  —  CỬA SỔ XEM KHO 3D
+ * CHỨC NĂNG: Cửa sổ nổi (modal) cho khách xem một kho dạng 3D trước khi thuê, với 3 chế độ (tab):
+ *   - "Kho trống": vẽ bằng CSS 3D (không cần thư viện / mạng), hộp kho đúng tỉ lệ rộng × dài × cao, sàn kẻ ô 1 m,
+ *     cửa cuốn mặt trước, người cao 1,7 m đứng cạnh để so sánh.
+ *   - "Có đồ mẫu": SampleRoom (Three.js) bày đồ mẫu theo cỡ kho.
+ *   - "Tự xếp thùng": PackPlanner (Three.js) cho khách nhập số đồ, kéo thả / tự xếp; cột phải gợi ý kho trống
+ *     xếp vừa (useBoxFit), kho ở cơ sở khác, và khi kho đang xem thiếu chỗ thì đưa 2 lựa chọn: A. thuê thêm 1 kho
+ *     cho phần dư, B. đổi sang kho lớn hơn (useSplitPack).
+ *   Điều khiển: kéo chuột / vuốt để xoay, lăn chuột hoặc nút +/− để phóng to, phím mũi tên để xoay, Esc để đóng.
+ * THÀNH PHẦN CHÍNH: Unit3DViewer (default export); hintFor(geo) - câu gợi ý sức chứa.
+ * DÙNG Ở: src/App.jsx (trang chi tiết cơ sở), features/facility/FacilityFloorPlan.jsx.
+ * PHỤ THUỘC: ./unitTypes, ./UnitPackPlanner (PackPlanner, SampleRoom), ./boxCounts, ./useBoxFit,
+ *   utils/unitGeometry, utils/packing (gridCapacity, itemType), services/storageRules (formatVnd),
+ *   Unit3DViewer.css, UnitPackPlanner.css.
+ * API: Không gọi API trực tiếp. Đặt kho / thêm giỏ / mở chi tiết được giao cho component cha qua callback
+ *   onBook, onAddToCart, onOpenDetail, onOpenOther.
+ * LUỒNG: khách bấm 1 ô kho ở sơ đồ -> cha mở <Unit3DViewer unit=...> -> chọn tab "Tự xếp thùng" -> nhập số đồ
+ *   -> counts đổi (lưu sessionStorage) -> useBoxFit / useSplitPack chạy worker -> hiện danh sách kho vừa, phương án
+ *   A/B -> khách bấm "Xem kho này" (setUnit + autoRun xếp ngay) hoặc "Thêm cả 2 kho vào giỏ" (onAddToCart) / "Đặt kho này" (onBook).
  * ======================================================================
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
@@ -18,21 +32,19 @@ import { loadBoxCounts, saveBoxCounts } from './boxCounts'
 import { geoKey, useBoxFit, useSplitPack } from './useBoxFit'
 import './UnitPackPlanner.css'
 
-/*
- * Xem kho dạng 3D (CSS 3D, không cần thư viện / mạng).
- * - Hộp kho đúng tỉ lệ dài × rộng × cao, sàn kẻ ô 1 m, cửa cuốn ở mặt trước.
- * - Người cao 1,7 m đứng cạnh để khách hình dung độ lớn.
- * - Kéo chuột / vuốt để xoay, lăn chuột hoặc nút +/− để phóng to, phím mũi tên để xoay.
- */
+/* Chữ hiển thị cho trạng thái kho (khóa lấy từ unitPlanStatus). */
 const STATUS_TEXT = { free: 'Còn trống', rented: 'Đã có người thuê', off: 'Đang bảo trì' }
 /**
  * Giới hạn giá trị trong khoảng [min, max].
  */
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+/* Góc nhìn mặc định của chế độ "Kho trống": ry = xoay ngang (độ), rx = nghiêng nhìn từ trên (độ), zoom = phóng to. */
 const DEFAULT_VIEW = { ry: -38, rx: -24, zoom: 1 }
 
 /**
- * Component cửa sổ xem kho 3D.
+ * Component cửa sổ xem kho 3D: header (trạng thái, mã kho), 3 tab chế độ, vùng vẽ 3D và cột thông tin bên phải
+ * (kích thước, giá, gợi ý kho vừa, phương án thuê thêm / đổi kho, nút đặt kho).
+ * Đọc/ghi sessionStorage qua loadBoxCounts / saveBoxCounts. Chạy Web Worker qua useBoxFit / useSplitPack.
  * @param {object} props unit (kho mở ban đầu), facilityName, onClose, onOpenDetail(unit) (mở chi tiết kho),
  *   onBook(unit) (đặt kho — chỉ hiện khi kho còn trống), units (các kho cùng cơ sở, để gợi ý kho vừa đồ của khách),
  *   otherUnits ([{ facility, unit }] kho ở cơ sở khác, gợi ý khi cơ sở này không có kho vừa),
@@ -43,10 +55,11 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
   // Kho đang xem: ban đầu là kho được mở, đổi khi khách bấm một kho được gợi ý ở sidebar.
   const [unit, setUnit] = useState(initialUnit)
   const [counts, setCounts] = useState(loadBoxCounts) // nhớ số thùng khách đã nhập (trong tab đang mở)
-  const [aisleOn, setAisleOn] = useState(true)
-  const [autoRun, setAutoRun] = useState(false)
+  const [aisleOn, setAisleOn] = useState(true) // có chừa lối đi 80 cm khi xếp không
+  const [autoRun, setAutoRun] = useState(false) // true = PackPlanner tự xếp ngay khi mở (khi khách chọn kho được gợi ý)
   const [packSlot, setPackSlot] = useState(null) // ô ở cột phải để PackPlanner vẽ danh sách đồ + nhập số thùng
   const [mode, setMode] = useState('empty') // empty | sample | pack
+  // Mỗi khi số đồ đổi: lưu vào sessionStorage để mở kho khác / trang Tìm kho vẫn nhớ.
   useEffect(() => { saveBoxCounts(counts) }, [JSON.stringify(counts)])
   // Chỉ tính gợi ý khi đang ở tab "Tự xếp thùng" (tab khác truyền danh sách rỗng -> không chạy worker).
   const packActive = mode === 'pack'
@@ -73,6 +86,8 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
   // Kho đang xem thiếu chỗ -> 2 lựa chọn: A. thuê thêm 1 kho trống cùng cơ sở cho phần dư, B. đổi sang kho lớn hơn.
   const otherFreeHere = freeUnits.filter(u => u.id !== unit.id)
   const split = useSplitPack(unit, otherFreeHere, counts, aisleOn, packActive && status === 'free')
+  // Dựng 2 phương án khi kho đang xem còn dư đồ: A = kho này + kho thêm rẻ nhất chứa vừa phần dư,
+  // B = kho rẻ nhất (khác kho này) chứa hết; kèm giá mỗi phương án và nhãn phương án nên chọn. null nếu kho đủ chỗ.
   const alt = (() => {
     const r = split.result
     if (!r || !r.leftoverCount) return null
@@ -98,17 +113,17 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
       bestLabel: best === 'B' && priceB >= priceA ? 'Gọn 1 chỗ' : 'Tiết kiệm hơn'
     }
   })()
-  const [view, setView] = useState(DEFAULT_VIEW)
-  const drag = useRef(null)
+  const [view, setView] = useState(DEFAULT_VIEW) // góc nhìn hiện tại của chế độ "Kho trống"
+  const drag = useRef(null) // điểm bắt đầu kéo chuột + góc nhìn lúc đó (null = không kéo)
   const sceneRef = useRef(null)
   const closeRef = useRef(null)
   const [sceneSize, setSceneSize] = useState({ w: 600, h: 420 })
 
-  // Theo dõi kích thước khung để mô hình luôn vừa màn hình (cả điện thoại).
+  // Chạy khi đổi chế độ: theo dõi kích thước khung (ResizeObserver) để mô hình luôn vừa màn hình (cả điện thoại).
   useEffect(() => {
     const el = sceneRef.current
     if (!el) return undefined
-    // Đo lại kích thước khung vẽ để mô hình luôn vừa màn hình (kể cả điện thoại).
+    // Đo lại kích thước khung vẽ.
     const update = () => setSceneSize({ w: el.clientWidth || 600, h: el.clientHeight || 420 })
     update()
     if (typeof ResizeObserver === 'undefined') return undefined
@@ -117,6 +132,7 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
     return () => observer.disconnect()
   }, [mode])
 
+  // Chạy khi mở cửa sổ (và khi onClose đổi): đưa focus vào nút Đóng, gắn phím tắt trên window; gỡ khi đóng.
   useEffect(() => {
     closeRef.current?.focus()
     // Phím tắt: Esc đóng cửa sổ; mũi tên trái/phải xoay ngang; lên/xuống đổi góc nhìn dọc.
@@ -131,7 +147,7 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  // Lăn chuột để phóng to (gắn thủ công để chặn cuộn trang).
+  // Chạy khi đổi chế độ: gắn sự kiện lăn chuột thủ công với passive: false để gọi được preventDefault (chặn cuộn trang).
   useEffect(() => {
     const el = sceneRef.current
     if (!el) return undefined
@@ -159,8 +175,8 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
   // Thả chuột: kết thúc thao tác kéo.
   const onPointerUp = () => { drag.current = null }
 
-  // Tỉ lệ: cạnh lớn nhất (kể cả người 1,7 m) vừa khung.
-  // Bề ngang cần chỗ cho cả người đứng bên trái (~0,9 m).
+  // Tỉ lệ s (px / 1 m): cạnh lớn nhất (kể cả người 1,7 m) vừa khung; màn hẹp (< 520 px) thu nhỏ hơn.
+  // Bề ngang cần chỗ cho cả người đứng bên trái (~0,9 m). W, D, H là kích thước kho đổi ra px.
   const s = (sceneSize.w < 520 ? Math.min(sceneSize.w * 0.5, sceneSize.h * 0.55) : Math.min(sceneSize.w * 0.7, sceneSize.h * 0.78)) / Math.max(geo.length, geo.width + 0.9, geo.height * 1.15, 2)
   const W = geo.width * s
   const D = geo.length * s
@@ -394,9 +410,10 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
   )
 }
 
-/* Gợi ý sức chứa (ước lượng) cho khách dễ hình dung. */
 /**
  * Gợi ý sức chứa ước lượng theo kích thước kho để khách dễ hình dung (vd "Đồ đạc căn hộ 1 phòng ngủ...").
+ * Số thùng vừa tính bằng gridCapacity (xếp lưới thẳng hàng), mục đích sử dụng theo diện tích.
+ * @param {object} geo kết quả unitGeometry(). @returns {string}
  */
 function hintFor(geo) {
   if (geo.band === 'V') return 'Phù hợp gửi ô tô / xe máy, có lối vào rộng.'

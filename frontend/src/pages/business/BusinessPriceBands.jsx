@@ -1,18 +1,30 @@
 /**
  * ======================================================================
- * FILE: src/pages/business/BusinessPriceBands.jsx  —  BUSINESS OPERATIONS: KHUNG GIÁ THEO NHÓM KÍCH THƯỚC (S/M/L/V...)
- * BO chỉ đặt khoảng diện tích + khoảng giá thuê/tháng cho mỗi nhóm; giá cụ thể từng size tại từng cơ sở do
- * Facility Manager đặt trong khoảng này (ManagerPriceTable.jsx).
- * Khóa chặt (services/priceBandRules.js + backend PriceBandRulesController):
- *  - diện tích các nhóm không chồng nhau; nhóm lớn hơn phải có giá sàn & trần cao hơn nhóm nhỏ hơn;
- *  - nhóm đang có kho được đặt/đang thuê: khóa khung, không ngừng sử dụng, không xóa (chỉ đổi tên);
- *  - nhóm đã có size: khung mới phải chứa hết diện tích size và giá đang áp dụng.
+ * FILE: src/pages/business/BusinessPriceBands.jsx  —  KHUNG GIÁ THEO NHÓM KÍCH THƯỚC (S/M/L/V...)
+ * CHỨC NĂNG: Màn hình "Kích thước & giá" của Business Operations. BO chỉ đặt khoảng diện tích + khoảng giá
+ *   thuê/tháng cho mỗi nhóm kích thước chuẩn (Small, Medium, Large, Vehicle...); giá cụ thể từng size (S1, S2...)
+ *   tại từng cơ sở do Facility Manager đặt trong khoảng này (src/pages/manager/ManagerPriceTable.jsx).
+ *   Quy tắc khóa (services/priceBandRules.js + backend PriceBandRulesController):
+ *    - diện tích các nhóm không chồng nhau; nhóm lớn hơn phải có giá sàn & trần cao hơn nhóm nhỏ hơn;
+ *    - nhóm đang có kho được đặt/đang thuê: khóa khung, không ngừng sử dụng, không xóa (chỉ đổi tên);
+ *    - nhóm đã có size: khung mới phải chứa hết diện tích size và giá đang áp dụng (không tự ép giá cơ sở).
+ * THÀNH PHẦN CHÍNH:
+ *   - BusinessPriceBands (export default): danh sách thẻ nhóm khung giá + thêm / sửa / ngừng dùng / xóa nhóm.
+ *   - PriceBandForm: modal thêm / sửa 1 nhóm, kiểm tra quy tắc ngay khi nhập.
+ *   - money, EMPTY, STANDARD_GROUPS: hàm định dạng tiền, giá trị form rỗng, danh mục nhóm chuẩn.
+ * DÙNG Ở: src/pages/business/BusinessOperations.jsx (menu "Kích thước & giá").
+ *   (File CSS BusinessPriceBands.css cũng được src/pages/manager/ManagerPriceTable.jsx dùng lại.)
+ * PHỤ THUỘC: api/api, components/common/PriceInput, services/storageRules (formatVnd),
+ *   services/priceBands (formatArea, formatBandPrice), services/priceBandRules (validateBand, bandHints),
+ *   BusinessPriceBands.css.
  * API: GET    /api/price-bands                (PriceBandsController)     -> danh sách khung + size + kho giá ngoài khung
- *      GET    /api/price-band-rules           (PriceBandRulesController) -> điều kiện khóa từng nhóm
+ *      GET    /api/price-band-rules           (PriceBandRulesController) -> danh sách quy tắc + điều kiện khóa từng nhóm
  *      POST   /api/price-band-rules           -> tạo nhóm
  *      PUT    /api/price-band-rules/{code}    -> sửa nhóm / bật-tắt sử dụng
  *      DELETE /api/price-band-rules/{code}    -> xóa nhóm (chỉ khi chưa có size)
- * Dùng ở: pages/business/BusinessOperations.jsx.
+ * LUỒNG: mở menu -> load (GET price-bands + price-band-rules) -> hiện thẻ nhóm; bấm "+ Thêm nhóm" / "Sửa khung"
+ *   -> PriceBandForm kiểm tra bằng validateBand -> POST/PUT /api/price-band-rules -> onSaved đóng form + load lại.
+ *   Nếu không tải được price-band-rules thì canEdit = false (tạm khóa mọi nút chỉnh sửa).
  * ======================================================================
  */
 import React, { useEffect, useState } from 'react'
@@ -23,41 +35,37 @@ import { formatArea, formatBandPrice } from '../../services/priceBands'
 import { bandHints, validateBand } from '../../services/priceBandRules'
 import './BusinessPriceBands.css'
 
-/*
- * Business Operations: KHUNG GIÁ theo nhóm kích thước (S / M / L / V ...).
- * BO chỉ đặt khoảng diện tích + khoảng giá thuê/tháng cho mỗi nhóm.
- * Giá cụ thể của từng size (S1, S2...) tại từng cơ sở do Facility Manager tự đặt trong khoảng này.
- *
- * KHÓA CHẶT (priceBandRules.js + backend /api/price-band-rules):
- *  - diện tích các nhóm không chồng nhau; nhóm lớn hơn phải có giá sàn & giá trần cao hơn nhóm nhỏ hơn;
- *  - nhóm đang có kho được đặt / đang thuê: khóa khung, không ngừng sử dụng, không xóa (chỉ đổi tên);
- *  - nhóm đã có size: khung mới phải chứa hết diện tích size và giá đang áp dụng (không tự ép giá cơ sở).
- */
-
 /**
- * Định dạng tiền kèm "đ".
+ * Định dạng số tiền kèm "đ" (null/undefined coi là 0).
+ * @param {number} value số tiền.
+ * @returns {string}
  */
 const money = value => `${formatVnd(value || 0)}đ`
+/** Giá trị rỗng của form khi bấm "+ Thêm nhóm". */
 const EMPTY = { code: '', name: '', minArea: '', maxArea: '', minPrice: '', maxPrice: '', isActive: true }
-/* Danh mục kích thước chuẩn theo quy định: Small, Medium, Large, Vehicle */
+/** Danh mục kích thước chuẩn theo quy định: [mã nhóm, tên]; hiện thành nút chọn nhanh khi tạo nhóm. */
 const STANDARD_GROUPS = [['S', 'Small (nhỏ)'], ['M', 'Medium (vừa)'], ['L', 'Large (lớn)'], ['V', 'Vehicle (xe)']]
 
 /**
- * Component trang khung giá: danh sách nhóm (khoảng diện tích, khoảng giá, thanh giá thực tế, các size thuộc nhóm,
- * kho có giá ngoài khung), nút thêm/sửa/ngừng dùng/xóa nhóm. Không tải được điều kiện khóa thì tạm khóa chỉnh sửa.
- * @param {{dialog: object}} props dialog = từ useDialog().
+ * Màn hình khung giá: danh sách thẻ nhóm (khoảng diện tích, khoảng giá, giá khuyến nghị, thanh giá đang dùng so với khung,
+ * các size thuộc nhóm, kho có giá ngoài khung), nút thêm / sửa / ngừng dùng / xóa nhóm.
+ * Không tải được điều kiện khóa (GET /api/price-band-rules) thì tạm khóa mọi chỉnh sửa.
+ * Được gọi bởi: BusinessOperations khi activeMenu === "prices".
+ * @param {{dialog: object}} props dialog = đối tượng hộp thoại từ useDialog().
  */
 export default function BusinessPriceBands({ dialog }) {
-  const [data, setData] = useState(null)
+  const [data, setData] = useState(null) // kết quả GET /api/price-bands: { bands, unassignedSizes }
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(null) // { mode: 'create' | 'edit', values }
-  const [openIssues, setOpenIssues] = useState(null)
+  const [openIssues, setOpenIssues] = useState(null) // mã nhóm đang mở danh sách "kho có giá ngoài khung"
   const [rules, setRules] = useState(null) // { rules: [...], bands: [...] } từ /api/price-band-rules
   const [rulesError, setRulesError] = useState('')
 
   /**
-   * Tải song song danh sách khung giá và điều kiện khóa.
+   * Tải song song danh sách khung giá và điều kiện khóa. Lỗi tải điều kiện khóa không làm hỏng cả trang:
+   * chỉ hiện cảnh báo (404 = backend thiếu PriceBandRulesController) và để rules = null (tạm khóa chỉnh sửa).
    * API: GET /api/price-bands  +  GET /api/price-band-rules
+   * Được gọi khi: mở màn hình, bấm "Thử lại", sau khi lưu / xóa / bật-tắt nhóm.
    */
   const load = async () => {
     try {
@@ -83,12 +91,14 @@ export default function BusinessPriceBands({ dialog }) {
   const ruleBands = rules?.bands || []
   // Tìm điều kiện khóa (rule) của 1 nhóm theo mã.
   const ruleOf = code => ruleBands.find(rule => rule.code === code) || null
-  const canEdit = Boolean(rules)
+  const canEdit = Boolean(rules) // chỉ cho chỉnh sửa khi đã tải được điều kiện khóa
+  // Chạy 1 lần khi mở màn hình: tải khung giá + điều kiện khóa.
   useEffect(() => { load() }, [])
 
   /**
-   * Xóa 1 nhóm khung giá (hỏi xác nhận) rồi tải lại.
+   * Xóa 1 nhóm khung giá (bấm "Xóa", chỉ hiện khi nhóm chưa có size): hỏi xác nhận rồi tải lại; lỗi thì báo bằng hộp thoại.
    * API: DELETE /api/price-band-rules/{code}
+   * @param {object} band nhóm khung giá cần xóa.
    */
   const remove = async band => {
     const ok = await dialog.confirm({
@@ -109,8 +119,10 @@ export default function BusinessPriceBands({ dialog }) {
   }
 
   /**
-   * Ngừng sử dụng / dùng lại 1 nhóm: kiểm tra quy tắc trước (validateBand), hỏi xác nhận rồi lưu.
+   * Ngừng sử dụng / dùng lại 1 nhóm (bấm nút "Ngừng sử dụng" / "Dùng lại"): kiểm tra quy tắc trước bằng validateBand,
+   * vi phạm thì báo lý do; hợp lệ thì hỏi xác nhận rồi lưu và tải lại.
    * API: PUT /api/price-band-rules/{code}  body { ...band, isActive }
+   * @param {object} band nhóm khung giá.
    */
   const toggleActive = async band => {
     const next = !band.isActive
@@ -148,7 +160,8 @@ export default function BusinessPriceBands({ dialog }) {
   if (!data) return <section className="business-panel"><p>Đang tải khung giá...</p></section>
 
   const bands = data.bands || []
-  const issueCount = bands.reduce((n, band) => n + band.outOfRange.length, 0)
+  // Tổng số kho có giá nằm ngoài khung (ở mọi nhóm) để hiện cảnh báo đầu trang.
+  const issueCount =bands.reduce((n, band) => n + band.outOfRange.length, 0)
 
   return (
     <section className="business-panel pb-root">
@@ -196,7 +209,8 @@ export default function BusinessPriceBands({ dialog }) {
           <div className="pb-grid">
             {bands.map(band => {
               const rule = ruleOf(band.code)
-              const span = Number(band.maxPrice) - Number(band.minPrice) || 1
+              // Vị trí (%) của giá thấp nhất / cao nhất đang dùng trên thanh khung giá, kẹp trong 0–100%.
+              const span =Number(band.maxPrice) - Number(band.minPrice) || 1
               const left = band.currentMinPrice != null ? Math.max(0, Math.min(100, (band.currentMinPrice - band.minPrice) / span * 100)) : null
               const right = band.currentMaxPrice != null ? Math.max(0, Math.min(100, (band.currentMaxPrice - band.minPrice) / span * 100)) : null
               return (
@@ -293,11 +307,20 @@ export default function BusinessPriceBands({ dialog }) {
 }
 
 /**
- * Component form thêm/sửa nhóm khung giá: mã nhóm, tên, diện tích từ–đến, giá từ–đến; hiện lỗi và gợi ý giới hạn
- * theo priceBandRules; nhóm đang khóa chỉ cho đổi tên.
- * @param {object} props mode ('create'|'edit'), initial, bands, ruleBands, dialog, onClose, onSaved().
+ * Modal thêm / sửa nhóm khung giá: mã nhóm, tên, diện tích từ–đến, giá từ–đến, Active; hiện lỗi (validateBand)
+ * và gợi ý giới hạn (bandHints) ngay khi nhập; nhóm đang khóa chỉ cho đổi tên.
+ * Được gọi bởi: BusinessPriceBands khi state editing khác null.
+ * @param {object} props
+ * @param {'create'|'edit'} props.mode tạo mới hay sửa.
+ * @param {object} props.initial giá trị ban đầu (EMPTY hoặc bản sao nhóm đang sửa).
+ * @param {Array} props.bands các nhóm hiện có (để ẩn nút chọn nhanh nhóm chuẩn đã tồn tại).
+ * @param {Array} props.ruleBands điều kiện khóa của các nhóm (từ /api/price-band-rules).
+ * @param {object} props.dialog hộp thoại xác nhận.
+ * @param {Function} props.onClose đóng modal.
+ * @param {Function} props.onSaved gọi sau khi lưu thành công (đóng modal + tải lại).
  */
 function PriceBandForm({ mode, initial, bands, ruleBands, dialog, onClose, onSaved }) {
+  // Điều kiện khóa của nhóm đang sửa (null khi tạo mới).
   const current = mode === 'edit' ? ruleBands.find(rule => rule.code === initial.code) || null : null
   const locked = Boolean(current?.locked)
   const [values, setValues] = useState(() => ({
@@ -317,6 +340,7 @@ function PriceBandForm({ mode, initial, bands, ruleBands, dialog, onClose, onSav
   // Đổi chuỗi số (cho phép dấu phẩy) thành Number; rỗng -> NaN.
   const num = value => Number(String(value).replace(',', '.'))
 
+  // Nhóm "ứng viên" đã đổi sang số để kiểm tra quy tắc; ô trống -> NaN.
   const candidate = {
     code: values.code.trim().toUpperCase(),
     minArea: values.minArea === '' ? NaN : num(values.minArea),
@@ -325,6 +349,7 @@ function PriceBandForm({ mode, initial, bands, ruleBands, dialog, onClose, onSav
     maxPrice: values.maxPrice === '' ? NaN : Number(values.maxPrice),
     isActive: values.isActive
   }
+  // Danh sách lỗi hiện tại (rỗng = hợp lệ) và các gợi ý giới hạn diện tích / giá được phép.
   const problems = [
     ...(!values.name.trim() ? ['Vui lòng nhập tên nhóm.'] : []),
     ...validateBand(candidate, ruleBands, current)
@@ -332,8 +357,10 @@ function PriceBandForm({ mode, initial, bands, ruleBands, dialog, onClose, onSav
   const hints = bandHints(candidate, ruleBands, current)
 
   /**
-   * Lưu nhóm: kiểm tra quy tắc, hỏi xác nhận, rồi tạo mới hoặc cập nhật.
+   * Lưu nhóm (submit khi bấm "Lưu"): còn lỗi thì hiện lỗi đầu tiên; khi sửa thì hỏi xác nhận; rồi tạo mới hoặc cập nhật.
+   * Lỗi từ backend (data.errors) được nối thành nhiều dòng để hiện trong form.
    * API: POST /api/price-band-rules (tạo)  |  PUT /api/price-band-rules/{code} (sửa)
+   * @param {Event} event sự kiện submit của form.
    */
   const submit = async event => {
     event.preventDefault()

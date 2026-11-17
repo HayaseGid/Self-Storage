@@ -1,24 +1,29 @@
 /**
  * ======================================================================
- * FILE: src/services/pricing.js  —  TÍNH TIỀN THUÊ & TIỀN CỌC Ở FRONTEND (để báo giá hiển thị)
- * Không áp dụng giảm giá/khuyến mãi (đã tắt theo migration 20261029_TamBoGiamGia).
- * Công thức:
- *   tiền thuê/tháng = giá niêm yết của kho
- *   tiền thuê       = giá niêm yết × số tháng
- *   tiền cọc        = giá niêm yết × số tháng cọc của cơ sở (mặc định 2)
- * Số tiền CHÍNH THỨC vẫn do backend tính khi tạo đơn (POST /api/reservation).
- * Dữ liệu cấu hình (số tháng cọc, phút giữ chỗ theo cơ sở) được nạp từ GET /api/catalog/state
- * qua setCatalogPricing() trong App.jsx.
- * Dùng ở: App.jsx, CartPage.
+ * FILE: src/services/pricing.js  —  TÍNH TIỀN THUÊ & TIỀN CỌC Ở FRONTEND (BÁO GIÁ HIỂN THỊ)
+ * CHỨC NĂNG: Tính báo giá để hiển thị khi khách chọn kho / gói thuê, không áp dụng giảm giá/khuyến mãi
+ *   (đã tắt theo migration 20261029_TamBoGiamGia). Công thức:
+ *     tiền thuê/tháng = giá niêm yết của kho
+ *     tiền thuê       = giá niêm yết × số tháng
+ *     tiền cọc        = giá niêm yết × số tháng cọc của cơ sở (mặc định 2)
+ *   Số tiền CHÍNH THỨC vẫn do backend tính khi tạo đơn. Cấu hình theo cơ sở (số tháng cọc, phút giữ chỗ)
+ *   được nạp từ dữ liệu catalog qua setCatalogPricing() và lưu trong biến module `state`.
+ * THÀNH PHẦN CHÍNH:
+ *   - setCatalogPricing : nạp cấu hình từ catalog.
+ *   - quote             : báo giá cho 1 hoặc nhiều kho (tiền/tháng, tiền thuê, tiền cọc).
+ *   - effectiveMonthly  : giá thuê/tháng thực tế (= giá niêm yết làm tròn).
+ *   - depositMonthsFor / holdMinutesFor : số tháng cọc / số phút giữ chỗ của 1 cơ sở.
+ *   - DISCOUNT_ENABLED, discountFor : giữ lại cho tương thích, luôn tắt / luôn 0.
+ * DÙNG Ở: src/App.jsx (setCatalogPricing, quote, effectiveMonthly, holdMinutesFor),
+ *   src/pages/customer/CartPage.jsx (quote, effectiveMonthly, holdMinutesFor).
+ * PHỤ THUỘC: Không có.
+ * API: Không gọi API trực tiếp (App.jsx tải GET /api/catalog/state rồi truyền vào setCatalogPricing).
+ * LUỒNG: App tải catalog -> setCatalogPricing(catalog) -> khách chọn kho + số tháng -> quote(prices, months, facilityId)
+ *   -> hiển thị tiền thuê, tiền cọc trong giỏ / bảng giá -> backend tính lại chính thức khi tạo đơn.
  * ======================================================================
  */
-/*
- * Tính tiền thuê và tiền cọc ở frontend (không áp dụng bất kỳ giảm giá / khuyến mãi nào):
- *   tiền thuê / tháng = giá niêm yết của kho (không giảm giá theo gói hay hình thức trả)
- *   tiền thuê         = giá niêm yết × số tháng
- *   tiền cọc          = giá niêm yết × số tháng cọc của cơ sở (mặc định 2 tháng)
- */
 
+// Cấu hình tính giá trong bộ nhớ (nạp bởi setCatalogPricing): danh sách gói thuê và cấu hình theo cơ sở.
 const state = {
   contractTypes: [],
   facilities: new Map()   // facilityId -> { depositMonths, holdMinutes }
@@ -28,6 +33,7 @@ const state = {
  * Nạp cấu hình tính giá từ dữ liệu catalog backend trả về (GET /api/catalog/state):
  * danh sách gói thuê (contractTypes) và theo từng cơ sở: số tháng cọc, số phút giữ chỗ.
  * @param {object} catalog dữ liệu catalog.
+ * Được gọi bởi App.jsx mỗi khi tải xong catalog. Ghi vào biến `state` của module.
  */
 export function setCatalogPricing(catalog) {
   const types = catalog?.policies?.contractTypes
@@ -45,6 +51,7 @@ export function setCatalogPricing(catalog) {
   }
 }
 
+// Cờ giảm giá: luôn tắt (hiện không file nào dùng, giữ lại cho tương thích).
 export const DISCOUNT_ENABLED = false
 /**
  * Giảm giá luôn = 0 (tính năng giảm giá đang tắt, giữ hàm để code cũ không lỗi).
@@ -66,9 +73,9 @@ export function effectiveMonthly(price) {
   return Math.round(Number(price || 0))
 }
 
-/* Báo giá cho một hoặc nhiều kho cùng cơ sở, cùng gói thuê. */
 /**
  * Báo giá cho một hoặc nhiều kho cùng cơ sở, cùng gói thuê.
+ * Được gọi bởi App.jsx (bảng giá khi đặt kho) và CartPage (tổng tiền giỏ hàng).
  * @param {number|number[]} prices giá thuê/tháng của từng kho.
  * @param {number} months số tháng thuê.
  * @param {number} facilityId cơ sở (để lấy số tháng cọc).

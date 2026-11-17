@@ -1,36 +1,38 @@
 /**
  * ======================================================================
- * FILE: src/pages/manager/ManagerNav.jsx  —  MENU TRÁI CỦA FACILITY MANAGER (gom nhóm theo loại việc + số việc chờ)
- * Nhóm: Tổng quan · Vận hành (Kho cơ sở, Sự cố kho, Nhân sự) · Khách hàng & tài chính (Đơn đặt chỗ, Hợp đồng,
- * Công nợ & phí trễ, Khiếu nại kiểm kho) · Thiết lập (Đặc tính kho, Bảng giá — thu gọn được).
- * Số đỏ lấy từ các API (tải lại khi đổi mục, khi quay lại tab, mỗi 2 phút); API lỗi thì mục đó không hiện số:
- *   GET /api/manager-tools/facilities/{id}/unit-reports  (ManagerToolsController) -> kho hư chưa xử lý
- *   GET /api/late-fees/facilities/{id}                   (LateFeesController)     -> hợp đồng đang nợ
- *   GET /api/return-inspections/facilities/{id}          (ReturnInspectionsController) -> chờ duyệt + khiếu nại
- * Dùng ở: pages/manager/FacilityManagerAccount.jsx.
+ * FILE: src/pages/manager/ManagerNav.jsx  —  MENU TRÁI CỦA QUẢN LÝ CƠ SỞ
+ * CHỨC NĂNG: Vẽ thanh menu bên trái của trang Facility Manager, chia mục theo nhóm công việc:
+ *   Tổng quan · Vận hành (Kho cơ sở, Sự cố kho, Nhân sự) · Khách hàng & tài chính (Đơn đặt chỗ, Hợp đồng,
+ *   Công nợ & phí trễ, Khiếu nại kiểm kho) · Thiết lập (Đặc tính kho, Bảng giá — nhóm này thu gọn được).
+ *   Mỗi mục có thể hiện "số đỏ" = số việc đang chờ xử lý, để Manager biết nên vào đâu trước.
+ * THÀNH PHẦN CHÍNH:
+ *   - ICONS / GROUPS / HINTS: bộ icon SVG, danh sách nhóm + mục menu, câu gợi ý khi rê chuột lên số đỏ.
+ *   - useManagerBadges(facilityId, activeTab): hook gọi API và đếm số việc chờ (Sự cố kho, Công nợ, Khiếu nại).
+ *   - ManagerNav (export default): component menu, nhận mục đang chọn và báo lại khi người dùng bấm mục khác.
+ * DÙNG Ở: src/pages/manager/FacilityManagerAccount.jsx.
+ * PHỤ THUỘC: react, api/api.js (apiGet), ManagerNav.css (giao diện menu).
+ * API (tải lại khi đổi mục, khi tab trình duyệt hiện lại, và mỗi 2 phút; API nào lỗi thì mục đó không hiện số):
+ *   GET /api/manager-tools/facilities/{id}/unit-reports  -> đếm kho hư có báo cáo mới nhất chưa xử lý (luật như nút "Cần xử lý")
+ *   GET /api/late-fees/facilities/{id}                   -> đếm hợp đồng còn nợ tiền thuê quá hạn / phí trễ / phí khác (luật như nút "Đang nợ")
+ *   GET /api/return-inspections/facilities/{id}          -> đếm kết quả kiểm kho chờ Manager duyệt + khiếu nại của khách
+ * LUỒNG: FacilityManagerAccount truyền activeTab + facilityId -> useManagerBadges gọi 3 API song song -> gộp với
+ *   extraCounts (số tính sẵn ở trang) -> hiện số đỏ trên từng mục. Người dùng bấm mục -> onSelect(key) -> trang đổi activeTab.
  * ======================================================================
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet } from '../../api/api'
 import './ManagerNav.css'
 
-/*
- * MENU TRÁI CỦA FACILITY MANAGER (file THÊM MỚI): gom nhóm theo loại việc + số việc đang chờ xử lý.
- *   - Một bộ icon nét mảnh đồng nhất, tên mục ngắn (tiêu đề đầy đủ vẫn hiện ở đầu trang).
- *   - Nhóm "Thiết lập" (ít dùng) thu gọn được; đang ở mục trong nhóm thì tự mở.
- *   Số đỏ lấy từ các API sẵn có, tải lại mỗi khi đổi mục / quay lại tab trình duyệt / mỗi 2 phút:
- *     - Sự cố kho          : kho hư mà báo cáo mới nhất chưa xử lý (kho còn Bảo trì / Chờ kiểm tra) - cùng luật nút "Cần xử lý"
- *     - Công nợ & phí trễ  : hợp đồng còn nợ tiền thuê quá hạn / phí trễ / phí khác (7a) - cùng luật nút "Đang nợ"
- *     - Khiếu nại kiểm kho : khiếu nại khách gửi, chờ Manager quyết định (14)
- *   API nào lỗi / chưa có thì mục đó không hiện số (không chặn menu).
- */
-
 /**
- * Bọc các path SVG thành 1 icon nét mảnh thống nhất kích thước.
+ * Bọc các thẻ path/rect/circle SVG thành 1 icon 24x24 nét mảnh (kích thước, màu nét do ManagerNav.css quy định).
+ * @param {JSX.Element} children các hình vẽ bên trong icon.
+ * @returns {JSX.Element} thẻ <svg> ẩn với trình đọc màn hình (chỉ để trang trí).
+ * Được gọi khi khai báo bảng ICONS bên dưới.
  */
 const svg = children => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{children}</svg>
 )
+/** Bảng icon cho từng mục menu; khóa (overview, units...) trùng với `key` của mục trong GROUPS. */
 const ICONS = {
   overview: svg(<><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20h5v-6h4v6h5V9.5" /></>),
   reservations: svg(<><rect x="4" y="4" width="16" height="17" rx="2" /><path d="M8 2.5v3" /><path d="M16 2.5v3" /><path d="M4 9.5h16" /><path d="M8 13.5h3" /><path d="M8 17h6" /></>),
@@ -44,12 +46,19 @@ const ICONS = {
   prices: svg(<><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" /><circle cx="7.5" cy="7.5" r="1.5" /></>)
 }
 /**
- * Icon mũi tên mở/thu gọn nhóm menu (xoay khi mở).
+ * Icon mũi tên ">" cạnh tiêu đề nhóm thu gọn được; thêm class "open" để CSS xoay mũi tên xuống khi nhóm mở.
+ * @param {{open: boolean}} props open = nhóm đang mở hay không.
+ * Được dùng trong nút tiêu đề nhóm "Thiết lập".
  */
 const Chevron = ({ open }) => (
   <svg className={`mnav-chevron${open ? ' open' : ''}`} viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
 )
 
+/**
+ * Cấu trúc menu: mỗi nhóm có id, tiêu đề (null = không hiện tiêu đề), danh sách mục { key, label }.
+ * `key` chính là giá trị activeTab mà FacilityManagerAccount dùng để chọn nội dung hiển thị.
+ * Nhóm có `collapsible: true` thì có nút bấm để thu gọn / mở ra.
+ */
 const GROUPS = [
   { id: 'main', title: null, items: [{ key: 'overview', label: 'Tổng quan' }] },
   {
@@ -82,6 +91,10 @@ const GROUPS = [
   }
 ]
 
+/**
+ * Hàm tạo câu gợi ý (hiện khi rê chuột / đọc bởi trình đọc màn hình) cho số đỏ của từng mục.
+ * Mỗi hàm nhận n = số việc chờ, trả về chuỗi mô tả. Mục không có trong bảng thì chỉ hiện tên mục.
+ */
 const HINTS = {
   /**
    * Câu gợi ý cho số đỏ mục "Sự cố kho".
@@ -104,13 +117,19 @@ const HINTS = {
    */
   returnInspections: n => `${n} khiếu nại chờ quyết định`
 }
+/** Khóa localStorage nhớ nhóm "Thiết lập" đang mở ('1') hay thu gọn ('0') giữa các lần vào trang. */
 const SETUP_KEY = 'storespace_mnav_setup_open'
 
 /**
- * Hook: tính số việc chờ cho các mục menu của Manager từ 3 API (gọi song song, API lỗi thì bỏ qua).
- * @param {number} facilityId cơ sở của Manager.
- * @param {string} activeTab mục đang mở (đổi mục thì tải lại).
- * @returns {{reports?:number, lateFees?:number, returnInspections?:number}}
+ * Hook: tính số việc đang chờ cho 3 mục menu của Manager (Sự cố kho, Công nợ & phí trễ, Khiếu nại kiểm kho).
+ * Gọi song song 3 API bằng Promise.allSettled nên 1 API lỗi không làm hỏng các số còn lại.
+ * API: GET /api/manager-tools/facilities/{id}/unit-reports, GET /api/late-fees/facilities/{id},
+ *      GET /api/return-inspections/facilities/{id}.
+ * Chạy lại khi: facilityId hoặc activeTab đổi, khi tab trình duyệt hiện lại, và mỗi 2 phút.
+ * @param {number} facilityId mã cơ sở của Manager (null thì chưa tải).
+ * @param {string} activeTab mục menu đang mở (đổi mục thì tải lại để số luôn mới).
+ * @returns {{reports?:number, lateFees?:number, returnInspections?:number}} số việc chờ theo key mục; thiếu key = API lỗi.
+ * Được gọi bởi: component ManagerNav bên dưới.
  */
 export function useManagerBadges(facilityId, activeTab) {
   const [counts, setCounts] = useState({})
@@ -145,8 +164,9 @@ export function useManagerBadges(facilityId, activeTab) {
     setCounts(next)
   }, [facilityId])
 
-  // Đổi mục (vd vừa xử lý xong 1 khiếu nại rồi chuyển mục khác) -> cập nhật số
+  // Chạy khi lần đầu hiển thị và mỗi khi đổi mục / đổi cơ sở (vd vừa xử lý xong 1 khiếu nại rồi chuyển mục) -> cập nhật số
   useEffect(() => { load() }, [load, activeTab])
+  // Chạy 1 lần (và khi `load` đổi): đặt hẹn giờ tải lại mỗi 2 phút + lắng nghe sự kiện tab trình duyệt hiện lại; gỡ khi rời trang.
   useEffect(() => {
     // Khi tab trình duyệt hiện lại thì tải lại số đếm.
     const onVisible = () => { if (document.visibilityState === 'visible') load() }
@@ -158,12 +178,18 @@ export function useManagerBadges(facilityId, activeTab) {
   return counts
 }
 
-/* freshUnits: số kho mới BOM vừa thêm cho cơ sở (nhãn "Mới" sẵn có của mục Kho cơ sở).
-   extraCounts: [THÊM] số việc tính sẵn ở trang (vd { reservations: đơn cần theo dõi, contracts: HĐ cần chú ý }). */
 /**
- * Component menu trái của Manager.
- * @param {object} props activeTab, onSelect(key), facilityId, freshUnits (số kho mới được thêm, hiện nhãn "Mới"),
- *   extraCounts (số việc tính sẵn ở trang, vd đơn cần theo dõi).
+ * Menu trái của Manager: vẽ các nhóm/mục trong GROUPS, đánh dấu mục đang chọn, hiện số đỏ việc chờ
+ * và nhãn "Mới N" ở mục Kho cơ sở. Gọi hook useManagerBadges (3 API GET) để lấy số đếm.
+ * Đọc/ghi localStorage (SETUP_KEY) để nhớ nhóm "Thiết lập" đang mở hay đóng.
+ * @param {object} props
+ * @param {string} props.activeTab key của mục đang mở (vd 'overview', 'units').
+ * @param {(key: string) => void} props.onSelect gọi khi người dùng bấm 1 mục, truyền key mục đó.
+ * @param {number} props.facilityId mã cơ sở của Manager (để gọi API đếm).
+ * @param {number} [props.freshUnits=0] số kho mới Business Operations vừa thêm cho cơ sở (nhãn "Mới" ở mục Kho cơ sở).
+ * @param {object} [props.extraCounts={}] số việc trang đã tự tính sẵn, vd { reservations: đơn cần theo dõi, contracts: HĐ cần chú ý }.
+ *   Số từ API (useManagerBadges) ghi đè lên nếu trùng key.
+ * Được dùng bởi: FacilityManagerAccount.jsx (cột trái của trang /manager).
  */
 export default function ManagerNav({ activeTab, onSelect, facilityId, freshUnits = 0, extraCounts = {} }) {
   const apiCounts = useManagerBadges(facilityId, activeTab)
@@ -177,16 +203,17 @@ export default function ManagerNav({ activeTab, onSelect, facilityId, freshUnits
     return !v
   })
 
-  // [SỬA] Menu cuộn được (ManagerNav.css). Vừa mở nhóm "Thiết lập" thì tự cuộn xuống để thấy các mục mới hiện
+  // Menu cuộn được (ManagerNav.css). navRef trỏ tới thẻ <nav>; firstRender để bỏ qua lần hiển thị đầu tiên.
   const navRef = useRef(null)
   const firstRender = useRef(true)
+  // Chạy khi setupOpen đổi (bấm mở nhóm "Thiết lập"): tự cuộn menu xuống cuối để thấy các mục vừa hiện.
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return }
     if (!setupOpen || !navRef.current) return
     const nav = navRef.current
     window.requestAnimationFrame(() => nav.scrollTo({ top: nav.scrollHeight, behavior: 'smooth' }))
   }, [setupOpen])
-  // Đổi mục: nếu mục đang chọn bị khuất trong vùng cuộn thì cuộn tới
+  // Chạy khi activeTab đổi: nếu mục đang chọn bị khuất trong vùng cuộn thì cuộn tới
   // (chỉ cuộn trong menu, không kéo cả trang; màn hình hẹp menu không cuộn riêng nên bỏ qua)
   useEffect(() => {
     const nav = navRef.current

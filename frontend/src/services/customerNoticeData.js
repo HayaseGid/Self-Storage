@@ -1,16 +1,25 @@
 /**
  * ======================================================================
- * FILE: src/services/customerNoticeData.js  —  TÍNH DANH SÁCH THÔNG BÁO CHO KHÁCH HÀNG (chỉ ở frontend)
- * Không có bảng / API thông báo riêng: thông báo được TÍNH LẠI mỗi lần mở trang từ dữ liệu sẵn có:
- *   - đơn đặt kho của khách      GET /api/customer-reservations/mine
- *   - thông tin gia hạn           GET /api/contract-renewals/mine
- *   - chính sách hiện hành/sắp áp dụng GET /api/policies
- *   - yêu cầu trả kho             GET /api/unit-returns/mine
- *   - kết quả kiểm kho khi trả    GET /api/return-inspections/mine
- * (các API này do CustomerAccount / HeaderNotificationBell gọi rồi truyền dữ liệu vào đây).
- * Mỗi thông báo có id ổn định (vd "expiring:120:d7"); id đã xem lưu ở localStorage theo email.
- * Khi tới mốc gần hơn (14/7/3 ngày) id đổi nên thông báo hiện lại.
- * Thuộc tính: section = tab menu ('contract'|'payment'|'storage'|'policy'), tone = 'danger'|'warn'|'info'|'ok'.
+ * FILE: src/services/customerNoticeData.js  —  TÍNH THÔNG BÁO CHO KHÁCH HÀNG (CHỈ Ở FRONTEND)
+ * CHỨC NĂNG: Backend KHÔNG có bảng / API thông báo riêng: file này TÍNH LẠI danh sách thông báo mỗi lần
+ *   dữ liệu thay đổi, từ các dữ liệu sẵn có của khách (đơn đặt kho, gia hạn, chính sách, trả kho, kiểm kho),
+ *   và quản lý trạng thái "đã xem" (localStorage theo email) để hiện số badge trên menu và chuông thông báo.
+ *   Mỗi thông báo có id ổn định (vd "expiring:120:d7"); tới mốc gần hơn (14/7/3 ngày) id đổi nên thông báo hiện lại.
+ *   Thuộc tính: section = tab menu ('contract'|'payment'|'storage'|'policy'), tone = 'danger'|'warn'|'info'|'ok'.
+ * THÀNH PHẦN CHÍNH:
+ *   - buildCustomerNotifications : hàm thuần tạo mảng thông báo đã sắp theo độ ưu tiên.
+ *   - useCustomerNotifications   : hook React bọc hàm trên + quản lý "đã xem" (markSection, markAll, countBySection).
+ *   - Hàm phụ: money, isoDay, parseUtc, fmtTimeVn, daysUntil, stageOf, unitsText, seenKey/readSeen/writeSeen.
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx, src/features/notification/HeaderNotificationBell.jsx
+ *   (cả hai dùng useCustomerNotifications).
+ * PHỤ THUỘC: react, ./policies (POLICY_TITLES, describePolicy, fmtDay), ./storageRules (formatVnd),
+ *   src/demoClock/demoClock (getTodayDate: "hôm nay" theo Demo Clock); localStorage.
+ * API: Không gọi API trực tiếp. Dữ liệu đầu vào do trang gọi trước rồi truyền vào:
+ *   GET /api/customer-reservations/mine, GET /api/contract-renewals/mine, GET /api/policies,
+ *   GET /api/unit-returns/mine, GET /api/return-inspections/mine.
+ * LUỒNG: CustomerAccount / HeaderNotificationBell tải dữ liệu -> useCustomerNotifications({ email, rentals, ... })
+ *   -> buildCustomerNotifications() tạo danh sách -> lọc id chưa xem (readSeen) -> countBySection hiện badge
+ *   -> khách mở tab -> markSection(section) -> writeSeen() lưu localStorage -> badge biến mất.
  * ======================================================================
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -18,35 +27,21 @@ import { POLICY_TITLES, describePolicy, fmtDay } from './policies'
 import { formatVnd } from './storageRules'
 import { getTodayDate } from '../demoClock/demoClock'
 
-/*
- * THÔNG BÁO CHO KHÁCH HÀNG (chỉ frontend, không cần bảng / API mới).
- * Thông báo được tính từ dữ liệu sẵn có mỗi lần mở trang:
- *   - danh sách đặt chỗ của khách (GET /api/customer-reservations/mine)
- *   - thông tin gia hạn (GET /api/contract-renewals/mine)
- *   - chính sách hiện hành + chính sách sắp áp dụng (GET /api/policies)
- *   - [THÊM 14] kết quả kiểm kho khi trả (GET /api/return-inspections/mine): chờ xác nhận / khiếu nại / đã quyết toán
- * Mỗi thông báo có id ổn định (vd "expiring:120:d7"). Khách mở đúng mục (Hợp đồng, Thanh toán...)
- * hoặc trang Thông báo thì các id đó được lưu là "đã xem" (localStorage theo email) -> số trên menu biến mất.
- * Mốc gần hơn (còn 14 / 7 / 3 ngày) là id mới nên thông báo hiện lại.
- *
- * section: mục trên menu trái mà thông báo thuộc về ('contract' | 'payment' | 'storage' | 'policy')
- * tone:    'danger' | 'warn' | 'info' | 'ok'
- */
-
 /**
- * Định dạng tiền làm tròn kèm "đ".
+ * Định dạng tiền làm tròn kèm "đ" (vd 1500000 -> "1.500.000đ").
  */
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
+// Số milisecond trong 1 ngày.
 const DAY = 86400000
 /**
  * Cắt chuỗi ngày/giờ ISO lấy phần 'YYYY-MM-DD'.
  */
 const isoDay = iso => (iso ? String(iso).slice(0, 10) : null)
-// [SỬA] Backend trả giờ UTC KHÔNG kèm "Z" (vd HoldExpiresAt) -> Date.parse hiểu thành giờ máy (VN), lệch 7 tiếng
-// => đơn chờ cọc bị coi là đã hết giờ giữ kho và không hiện thông báo. Tự thêm "Z" khi thiếu múi giờ.
 /**
- * Parse thời điểm backend trả về theo giờ UTC. Backend có lúc trả không kèm "Z" nên tự thêm "Z"
- * để không bị lệch 7 tiếng (giờ Việt Nam).
+ * Parse thời điểm backend trả về theo giờ UTC. Backend có lúc trả không kèm "Z" (vd HoldExpiresAt),
+ * khi đó Date.parse hiểu thành giờ máy (VN) và lệch 7 tiếng -> đơn chờ cọc bị coi là hết giờ giữ kho.
+ * Vì vậy tự thêm "Z" khi chuỗi thiếu múi giờ.
+ * @param {string} value chuỗi thời điểm từ backend.
  * @returns {number} milisecond (NaN nếu rỗng).
  */
 const parseUtc = value => {
@@ -60,6 +55,8 @@ const parseUtc = value => {
 const fmtTimeVn = ms => new Date(ms).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
 /**
  * Tính số ngày từ "hôm nay" (theo Demo Clock) tới một ngày ISO (âm = đã qua).
+ * @param {string} iso ngày đích.
+ * @returns {number|null} số ngày, null nếu iso rỗng.
  */
 const daysUntil = iso => {
   if (!iso) return null
@@ -81,6 +78,7 @@ const stageOf = days => (days <= 3 ? 'd3' : days <= 7 ? 'd7' : days <= 14 ? 'd14
  * Ghép danh sách số kho của 1 đơn thành chuỗi "A01, A02" để đưa vào câu thông báo.
  */
 const unitsText = r => (r?.units?.length ? r.units.map(u => u.number).filter(Boolean).join(', ') : r?.unitId) || ''
+// Thứ tự phụ khi sắp xếp thông báo cùng priority: nguy hiểm trước, thành công sau.
 const TONE_RANK = { danger: 0, warn: 1, info: 2, ok: 3 }
 
 /**
@@ -89,7 +87,9 @@ const TONE_RANK = { danger: 0, warn: 1, info: 2, ok: 3 }
  * / quá hạn, hoàn cọc khi hủy, trả kho & kết quả kiểm kho (chờ xác nhận, khiếu nại, đã quyết toán, còn nợ phí),
  * gia hạn thành công, chính sách vừa cập nhật / sắp áp dụng.
  * @param {{rentals, renewals, policies, returns, inspections}} data dữ liệu đã tải từ các API ở đầu file.
- * @returns {object[]} danh sách { id, section, tone, priority, title, message, action } đã sắp theo độ ưu tiên.
+ * @returns {object[]} danh sách { id, section, tone, priority, title, message, action } đã sắp theo độ ưu tiên
+ *   (priority nhỏ = quan trọng hơn). action mô tả nút bấm: { label, section, signContractId?, focusReservationId?, renewReservationId? }.
+ * Được gọi bởi useCustomerNotifications (cùng file). Không gọi API.
  */
 export function buildCustomerNotifications({ rentals = [], renewals = null, policies = null, returns = null, inspections = null }) {
   const list = []
@@ -105,7 +105,7 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
 
   // 1) Đơn chờ thanh toán cọc / yêu cầu gia hạn chờ thanh toán
   rentals.filter(r => r.status === 'Pending Deposit' && r.paymentStatus !== 'Completed').forEach(r => {
-    const expiresAt = parseUtc(r.depositExpiresAt) // [SỬA] giờ UTC
+    const expiresAt = parseUtc(r.depositExpiresAt) // giờ UTC (xem parseUtc)
     const left = Number.isNaN(expiresAt) ? 0 : expiresAt - Date.now()
     if (left <= 0) return
     const minutes = Math.max(1, Math.ceil(left / 60000))
@@ -221,7 +221,7 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
   ;(Array.isArray(returns?.items) ? returns.items : []).filter(i => i.request).forEach(i => {
     const q = i.request
     const units = i.units.join(', ')
-    // [THÊM 14] Có phí kiểm kho: chưa trừ cọc cho tới khi khách xác nhận / khiếu nại được giải quyết
+    // Có phí kiểm kho: chưa trừ cọc cho tới khi khách xác nhận / khiếu nại được giải quyết
     const insp = inspectionItems.find(x => String(x.reservationId) === String(i.reservationId))
     if (q.status === 'Completed' && insp && insp.settledBy !== 'NoFee') {
       const deadline = parseUtc(insp.confirmDeadline)
@@ -363,7 +363,9 @@ const writeSeen = (email, set) => {
 }
 
 /**
- * Hook React: tính thông báo cho khách + quản lý trạng thái "đã xem".
+ * Hook React: tính thông báo cho khách + quản lý trạng thái "đã xem" (đọc/ghi localStorage theo email).
+ * Được gọi bởi CustomerAccount (badge menu, trang Thông báo) và HeaderNotificationBell (chuông trên header).
+ * @param {{email, rentals, renewals, policies, returns, inspections}} args email khách + dữ liệu đã tải từ API.
  * @returns {{notifications, seen, unseenCount, countBySection, markSection, markAll, isSeen}}
  *   countBySection = số thông báo chưa xem theo từng tab (để hiện badge trên menu).
  */
@@ -374,6 +376,7 @@ export function useCustomerNotifications({ email, rentals, renewals, policies, r
     [rentals, renewals, policies, returns, inspections]
   )
   const [seen, setSeen] = useState(() => readSeen(email))
+  // Khi đổi tài khoản (email đổi): đọc lại tập "đã xem" của tài khoản mới.
   useEffect(() => { setSeen(readSeen(email)) }, [email])
 
   // Đánh dấu một danh sách id thông báo là đã xem và lưu xuống localStorage.

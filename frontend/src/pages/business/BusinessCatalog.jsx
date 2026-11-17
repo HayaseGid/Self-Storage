@@ -2,9 +2,25 @@
  * ======================================================================
  * FILE: src/pages/business/BusinessCatalog.jsx  —  DANH MỤC LOẠI KHO & KÍCH THƯỚC KHO (CRUD)
  * ⚠ GHI CHÚ: hiện KHÔNG có file nào import component này -> đây là CODE CHƯA DÙNG (giữ nguyên, không xóa).
- * Chức năng (nếu được gắn vào menu): thêm/sửa/xóa Loại kho và Kích thước kho; chặn xóa khi đang được kho/đơn/biểu giá
- * sử dụng; cảnh báo khi sửa danh mục đang dùng; backend chưa có API danh mục thì tự chuyển sang chế độ chỉ xem.
- * API (qua api/catalogApi.js): GET/POST/PUT/DELETE /api/unit-types, /api/unit-sizes (UnitTypesController, UnitSizesController).
+ *   (BusinessCatalog.css thì vẫn được dùng, vì BusinessFacilityForm.jsx import lại các class .bc-*.)
+ * CHỨC NĂNG (nếu được gắn vào menu): màn hình "Danh mục thiết lập" có 2 tab Loại kho / Kích thước kho,
+ *   cho thêm / sửa / xóa; chặn xóa khi danh mục đang được kho / đơn / biểu giá sử dụng; cảnh báo khi sửa danh mục
+ *   đang dùng (thay đổi áp dụng cho mọi kho liên quan); backend chưa có API danh mục thì tự chuyển sang chế độ chỉ xem.
+ * THÀNH PHẦN CHÍNH:
+ *   - BusinessCatalog (export default): màn hình chính với 2 bảng DataGrid.
+ *   - UnitTypeForm: modal thêm / sửa loại kho.
+ *   - UnitSizeForm: modal thêm / sửa kích thước kho (ghép chuỗi "S2: 2x2m", tự tính diện tích).
+ *   - CatalogModal, Field: khung hộp thoại và 1 ô form dùng chung.
+ *   - SIZE_CODE_PATTERN, fmtArea, suggestedSizeLetter: hằng số / hàm tiện ích.
+ * DÙNG Ở: Chưa có nơi nào import (code chưa dùng).
+ * PHỤ THUỘC: components/common/DataGrid (bảng có tìm kiếm + sắp xếp), features/unit/unitTypes (chip loại kho, thước size),
+ *   api/catalogApi (gọi API danh mục, ghép / tách chuỗi kích thước), BusinessCatalog.css.
+ * API (qua api/catalogApi.js, UnitTypesController / UnitSizesController):
+ *   GET/POST /api/unit-types, PUT/DELETE /api/unit-types/{id},
+ *   GET/POST /api/unit-sizes, PUT/DELETE /api/unit-sizes/{id}.
+ * LUỒNG: mở màn hình -> load (GET unit-types + unit-sizes; lỗi thì lấy từ operationState và bật readOnly)
+ *   -> bấm "+ Thêm" / "Sửa" -> UnitTypeForm / UnitSizeForm kiểm tra -> saveType / saveSize hỏi xác nhận nếu đang dùng
+ *   -> runSave gọi API -> afterChange đóng form, tải lại, báo thành công.
  * ======================================================================
  */
 import React, { useEffect, useMemo, useState } from 'react'
@@ -13,21 +29,20 @@ import { SizeMeter, UnitTypeChip, getUnitTypeStyle } from '../../features/unit/u
 import { catalogApi, composeDimensions, isMissingEndpoint, parseDimensions } from '../../api/catalogApi'
 import './BusinessCatalog.css'
 
-/*
- * Danh mục thiết lập (Facility Manager quản lý): CRUD Loại kho và Kích thước kho.
- * - Chặn xóa khi danh mục đang được kho / đơn / biểu giá sử dụng.
- * - Cảnh báo khi sửa danh mục đang dùng (thay đổi áp dụng cho mọi kho liên quan).
- * - Nếu backend chưa có API danh mục, tự chuyển sang chế độ chỉ xem.
- */
-
+/** Mã size hợp lệ: 1 chữ S/M/L/V + 1–2 chữ số (vd S2, M10). */
 const SIZE_CODE_PATTERN = /^[SMLV]\d{1,2}$/
 /**
- * Định dạng diện tích kiểu Việt Nam (1 chữ số thập phân).
+ * Định dạng diện tích kiểu Việt Nam (tối đa 1 chữ số thập phân).
+ * @param {number} value diện tích m².
+ * @returns {string} vd "4,5".
  */
 const fmtArea = value => Number(value).toLocaleString('vi-VN', { maximumFractionDigits: 1 })
 
 /**
  * Gợi ý chữ cái nhóm size theo diện tích: <=8 m² 'S', <=16 'M', <=30 'L', lớn hơn 'V'.
+ * Được gọi bởi: UnitSizeForm để cảnh báo khi chữ cái mã size không khớp diện tích.
+ * @param {number|null} area diện tích m².
+ * @returns {'S'|'M'|'L'|'V'|null} null nếu chưa có diện tích.
  */
 function suggestedSizeLetter(area) {
   if (!area) return null
@@ -39,12 +54,20 @@ function suggestedSizeLetter(area) {
 
 /* ---------- Modal chung ---------- */
 /**
- * Component khung hộp thoại chung cho các form danh mục (tiêu đề, nội dung, nút Hủy / Lưu, Esc để đóng).
- * @param {object} props title, subtitle, children, onClose, onSubmit, submitLabel, saving.
+ * Khung hộp thoại chung cho các form danh mục: tiêu đề, nội dung, nút Hủy / Lưu; đóng bằng Esc, nút × hoặc bấm ra ngoài.
+ * Được dùng bởi: UnitTypeForm, UnitSizeForm.
+ * @param {object} props
+ * @param {string} props.title tiêu đề.
+ * @param {string} [props.subtitle] dòng phụ dưới tiêu đề.
+ * @param {React.ReactNode} props.children nội dung form.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} props.onSubmit gọi khi submit form.
+ * @param {string} props.submitLabel chữ trên nút lưu.
+ * @param {boolean} props.saving đang lưu -> khóa nút lưu.
  */
 function CatalogModal({ title, subtitle, children, onClose, onSubmit, submitLabel, saving }) {
+  // Gắn phím Esc để đóng hộp thoại khi mở; gỡ khi đóng (chạy lại nếu onClose đổi).
   useEffect(() => {
-    // Nhấn Esc để đóng hộp thoại.
     const onKey = event => { if (event.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -70,7 +93,13 @@ function CatalogModal({ title, subtitle, children, onClose, onSubmit, submitLabe
 }
 
 /**
- * Component 1 trường form: nhãn (dấu * nếu bắt buộc), ô nhập, câu lỗi hoặc gợi ý.
+ * 1 trường form: nhãn (thêm dấu * nếu bắt buộc), ô nhập (children), và câu lỗi (ưu tiên) hoặc gợi ý bên dưới.
+ * @param {object} props
+ * @param {string} props.label nhãn.
+ * @param {string} [props.error] câu lỗi (có thì tô đỏ).
+ * @param {string} [props.hint] câu gợi ý khi không có lỗi.
+ * @param {React.ReactNode} props.children ô nhập.
+ * @param {boolean} [props.required] hiện dấu * bắt buộc.
  */
 function Field({ label, error, hint, children, required }) {
   return (
@@ -84,8 +113,15 @@ function Field({ label, error, hint, children, required }) {
 
 /* ---------- Form loại kho ---------- */
 /**
- * Component form thêm/sửa loại kho: tên (2–100 ký tự, không trùng), mô tả (<= 255 ký tự), xem trước nhãn loại kho.
- * @param {object} props item (null khi thêm), allTypes, usage (số kho/đơn/giá đang dùng), onClose, onSave(body).
+ * Modal thêm / sửa loại kho: tên (2–100 ký tự, không trùng), mô tả (<= 255 ký tự), xem trước chip loại kho
+ * (icon + màu tự chọn theo tên). Không gọi API: trả dữ liệu qua onSave.
+ * Được gọi bởi: BusinessCatalog khi modal.kind === 'type'.
+ * @param {object} props
+ * @param {object|null} props.item loại kho đang sửa (null khi thêm mới).
+ * @param {Array} props.allTypes mọi loại kho (kiểm tra trùng tên).
+ * @param {{units: number}} props.usage số kho đang dùng loại này (để cảnh báo khi đổi tên).
+ * @param {Function} props.onClose đóng modal.
+ * @param {Function} props.onSave nhận { typeName, description }.
  */
 function UnitTypeForm({ item, allTypes, usage, onClose, onSave }) {
   const [name, setName] = useState(item?.name || '')
@@ -105,7 +141,7 @@ function UnitTypeForm({ item, allTypes, usage, onClose, onSave }) {
   const valid = !errors.name && !errors.description
   const style = getUnitTypeStyle(trimmed)
 
-  // Lưu loại kho: kiểm tra hợp lệ rồi gọi onSave({ typeName, description }).
+  // Lưu loại kho (submit form): bật hiện lỗi, kiểm tra hợp lệ rồi gọi onSave({ typeName, description }).
   const submit = async () => {
     setTouched(true)
     if (!valid) return
@@ -147,9 +183,16 @@ function UnitTypeForm({ item, allTypes, usage, onClose, onSave }) {
 
 /* ---------- Form kích thước kho ---------- */
 /**
- * Component form thêm/sửa kích thước: mã size (S/M/L/V + 1–2 số), dài × rộng (0,5–50 m) hoặc Locker + ghi chú;
- * tự ghép chuỗi "S2: 2x2m", tính diện tích, cảnh báo trùng mã / trùng kích thước / chữ cái không khớp diện tích.
- * @param {object} props item, allSizes, usage, onClose, onSave(body).
+ * Modal thêm / sửa kích thước: mã size (S/M/L/V + 1–2 số), dài × rộng (0,5–50 m) hoặc tủ Locker + ghi chú;
+ * tự ghép chuỗi "S2: 2x2m" (composeDimensions), tính diện tích, cảnh báo trùng mã / trùng kích thước /
+ * chữ cái không khớp diện tích. Không gọi API: trả dữ liệu qua onSave.
+ * Được gọi bởi: BusinessCatalog khi modal.kind === 'size'.
+ * @param {object} props
+ * @param {object|null} props.item kích thước đang sửa (null khi thêm mới).
+ * @param {Array} props.allSizes mọi kích thước (kiểm tra trùng).
+ * @param {{units: number}} props.usage số kho đang dùng kích thước này.
+ * @param {Function} props.onClose đóng modal.
+ * @param {Function} props.onSave nhận { dimensions, volume }.
  */
 function UnitSizeForm({ item, allSizes, usage, onClose, onSave }) {
   const initial = item ? parseDimensions(item.dimensions, item.volume) : { code: '', length: '', width: '', isLocker: false, lockerNote: '' }
@@ -161,8 +204,10 @@ function UnitSizeForm({ item, allSizes, usage, onClose, onSave }) {
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  // Giá trị suy ra từ ô nhập: mã viết hoa, dài/rộng dạng số, diện tích (làm tròn 0,1), chuỗi kích thước sẽ lưu,
+  // và kích thước khác bị trùng mã (sameCode) / trùng dài×rộng kể cả khi đảo chiều (sameDims).
   const codeUpper = code.trim().toUpperCase()
-  const l = Number(String(length).replace(',', '.'))
+  const l =Number(String(length).replace(',', '.'))
   const w = Number(String(width).replace(',', '.'))
   const area = !isLocker && l > 0 && w > 0 ? Math.round(l * w * 10) / 10 : null
   const dimensions = codeUpper ? composeDimensions({ code: codeUpper, length: l, width: w, isLocker, lockerNote }) : ''
@@ -191,9 +236,10 @@ function UnitSizeForm({ item, allSizes, usage, onClose, onSave }) {
   }
   const valid = Object.values(errors).every(v => !v)
   const suggested = suggestedSizeLetter(area)
+  // Chữ cái mã size khác với hạng gợi ý theo diện tích -> chỉ cảnh báo, không chặn lưu.
   const letterMismatch = area && SIZE_CODE_PATTERN.test(codeUpper) && codeUpper[0] !== suggested
 
-  // Lưu kích thước: kiểm tra hợp lệ rồi gọi onSave({ dimensions, volume }).
+  // Lưu kích thước (submit form): bật hiện lỗi, kiểm tra hợp lệ rồi gọi onSave({ dimensions, volume = diện tích }).
   const submit = async () => {
     setTouched(true)
     if (!valid) return
@@ -257,14 +303,19 @@ function UnitSizeForm({ item, allSizes, usage, onClose, onSave }) {
 
 /* ---------- Màn hình chính ---------- */
 /**
- * Component màn hình danh mục: 2 tab (Loại kho / Kích thước) dùng DataGrid, nút Thêm/Sửa/Xóa.
- * @param {object} props operationState (dữ liệu vận hành để đếm mức sử dụng / dự phòng chỉ xem), dialog, onChanged().
+ * Màn hình danh mục: 2 tab (Loại kho / Kích thước kho) hiển thị bằng DataGrid, nút Thêm / Sửa / Xóa,
+ * đếm mức sử dụng của từng mục để chặn xóa. Hiện chưa được component nào dùng.
+ * @param {object} props
+ * @param {object} props.operationState dữ liệu vận hành đã map (units, reservations, rentalRates, unitTypes, unitSizes)
+ *   để đếm mức sử dụng và làm dữ liệu dự phòng ở chế độ chỉ xem.
+ * @param {object} props.dialog hộp thoại (alert / confirm).
+ * @param {Function} [props.onChanged] gọi sau mỗi thay đổi để component cha tải lại dữ liệu.
  */
 export default function BusinessCatalog({ operationState, dialog, onChanged }) {
-  const [tab, setTab] = useState('types')
+  const [tab, setTab] = useState('types') // 'types' | 'sizes'
   const [types, setTypes] = useState(null)
   const [sizes, setSizes] = useState(null)
-  const [readOnly, setReadOnly] = useState(false)
+  const [readOnly, setReadOnly] = useState(false) // true khi backend chưa có API danh mục
   const [modal, setModal] = useState(null) // { kind: 'type' | 'size', item }
 
   const units = operationState?.units || []
@@ -305,8 +356,10 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
   })
 
   /**
-   * Tải danh mục loại kho + kích thước; backend chưa có API thì dùng dữ liệu vận hành và chuyển sang chỉ xem.
+   * Tải danh mục loại kho + kích thước; lỗi thì dùng dữ liệu vận hành và chuyển sang chỉ xem
+   * (chỉ hiện hộp thoại lỗi nếu không phải lỗi "thiếu endpoint").
    * API: GET /api/unit-types + GET /api/unit-sizes (qua catalogApi)
+   * Được gọi khi: mở màn hình và sau mỗi lần lưu / xóa (afterChange).
    */
   const load = async () => {
     try {
@@ -325,9 +378,10 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
     }
   }
 
+  // Chạy 1 lần khi mở màn hình: tải danh mục.
   useEffect(() => { load() }, [])
 
-  // Sau khi lưu: đóng form, tải lại danh mục + dữ liệu cha, báo thành công.
+  // Sau khi lưu: đóng form, tải lại danh mục + dữ liệu cha (onChanged), báo thành công.
   const afterChange = async message => {
     setModal(null)
     await Promise.all([load(), onChanged?.()])
@@ -348,6 +402,8 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
   /**
    * Thêm hoặc sửa loại kho (hỏi xác nhận khi đổi tên loại đang được kho sử dụng).
    * API: POST /api/unit-types  |  PUT /api/unit-types/{id}
+   * Được gọi bởi: UnitTypeForm (prop onSave).
+   * @param {{typeName: string, description: string|null}} body dữ liệu loại kho.
    */
   const saveType = async body => {
     const item = modal?.item
@@ -369,8 +425,9 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
   }
 
   /**
-   * Xóa loại kho: chặn nếu đang được dùng, hỏi xác nhận rồi xóa.
+   * Xóa loại kho (bấm "Xóa" trên dòng): chặn và báo lý do nếu đang được kho / đơn / mức giá dùng, ngược lại hỏi xác nhận rồi xóa.
    * API: DELETE /api/unit-types/{id}
+   * @param {object} item loại kho.
    */
   const deleteType = async item => {
     const usage = usageOfType(item)
@@ -392,6 +449,8 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
   /**
    * Thêm hoặc sửa kích thước (hỏi xác nhận khi sửa kích thước đang được kho sử dụng).
    * API: POST /api/unit-sizes  |  PUT /api/unit-sizes/{id}
+   * Được gọi bởi: UnitSizeForm (prop onSave).
+   * @param {{dimensions: string, volume: number|null}} body dữ liệu kích thước.
    */
   const saveSize = async body => {
     const item = modal?.item
@@ -413,8 +472,9 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
   }
 
   /**
-   * Xóa kích thước: chặn nếu đang được dùng, hỏi xác nhận rồi xóa.
+   * Xóa kích thước (bấm "Xóa" trên dòng): chặn nếu đang được kho / mức giá dùng, ngược lại hỏi xác nhận rồi xóa.
    * API: DELETE /api/unit-sizes/{id}
+   * @param {object} item kích thước.
    */
   const deleteSize = async item => {
     const usage = usageOfSize(item)

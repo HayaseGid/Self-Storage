@@ -1,28 +1,32 @@
 /**
  * ======================================================================
- * FILE: src/features/unit/unitTypes.jsx  —  NHẬN DIỆN LOẠI KHO & KÍCH THƯỚC KHO DÙNG CHUNG CHO GIAO DIỆN
- * Cung cấp: màu, icon, tên tiếng Việt, mô tả ngắn, ảnh minh họa cho từng loại kho
- * (Kho lạnh, Kho mát, Kho tiêu chuẩn, Kho trong nhà, Kho xe vào tận nơi, Kho khác) và phân hạng kích thước
- * (Nhỏ / Vừa / Lớn / Rất lớn). Tên loại kho trong database là tiếng Anh, getUnitTypeKey() nhận diện theo từ khóa.
- * Ảnh thật nằm ở frontend/public/unit-types/ (Unsplash, giấy phép miễn phí), khai báo trong trường `photos`.
- * Không gọi API. Dùng ở: App.jsx, CartPage, CustomerAccount, FacilityManagerAccount, BusinessPanels, Unit3DViewer...
+ * FILE: src/features/unit/unitTypes.jsx  —  LOẠI KHO, HẠNG KÍCH THƯỚC & ẢNH KHO
+ * CHỨC NĂNG: Nhận diện loại kho dùng chung cho toàn bộ giao diện: màu, icon, tên tiếng Việt, mô tả ngắn, ảnh
+ *   cho từng loại (Kho lạnh, Kho mát, Kho tiêu chuẩn, Kho trong nhà, Kho xe vào tận nơi, Kho khác) và phân hạng
+ *   kích thước (Nhỏ / Vừa / Lớn / Rất lớn). Tên loại kho trong database là tiếng Anh (Climate-Control Unit,
+ *   Drive-up Unit, Basic Unit, Indoor Unit...); getUnitTypeKey() nhận diện theo từ khóa nên vẫn chạy đúng nếu sau
+ *   này đổi tên hoặc thêm loại (vd "Kho lạnh").
+ *   ẢNH THẬT: mỗi loại có danh sách `photos` (ảnh trong frontend/public/unit-types/, nguồn Unsplash miễn phí).
+ *   Mỗi kho chọn 1 ảnh theo mã kho nên các kho cùng loại ít bị trùng ảnh; để mảng rỗng thì dùng ảnh SVG vẽ sẵn.
+ * THÀNH PHẦN CHÍNH:
+ *   - UNIT_TYPE_STYLES, UNIT_TYPE_ORDER: bộ style và thứ tự hiển thị của 6 loại kho.
+ *   - getUnitTypeKey, getUnitTypeStyle: tên loại (DB) -> khóa / style.
+ *   - parseUnitSize: chuỗi size -> mã, nhãn, diện tích, hạng kích thước.
+ *   - UnitTypeIcon, UnitTypeChip, SizeMeter, UnitTypeArt: các component hiển thị icon, nhãn, thanh hạng, ảnh kho.
+ * DÙNG Ở: src/App.jsx, features/unit/Unit3DViewer.jsx, pages/business/BusinessCatalog.jsx, BusinessPanels.jsx,
+ *   pages/customer/CartPage.jsx, CustomerAccount.jsx, pages/manager/FacilityManagerAccount.jsx.
+ * PHỤ THUỘC: react (useId). CSS ở unitTypes.css (được import ở nơi khác).
+ * API: Không gọi API.
+ * LUỒNG: trang có object kho từ backend (unit.type, unit.size, unit.code) -> <UnitTypeChip type=...>,
+ *   <UnitTypeArt type size unitCode> -> getUnitTypeStyle / parseUnitSize -> vẽ nhãn màu, ảnh thật hoặc ảnh SVG.
  * ======================================================================
  */
 import React, { useId } from 'react'
 
-/*
- * Nhận diện loại kho dùng chung cho toàn bộ giao diện:
- * icon, màu, tên tiếng Việt, mô tả ngắn, ảnh minh họa, phân hạng kích thước.
- *
- * Tên loại kho trong database là tiếng Anh (Climate-Control Unit, Drive-up Unit,
- * Basic Unit, Indoor Unit...). Hàm getUnitTypeKey() nhận diện theo từ khóa nên
- * vẫn chạy đúng nếu sau này đổi tên hoặc thêm loại (ví dụ "Kho lạnh").
- *
- * ẢNH THẬT: mỗi loại có danh sách `photos` (ảnh trong frontend/public/unit-types/).
- * Mỗi kho chọn 1 ảnh trong danh sách theo mã kho, nên các kho cùng loại ít bị trùng ảnh.
- * Để mảng rỗng thì giao diện dùng ảnh minh họa vẽ sẵn.
+/**
+ * Bộ style của từng loại kho: key, label (tên đầy đủ), short (tên ngắn), description, feature (điểm nổi bật),
+ * color (màu chính), soft (màu nền nhạt), gradient (2 màu nền ảnh SVG), photos (đường dẫn ảnh thật).
  */
-
 export const UNIT_TYPE_STYLES = {
   cold: {
     key: 'cold',
@@ -98,6 +102,8 @@ export const UNIT_TYPE_ORDER = ['cold', 'climate', 'basic', 'indoor', 'driveup',
 /**
  * Nhận diện khóa loại kho từ tên loại (không dấu, chữ thường, khớp từ khóa tiếng Anh/Việt).
  * Ví dụ "Climate-Control Unit" -> 'climate', "Kho lạnh" -> 'cold', không khớp -> 'other'.
+ * Thứ tự kiểm tra quan trọng: lạnh trước mát, xe vào trước trong nhà, tiêu chuẩn sau cùng.
+ * @param {string} typeName tên loại kho (từ DB).
  * @returns {'cold'|'climate'|'basic'|'indoor'|'driveup'|'other'}
  */
 export function getUnitTypeKey(typeName) {
@@ -115,6 +121,8 @@ export function getUnitTypeKey(typeName) {
 
 /**
  * Lấy bộ style (tên, màu, mô tả, ảnh...) của loại kho từ tên loại.
+ * @param {string} typeName tên loại kho.
+ * @returns {object} một phần tử của UNIT_TYPE_STYLES.
  */
 export function getUnitTypeStyle(typeName) {
   return UNIT_TYPE_STYLES[getUnitTypeKey(typeName)]
@@ -122,6 +130,7 @@ export function getUnitTypeStyle(typeName) {
 
 /* ---------- Kích thước ---------- */
 
+/* 4 hạng kích thước theo chữ nhóm trong mã size (S/M/L/V); level = số nấc sáng trên SizeMeter. */
 const SIZE_CLASSES = {
   S: { key: 'S', label: 'Nhỏ', level: 1 },
   M: { key: 'M', label: 'Vừa', level: 2 },
@@ -129,13 +138,13 @@ const SIZE_CLASSES = {
   V: { key: 'V', label: 'Rất lớn', level: 4 }
 }
 
-/*
- * Đọc chuỗi kích thước trong DB, ví dụ "S2: 2x2m", "L1: 4x6m", "S1: Locker (< 2.5m)".
- * Trả về mã size, diện tích (m²) nếu tính được, và hạng Nhỏ / Vừa / Lớn / Rất lớn.
- */
 /**
- * Đọc chuỗi kích thước trong DB (vd "S2: 2x2m", "S1: Locker (< 2.5m)") thành mã size, nhãn, diện tích (m²),
- * hạng kích thước (Nhỏ/Vừa/Lớn/Rất lớn) và cờ isLocker. Không có mã nhóm thì xếp hạng theo diện tích.
+ * Đọc chuỗi kích thước trong DB (vd "S2: 2x2m", "L1: 4x6m", "S1: Locker (< 2.5m)") thành mã size, nhãn,
+ * diện tích (m²), hạng kích thước (Nhỏ/Vừa/Lớn/Rất lớn) và cờ isLocker.
+ * Không có mã nhóm thì xếp hạng theo diện tích (<= 8 m² Nhỏ, <= 16 Vừa, <= 30 Lớn, còn lại Rất lớn);
+ * không có cả diện tích thì locker = Nhỏ, còn lại = Vừa.
+ * @param {string} sizeText chuỗi size của kho.
+ * @returns {{code:string, label:string, area:number|null, sizeClass:object, isLocker:boolean}}
  */
 export function parseUnitSize(sizeText) {
   const text = String(sizeText || '')
@@ -159,6 +168,7 @@ export function parseUnitSize(sizeText) {
 
 /* ---------- Icon (SVG, nét vẽ theo currentColor) ---------- */
 
+/* Các nét vẽ SVG (khung 24×24) của icon từng loại kho: bông tuyết, nhiệt kế, thùng, nhà, xe tải, hộp. */
 const ICON_PATHS = {
   cold: (
     <>
@@ -202,8 +212,10 @@ const ICON_PATHS = {
 }
 
 /**
- * Component icon SVG của loại kho (nét vẽ theo màu chữ hiện tại).
- * @param {object} props type (tên loại) hoặc typeKey, size (px), className, title.
+ * Component icon SVG của loại kho (nét vẽ theo màu chữ hiện tại - currentColor).
+ * Có title thì icon được đọc bởi trình đọc màn hình (role="img"), không có thì ẩn (aria-hidden).
+ * @param {object} props type (tên loại) hoặc typeKey (khóa sẵn), size (px), className, title.
+ * @returns {JSX.Element}
  */
 export function UnitTypeIcon({ type, typeKey, size = 18, className = '', title }) {
   const key = typeKey || getUnitTypeKey(type)
@@ -227,9 +239,10 @@ export function UnitTypeIcon({ type, typeKey, size = 18, className = '', title }
   )
 }
 
-/* Nhãn loại kho: icon + tên tiếng Việt, tô màu theo loại. */
 /**
- * Component nhãn loại kho: icon + tên tiếng Việt, tô màu theo loại (compact = chỉ hiện tên ngắn).
+ * Component nhãn loại kho: icon + tên tiếng Việt, tô màu theo loại qua biến CSS --ut-color / --ut-soft.
+ * Dùng trong thẻ kho, giỏ hàng, bảng quản lý...
+ * @param {object} props type (tên loại từ DB), compact (true = chỉ hiện tên ngắn, icon nhỏ hơn), className.
  */
 export function UnitTypeChip({ type, compact = false, className = '' }) {
   const style = getUnitTypeStyle(type)
@@ -245,9 +258,9 @@ export function UnitTypeChip({ type, compact = false, className = '' }) {
   )
 }
 
-/* Thanh hạng kích thước: 4 nấc Nhỏ / Vừa / Lớn / Rất lớn. */
 /**
- * Component thanh hạng kích thước gồm 4 nấc (Nhỏ / Vừa / Lớn / Rất lớn) kèm nhãn.
+ * Component thanh hạng kích thước gồm 4 nấc (Nhỏ / Vừa / Lớn / Rất lớn) kèm nhãn; số nấc sáng = sizeClass.level.
+ * @param {object} props size (chuỗi size của kho, đọc bằng parseUnitSize).
  */
 export function SizeMeter({ size }) {
   const info = parseUnitSize(size)
@@ -259,7 +272,12 @@ export function SizeMeter({ size }) {
   )
 }
 
-/* Chọn 1 ảnh trong danh sách theo mã kho (cùng mã luôn ra cùng ảnh). */
+/**
+ * Chọn 1 ảnh trong danh sách theo mã kho: tính hash chuỗi mã (hash = hash × 31 + mã ký tự) rồi lấy phần dư
+ * cho số ảnh, nên cùng mã luôn ra cùng ảnh (không đổi ảnh mỗi lần tải lại trang).
+ * @param {string[]} photos danh sách ảnh. @param {string} unitCode mã kho.
+ * @returns {string|null} đường dẫn ảnh, hoặc null nếu không có ảnh.
+ */
 function pickUnitPhoto(photos, unitCode) {
   if (!photos || photos.length === 0) return null
   const code = String(unitCode || '')
@@ -268,14 +286,12 @@ function pickUnitPhoto(photos, unitCode) {
   return photos[hash % photos.length]
 }
 
-/*
- * Ảnh minh họa của kho: cửa cuốn kho có độ rộng theo hạng kích thước,
- * nền và biểu tượng theo loại kho. Nếu loại kho có `photos` thì dùng ảnh thật.
- */
 /**
- * Component ảnh minh họa kho (SVG): mặt tiền + cửa cuốn có độ rộng theo hạng kích thước, màu theo loại,
- * có biển số kho; nếu loại có `photos` thì hiện ảnh thật (chọn theo mã kho) kèm biển số kho.
- * @param {object} props type, size, unitCode, className.
+ * Component ảnh minh họa kho. Nếu loại có `photos`: hiện ảnh thật (chọn theo mã kho, tải lười) kèm biển số kho
+ * và icon loại. Không có ảnh: vẽ SVG mặt tiền + cửa cuốn có độ rộng theo hạng kích thước (92–210 px),
+ * cửa thấp hơn nếu là locker, màu theo loại, kèm biển số kho. useId tạo id gradient riêng cho mỗi ảnh
+ * để nhiều ảnh trên cùng trang không dùng nhầm gradient của nhau.
+ * @param {object} props type (tên loại), size (chuỗi size), unitCode (mã kho), className.
  */
 export function UnitTypeArt({ type, size, unitCode, className = '' }) {
   const style = getUnitTypeStyle(type)

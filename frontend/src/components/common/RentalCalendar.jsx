@@ -1,23 +1,25 @@
 /**
  * ======================================================================
  * FILE: src/components/common/RentalCalendar.jsx  —  LỊCH CHỌN NGÀY BẮT ĐẦU THUÊ KHO
- * - Không cho chọn ngày quá khứ (theo "hôm nay" của Demo Clock) hoặc sau maxDate.
- * - Tô màu cả kỳ thuê từ ngày bắt đầu tới ngày kết thúc dự kiến.
- * - Có nút chọn nhanh (Hôm nay, Ngày mai, Thứ Hai tới, Đầu tháng sau) và điều khiển bằng phím mũi tên.
- * Không gọi API. Dùng ở: App.jsx (trang đặt kho), CartPage.
+ * CHỨC NĂNG: Lịch tháng để khách chọn ngày bắt đầu thuê. Không cho chọn ngày quá khứ (theo "hôm nay"
+ *   của Demo Clock) hoặc sau maxDate; tô màu cả kỳ thuê từ ngày bắt đầu tới ngày kết thúc dự kiến; có nút
+ *   chọn nhanh (Hôm nay, Ngày mai, Thứ Hai tới, Đầu tháng sau) và điều khiển bằng phím mũi tên.
+ * THÀNH PHẦN CHÍNH:
+ *   - RentalCalendar (default) : component lịch.
+ *   - buildMonth : dựng mảng ô ngày của 1 tháng (lưới 7 cột, Thứ Hai đầu tuần).
+ *   - startOfDay / sameDay / addDays / fmt / keyOf : hàm phụ về ngày.
+ * DÙNG Ở: src/App.jsx (trang đặt kho), src/pages/customer/CartPage.jsx.
+ * PHỤ THUỘC: react, src/demoClock/demoClock (getTodayDate), ./RentalCalendar.css.
+ * API: Không gọi API.
+ * LUỒNG: Khách bấm 1 ô ngày / nút chọn nhanh / Enter -> select(date) -> onChange(date) báo trang cha
+ *   -> trang tính endDate (calculateEndDate) và truyền lại -> lịch tô kỳ thuê + dòng tóm tắt.
  * ======================================================================
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { getTodayDate } from '../../demoClock/demoClock'
 import './RentalCalendar.css'
 
-/*
- * Lịch chọn ngày bắt đầu thuê.
- * - Không cho chọn ngày trong quá khứ hoặc sau maxDate.
- * - Tô màu cả kỳ thuê (từ ngày bắt đầu tới ngày kết thúc dự kiến).
- * - Có nút chọn nhanh và điều khiển bằng phím mũi tên.
- */
-
+// Nhãn các cột thứ trong tuần (Thứ Hai đầu tuần).
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
 
 /**
@@ -54,6 +56,8 @@ const keyOf = date => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()
 
 /**
  * Dựng mảng ô của 1 tháng cho lưới 7 cột (Thứ Hai là cột đầu), ô trống ở đầu/cuối là null.
+ * @param {Date} monthDate một ngày bất kỳ trong tháng cần dựng.
+ * @returns {Array<Date|null>} mảng ô, độ dài chia hết cho 7.
  */
 function buildMonth(monthDate) {
   const year = monthDate.getFullYear()
@@ -72,6 +76,7 @@ function buildMonth(monthDate) {
  * Component lịch chọn ngày bắt đầu thuê.
  * @param {object} props value (Date đang chọn), onChange(Date), endDate (ngày kết thúc dự kiến để tô kỳ thuê),
  *   minDate, maxDate, durationMonths (số tháng thuê, để hiển thị chú thích).
+ * @returns {JSX.Element}
  */
 export default function RentalCalendar({ value, onChange, endDate, minDate, maxDate, durationMonths }) {
   // "Hôm nay" theo Demo Clock (tính 1 lần khi mở lịch).
@@ -82,11 +87,11 @@ export default function RentalCalendar({ value, onChange, endDate, minDate, maxD
     const base = value || min
     return new Date(base.getFullYear(), base.getMonth(), 1)
   })
-  const [focusDate, setFocusDate] = useState(value || min)
+  const [focusDate, setFocusDate] = useState(value || min) // ô ngày đang được focus bằng bàn phím
   const gridRef = useRef(null)
-  const shouldFocus = useRef(false)
+  const shouldFocus = useRef(false) // true khi vừa di chuyển bằng phím -> cần focus ô mới sau render
 
-  // Khi giá trị đổi từ bên ngoài (khôi phục bản nháp) thì chuyển lịch tới tháng đó.
+  // Chạy khi value đổi từ bên ngoài (vd khôi phục bản nháp): chuyển lịch tới tháng đó.
   useEffect(() => {
     if (value) {
       setViewMonth(new Date(value.getFullYear(), value.getMonth(), 1))
@@ -94,6 +99,7 @@ export default function RentalCalendar({ value, onChange, endDate, minDate, maxD
     }
   }, [value?.getTime()])
 
+  // Chạy khi focusDate / viewMonth đổi: nếu vừa di chuyển bằng phím mũi tên thì focus vào ô ngày mới.
   useEffect(() => {
     if (!shouldFocus.current) return
     shouldFocus.current = false

@@ -1,14 +1,29 @@
 /**
  * ======================================================================
- * FILE: src/pages/business/BusinessPolicyEditor.jsx  —  BUSINESS OPERATIONS: THIẾT LẬP CHÍNH SÁCH CHUNG
- * 4 tab: 1. Tiền đặt cọc · 3. Phí quá hạn & phụ phí · 4. Đặt chỗ & hủy · 5. Gia hạn & trả kho
- * (2. Kích thước & giá nằm ở menu riêng — BusinessPriceBands.jsx).
- * Mỗi lần lưu tạo một PHIÊN BẢN mới có ngày bắt đầu áp dụng; phiên bản cũ được giữ để đối chiếu hợp đồng đã ký.
- * API: GET /api/policies                       (PoliciesController) -> chính sách hiện hành + phiên bản sắp áp dụng
- *      PUT /api/policies/{policyKey}           -> { value, effectiveFrom, note } lưu phiên bản mới
- *      GET /api/policies/{policyKey}/history   -> lịch sử các phiên bản
- * Sau khi lưu gọi loadPolicies(true) để làm mới cache chính sách dùng chung (services/policies.js).
- * Dùng ở: pages/business/BusinessOperations.jsx.
+ * FILE: src/pages/business/BusinessPolicyEditor.jsx  —  THIẾT LẬP CHÍNH SÁCH CHUNG (BUSINESS OPERATIONS)
+ * CHỨC NĂNG: Màn hình "Chính sách" của Business Operations, gồm 4 tab chính sách thuê áp dụng toàn hệ thống:
+ *   1. Tiền đặt cọc · 3. Phí quá hạn & phụ phí · 4. Đặt chỗ & hủy · 5. Gia hạn & trả kho
+ *   (nhóm 2. Kích thước & giá nằm ở menu riêng - BusinessPriceBands.jsx).
+ *   Mỗi lần lưu tạo một PHIÊN BẢN mới có ngày bắt đầu áp dụng; phiên bản cũ được giữ để đối chiếu
+ *   hợp đồng / đặt chỗ đã tạo trước đó.
+ * THÀNH PHẦN CHÍNH:
+ *   - BusinessPolicyEditor (export): thanh tab + tải chính sách hiện hành.
+ *   - PolicyForm: form sửa 1 nhóm chính sách (kiểm tra, lưu phiên bản mới, xem lịch sử).
+ *   - DepositFields / OverdueFields / ReservationFields / RenewalReturnFields: các ô nhập riêng cho từng nhóm.
+ *   - NumField, Choice: ô nhập số và nhóm nút chọn dùng chung trong form.
+ *   - TABS, today, clone, toNumber: hằng số và hàm tiện ích.
+ * DÙNG Ở: src/pages/business/BusinessOperations.jsx (menu "Chính sách").
+ * PHỤ THUỘC: api/api, components/common/PriceInput (ô nhập tiền), services/storageRules (formatVnd),
+ *   services/policies (giá trị mặc định, mô tả chính sách, tính cọc, làm mới cache), demoClock/demoClock,
+ *   BusinessPolicyEditor.css.
+ * API (PoliciesController):
+ *   GET /api/policies                       -> chính sách hiện hành (current) + phiên bản đã hẹn ngày (scheduled)
+ *   PUT /api/policies/{policyKey}           -> body { value, effectiveFrom, note }: lưu phiên bản mới
+ *   GET /api/policies/{policyKey}/history   -> lịch sử các phiên bản
+ * LUỒNG: mở menu -> load (GET /api/policies) -> chọn tab -> PolicyForm hiển thị ô nhập của nhóm
+ *   -> người dùng sửa (dirty) + chọn ngày áp dụng -> bấm "Lưu phiên bản mới" -> validate -> hộp thoại xác nhận
+ *   -> PUT /api/policies/{key} -> onSaved = load() tải lại + loadPolicies(true) làm mới cache chính sách
+ *   dùng chung (services/policies.js) cho các màn hình khác.
  * ======================================================================
  */
 import React, { useEffect, useMemo, useState } from 'react'
@@ -22,14 +37,7 @@ import {
 import { getTodayISO } from '../../demoClock/demoClock'
 import './BusinessPolicyEditor.css'
 
-/*
- * Business Operations: thiết lập chính sách chung.
- *   1. Tiền đặt cọc            3. Phí quá hạn & phụ phí
- *   4. Đặt chỗ & hủy           5. Gia hạn & trả kho
- * (2. Kích thước & giá ở menu riêng - BusinessPriceBands.jsx)
- * Mỗi lần lưu tạo một PHIÊN BẢN mới với ngày bắt đầu áp dụng; phiên bản cũ giữ lại để đối chiếu hợp đồng.
- */
-
+/** Danh sách tab: [policyKey gửi lên API, số thứ tự nhóm, nhãn hiển thị]. */
 const TABS = [
   ['deposit', '1', 'Tiền đặt cọc'],
   ['overdue', '3', 'Phí quá hạn & phụ phí'],
@@ -44,14 +52,19 @@ const TABS = [
 // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
 /**
  * "Hôm nay" dạng 'YYYY-MM-DD' theo Demo Clock (ngày áp dụng nhỏ nhất được phép chọn).
+ * @returns {string}
  */
 const today = () => getTodayISO()
 /**
  * Sao chép sâu 1 giá trị (qua JSON) để sửa form mà không đụng dữ liệu gốc.
+ * @param {any} value giá trị cần sao chép.
+ * @returns {any} bản sao độc lập.
  */
 const clone = value => JSON.parse(JSON.stringify(value))
 /**
- * Đổi chuỗi người dùng nhập thành số (chấp nhận dấu phẩy); rỗng -> null; sai -> NaN.
+ * Đổi chuỗi người dùng nhập thành số (chấp nhận dấu phẩy thập phân, vd "1,5" -> 1.5).
+ * @param {string} text chuỗi nhập.
+ * @returns {number|null} số; rỗng -> null; không hợp lệ -> NaN.
  */
 const toNumber = text => {
   if (text === '' || text == null) return null
@@ -60,11 +73,22 @@ const toNumber = text => {
 }
 
 /**
- * Component ô nhập số dùng trong form chính sách (lọc ký tự không phải số, hỗ trợ số thập phân, cho phép để trống).
- * @param {object} props label, value, onChange(number|null), suffix (đơn vị), hint, allowDecimal, allowEmpty, width.
+ * Ô nhập số dùng trong form chính sách: tự lọc ký tự không phải số, hỗ trợ số thập phân (dấu phẩy),
+ * cho phép để trống; chỉ báo onChange khi giá trị hợp lệ. Giữ chuỗi đang gõ riêng (text) để gõ "1," không bị mất dấu phẩy.
+ * Được dùng bởi: DepositFields, OverdueFields, ReservationFields, RenewalReturnFields.
+ * @param {object} props
+ * @param {string} props.label nhãn ô.
+ * @param {number|null} props.value giá trị số hiện tại.
+ * @param {Function} props.onChange nhận số mới (hoặc null khi để trống và allowEmpty).
+ * @param {string} [props.suffix] đơn vị hiển thị sau ô (vd "ngày").
+ * @param {string} [props.hint] dòng gợi ý dưới ô.
+ * @param {boolean} [props.allowDecimal] cho nhập số thập phân.
+ * @param {boolean} [props.allowEmpty] cho phép để trống (giá trị null).
+ * @param {number} [props.width] độ rộng tối đa (px).
  */
 function NumField({ label, value, onChange, suffix, hint, allowDecimal = false, allowEmpty = false, width }) {
   const [text, setText] = useState(value == null ? '' : String(value).replace('.', allowDecimal ? ',' : '.'))
+  // Khi value từ ngoài đổi (vd bấm "Hoàn tác") mà khác chuỗi đang gõ -> cập nhật lại chuỗi hiển thị.
   useEffect(() => {
     const current = toNumber(text)
     if (current !== value && !(current == null && value == null)) setText(value == null ? '' : String(value).replace('.', ','))
@@ -91,8 +115,12 @@ function NumField({ label, value, onChange, suffix, hint, allowDecimal = false, 
 }
 
 /**
- * Component nhóm nút chọn 1 trong nhiều lựa chọn (dạng radio).
- * @param {object} props label, value, options ([[key, text]]), onChange(key).
+ * Nhóm nút chọn 1 trong nhiều lựa chọn (hoạt động như radio), nút đang chọn có class 'on'.
+ * @param {object} props
+ * @param {string} props.label nhãn nhóm.
+ * @param {string} props.value key đang chọn.
+ * @param {Array<[string, string]>} props.options danh sách [key, chữ hiển thị].
+ * @param {Function} props.onChange nhận key khi bấm 1 nút.
  */
 function Choice({ label, value, options, onChange }) {
   return (
@@ -108,17 +136,21 @@ function Choice({ label, value, options, onChange }) {
 }
 
 /**
- * Component trang thiết lập chính sách: thanh tab 4 nhóm + form của nhóm đang chọn.
- * @param {object} props facilities (để chọn phạm vi áp dụng cọc), dialog.
+ * Màn hình thiết lập chính sách: tải chính sách hiện hành, hiện thanh tab 4 nhóm và PolicyForm của nhóm đang chọn.
+ * Được gọi bởi: BusinessOperations khi activeMenu === "policies".
+ * @param {object} props
+ * @param {Array} [props.facilities] danh sách cơ sở (để chọn phạm vi áp dụng cọc, mô tả chính sách).
+ * @param {object} props.dialog đối tượng hộp thoại (useDialog) truyền xuống PolicyForm.
  */
 export function BusinessPolicyEditor({ facilities = [], dialog }) {
-  const [tab, setTab] = useState('deposit')
-  const [data, setData] = useState(null)
+  const [tab, setTab] = useState('deposit') // policyKey của tab đang mở
+  const [data, setData] = useState(null) // kết quả GET /api/policies: { current: {key: phiên bản}, scheduled: [...] }
   const [error, setError] = useState('')
 
   /**
-   * Tải chính sách hiện hành và làm mới cache chính sách dùng chung.
+   * Tải chính sách hiện hành và làm mới cache chính sách dùng chung (loadPolicies(true) trong services/policies).
    * API: GET /api/policies
+   * Được gọi khi: mở màn hình, bấm "Thử lại", và sau khi lưu phiên bản mới (onSaved).
    */
   const load = async () => {
     try {
@@ -130,6 +162,7 @@ export function BusinessPolicyEditor({ facilities = [], dialog }) {
       setError(loadError.message)
     }
   }
+  // Chạy 1 lần khi mở màn hình: tải chính sách.
   useEffect(() => { load() }, [])
 
   if (error && !data) {
@@ -142,7 +175,9 @@ export function BusinessPolicyEditor({ facilities = [], dialog }) {
   }
   if (!data) return <section className="business-panel"><p>Đang tải chính sách...</p></section>
 
+  // Phiên bản đang áp dụng của tab (chưa có thì dùng giá trị mặc định hệ thống, version 0).
   const current = data.current?.[tab] || { version: 0, value: DEFAULT_POLICIES[tab], isDefault: true }
+  // Các phiên bản đã lưu nhưng ngày áp dụng ở tương lai.
   const scheduled = (data.scheduled || []).filter(item => item.key === tab)
 
   return (
@@ -154,6 +189,7 @@ export function BusinessPolicyEditor({ facilities = [], dialog }) {
           </button>
         ))}
       </div>
+      {/* key đổi theo tab + version -> form được tạo mới (reset state) khi đổi tab hoặc sau khi lưu */}
       <PolicyForm
         key={`${tab}-${current.version}`}
         policyKey={tab}
@@ -168,12 +204,19 @@ export function BusinessPolicyEditor({ facilities = [], dialog }) {
 }
 
 /**
- * Component form sửa 1 nhóm chính sách: các trường theo nhóm, xem trước câu mô tả, chọn ngày áp dụng + ghi chú,
- * lưu phiên bản mới, xem lịch sử phiên bản.
- * @param {object} props policyKey, current (phiên bản hiện hành), scheduled (phiên bản sắp áp dụng), facilities, dialog,
- *   onSaved() (tải lại sau khi lưu).
+ * Form sửa 1 nhóm chính sách: hiện tóm tắt chính sách hiện hành + bản nháp đang sửa, các ô nhập theo nhóm,
+ * chọn ngày áp dụng + ghi chú, nút Hoàn tác / Lưu phiên bản mới, và bảng lịch sử phiên bản.
+ * Được gọi bởi: BusinessPolicyEditor.
+ * @param {object} props
+ * @param {string} props.policyKey 'deposit' | 'overdue' | 'reservation' | 'renewal_return'.
+ * @param {object} props.current phiên bản hiện hành { version, value, effectiveFrom, isDefault }.
+ * @param {Array} props.scheduled các phiên bản đã hẹn ngày áp dụng trong tương lai.
+ * @param {Array} props.facilities danh sách cơ sở.
+ * @param {object} props.dialog hộp thoại (confirm / alert).
+ * @param {Function} props.onSaved gọi sau khi lưu thành công để tải lại dữ liệu.
  */
 function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved }) {
+  // Cấu hình đang sửa (bản sao của phiên bản hiện hành).
   const [value, setValue] = useState(() => {
     const initial = clone(current.value || DEFAULT_POLICIES[policyKey])
     // Cọc chỉ tính theo số tháng tiền thuê (mặc định 2 tháng).
@@ -184,10 +227,11 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [history, setHistory] = useState(null)
+  const [history, setHistory] = useState(null) // lịch sử phiên bản (null = chưa tải; { error } khi lỗi)
   const [showHistory, setShowHistory] = useState(false)
 
-  const dirty = JSON.stringify(value) !== JSON.stringify(current.value || DEFAULT_POLICIES[policyKey])
+  // dirty = cấu hình đang sửa khác phiên bản hiện hành -> mới bật nút Lưu / Hoàn tác.
+  const dirty =JSON.stringify(value) !== JSON.stringify(current.value || DEFAULT_POLICIES[policyKey])
   // Cập nhật 1 trường trong cấu hình chính sách đang sửa.
   const set = (key, next) => setValue(v => ({ ...v, [key]: next }))
   // Tính câu mô tả xem trước của cấu hình đang sửa (describePolicy).
@@ -196,6 +240,7 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
   /**
    * Kiểm tra cấu hình theo từng nhóm (cọc 1 hoặc 2 tháng, phí quá hạn hợp lệ, thời gian giữ chỗ 5–1440 phút,
    * mức hoàn tiền không trùng và có mức 0 ngày, kỳ gia hạn hợp lệ...) và ngày áp dụng không ở quá khứ.
+   * Được gọi bởi: save, trước khi hỏi xác nhận.
    * @returns {string|null} câu lỗi hoặc null nếu hợp lệ.
    */
   const validate = () => {
@@ -236,7 +281,8 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
   }
 
   /**
-   * Lưu phiên bản chính sách mới: kiểm tra, hỏi xác nhận rồi gửi lên backend, sau đó tải lại.
+   * Lưu phiên bản chính sách mới (bấm "Lưu phiên bản mới"): validate, hỏi xác nhận (kèm số phiên bản mới,
+   * ngày áp dụng, tối đa 6 dòng cấu hình), gửi lên backend, báo thành công rồi gọi onSaved để tải lại.
    * API: PUT /api/policies/{policyKey}  body { value, effectiveFrom, note }
    */
   const save = async () => {
@@ -269,7 +315,7 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
   }
 
   /**
-   * Hiện/ẩn lịch sử phiên bản (lần đầu mở thì tải).
+   * Hiện/ẩn bảng lịch sử phiên bản (bấm "Lịch sử thay đổi"); chỉ tải ở lần mở đầu tiên.
    * API: GET /api/policies/{policyKey}/history
    */
   const toggleHistory = async () => {
@@ -358,11 +404,16 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
 
 /* ---------- 1. Tiền đặt cọc ---------- */
 /**
- * Component các trường của nhóm "Tiền đặt cọc": số tháng cọc, phạm vi áp dụng (tất cả / chọn cơ sở), ví dụ tính cọc.
- * @param {object} props value (cấu hình), set(key, value), facilities.
+ * Các ô của nhóm "Tiền đặt cọc": số tháng cọc (1 hoặc 2), phạm vi áp dụng (tất cả / chọn cơ sở),
+ * và ví dụ tính cọc cho kho 1.000.000đ/tháng (dùng depositFor trong services/policies).
+ * Được gọi bởi: PolicyForm khi policyKey === 'deposit'.
+ * @param {object} props
+ * @param {object} props.value cấu hình cọc { method, value, scope, facilityIds }.
+ * @param {Function} props.set (key, giá trị) cập nhật 1 trường cấu hình.
+ * @param {Array} props.facilities danh sách cơ sở để tick chọn.
  */
 function DepositFields({ value, set, facilities }) {
-  const sample = 1000000
+  const sample = 1000000 // giá thuê mẫu để minh họa
   // Thêm/bỏ 1 cơ sở khỏi danh sách cơ sở áp dụng chính sách cọc.
   const toggleFacility = id => set('facilityIds', value.facilityIds.includes(id) ? value.facilityIds.filter(x => x !== id) : [...value.facilityIds, id])
   return (
@@ -396,15 +447,21 @@ function DepositFields({ value, set, facilities }) {
 
 /* ---------- 3. Phí quá hạn & phụ phí ---------- */
 /**
- * Component các trường của nhóm "Phí quá hạn & phụ phí": kiểu phí, mức phí, chu kỳ, số ngày ân hạn, mức trần, danh sách phụ phí.
+ * Các ô của nhóm "Phí quá hạn & phụ phí": loại phí (% hoặc cố định), chu kỳ tính, mức phí, số ngày chưa tính phí,
+ * mức trần mỗi kỳ, ví dụ tính phí (nợ 1.000.000đ trễ 20 ngày) và bảng phụ phí chung (thêm / sửa / xóa / bật tắt).
+ * Được gọi bởi: PolicyForm khi policyKey === 'overdue'.
+ * @param {object} props
+ * @param {object} props.value cấu hình { feeType, feeValue, period, graceDays, maxPercent, extraFees[] }.
+ * @param {Function} props.set (key, giá trị) cập nhật 1 trường cấu hình.
  */
 function OverdueFields({ value, set }) {
   const fees = value.extraFees
   // Sửa 1 phụ phí trong danh sách theo vị trí.
   const updateFee = (index, patch) => set('extraFees', fees.map((f, i) => (i === index ? { ...f, ...patch } : f)))
+  // Tính phí ví dụ: số ngày tính phí = ngày trễ - ngày chưa tính phí, đổi ra số kỳ theo ngày/tuần/tháng, áp mức trần nếu có.
   const sampleDebt = 1000000
   const sampleDays = 20
-  const units = Math.max(0, sampleDays - (value.graceDays || 0))
+  const units =Math.max(0, sampleDays - (value.graceDays || 0))
   const periods = value.period === 'day' ? units : value.period === 'week' ? Math.ceil(units / 7) : Math.ceil(units / 30)
   let fee = value.feeType === 'percent' ? sampleDebt * (value.feeValue || 0) / 100 * periods : (value.feeValue || 0) * periods
   if (value.maxPercent != null && !Number.isNaN(value.maxPercent)) fee = Math.min(fee, sampleDebt * value.maxPercent / 100)
@@ -451,13 +508,19 @@ function OverdueFields({ value, set }) {
 
 /* ---------- 4. Đặt chỗ & hủy ---------- */
 /**
- * Component các trường của nhóm "Đặt chỗ & hủy": thời gian giữ chỗ, các mức hoàn tiền theo số ngày, quy định khách không đến.
+ * Các ô của nhóm "Đặt chỗ & hủy": thời hạn giữ chỗ chờ cọc, điều kiện hủy, các mức hoàn tiền cọc theo số ngày
+ * hủy trước ngày bắt đầu, và quy định khi khách không đến nhận kho (no-show).
+ * Được gọi bởi: PolicyForm khi policyKey === 'reservation'.
+ * @param {object} props
+ * @param {object} props.value cấu hình { holdMinutes, cancellationConditions, refundTiers[], noShowAfterDays, noShowRefundPercent, releaseUnitOnNoShow }.
+ * @param {Function} props.set (key, giá trị) cập nhật 1 trường cấu hình.
  */
 function ReservationFields({ value, set }) {
   const tiers = value.refundTiers
   // Sửa 1 mức hoàn tiền trong danh sách theo vị trí.
   const updateTier = (index, patch) => set('refundTiers', tiers.map((t, i) => (i === index ? { ...t, ...patch } : t)))
-  const sorted = [...tiers].map((t, i) => ({ ...t, i })).sort((a, b) => (b.minDaysBefore ?? 0) - (a.minDaysBefore ?? 0))
+  // Các mức sắp xếp theo số ngày giảm dần (giữ vị trí gốc `i` để sửa/xóa đúng phần tử); dùng để hiện khoảng "từ X đến Y ngày".
+  const sorted =[...tiers].map((t, i) => ({ ...t, i })).sort((a, b) => (b.minDaysBefore ?? 0) - (a.minDaysBefore ?? 0))
   return (
     <>
       <div className="pe-grid">
@@ -497,8 +560,13 @@ function ReservationFields({ value, set }) {
 
 /* ---------- 5. Gia hạn & trả kho ---------- */
 /**
- * Component các trường của nhóm "Gia hạn & trả kho": số ngày báo trước, kỳ gia hạn tối thiểu/tối đa, điều kiện,
- * hạn thanh toán, số ngày hoàn cọc, yêu cầu khi trả kho, danh sách phí trả kho.
+ * Các ô của nhóm "Gia hạn & trả kho": số ngày báo trước khi gia hạn, kỳ gia hạn tối thiểu/tối đa, hạn thanh toán,
+ * điều kiện không còn nợ quá hạn, cách tính giá gia hạn; số ngày báo trả kho, số ngày hoàn cọc, yêu cầu khi trả kho
+ * và bảng phí trả kho (thêm / sửa / xóa).
+ * Được gọi bởi: PolicyForm khi policyKey === 'renewal_return'.
+ * @param {object} props
+ * @param {object} props.value cấu hình gia hạn & trả kho (renewalNoticeDays, minRenewalMonths, returnFees[]...).
+ * @param {Function} props.set (key, giá trị) cập nhật 1 trường cấu hình.
  */
 function RenewalReturnFields({ value, set }) {
   const fees = value.returnFees

@@ -1,11 +1,18 @@
 /**
  * ======================================================================
- * FILE: src/features/facility/FacilityFloorPlan.jsx  —  SƠ ĐỒ KHO BÊN TRONG MỘT CƠ SỞ (trang chi tiết cơ sở)
- * - Chia khu theo nhóm size (S, M, L, xe). Mỗi kho là 1 chấm: đỏ = đã thuê, xanh = còn trống, xám = bảo trì.
- * - Bấm chấm -> mở Unit3DViewer xem kho 3D.
- * - Cơ sở có tọa độ: vẽ chấm kho ngay trên bản đồ thật (FacilityUnitsMap); chưa có tọa độ: hiện sơ đồ lưới.
- * Lưu ý: DB chưa có tọa độ từng kho nên vị trí kho được xếp tự động theo khu (minh họa). Không gọi API.
- * Dùng ở: App.jsx.
+ * FILE: src/features/facility/FacilityFloorPlan.jsx  —  SƠ ĐỒ KHO TRONG CƠ SỞ
+ * CHỨC NĂNG: Khối "Sơ đồ / Bản đồ kho tại cơ sở" ở trang chi tiết cơ sở. Chia kho theo khu nhóm size (S, M, L, xe);
+ *   mỗi kho là 1 chấm: đỏ = đã thuê, xanh = còn trống, xám = bảo trì; kèm chú thích đếm số kho mỗi trạng thái.
+ *   Cơ sở có tọa độ: vẽ chấm kho ngay trên bản đồ thật (FacilityUnitsMap); chưa có tọa độ: hiện sơ đồ lưới HTML.
+ *   Bấm chấm -> mở Unit3DViewer xem kho 3D. Kho không khớp bộ lọc (highlightIds) bị làm mờ.
+ *   Lưu ý: DB chưa có tọa độ từng kho nên vị trí kho được xếp tự động theo khu (minh họa).
+ * THÀNH PHẦN CHÍNH: FacilityFloorPlan (default export).
+ * DÙNG Ở: src/App.jsx (trang chi tiết cơ sở).
+ * PHỤ THUỘC: ./FacilityUnitsMap, features/unit/Unit3DViewer, utils/unitGeometry, services/storageRules (formatVnd),
+ *   FacilityFloorPlan.css.
+ * API: Không gọi API (dữ liệu kho do App truyền vào; đặt kho / thêm giỏ qua callback onBook, onAddToCart).
+ * LUỒNG: App truyền facility + units + point -> gom kho theo khu (useMemo zones) -> vẽ bản đồ hoặc lưới
+ *   -> khách bấm chấm -> setSelected(unit) -> mở <Unit3DViewer> -> đóng: setSelected(null).
  * ======================================================================
  */
 import React, { useMemo, useState } from 'react'
@@ -15,23 +22,16 @@ import Unit3DViewer from '../unit/Unit3DViewer'
 import FacilityUnitsMap from './FacilityUnitsMap'
 import './FacilityFloorPlan.css'
 
-/*
- * Sơ đồ kho bên trong một cơ sở (trang chi tiết cơ sở).
- * - Chia khu theo nhóm size (Khu S, M, L, xe). Mỗi kho là một chấm: đỏ = đã thuê, xanh = còn trống, xám = bảo trì.
- * - Bấm chấm -> xem kho 3D (Unit3DViewer).
- * - Cơ sở có tọa độ: vẽ các chấm kho NGAY TRÊN BẢN ĐỒ (FacilityUnitsMap), quanh vị trí thật của cơ sở.
- * - Cơ sở chưa có tọa độ: hiện sơ đồ dạng lưới như cũ.
- * Lưu ý: database chưa có tọa độ thật của từng kho, nên vị trí kho được xếp tự động theo khu (minh họa).
- */
 /**
- * Component sơ đồ kho của cơ sở.
+ * Component sơ đồ kho của cơ sở: header + chú thích, bản đồ kho (có tọa độ) hoặc sơ đồ lưới, và cửa sổ 3D
+ * của kho đang chọn. Trả null nếu cơ sở không có kho nào.
  * @param {object} props facility, units (danh sách kho), point (tọa độ cơ sở), highlightIds (Set mã kho khớp bộ lọc,
  *   kho khác bị làm mờ), onOpenDetail(unit), onBook(unit), otherUnits + onOpenOther (truyền cho cửa sổ 3D để
  *   gợi ý kho ở cơ sở khác), onAddToCart(units) (thêm nhiều kho vào giỏ từ cửa sổ 3D).
  */
 export default function FacilityFloorPlan({ facility, units, point = null, highlightIds = null, onOpenDetail, onBook, otherUnits = [], onOpenOther, onAddToCart }) {
-  const [selected, setSelected] = useState(null)
-  const [hover, setHover] = useState(null)
+  const [selected, setSelected] = useState(null) // kho đang mở trong cửa sổ 3D (null = đóng)
+  const [hover, setHover] = useState(null) // mã kho đang rê chuột / focus (hiện tooltip trong sơ đồ lưới)
 
   // Gom kho theo nhóm size (S/M/L/V) và sắp xếp: nhóm theo thứ tự chuẩn, kho trong nhóm theo diện tích rồi mã kho.
   const zones = useMemo(() => {
@@ -51,12 +51,14 @@ export default function FacilityFloorPlan({ facility, units, point = null, highl
       }))
   }, [units])
 
+  // Đếm số kho theo trạng thái để hiện ở chú thích.
   const counts = units.reduce((acc, unit) => {
     acc[unitPlanStatus(unit)] += 1
     return acc
   }, { free: 0, rented: 0, off: 0 })
 
   if (!units.length) return null
+  // Có tọa độ hợp lệ thì vẽ trên bản đồ thật, không thì dùng sơ đồ lưới.
   const hasMap = point && Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude)) && point.latitude !== null && point.longitude !== null
 
   return (

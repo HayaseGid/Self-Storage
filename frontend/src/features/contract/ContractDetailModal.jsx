@@ -1,12 +1,23 @@
 /**
  * ======================================================================
- * FILE: src/features/contract/ContractDetailModal.jsx  —  CHI TIẾT HỢP ĐỒNG CHO KHÁCH (xem ở mọi trạng thái)
- * Trạng thái: đang tạo hợp đồng (bản xem trước) -> chờ ký -> đã ký chờ nhận kho -> đang hiệu lực.
- * Chức năng: xem văn bản đầy đủ + điều khoản + phụ lục kho + chữ ký; In/Lưu PDF; gửi hợp đồng qua email;
- * nút Ký / Gia hạn / Hủy đặt kho (do cha truyền vào).
+ * FILE: src/features/contract/ContractDetailModal.jsx  —  HỘP THOẠI CHI TIẾT HỢP ĐỒNG (PHÍA KHÁCH)
+ * CHỨC NĂNG: Hộp thoại xem hợp đồng ở MỌI giai đoạn: đang tạo (bản xem trước) -> chờ ký -> đã ký chờ nhận kho
+ *   -> đang hiệu lực. Hiện thanh tiến trình 4 bước, bảng tóm tắt tiền, toàn văn hợp đồng (ContractDocument có điều khoản
+ *   chi tiết + Phụ lục kho + chữ ký). Cho In / Lưu PDF, gửi hợp đồng qua email, và các nút Ký / Gia hạn / Hủy đặt kho.
+ *   Luồng mới: không còn bước Manager duyệt, đặt cọc xong là hợp đồng được tạo để ký.
+ * THÀNH PHẦN CHÍNH:
+ *   - ContractDetailModal (default export): component hộp thoại.
+ *   - contractStage(rentals): xác định giai đoạn hợp đồng (approval / preparing / toSign / signed / active).
+ *   - STAGE_LABEL: nhãn + màu badge cho từng giai đoạn.
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx.
+ * PHỤ THUỘC: api/api (apiGet), services/storageRules (formatVnd), ./ContractDocument, api/contractEmail
+ *   (sendContractEmail), services/policies (usePolicies), ContractSignFlow.css.
  * API: GET /api/contracts/{contractId}/signature (ContractsController) — lấy ảnh chữ ký nếu đã ký;
- *      gửi email qua sendContractEmail() -> POST /api/email/send-contract (dự phòng EmailJS).
- * Dùng ở: CustomerAccount.
+ *      POST /api/email/send-contract (qua sendContractEmail, có dự phòng EmailJS) — gửi hợp đồng qua email.
+ * LUỒNG: khách bấm "Xem chi tiết hợp đồng" trên ContractCard -> CustomerAccount mở hộp thoại với group
+ *   -> useEffect gọi GET .../signature cho từng contractId tới khi thấy chữ ký -> hiện văn bản + chữ ký
+ *   -> bấm "Gửi qua email" -> sendMail() -> POST /api/email/send-contract -> hiện thông báo kết quả;
+ *   bấm "Ký hợp đồng" -> onSign(group) -> CustomerAccount mở ContractSignFlow.
  * ======================================================================
  */
 import React, { useEffect, useState } from 'react'
@@ -17,16 +28,10 @@ import { sendContractEmail } from '../../api/contractEmail'
 import { usePolicies } from '../../services/policies'
 import './ContractSignFlow.css'
 
-/*
- * Chi tiết hợp đồng cho khách hàng: xem được ở mọi trạng thái
- * (đang tạo hợp đồng -> bản xem trước, chờ ký, đã ký chờ nhận kho, đang thuê).
- * Luồng mới: không còn bước Manager duyệt, đặt cọc xong là hợp đồng được tạo để ký.
- * - Văn bản đầy đủ + điều khoản chi tiết + Phụ lục kho + chữ ký (nếu đã ký)
- * - In / Lưu PDF
- * - Gửi hợp đồng qua email (EmailJS - contractEmail.js, không cần backend)
- */
 /**
- * Định dạng tiền kèm "đ".
+ * Định dạng số tiền thành chuỗi kiểu Việt Nam kèm "đ" (rỗng -> "0đ").
+ * @param {number} value số tiền.
+ * @returns {string}
  */
 const money = value => `${formatVnd(value || 0)}đ`
 
@@ -34,7 +39,10 @@ const money = value => `${formatVnd(value || 0)}đ`
  * Xác định giai đoạn của hợp đồng từ trạng thái đơn/hợp đồng:
  * 'toSign' (chờ ký, kể cả phụ lục gia hạn), 'active' (đang thuê), 'signed' (đã ký chờ nhận kho),
  * 'preparing' (đã xác nhận nhưng chưa có hợp đồng), 'approval' (đang tạo).
- * @param {object[]} rentals các đơn trong nhóm hợp đồng.
+ * Chỉ xét đơn đầu tiên của nhóm (các đơn trong nhóm cùng trạng thái).
+ * @param {object[]} rentals các đơn trong nhóm hợp đồng (dùng status, contractStatus, contractId, isRenewal, renewedFrom).
+ * @returns {'toSign'|'active'|'signed'|'preparing'|'approval'}
+ * Được gọi bởi: ContractDetailModal (chọn nhãn badge, bước tiến trình, có hiện nút Ký hay không).
  */
 export function contractStage(rentals) {
   const r = rentals[0] || {}
@@ -47,6 +55,7 @@ export function contractStage(rentals) {
   return 'approval'
 }
 
+/** Giai đoạn -> [chữ hiện trên badge, class màu badge (wait/todo/done)]. */
 const STAGE_LABEL = {
   approval: ['Đang tạo hợp đồng', 'wait'],
   preparing: ['Đang tạo hợp đồng', 'wait'],
@@ -56,15 +65,26 @@ const STAGE_LABEL = {
 }
 
 /**
- * Component hộp thoại chi tiết hợp đồng.
- * @param {object} props group, customer, facilityAddress, knownSignature (chữ ký đã biết, khỏi gọi API),
- *   autoMailResult (kết quả gửi email tự động sau khi ký), onClose, onSign(group), onRenew, onCancel.
+ * Hộp thoại chi tiết hợp đồng cho khách: badge giai đoạn, tiến trình 4 bước, tóm tắt tiền, văn bản hợp đồng,
+ * các nút In/PDF, Gửi email, Hủy đặt kho, Gia hạn, Ký, Đóng. Nhấn Esc hoặc bấm nền tối để đóng.
+ * @param {object} props
+ * @param {{key, code, title, rentals: object[], renewedFrom?}} props.group nhóm hợp đồng (1 hoặc nhiều đơn).
+ * @param {{name, email, phone}} props.customer thông tin khách (in vào văn bản, gửi email).
+ * @param {string} [props.facilityAddress] địa chỉ cơ sở.
+ * @param {object} [props.knownSignature] chữ ký đã biết sẵn -> không cần gọi API lấy chữ ký.
+ * @param {{tone, text}} [props.autoMailResult] kết quả gửi email tự động ngay sau khi ký (hiện sẵn ở đầu hộp thoại).
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} [props.onSign] onSign(group) — bấm "Ký hợp đồng / Ký phụ lục" (chỉ hiện khi giai đoạn 'toSign').
+ * @param {Function} [props.onRenew] bấm "Gia hạn".
+ * @param {Function} [props.onCancel] bấm "Hủy đặt kho".
+ * API: GET /api/contracts/{id}/signature (trong useEffect), POST /api/email/send-contract (sendMail).
+ * Được gọi bởi: CustomerAccount khi khách bấm "Xem chi tiết hợp đồng".
  */
 export default function ContractDetailModal({ group, customer, facilityAddress, knownSignature, autoMailResult, onClose, onSign, onRenew, onCancel }) {
-  const [signature, setSignature] = useState(knownSignature || null)
-  const [loading, setLoading] = useState(!knownSignature)
-  const [mail, setMail] = useState(autoMailResult || null)
-  const [sending, setSending] = useState(false)
+  const [signature, setSignature] = useState(knownSignature || null) // chữ ký { image, signerName, signedAt } nếu đã ký
+  const [loading, setLoading] = useState(!knownSignature) // đang tải trạng thái chữ ký
+  const [mail, setMail] = useState(autoMailResult || null) // thông báo gửi email { tone, text }
+  const [sending, setSending] = useState(false) // đang gửi email
 
   const policies = usePolicies()
   const rentals = group.rentals
@@ -73,10 +93,12 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
   const contractIds = rentals.map(r => r.contractId).filter(Boolean)
   const hasAllContracts = contractIds.length === rentals.length
   const signedLocally = rentals.some(r => r.contractStatus === 'Signed' || r.contractStatus === 'Active')
+  // Giai đoạn hiện tại; nếu API báo đã có chữ ký mà dữ liệu đơn chưa cập nhật thì coi như 'signed'.
   let stage = contractStage(rentals)
   if (signature && (stage === 'toSign')) stage = 'signed'
   const [stageText, stageTone] = STAGE_LABEL[stage]
 
+  // Chạy khi mở hộp thoại (và khi onClose đổi): bắt phím Esc để đóng + khóa cuộn trang nền; dọn dẹp khi đóng.
   useEffect(() => {
     // Nhấn Esc để đóng hộp thoại.
     const onKey = event => { if (event.key === 'Escape') onClose() }
@@ -86,6 +108,8 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = previous }
   }, [onClose])
 
+  // Chạy khi mở hộp thoại / đổi nhóm hợp đồng (group.key): lần lượt gọi GET /api/contracts/{id}/signature cho từng
+  // hợp đồng trong nhóm, gặp hợp đồng đã ký thì lưu chữ ký vào state và dừng. Bỏ qua nếu đã có knownSignature.
   useEffect(() => {
     if (knownSignature || !contractIds.length) { setLoading(false); return }
     let cancelled = false
@@ -107,7 +131,8 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
   }, [group.key])
 
   /**
-   * Gửi hợp đồng qua email cho khách và hiện kết quả.
+   * Gửi hợp đồng qua email cho khách và hiện kết quả trong khung thông báo (state mail).
+   * Chạy khi bấm nút "✉ Gửi qua email" (nút bị khóa khi nhóm chưa có đủ contractId).
    * API: POST /api/email/send-contract (qua sendContractEmail; dự phòng EmailJS).
    */
   const sendMail = async () => {
@@ -123,6 +148,8 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
     }
   }
 
+  // Các bước của thanh tiến trình: phụ lục gia hạn và hợp đồng mới có bộ bước khác nhau.
+  // currentIndex = bước đang ở (các bước trước được tô "done").
   const isRenewal = Boolean(group.renewedFrom || first.isRenewal)
   const steps = isRenewal ? [
     ['Thanh toán gia hạn', 'Đã thanh toán'],

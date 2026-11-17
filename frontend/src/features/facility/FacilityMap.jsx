@@ -1,23 +1,28 @@
 /**
  * ======================================================================
- * FILE: src/features/facility/FacilityMap.jsx  —  BẢN ĐỒ VỊ TRÍ CÁC CƠ SỞ LƯU TRỮ (Leaflet + OpenStreetMap)
- * - Tọa độ lấy từ API GET /api/facility-locations (FacilityLocationsController; cột Latitude/Longitude của Facility).
- * - Leaflet nạp từ CDN khi cần (không cài package npm, không cần API key).
- * - Mỗi cơ sở là 1 ghim hiện số kho trống; bấm ghim -> popup tên, địa chỉ, "Xem kho" và "Chỉ đường" (Google Maps).
- * Dùng ở: App.jsx (trang chủ, trang chi tiết cơ sở), FacilityUnitsMap (dùng chung loadLeaflet).
+ * FILE: src/features/facility/FacilityMap.jsx  —  BẢN ĐỒ CÁC CƠ SỞ (LEAFLET)
+ * CHỨC NĂNG: Hiển thị bản đồ vị trí các cơ sở lưu trữ bằng Leaflet + bản đồ OpenStreetMap (miễn phí, không cần
+ *   API key). Leaflet được nạp từ CDN khi cần nên không phải cài package npm. Mỗi cơ sở là 1 ghim hiện số kho trống;
+ *   bấm ghim -> popup tên, địa chỉ, số kho trống, giờ mở cửa, SĐT, nút "Xem kho" và link "Chỉ đường" (Google Maps).
+ *   Tọa độ lấy từ API (cột Latitude/Longitude của bảng Facility, FacilityLocationsController ở backend).
+ * THÀNH PHẦN CHÍNH:
+ *   - loadLeaflet(): nạp Leaflet (CSS + JS) 1 lần, dùng chung với FacilityUnitsMap.
+ *   - loadFacilityLocations(force), useFacilityLocations(): tải tọa độ cơ sở (cache 1 lần) / hook kèm loading, error.
+ *   - directionsUrl(point): link chỉ đường Google Maps.
+ *   - FacilityMap (default export): component bản đồ.
+ * DÙNG Ở: src/App.jsx (trang chủ / danh sách cơ sở, trang chi tiết cơ sở), features/facility/FacilityUnitsMap.jsx (loadLeaflet).
+ * PHỤ THUỘC: react, api/api (apiGet), FacilityMap.css, Leaflet 1.9.4 từ https://unpkg.com (window.L), tile OpenStreetMap.
+ * API: GET /api/facility-locations -> [{ id, name, address, latitude, longitude, ... }].
+ * LUỒNG: App gọi useFacilityLocations -> GET /api/facility-locations -> ghép với danh sách cơ sở thành points
+ *   -> <FacilityMap points onOpen selectedId> -> loadLeaflet -> tạo bản đồ -> vẽ ghim -> khách bấm "Xem kho" trong popup
+ *   -> onOpen(point) -> App mở trang chi tiết cơ sở.
  * ======================================================================
  */
 import React, { useEffect, useRef, useState } from 'react'
 import { apiGet } from '../../api/api'
 import './FacilityMap.css'
 
-/*
- * Bản đồ vị trí các cơ sở lưu trữ (Leaflet + bản đồ OpenStreetMap, miễn phí, không cần API key).
- * - Tọa độ lấy từ GET /api/facility-locations (cột Latitude/Longitude của bảng Facility).
- * - Leaflet được nạp từ CDN khi cần, nên không phải cài thêm package npm.
- * - Mỗi cơ sở là một ghim hiện số kho trống; bấm ghim -> tên, địa chỉ, nút "Xem kho" và "Chỉ đường" (Google Maps).
- */
-
+/* Phiên bản và địa chỉ CDN của Leaflet; tâm bản đồ mặc định khi chưa có ghim nào. */
 const LEAFLET_VERSION = '1.9.4'
 const LEAFLET_CSS = `https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.css`
 const LEAFLET_JS = `https://unpkg.com/leaflet@${LEAFLET_VERSION}/dist/leaflet.js`
@@ -26,6 +31,8 @@ const DEFAULT_CENTER = [10.7769, 106.7009] // TP. Hồ Chí Minh
 let leafletPromise = null
 /**
  * Nạp thư viện bản đồ Leaflet (CSS + JS) từ CDN một lần duy nhất, trả về window.L.
+ * Chèn <link> CSS (nếu chưa có) và <script> vào <head>; lỗi thì xóa Promise để lần sau thử lại.
+ * Được gọi bởi FacilityMap và FacilityUnitsMap khi tạo bản đồ.
  * @returns {Promise<object>}
  */
 export function loadLeaflet() {
@@ -48,10 +55,9 @@ export function loadLeaflet() {
   return leafletPromise
 }
 
-/* Tọa độ các cơ sở (tải 1 lần, dùng chung). */
-let locationsPromise = null
+let locationsPromise = null // Promise tọa độ các cơ sở (tải 1 lần, dùng chung)
 /**
- * Tải tọa độ các cơ sở (gọi 1 lần, dùng chung kết quả cho mọi nơi).
+ * Tải tọa độ các cơ sở (gọi 1 lần, dùng chung kết quả cho mọi nơi). Lỗi thì xóa cache để lần sau gọi lại.
  * API: GET /api/facility-locations  -> [{ id, name, address, latitude, longitude, ... }]
  * @param {boolean} force true để tải lại.
  * @returns {Promise<object[]>}
@@ -66,7 +72,8 @@ export function loadFacilityLocations(force = false) {
 }
 
 /**
- * Hook React: lấy danh sách tọa độ cơ sở kèm trạng thái loading/error.
+ * Hook React: lấy danh sách tọa độ cơ sở kèm trạng thái loading/error (gọi loadFacilityLocations khi mount;
+ * cờ alive tránh setState sau khi component đã gỡ). API: GET /api/facility-locations. Được gọi bởi App.jsx.
  * @returns {{loading:boolean, error:string, locations:object[]}}
  */
 export function useFacilityLocations() {
@@ -82,21 +89,20 @@ export function useFacilityLocations() {
 }
 
 /**
- * Tạo link Google Maps chỉ đường tới tọa độ của cơ sở.
+ * Tạo link Google Maps chỉ đường tới tọa độ của cơ sở (dùng trong popup bản đồ và trang chi tiết cơ sở ở App.jsx).
+ * @param {{latitude:number, longitude:number}} point @returns {string}
  */
 export const directionsUrl = point => `https://www.google.com/maps/dir/?api=1&destination=${point.latitude},${point.longitude}`
 
 /**
- * Escape ký tự đặc biệt HTML để chèn vào nội dung popup của bản đồ.
+ * Escape ký tự đặc biệt HTML để chèn vào nội dung popup của bản đồ (popup Leaflet là chuỗi HTML,
+ * nên phải escape tên / địa chỉ để tránh chèn mã độc - XSS).
  */
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch])
 
-/*
- * points: [{ id, name, address, latitude, longitude, available, total, phone, hours }]
- * onOpen(point): bấm "Xem kho" trong popup.  selectedId: cơ sở đang chọn (mở popup, bay tới).
- */
 /**
  * Component bản đồ các cơ sở: tạo bản đồ 1 lần, vẽ lại ghim khi dữ liệu đổi, bay tới cơ sở đang chọn.
+ * Bỏ qua cơ sở không có tọa độ hợp lệ. Được gọi bởi App.jsx.
  * @param {object} props points ([{ id, name, address, latitude, longitude, available, total, phone, hours }]),
  *   onOpen(point) (bấm "Xem kho" trong popup), selectedId (cơ sở đang chọn), height, single (chỉ 1 cơ sở).
  */
@@ -109,12 +115,14 @@ export default function FacilityMap({ points, onOpen, selectedId = null, height 
   const [ready, setReady] = useState(false)
   onOpenRef.current = onOpen
 
+  // Chỉ giữ cơ sở có vĩ độ / kinh độ là số; key = chuỗi tóm tắt để biết khi nào cần vẽ lại ghim.
   const valid = points.filter(p => Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude)) && p.latitude !== null && p.longitude !== null)
   const key = valid.map(p => `${p.id}:${p.latitude},${p.longitude}:${p.available}`).join('|')
   const pointsRef = useRef(valid)
   pointsRef.current = valid
 
-  // Tạo bản đồ một lần.
+  // Tạo bản đồ một lần khi mount: nạp Leaflet, thêm lớp tile OpenStreetMap, gắn xử lý nút "Xem kho" mỗi khi popup mở.
+  // Cleanup khi gỡ component: xóa bản đồ.
   useEffect(() => {
     let cancelled = false
     loadLeaflet()
@@ -142,7 +150,8 @@ export default function FacilityMap({ points, onOpen, selectedId = null, height 
     }
   }, [])
 
-  // Vẽ lại ghim khi dữ liệu đổi.
+  // Vẽ lại ghim khi bản đồ sẵn sàng hoặc dữ liệu đổi (key): xóa ghim cũ, tạo ghim + popup mới, rồi căn khung nhìn
+  // (1 cơ sở: phóng tới; nhiều cơ sở: fitBounds vừa tất cả). Chế độ single: tự mở popup.
   useEffect(() => {
     const map = mapRef.current
     const L = window.L
@@ -179,7 +188,7 @@ export default function FacilityMap({ points, onOpen, selectedId = null, height 
     if (single && valid.length === 1) markersRef.current.get(String(valid[0].id))?.openPopup()
   }, [ready, key])
 
-  // Mở popup cơ sở đang chọn.
+  // Khi selectedId đổi (vd khách bấm 1 cơ sở trong danh sách bên cạnh): di chuyển tới ghim đó và mở popup.
   useEffect(() => {
     if (!ready || selectedId == null) return
     const marker = markersRef.current.get(String(selectedId))

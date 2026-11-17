@@ -1,17 +1,33 @@
 /**
  * ======================================================================
  * FILE: src/features/notification/HeaderNotificationBell.jsx  —  CHUÔNG THÔNG BÁO Ở HEADER (chỉ với tài khoản KHÁCH HÀNG)
- * - Bấm chuông: mở popup danh sách thông báo ngay tại trang đang xem (không chuyển trang).
- * - Bấm 1 thông báo: chuyển tới đúng chỗ (ký hợp đồng, gia hạn, thẻ hợp đồng, tab thanh toán...).
- * - "Xem tất cả": mở tab Thông báo trong trang tài khoản.
- * - Đơn chưa đặt cọc được GHIM đầu popup ("Cần làm ngay", có đồng hồ) và cộng vào số đỏ;
- *   HeaderPendingDepositBar là thanh nhắc dưới header (dùng chung 1 lần tải dữ liệu với chuông).
- * Luồng dữ liệu / API (gọi qua các hook):
+ * CHỨC NĂNG: Nút chuông trên header các trang công khai, có số đỏ = thông báo chưa xem + đơn chưa đặt cọc.
+ *   Bấm chuông mở popup danh sách thông báo ngay tại trang đang xem (không chuyển trang); bấm 1 thông báo
+ *   thì chuyển tới đúng chỗ trong trang khách (ký hợp đồng, gia hạn, thẻ hợp đồng, tab thanh toán...);
+ *   "Xem tất cả" mở tab Thông báo. Đơn chưa đặt cọc (khách thoát VNPay giữa chừng) được GHIM đầu popup
+ *   ("Cần làm ngay", có đồng hồ đếm giờ giữ kho). Kèm thanh nhắc HeaderPendingDepositBar dưới header.
+ *   Dùng CHUNG trạng thái "đã xem" (useCustomerNotifications) với trang Thông báo nên số luôn khớp.
+ * THÀNH PHẦN CHÍNH:
+ *   - fetchShared / useSharedRentals (nội bộ): tải danh sách đơn 1 lần dùng chung cho chuông + thanh nhắc.
+ *   - BellIcon (export): biểu tượng chuông SVG.
+ *   - useHeaderNotices (export): hook gom dữ liệu và tính danh sách thông báo.
+ *   - HeaderPendingDepositBar (export): thanh nhắc đơn chưa đặt cọc dưới header.
+ *   - openNoticeTarget (nội bộ): chuyển tới đúng nơi xử lý 1 thông báo.
+ *   - HeaderNotificationBell (export default): nút chuông + popup (variant 'icon') hoặc dòng menu điện thoại ('menu').
+ * DÙNG Ở: src/App.jsx (header desktop + menu điện thoại).
+ * PHỤ THUỘC: services/customerNoticeData (useCustomerNotifications), ./CustomerNotifications (NotificationsPreview),
+ *   features/contract/ContractRenewal (useContractRenewals), services/policies (usePolicies),
+ *   features/return/UnitReturn (useUnitReturns), features/return/ReturnInspection (useMyInspections),
+ *   services/afterDeposit (focusContract, openCustomerSection, requestContractSign, requestRenewal),
+ *   features/payment/PendingPayments (PendingDepositBar, fmtLeft, usePendingDeposits), services/storageRules.
+ * API (gọi gián tiếp qua các hook / hàm truyền vào):
  *   loadRentals() do App.jsx truyền vào -> GET /api/customer-reservations/mine
  *   useContractRenewals -> GET /api/contract-renewals/mine;  usePolicies -> GET /api/policies
  *   useUnitReturns -> GET /api/unit-returns/mine;  useMyInspections -> GET /api/return-inspections/mine
- * Dùng chung trạng thái "đã xem" với trang Thông báo nên số trên header luôn khớp.
- * Dùng ở: App.jsx (header các trang công khai).
+ * LUỒNG: App.jsx vẽ <HeaderNotificationBell> -> useHeaderNotices tải đơn/gia hạn/chính sách/trả kho/kiểm kho
+ *   -> useCustomerNotifications tính danh sách + trạng thái đã xem -> hiện số đỏ -> khách bấm chuông mở popup
+ *   -> bấm 1 thông báo -> goTo -> openNoticeTarget ghi yêu cầu vào sessionStorage (qua afterDeposit)
+ *   -> chuyển sang /customer đúng tab -> trang khách đọc yêu cầu và mở đúng hộp thoại.
  * ======================================================================
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
@@ -26,27 +42,20 @@ import { useMyInspections } from '../return/ReturnInspection'
 import { formatReservationCode } from '../../services/storageRules'
 import './HeaderNotificationBell.css'
 
-/*
- * CHUÔNG THÔNG BÁO Ở HEADER (file THÊM MỚI) - chỉ hiện với tài khoản khách hàng.
- *   - Bấm chuông: mở POPUP danh sách thông báo ngay tại trang đang xem (không chuyển trang).
- *   - Bấm 1 thông báo: mới chuyển tới đúng chỗ (ký hợp đồng, gia hạn, thẻ hợp đồng, tab thanh toán...),
- *     cùng cách xử lý với thông báo trong trang tài khoản (openNotice của CustomerAccount).
- *   - "Xem tất cả": mở tab Thông báo trong trang tài khoản.
- * Dùng CHUNG dữ liệu + trạng thái "đã xem" với chuông trong trang tài khoản (useCustomerNotifications),
- * nên số trên header luôn khớp số trong trang Thông báo.
- *   loadRentals: hàm trả về Promise danh sách đơn của khách (cùng dữ liệu trang khách) - App.jsx truyền vào.
- *   variant: 'icon' (nút trên header, có popup) | 'menu' (dòng trong menu điện thoại, bấm là mở tab Thông báo).
- * Đơn chưa đặt cọc (khách thoát VNPay giữa chừng) được GHIM đầu popup ("Cần làm ngay") và cộng vào số đỏ,
- * kèm thanh nhắc HeaderPendingDepositBar dưới header (dùng chung 1 lần tải dữ liệu với chuông).
+/**
+ * Bộ nhớ đệm dùng chung (cấp module) giữa chuông + thanh nhắc trên header để chỉ tải danh sách đơn 1 lần.
+ *   email: tài khoản đang dùng dữ liệu này; data: danh sách đơn; at: thời điểm tải (ms);
+ *   promise: lần tải đang chạy (tránh gọi trùng); subs: các hàm setState của component đang theo dõi.
  */
-
-/* Danh sách đơn dùng chung giữa chuông + thanh nhắc trên header: 1 lần tải cho cả 2, tải lại sau 15 giây / khi quay lại tab. */
 const shared = { email: null, data: null, at: 0, promise: null, subs: new Set() }
 /**
- * Tải danh sách đơn của khách dùng chung cho chuông + thanh nhắc: 1 lần tải cho cả 2, dùng lại trong 15 giây,
- * báo cho mọi component đang theo dõi khi có dữ liệu mới.
- * @param {Function} loadRentals hàm trả về Promise danh sách đơn.
+ * Tải danh sách đơn của khách dùng chung cho chuông + thanh nhắc: nếu đang tải thì dùng lại lần tải đó,
+ * nếu dữ liệu còn mới (< 15 giây) thì trả luôn; tải xong thì báo cho mọi component đang theo dõi (shared.subs).
+ * Gọi API gián tiếp qua loadRentals (GET /api/customer-reservations/mine).
+ * Được gọi bởi: useSharedRentals (khi mount và khi refresh).
+ * @param {Function} loadRentals hàm trả về Promise danh sách đơn (App.jsx truyền vào).
  * @param {boolean} force true để bỏ qua bộ nhớ đệm 15 giây.
+ * @returns {Promise<object[]>} danh sách đơn (lỗi thì trả dữ liệu cũ hoặc mảng rỗng).
  */
 function fetchShared(loadRentals, force = false) {
   if (shared.promise) return shared.promise
@@ -63,8 +72,12 @@ function fetchShared(loadRentals, force = false) {
   return shared.promise
 }
 /**
- * Hook: lấy danh sách đơn dùng chung (đổi tài khoản thì bỏ dữ liệu cũ) và hàm refresh để tải lại.
- * @returns {[object[], Function]}
+ * Hook: lấy danh sách đơn dùng chung từ bộ nhớ đệm `shared` (đổi tài khoản thì bỏ dữ liệu cũ),
+ * đăng ký nhận dữ liệu mới và trả về hàm refresh để bắt buộc tải lại.
+ * Được gọi bởi: useHeaderNotices và HeaderPendingDepositBar.
+ * @param {object} user người dùng hiện tại (dùng user.email để nhận biết đổi tài khoản).
+ * @param {Function} loadRentals hàm trả về Promise danh sách đơn.
+ * @returns {[object[], Function]} [danh sách đơn, refresh()].
  */
 function useSharedRentals(user, loadRentals) {
   if (shared.email !== (user?.email || null)) { // đổi tài khoản -> bỏ dữ liệu cũ
@@ -73,6 +86,7 @@ function useSharedRentals(user, loadRentals) {
     shared.at = 0
   }
   const [rentals, setRentals] = useState(shared.data || [])
+  // Khi mount (hoặc loadRentals đổi): đăng ký nhận dữ liệu và tải đơn; khi unmount thì hủy đăng ký.
   useEffect(() => {
     shared.subs.add(setRentals)
     fetchShared(loadRentals)
@@ -84,7 +98,9 @@ function useSharedRentals(user, loadRentals) {
 }
 
 /**
- * Biểu tượng cái chuông (SVG).
+ * Vẽ biểu tượng cái chuông bằng SVG (màu theo CSS của nút chứa nó).
+ * Được gọi bởi: HeaderNotificationBell (variant 'icon').
+ * @returns {JSX.Element}
  */
 export function BellIcon() {
   return (
@@ -96,9 +112,14 @@ export function BellIcon() {
 }
 
 /**
- * Hook: gom dữ liệu đơn, gia hạn, chính sách, trả kho, kiểm kho rồi tính thông báo cho khách;
- * tự tải lại khi người dùng quay lại tab trình duyệt.
- * @returns {{notices:object, rentals:object[]}}
+ * Hook: gom dữ liệu đơn, gia hạn, chính sách, trả kho, kiểm kho rồi tính danh sách thông báo cho khách
+ * bằng useCustomerNotifications; tự tải lại khi người dùng quay lại tab trình duyệt.
+ * API (qua các hook con): GET /api/customer-reservations/mine, /api/contract-renewals/mine, /api/policies,
+ *   /api/unit-returns/mine, /api/return-inspections/mine.
+ * Được gọi bởi: HeaderNotificationBell.
+ * @param {object} user người dùng hiện tại (cần user.email).
+ * @param {Function} loadRentals hàm trả về Promise danh sách đơn.
+ * @returns {{notices:object, rentals:object[]}} notices = { notifications, isSeen, markAll, unseenCount... }.
  */
 export function useHeaderNotices(user, loadRentals) {
   const [rentals, refresh] = useSharedRentals(user, loadRentals)
@@ -111,6 +132,7 @@ export function useHeaderNotices(user, loadRentals) {
   const { reload: reloadRenewals } = renewals
   const { reload: reloadReturns } = returns
   const { reload: reloadInspections } = inspections
+  // Đăng ký sự kiện visibilitychange 1 lần (đăng ký lại nếu các hàm reload đổi); gỡ khi unmount.
   useEffect(() => {
     // Khi tab trình duyệt hiện lại: tải lại đơn, gia hạn, trả kho, kiểm kho.
     const onVisible = () => {
@@ -135,10 +157,15 @@ export function useHeaderNotices(user, loadRentals) {
   return { notices, rentals }
 }
 
-/* Thanh nhắc đơn chưa đặt cọc ngay dưới header (mọi trang công khai) */
 /**
- * Component thanh nhắc đơn chưa đặt cọc ngay dưới header (mọi trang công khai); bấm để mở tab Thanh toán.
- * @param {object} props user, loadRentals, navigate.
+ * Thanh nhắc "đơn chưa đặt cọc" ngay dưới header (mọi trang công khai); bấm "Thanh toán" để mở tab Thanh toán
+ * của trang khách. Dùng chung danh sách đơn với chuông nên không gọi API thêm lần nữa.
+ * Được gọi bởi: App.jsx (khi người dùng là khách hàng).
+ * @param {object} props
+ * @param {object} props.user người dùng hiện tại.
+ * @param {Function} props.loadRentals hàm trả về Promise danh sách đơn (GET /api/customer-reservations/mine).
+ * @param {Function} props.navigate hàm chuyển trang của App.
+ * @returns {JSX.Element}
  */
 export function HeaderPendingDepositBar({ user, loadRentals, navigate }) {
   const [rentals, refresh] = useSharedRentals(user, loadRentals)
@@ -151,11 +178,13 @@ export function HeaderPendingDepositBar({ user, loadRentals, navigate }) {
   return <PendingDepositBar rentals={rentals} onPay={() => openCustomerSection(navigate, 'payment')} />
 }
 
-/* Mở đúng nơi của thông báo trong trang khách (giống openNotice của CustomerAccount, nhưng từ trang khác nên
-   ghi yêu cầu lại rồi chuyển trang; trang khách đọc yêu cầu khi mở). */
 /**
- * Mở đúng nơi của thông báo trong trang khách khi đang ở trang khác: ghi yêu cầu (ký / gia hạn / cuộn tới hợp đồng)
- * vào sessionStorage rồi chuyển sang /customer ở tab phù hợp.
+ * Mở đúng nơi xử lý 1 thông báo trong trang khách khi đang ở trang khác (giống openNotice của CustomerAccount):
+ * ghi yêu cầu (ký hợp đồng / gia hạn / cuộn tới thẻ hợp đồng) vào sessionStorage qua các hàm của
+ * services/afterDeposit, rồi chuyển sang /customer ở tab phù hợp; trang khách đọc yêu cầu khi mở.
+ * Được gọi bởi: goTo trong HeaderNotificationBell (khi bấm 1 thông báo trong popup).
+ * @param {object} item thông báo; item.action có thể chứa signContractId, renewReservationId, focusReservationId, section.
+ * @param {Function} navigate hàm chuyển trang của App.
  */
 function openNoticeTarget(item, navigate) {
   const action = item?.action || {}
@@ -168,8 +197,16 @@ function openNoticeTarget(item, navigate) {
 }
 
 /**
- * Component chuông thông báo (variant 'icon': nút có popup; 'menu': dòng trong menu điện thoại).
- * @param {object} props user, loadRentals, navigate, variant, onOpen() (gọi khi điều hướng, vd để đóng menu).
+ * Nút chuông thông báo của khách: tính số đỏ (thông báo chưa xem + đơn chờ cọc, không đếm trùng), mở/đóng popup,
+ * ghim đơn chờ cọc ở mục "Cần làm ngay" và hiện tối đa 3 thông báo khác (NotificationsPreview).
+ * Được gọi bởi: App.jsx — variant 'icon' trên header desktop, variant 'menu' trong menu điện thoại.
+ * @param {object} props
+ * @param {object} props.user người dùng hiện tại (chỉ là khách hàng).
+ * @param {Function} props.loadRentals hàm trả về Promise danh sách đơn (GET /api/customer-reservations/mine).
+ * @param {Function} props.navigate hàm chuyển trang của App.
+ * @param {'icon'|'menu'} [props.variant='icon'] 'icon' = nút có popup; 'menu' = dòng menu, bấm là mở tab Thông báo.
+ * @param {Function} [props.onOpen] gọi mỗi khi điều hướng đi (vd để đóng menu điện thoại).
+ * @returns {JSX.Element}
  */
 export default function HeaderNotificationBell({ user, loadRentals, navigate, variant = 'icon', onOpen }) {
   const { notices, rentals } = useHeaderNotices(user, loadRentals)
@@ -179,7 +216,7 @@ export default function HeaderNotificationBell({ user, loadRentals, navigate, va
   const buttonRef = useRef(null)
   // Số đỏ = thông báo chưa xem + đơn chưa đặt cọc (việc phải làm, vẫn đếm dù đã xem; hết giờ giữ kho thì tự mất).
   // Thông báo "deposit:<id>" / "renewal-pay:<id>" trùng với đơn chờ cọc nên gộp theo id, không đếm 2 lần.
-  // Tạo id thông báo tương ứng của 1 đơn chờ cọc ("deposit:<id>" hoặc "renewal-pay:<id>") để gộp, không đếm 2 lần.
+  // depositNoticeId: tạo id thông báo tương ứng của 1 đơn chờ cọc để gộp.
   const depositNoticeId = r => (r.isRenewal ? `renewal-pay:${r.reservationId}` : `deposit:${r.reservationId}`)
   const allNotices = Array.isArray(notices.notifications) ? notices.notifications : []
   const count = new Set([
@@ -192,7 +229,7 @@ export default function HeaderNotificationBell({ user, loadRentals, navigate, va
   const total = listCenter.notifications.length + pendingDeposits.length
   const label = count > 0 ? `Thông báo, ${count} chưa xem` : 'Thông báo'
 
-  // Bấm ra ngoài / Esc -> đóng popup
+  // Chỉ chạy khi popup đang mở (open = true): bấm ra ngoài / Esc -> đóng popup; đóng thì gỡ sự kiện.
   useEffect(() => {
     if (!open) return undefined
     // Bấm chuột ra ngoài popup thì đóng popup.

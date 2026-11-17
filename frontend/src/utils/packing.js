@@ -1,15 +1,26 @@
 /**
  * ======================================================================
- * FILE: src/utils/packing.js  —  THUẬT TOÁN XẾP ĐỒ TRONG KHO (3D BIN PACKING) CHO TRÌNH XEM KHO 3D
- * Thuật toán: Extreme Point Best-Fit (EP-BFD) theo bài báo Crainic, Perboli, Tadei (2007).
- * Công dụng: (1) bày "đồ mẫu" để khách hình dung kho chứa được gì; (2) cho khách tự kéo thả/tự xếp thùng,
- * tính "còn xếp thêm được bao nhiêu thùng". Thuần tính toán, không gọi API, không dùng React.
- * Đơn vị mét. Trục: x = rộng (w), y = cao (h), z = sâu/dài (d). Mỗi món { id, x, y, z, w, h, d }.
- * Dùng ở: features/unit/ThreeUnitScene.jsx, features/unit/UnitPackPlanner.jsx.
- * ======================================================================
- */
-/*
- * XẾP ĐỒ TRONG KHO – thuật toán Extreme Point Best-Fit (EP-BFD) theo:
+ * FILE: src/utils/packing.js  —  THUẬT TOÁN XẾP ĐỒ TRONG KHO (3D BIN PACKING)
+ * CHỨC NĂNG: Tính toán cách xếp đồ (thùng carton, tủ lạnh, nệm, xe máy...) vào một kho hình hộp chữ nhật.
+ *   Phục vụ: (1) bày "đồ mẫu" trong trình xem kho 3D để khách hình dung kho chứa được gì; (2) cho khách tự kéo thả /
+ *   bấm "tự xếp" thùng và xem "còn xếp thêm được bao nhiêu thùng"; (3) kiểm tra số đồ khách nhập có vừa một cỡ kho
+ *   không (gợi ý kho). Thuần tính toán: không gọi API, không dùng React, chạy được cả trong Web Worker.
+ * THÀNH PHẦN CHÍNH:
+ *   - PACK_ITEMS, itemType, customBoxType, BOX_KEYS / BIG_ITEM_KEYS / COUNT_KEYS: danh mục loại đồ khách chọn.
+ *   - supportRatio, stackHeight, placeAt, magnetSnap: kiểm tra / đặt một món khi KÉO THẢ bằng tay.
+ *   - buildExtremePoints, findPosition, sortClusteredAreaHeight, autoPack: thuật toán TỰ XẾP (EP-BFD).
+ *   - remainingCapacity, gridCapacity, volumeOf, boxRequests: tính sức chứa / tổng thể tích / đổi số lượng thành yêu cầu.
+ *   - aisleZones: tạo vùng lối đi (vật cản ảo); sampleFurniture, describeItems: bày đồ mẫu và mô tả bằng chữ.
+ * DÙNG Ở: src/App.jsx, features/unit/ThreeUnitScene.jsx, Unit3DViewer.jsx, UnitPackPlanner.jsx, useBoxFit.js,
+ *   boxCounts.js, ItemCountsInput.jsx, utils/packing.worker.js (chạy autoPack ở luồng nền).
+ * PHỤ THUỘC: Không import gì (thuần JavaScript).
+ * API: Không gọi API.
+ * LUỒNG: component đưa vào kích thước kho room {w, h, l} + danh sách yêu cầu {loại, kích thước, count}
+ *   -> autoPack sắp thứ tự món -> với từng món, findPosition chọn điểm cực phù hợp nhất -> trả danh sách vị trí
+ *   {x, y, z, w, h, d} để ThreeUnitScene vẽ thành khối 3D, và danh sách món không xếp được (failed).
+ *
+ * ---------------------------------------------------------------------
+ * NỀN TẢNG THUẬT TOÁN: Extreme Point Best-Fit (EP-BFD) theo bài báo
  *   T. G. Crainic, G. Perboli, R. Tadei, "Extreme Point-Based Heuristics for Three-Dimensional Bin Packing",
  *   CIRRELT-2007-41 (2007).
  *
@@ -28,15 +39,26 @@
  *  - floorOnly: đồ to chỉ đặt trên sàn; noTop: không chồng gì lên (ghế, đèn, xe); maxTop: giới hạn chiều cao chồng;
  *    lối đi: vùng cấm (vật cản ảo cao tới trần).
  *
- * Đơn vị mét. Trục: x = rộng (W), y = cao (H), z = sâu/dài (L). Hai vách ở x = 0 và z = 0.
- * Mỗi món: { id, x, y, z, w, h, d } với (x, y, z) là góc trái-dưới-trong cùng.
+ * QUY ƯỚC TỌA ĐỘ: đơn vị mét. Trục x = rộng (W), y = cao (H), z = sâu/dài (L). Hai vách ở x = 0 và z = 0, sàn ở y = 0;
+ *   phía z = L là phía trước kho (lối đi trước được chừa ở đây). Mỗi món: { id, x, y, z, w, h, d } với (x, y, z) là góc trái-dưới-trong cùng,
+ *   w/h/d là kích thước theo x/y/z. Món vật cản (lối đi) có thêm obstacle: true.
+ * ======================================================================
  */
 
+/* Sai số so sánh số thực (1 phần triệu mét): tránh lỗi kiểu 0.1 + 0.2 !== 0.3 khi so tọa độ. */
 const EPS = 1e-6
+/**
+ * TỈ LỆ ĐỠ TỐI THIỂU = 70%: một món không nằm trên sàn chỉ được đặt nếu ít nhất 70% diện tích đáy của nó
+ * tựa lên nóc các món ngay bên dưới. Ý nghĩa thực tế: thùng không bị "lơ lửng" hay chìa ra quá nhiều,
+ * chồng lên vẫn vững, không đổ khi đóng cửa kho. Dùng trong fitsAt() và được export cho kéo thả ở ThreeUnitScene.
+ */
 export const SUPPORT_RATIO = 0.7
-const CLUSTER_DELTA = 10 // δ (%) cho thứ tự Clustered Area-Height
+const CLUSTER_DELTA = 10 // δ (%) cho thứ tự Clustered Area-Height: mỗi cụm rộng 10% diện tích sàn kho
 
-/* Danh mục để khách tự xếp (kích thước thật, m). */
+/**
+ * Danh mục loại đồ khách tự xếp (kích thước thật, đơn vị m). Mỗi loại: key, name, size (chữ hiển thị),
+ * w/h/d (rộng/cao/sâu), color (màu khối 3D), floorOnly (chỉ đặt trên sàn), noTop (không chồng gì lên).
+ */
 export const PACK_ITEMS = [
   { key: 'box-s', name: 'Thùng nhỏ', size: '40×30×30 cm', w: 0.4, h: 0.3, d: 0.3, color: '#d9a066' },
   { key: 'box-m', name: 'Thùng vừa', size: '60×40×40 cm', w: 0.6, h: 0.4, d: 0.4, color: '#c98b4f' },
@@ -47,12 +69,16 @@ export const PACK_ITEMS = [
   { key: 'motorbike', name: 'Xe máy', size: '190×70×110 cm', w: 0.7, h: 1.1, d: 1.9, color: '#37474f', floorOnly: true, noTop: true }
 ]
 /**
- * Tìm loại đồ trong danh mục PACK_ITEMS theo key.
+ * Tìm loại đồ trong danh mục PACK_ITEMS theo key (vd 'box-m' -> Thùng vừa).
+ * @param {string} key
+ * @returns {object|undefined} loại đồ, hoặc undefined nếu không có.
  */
 export const itemType = key => PACK_ITEMS.find(item => item.key === key)
 
 /**
- * Kiểm tra 2 đoạn [a0,a1) và [b0,b1) có giao nhau không (có sai số EPS).
+ * Kiểm tra 2 đoạn [a0,a1) và [b0,b1) trên cùng một trục có giao nhau không (có sai số EPS).
+ * Hai hộp 3D va chạm khi và chỉ khi chúng giao nhau trên CẢ 3 trục x, y, z (xem collides()).
+ * Chạm mép (a1 === b0) không tính là giao, nên hai thùng được đặt sát nhau.
  */
 const overlap1 = (a0, a1, b0, b1) => a0 < b1 - EPS && b0 < a1 - EPS
 /**
@@ -60,21 +86,26 @@ const overlap1 = (a0, a1, b0, b1) => a0 < b1 - EPS && b0 < a1 - EPS
  */
 const inside1 = (v, a0, a1) => v >= a0 - EPS && v < a1 - EPS
 /**
- * Làm tròn 3 chữ số thập phân (mm).
+ * Làm tròn 3 chữ số thập phân (tức tới milimét), để các điểm gần như trùng nhau có cùng khóa và bị loại trùng.
  */
 const r3 = v => Math.round(v * 1000) / 1000
-/* Món noTop chiếm cả cột phía trên nó (không được đặt đồ lên). */
 /**
  * Độ cao nóc của món; món noTop (ghế, đèn, xe...) coi như chiếm cả cột tới trần để không chồng gì lên.
+ * @param {object} it món đang xét.
+ * @param {{h:number}} room kho (lấy chiều cao trần room.h).
+ * @returns {number} độ cao nóc (m).
  */
 const topOf = (it, room) => (it.noTop ? room.h : it.y + it.h)
 
 /* ------------------------------------------------------------------ Kiểm tra một vị trí */
 
 /**
- * Kiểm tra hộp (x,y,z,w,h,d) có va chạm với món nào khác trong kho không.
+ * Kiểm tra hộp (x,y,z,w,h,d) có va chạm với món nào khác trong kho không:
+ * va chạm = giao nhau đồng thời trên trục x, trục z và trục y (trục y tính tới topOf, nên món noTop chặn cả cột).
+ * @param {object[]} items các món đang có trong kho (kể cả vật cản lối đi).
+ * @param {{w,h,l}} room kích thước kho.
  * @param {string} excludeId bỏ qua món này (khi đang kéo chính nó).
- * @returns {boolean}
+ * @returns {boolean} true nếu đụng.
  */
 function collides(items, room, x, y, z, w, h, d, excludeId) {
   for (const it of items) {
@@ -84,9 +115,17 @@ function collides(items, room, x, y, z, w, h, d, excludeId) {
   return false
 }
 
-/* Tỉ lệ diện tích đáy được đỡ tại độ cao y (1 = trên sàn). */
 /**
- * Tính tỉ lệ diện tích đáy của hộp được đỡ bởi nóc các món bên dưới ở độ cao y (trên sàn = 1).
+ * Tính TỈ LỆ ĐỠ: phần diện tích đáy của hộp được nóc các món bên dưới nâng đỡ, ở độ cao y.
+ * Công thức: tỉ lệ = Σ (ox × oz) / (w × d), trong đó với mỗi món có nóc đúng bằng y (sai số 0,1 mm):
+ *   ox = min(x + w, it.x + it.w) − max(x, it.x)   (chiều dài phần chồng lên nhau theo trục x)
+ *   oz = min(z + d, it.z + it.d) − max(z, it.z)   (chiều dài phần chồng lên nhau theo trục z)
+ * ox × oz là diện tích hình chữ nhật mà đáy hộp tựa lên nóc món đó. Món noTop / vật cản không tính là mặt đỡ.
+ * Đặt trên sàn (y = 0) thì tỉ lệ = 1. Ví dụ: thùng 0,6 × 0,4 đặt lệch, chỉ tựa 0,3 × 0,4 lên thùng dưới -> 50% (< 70%, không hợp lệ).
+ * @param {object[]} items các món trong kho.
+ * @param {number} x @param {number} y @param {number} z góc trái-dưới-trong của hộp.
+ * @param {number} w @param {number} d kích thước đáy hộp.
+ * @param {string|null} excludeId bỏ qua món này (khi kéo chính nó).
  * @returns {number} 0..1
  */
 export function supportRatio(items, x, y, z, w, d, excludeId = null) {
@@ -103,8 +142,11 @@ export function supportRatio(items, x, y, z, w, d, excludeId = null) {
 }
 
 /**
- * Kiểm tra hộp có đặt hợp lệ tại vị trí cho trước: trong kho, không quá trần/maxTop, đồ floorOnly phải ở sàn,
- * không va chạm, và được đỡ >= SUPPORT_RATIO (70%).
+ * Kiểm tra hộp có đặt hợp lệ tại vị trí cho trước. Lần lượt kiểm 5 điều kiện:
+ *  1) nằm trong kho (không ra ngoài vách), 2) không cao quá trần hoặc maxTop (giới hạn chiều cao chồng),
+ *  3) đồ floorOnly phải ở sàn, 4) không va chạm món khác, 5) được đỡ >= SUPPORT_RATIO (70%).
+ * Được gọi bởi placeAt (kéo thả) và findPosition (tự xếp).
+ * @returns {boolean}
  */
 function fitsAt(items, room, x, y, z, w, h, d, { excludeId = null, floorOnly = false, maxTop = room.h } = {}) {
   if (x < -EPS || y < -EPS || z < -EPS) return false
@@ -114,13 +156,10 @@ function fitsAt(items, room, x, y, z, w, h, d, { excludeId = null, floorOnly = f
   return supportRatio(items, x, y, z, w, d, excludeId) >= SUPPORT_RATIO - EPS
 }
 
-/*
- * Độ cao mặt đỡ (dùng khi KÉO THẢ): món "rơi" xuống nóc cao nhất bên dưới vùng (x, z, w, d).
- * Infinity nếu bên dưới có món không chồng được (noTop) hoặc lối đi.
- */
 /**
- * Tìm độ cao mặt đỡ khi kéo thả: món "rơi" xuống nóc cao nhất bên dưới vùng (x,z,w,d).
- * Trả Infinity nếu bên dưới là món không được chồng (noTop) hoặc lối đi.
+ * Tìm độ cao mặt đỡ khi KÉO THẢ: mô phỏng trọng lực, món "rơi" xuống nóc cao nhất trong số các món
+ * có hình chiếu đáy giao với vùng (x, z, w, d).
+ * @returns {number} độ cao y (m); Infinity nếu bên dưới là món không được chồng (noTop) hoặc lối đi.
  */
 export function stackHeight(items, x, z, w, d, excludeId = null) {
   let top = 0
@@ -134,10 +173,10 @@ export function stackHeight(items, x, z, w, d, excludeId = null) {
   return top
 }
 
-/* Đặt món tại (x, z) theo trọng lực: trả về vị trí hợp lệ (được đỡ ≥ 70%, không quá trần) hoặc null. */
 /**
- * Đặt món tại (x,z) theo trọng lực: tính độ cao rơi xuống rồi kiểm tra hợp lệ.
- * @returns {{x,y,z,w,h,d}|null} vị trí hợp lệ hoặc null.
+ * Đặt món tại (x, z) theo trọng lực: tính độ cao rơi xuống (stackHeight) rồi kiểm tra hợp lệ (fitsAt:
+ * được đỡ ≥ 70%, không quá trần, không va chạm). Được gọi khi khách kéo thả / thêm món bằng tay trong ThreeUnitScene.
+ * @returns {{x,y,z,w,h,d}|null} vị trí hợp lệ hoặc null nếu không đặt được.
  */
 export function placeAt(items, room, x, z, w, h, d, excludeId = null, { floorOnly = false, maxTop = room.h } = {}) {
   if (x < -EPS || z < -EPS || x + w > room.w + EPS || z + d > room.l + EPS) return null
@@ -149,9 +188,18 @@ export function placeAt(items, room, x, z, w, h, d, excludeId = null, { floorOnl
 
 /* ------------------------------------------------------------------ Extreme Points */
 
-/* Chiếu một điểm theo hướng âm của trục tới mặt món gần nhất (hoặc vách = 0). */
+/*
+ * CHIẾU ĐIỂM (projection) là gì? Từ một góc của món vừa đặt, ta "bắn một tia" theo hướng âm của một trục
+ * (xuống dưới, vào trong, sang trái) và dừng lại ở mặt đầu tiên gặp phải: nóc / mặt sau / mặt phải của món
+ * gần nhất, hoặc sàn / vách (tọa độ 0) nếu không gặp món nào. Điểm dừng là tọa độ mới của góc đó.
+ * Ý nghĩa thực tế: góc trên của một thùng thấp đặt cạnh thùng cao sẽ "trượt" xuống chỗ có mặt đỡ thật hoặc
+ * áp sát vào vách, nên món sau được đặt sát vào, không chừa khe hở vô ích.
+ * Ba hàm dưới cùng một khuôn: duyệt mọi món, chỉ xét món mà tia đi qua (điểm nằm trong hình chiếu của món
+ * trên 2 trục còn lại) và nằm phía sau điểm, lấy mặt lớn nhất (gần điểm nhất).
+ */
 /**
  * Chiếu điểm theo hướng -y (xuống dưới) tới nóc món gần nhất hoặc sàn.
+ * @returns {number} tọa độ y mới.
  */
 function projectDown(items, room, px, py, pz) { // theo -y
   let best = 0
@@ -162,7 +210,8 @@ function projectDown(items, room, px, py, pz) { // theo -y
   return best
 }
 /**
- * Chiếu điểm theo hướng -z (vào trong) tới mặt món gần nhất hoặc vách trong.
+ * Chiếu điểm theo hướng -z (vào trong) tới mặt trước của món gần nhất hoặc vách trong.
+ * @returns {number} tọa độ z mới.
  */
 function projectBack(items, room, px, py, pz) { // theo -z
   let best = 0
@@ -172,7 +221,8 @@ function projectBack(items, room, px, py, pz) { // theo -z
   return best
 }
 /**
- * Chiếu điểm theo hướng -x (sang trái) tới mặt món gần nhất hoặc vách trái.
+ * Chiếu điểm theo hướng -x (sang trái) tới mặt phải của món gần nhất hoặc vách trái.
+ * @returns {number} tọa độ x mới.
  */
 function projectLeft(items, room, px, py, pz) { // theo -x
   let best = 0
@@ -182,10 +232,18 @@ function projectLeft(items, room, px, py, pz) { // theo -x
   return best
 }
 
-/* Thuật toán 1 (Update_3DEPL): EP mới sinh ra khi đặt món k. */
 /**
- * Sinh các điểm cực (Extreme Points) mới khi vừa đặt món k (Thuật toán 1 "Update_3DEPL" trong bài báo):
- * lấy các góc phải / trước / trên của món rồi chiếu về các vách/món gần nhất.
+ * Sinh các ĐIỂM CỰC (Extreme Points) mới khi vừa đặt món k (Thuật toán 1 "Update_3DEPL" trong bài báo).
+ * Điểm cực = vị trí ứng viên để đặt góc trái-dưới-trong của món tiếp theo. Thay vì thử mọi tọa độ trong kho,
+ * ta chỉ thử các điểm "nằm sát" đồ đã xếp, nên nhanh mà vẫn xếp khít.
+ * Món k có 3 góc ngoài: góc phải (x+w, y, z), góc trước (x, y, z+d), góc trên (x, y+h, z).
+ * Mỗi góc được CHIẾU theo 2 trục còn lại (xem projectDown/Back/Left) -> tối đa 6 điểm, ví dụ góc phải được
+ * chiếu xuống (để món sau có mặt đỡ) và chiếu vào trong (để món sau sát vách). Món noTop / vật cản không sinh
+ * điểm trên nóc vì không được chồng lên. Thêm cả góc chưa chiếu để có nhiều ứng viên hơn.
+ * Chỉ giữ điểm còn nằm trong kho; tọa độ làm tròn tới mm.
+ * @param {object[]} items các món đã đặt (kể cả k).
+ * @param {{w,h,l}} room kích thước kho.
+ * @param {object} k món vừa đặt.
  * @returns {number[][]} danh sách điểm [x,y,z].
  */
 function newExtremePoints(items, room, k) {
@@ -218,9 +276,11 @@ function newExtremePoints(items, room, k) {
  */
 function epKey(p) { return `${p[0]}|${p[1]}|${p[2]}` }
 
-/* Dựng danh sách EP cho các món đã có (đặt lần lượt theo thứ tự thấp -> cao). */
 /**
- * Dựng danh sách điểm cực cho các món đã có (đặt lần lượt từ thấp lên cao), luôn có điểm gốc (0,0,0).
+ * Dựng danh sách điểm cực cho các món đã có sẵn trong kho (giả lập đặt lần lượt từ thấp lên cao, trong ra ngoài,
+ * trái sang phải), luôn có điểm gốc (0,0,0) = góc trong-trái-sàn. Điểm trùng (cùng khóa x|y|z) chỉ giữ 1.
+ * Được gọi bởi findPosition (khi không truyền sẵn points) và packOnce (khởi tạo danh sách điểm).
+ * @returns {number[][]} danh sách điểm [x,y,z].
  */
 export function buildExtremePoints(items, room) {
   const map = new Map([['0|0|0', [0, 0, 0]]])
@@ -232,10 +292,15 @@ export function buildExtremePoints(items, room) {
   return [...map.values()]
 }
 
-/* Residual Space quanh EP theo +x, +y, +z (tới vách hoặc món gần nhất). */
 /**
- * Tính "khoảng trống dư" (Residual Space) quanh một điểm cực theo +x, +y, +z tới vách hoặc món gần nhất.
- * @returns {number[]} [rx, ry, rz]
+ * Tính KHOẢNG TRỐNG DƯ (Residual Space) quanh một điểm cực: đứng tại điểm (px, py, pz) nhìn theo hướng
+ * +x (sang phải), +y (lên trên), +z (ra phía trước kho), đo khoảng cách tới vật đầu tiên chặn đường:
+ *   rx = (mép trái của món gần nhất bên phải, hoặc vách phải room.w) − px
+ *   ry = (đáy của món gần nhất bên trên, hoặc trần room.h) − py
+ *   rz = (mặt trong của món gần nhất phía trước, hoặc vách cửa room.l) − pz
+ * Ý nghĩa thực tế: đó là "cái hốc" còn trống tại điểm này. findPosition so kích thước món với cái hốc để chọn
+ * chỗ vừa khít nhất (giống tìm ngăn tủ vừa đúng cỡ đồ, thay vì nhét đồ nhỏ vào ngăn to và lãng phí chỗ).
+ * @returns {number[]} [rx, ry, rz] (m)
  */
 function residualSpace(items, room, px, py, pz) {
   let rx = room.w - px, ry = room.h - py, rz = room.l - pz
@@ -248,16 +313,22 @@ function residualSpace(items, room, px, py, pz) {
   return [rx, ry, rz]
 }
 
-/*
- * Chọn EP cho món (w, h, d):
- *  prefer = 'fit'   : Residual Space best-fit (theo bài báo) – dùng khi tự xếp / xếp đồ mẫu.
- *  prefer = 'back'  : EP sát vách trong nhất, rồi trái, rồi thấp (xếp từ trong ra, chừa phía cửa).
- *  prefer = 'floor' : EP thấp nhất trước (giống EP-FFD trong bài: z, y, x thấp nhất – trải sàn).
- */
 /**
- * Chọn vị trí (điểm cực) tốt nhất để đặt món kích thước (w,h,d), có thử xoay 90° trên mặt sàn.
- * prefer: 'fit' = khít khoảng trống dư nhất (theo bài báo); 'back' = sát vách trong trước; 'floor' = thấp nhất trước.
- * @returns {{x,y,z,w,h,d}|null}
+ * Chọn vị trí (điểm cực) tốt nhất để đặt món kích thước (w, h, d), có thử XOAY 90° trên mặt sàn (đổi w và d;
+ * không lật đứng vì chiều cao h giữ nguyên). Với mỗi điểm cực và mỗi hướng xoay, bỏ qua chỗ không hợp lệ (fitsAt),
+ * rồi tính một "điểm số" dạng mảng và lấy chỗ có điểm số NHỎ NHẤT theo thứ tự từ điển (lexLess: so phần tử đầu,
+ * hòa thì so phần tử tiếp theo...). Ba kiểu ưu tiên:
+ *  - prefer = 'fit' (ĐIỂM BEST-FIT, theo bài báo – dùng khi tự xếp / xếp đồ mẫu):
+ *      score = [ (rx − w) + (rz − d) + (ry − h),  y,  z,  x ]
+ *    Phần tử đầu là tổng phần hốc còn thừa sau khi đặt món (rx, ry, rz từ residualSpace). Càng nhỏ = món càng
+ *    vừa khít với hốc, ít để lại khe vụn khó dùng. Hòa thì chọn chỗ thấp hơn, rồi sâu bên trong hơn, rồi bên trái hơn.
+ *  - prefer = 'floor': score = [y, z, x] – chỗ thấp nhất trước (giống EP-FFD trong bài): trải kín sàn rồi mới chồng.
+ *  - prefer = 'back' : score = [z, x, y] – chỗ sát vách trong nhất trước: xếp từ trong ra, chừa trống phía trước.
+ * @param {object[]} items món đã có. @param {{w,h,l}} room kho.
+ * @param {number} w @param {number} h @param {number} d kích thước món (m).
+ * @param {object} options allowRotate (cho xoay), floorOnly, prefer, maxTop (giới hạn chiều cao chồng),
+ *   points (danh sách điểm cực tính sẵn; không truyền thì dựng lại bằng buildExtremePoints).
+ * @returns {{x,y,z,w,h,d}|null} vị trí tốt nhất, hoặc null nếu không còn chỗ.
  */
 export function findPosition(items, room, w, h, d, { allowRotate = true, floorOnly = false, prefer = 'fit', maxTop = room.h, points = null } = {}) {
   const eps = points || buildExtremePoints(items, room)
@@ -281,7 +352,9 @@ export function findPosition(items, room, w, h, d, { allowRotate = true, floorOn
 }
 
 /**
- * So sánh 2 mảng điểm số theo thứ tự từ điển (a < b?), có sai số EPS.
+ * So sánh 2 mảng điểm số theo thứ tự từ điển: a < b nếu phần tử khác nhau đầu tiên của a nhỏ hơn (có sai số EPS).
+ * Ví dụ [0.1, 0, 2] < [0.1, 0.4, 0] vì hòa phần tử đầu, phần tử thứ hai 0 < 0.4.
+ * @returns {boolean}
  */
 function lexLess(a, b) {
   for (let i = 0; i < a.length; i += 1) {
@@ -291,10 +364,16 @@ function lexLess(a, b) {
   return false
 }
 
-/* Thứ tự Clustered Area-Height (mục 4.1 của bài báo). */
 /**
- * Sắp thứ tự món theo "Clustered Area-Height": gom theo diện tích đáy (mỗi cụm δ% diện tích sàn),
- * cụm lớn trước, trong cụm món cao trước.
+ * Sắp thứ tự món theo "CLUSTERED AREA-HEIGHT" (mục 4.1 của bài báo):
+ *   clusterSize = diện tích sàn × δ / 100            (δ = 10 -> mỗi cụm rộng 10% diện tích sàn)
+ *   cụm của món = floor( (w × d) / clusterSize )      (số thứ tự cụm theo diện tích đáy)
+ * Sắp: cụm lớn trước -> trong cùng cụm, món CAO hơn trước -> cuối cùng diện tích đáy lớn hơn trước.
+ * Ý nghĩa thực tế: giống người dọn kho, đưa đồ to chiếm sàn vào trước, đồ nhỏ sau lấp vào khe; trong nhóm đồ
+ * cỡ đáy tương tự thì dựng đồ cao trước để các cột cao đứng cạnh nhau, đồ thấp dồn lại tạo mặt phẳng để chồng thêm.
+ * Gom cụm (thay vì sắp đúng theo diện tích) để hai món chênh nhau chút xíu diện tích vẫn được xét theo chiều cao.
+ * @param {object[]} list danh sách món (mỗi món 1 phần tử). @param {{w,l}} room kho. @param {number} delta δ (%).
+ * @returns {object[]} mảng mới đã sắp (không sửa mảng gốc).
  */
 export function sortClusteredAreaHeight(list, room, delta = CLUSTER_DELTA) {
   const clusterSize = (room.w * room.l * delta) / 100
@@ -305,17 +384,19 @@ export function sortClusteredAreaHeight(list, room, delta = CLUSTER_DELTA) {
   })
 }
 
-/*
- * Tự xếp danh sách món (EP-BFD). Đồ chỉ-đặt-sàn xếp trước, rồi theo Clustered Area-Height.
- * startItems: món / vật cản (lối đi) đã có. Trả về { placed (không gồm vật cản), failed }.
- */
 /**
- * Tự xếp danh sách món vào kho. prefer = 'best' thì chạy 3 biến thể (fit/floor/back) rồi giữ lời giải
- * xếp được thể tích lớn nhất.
+ * TỰ XẾP danh sách món vào kho (EP-BFD). Đồ chỉ-đặt-sàn xếp trước, rồi theo Clustered Area-Height (xem packOnce).
+ * prefer = 'fit' | 'floor' | 'back': chạy 1 lần với kiểu ưu tiên đó (xem findPosition).
+ * prefer = 'best': chạy cả 3 biến thể rồi chọn lời giải tốt nhất theo thứ tự tiêu chí:
+ *   1) tổng thể tích xếp được lớn hơn; 2) hòa thể tích thì nhiều món hơn;
+ *   3) vẫn hòa thì CHỌN CÁCH XẾP GỌN NHẤT: khối bao ngoài (envelopeOf) nhỏ hơn, tức đồ dồn sát góc trong,
+ *      để lại khoảng trống liền một khối phía trước, dễ đi lại và dễ xếp thêm.
+ * Được gọi bởi: packing.worker.js (Tự xếp trong UnitPackPlanner, gợi ý cỡ kho), remainingCapacity, sampleFurniture.
  * @param {{w,h,l}} room kích thước kho.
  * @param {object[]} requests các loại món cần xếp kèm count.
  * @param {object[]} startItems món / vật cản (lối đi) đã có sẵn.
- * @returns {{placed: object[], failed: object[]}}
+ * @param {object} options prefer (kiểu ưu tiên), maxTop (giới hạn chiều cao chồng).
+ * @returns {{placed: object[], failed: object[]}} placed gồm món cũ + món mới (không gồm vật cản); failed là món không xếp được.
  */
 export function autoPack(room, requests, startItems = [], { prefer = 'fit', maxTop = room.h } = {}) {
   // prefer = 'best': giống C-EPBFD trong bài báo – chạy vài biến thể rồi giữ lời giải xếp được nhiều nhất.
@@ -339,7 +420,10 @@ export function autoPack(room, requests, startItems = [], { prefer = 'fit', maxT
 }
 
 /**
- * Thể tích khối bao ngoài của các món tính từ góc trong-trái-sàn (0,0,0): càng nhỏ thì đồ xếp càng gọn, ít khe hở.
+ * Thể tích KHỐI BAO NGOÀI của các món, tính từ góc trong-trái-sàn (0,0,0):
+ *   envelope = max(x + w) × max(y + h) × max(z + d)   (lấy trên tất cả các món)
+ * Hai cách xếp cùng số đồ: cách nào có khối bao nhỏ hơn là đồ dồn sát hơn, ít khe hở. Dùng làm tiêu chí hòa trong autoPack('best').
+ * @returns {number} m³ (0 nếu không có món).
  */
 function envelopeOf(items) {
   if (!items.length) return 0
@@ -349,8 +433,15 @@ function envelopeOf(items) {
 }
 
 /**
- * Xếp 1 lần theo 1 biến thể prefer: đồ chỉ-đặt-sàn trước, cập nhật dần danh sách điểm cực,
- * bỏ qua nhanh các món cùng cỡ khi cỡ đó đã hết chỗ.
+ * Xếp 1 lần theo 1 biến thể prefer. Các bước:
+ *  1) Bung requests thành từng món (count = 3 -> 3 phần tử); xếp hàng đợi: đồ floorOnly trước, mỗi nhóm sắp theo
+ *     Clustered Area-Height.
+ *  2) Dựng danh sách điểm cực ban đầu từ startItems (gồm cả lối đi).
+ *  3) Với từng món: findPosition chọn chỗ -> thêm món vào kho -> bỏ điểm cực vừa dùng -> thêm điểm cực mới do
+ *     món sinh ra (newExtremePoints). Cập nhật dần như vậy nhanh hơn dựng lại từ đầu.
+ *  4) Mẹo tăng tốc: nếu một cỡ đồ đã không còn chỗ thì các món cùng cỡ phía sau chắc chắn cũng không vừa
+ *     (kho chỉ đầy thêm), nên đánh dấu failed ngay mà không tìm lại.
+ * @returns {{placed: object[], failed: object[]}}
  */
 function packOnce(room, requests, startItems, prefer, maxTop) {
   const items = [...startItems]
@@ -378,7 +469,7 @@ function packOnce(room, requests, startItems, prefer, maxTop) {
 }
 
 /**
- * Tính tổng thể tích các món.
+ * Tính tổng thể tích các món: Σ w × h × d (m³).
  */
 export const volumeOf = items => items.reduce((n, it) => n + it.w * it.h * it.d, 0)
 
@@ -393,7 +484,10 @@ export const DEFAULT_CUSTOM_SIZE = { w: 50, d: 40, h: 30 } // cm: dài × rộng
 export const COUNT_KEYS = [...BOX_KEYS, CUSTOM_BOX_KEY, ...BIG_ITEM_KEYS]
 
 /**
- * Loại "thùng tự nhập" theo kích thước khách nhập (cm). w = dài, d = rộng, h = cao (đổi ra m).
+ * Tạo loại "thùng tự nhập" theo kích thước khách nhập (cm). w = dài, d = rộng, h = cao (chia 100 đổi ra m).
+ * Giá trị trống / không hợp lệ thì dùng DEFAULT_CUSTOM_SIZE.
+ * @param {{w,d,h}} size kích thước cm.
+ * @returns {object} loại đồ cùng dạng với PACK_ITEMS.
  */
 export function customBoxType(size = DEFAULT_CUSTOM_SIZE) {
   const w = Number(size?.w) || DEFAULT_CUSTOM_SIZE.w
@@ -404,7 +498,10 @@ export function customBoxType(size = DEFAULT_CUSTOM_SIZE) {
 
 /**
  * Đổi đồ khách nhập (counts, xem features/unit/boxCounts.js) thành danh sách yêu cầu cho autoPack,
- * kèm tổng số món, số thùng, số đồ lớn và tổng thể tích (m³).
+ * kèm tổng số món, số thùng, số đồ lớn và tổng thể tích (m³). Chỉ giữ loại có số lượng > 0.
+ * Được gọi bởi App.jsx, useBoxFit, UnitPackPlanner, boxCounts...
+ * @param {object} counts { 'box-s': 3, 'box-m': 2, ..., customSize: {w,d,h} }
+ * @returns {{requests: object[], total: number, boxes: number, big: number, volume: number}}
  */
 export function boxRequests(counts) {
   const typeOf = key => (key === CUSTOM_BOX_KEY ? customBoxType(counts?.customSize) : itemType(key))
@@ -427,29 +524,33 @@ export const EXACT_PACK_LIMIT = 300
 export const PACK_EFFICIENCY = 0.8
 
 /**
- * Số thùng cùng cỡ chất kín được trong phòng nếu xếp thẳng hàng theo lưới (chưa chừa lối đi).
- * Dùng cho câu gợi ý sức chứa, thay cho con số viết cứng.
+ * Số thùng cùng cỡ chất kín được trong phòng nếu xếp thẳng hàng theo lưới (chưa chừa lối đi):
+ *   số tầng = floor(H / h);  mỗi tầng = max( floor(W/w) × floor(L/d),  floor(W/d) × floor(L/w) )
+ * (thử cả 2 hướng xoay thùng trên sàn, lấy hướng chứa nhiều hơn). Dùng cho câu gợi ý sức chứa, thay cho con số viết cứng.
+ * @param {{w,h,l}} room kho. @param {{w,h,d}} type loại thùng.
+ * @returns {number}
  */
 export function gridCapacity(room, type) {
   const fit = (a, b) => Math.floor((a + EPS) / b)
   return fit(room.h, type.h) * Math.max(fit(room.w, type.w) * fit(room.l, type.d), fit(room.w, type.d) * fit(room.l, type.w))
 }
 
-/* Còn xếp thêm được bao nhiêu thùng loại `type` – xếp thử thật bằng EP-BFD (có giới hạn số lượng). */
 /**
- * Ước lượng còn xếp thêm được bao nhiêu món loại `type` (xếp thử thật, tối đa `limit` món).
+ * Tính còn xếp thêm được bao nhiêu món loại `type`: xếp thử thật bằng autoPack (kiểu 'floor') với `limit` món
+ * trên nền các món đang có, rồi trừ đi số món cũ. Chạy qua packing.worker.js (op 'remainingCapacity').
+ * @param {object[]} items món đang có (kể cả lối đi). @param {{w,h,l}} room kho.
+ * @param {object} type loại thùng. @param {number} limit số món tối đa thử (giới hạn thời gian chạy).
+ * @returns {number}
  */
 export function remainingCapacity(items, room, type, limit = 300) {
   const { placed } = autoPack(room, [{ ...type, key: 'sim', count: limit }], items, { prefer: 'floor' })
   return placed.length - items.filter(it => !it.obstacle).length
 }
 
-/*
- * Hít vào mép (khi kéo thả): nếu x / z gần mép vách hoặc mép món khác trong `radius` m thì khớp vào đúng mép,
- * để thùng xếp sát nhau không bị hở vài cm.
- */
 /**
- * "Hít mép" khi kéo thả: nếu x/z gần mép vách hoặc mép món khác trong bán kính `radius` m thì khớp vào mép.
+ * "Hít mép" khi kéo thả: nếu x / z gần mép vách hoặc mép món khác trong bán kính `radius` m (mặc định 12 cm)
+ * thì khớp vào đúng mép, để thùng xếp sát nhau không bị hở vài cm. Các mép ứng viên của mỗi món: sát bên phải,
+ * sát bên trái, thẳng mép trái, thẳng mép phải (tương tự cho trục z). Được gọi khi kéo thả trong ThreeUnitScene.
  * @returns {{x:number, z:number}}
  */
 export function magnetSnap(items, room, x, z, w, d, excludeId = null, radius = 0.12) {
@@ -469,13 +570,14 @@ export function magnetSnap(items, room, x, z, w, d, excludeId = null, radius = 0
   return { x: r3(near(x, xs)), z: r3(near(z, zs)) }
 }
 
-/*
- * Lối đi chừa lại (vật cản ảo, không đặt đồ lên): dải phía trước kho rộng `width` m;
- * kho rộng từ 3 m có thêm lối giữa chạy dọc kho. Tủ locker nhỏ không cần lối đi; kho xe chỉ chừa phía trước.
- */
 /**
- * Tạo vùng lối đi (vật cản ảo cao tới trần): dải phía cửa; kho rộng >= 3 m thêm lối giữa.
- * Tủ locker / kho nhỏ < 3 m² không cần lối đi; kho xe chỉ chừa phía trước.
+ * Tạo VÙNG LỐI ĐI: các hộp "vật cản ảo" (obstacle + noTop, cao tới trần) để thuật toán không đặt đồ vào.
+ *  - Lối trước: dải phía trước kho (z từ L − width tới L), rộng hết chiều ngang kho, sâu `width` m (mặc định 0,8 m).
+ *  - Lối giữa: chỉ khi kho rộng >= 3 m và dài > 2,5 m (và không phải kho xe): dải rộng `width` chạy dọc giữa kho
+ *    từ vách trong tới lối trước, tâm tại x = W / 2.
+ *  - Tủ locker / kho nhỏ < 3 m² không cần lối đi (với tay lấy được); kho xe chỉ chừa phía trước.
+ * Ý nghĩa thực tế: khách cần chỗ bước vào và lối để lấy đồ ở sâu bên trong mà không phải dỡ hết đồ phía ngoài.
+ * @returns {object[]} danh sách vùng lối đi dạng món { id, x, y, z, w, h, d, obstacle, noTop, name }.
  */
 export function aisleZones(room, { width = 0.8, isLocker = false, vehicle = false } = {}) {
   if (isLocker || room.w * room.l < 3) return []
@@ -485,6 +587,8 @@ export function aisleZones(room, { width = 0.8, isLocker = false, vehicle = fals
 }
 
 /* ------------------------------------------------------------------ Đồ mẫu bày sẵn */
+
+/* Danh mục đồ dùng gia đình để bày mẫu (kích thước thật, m), dùng trong sampleFurniture. */
 
 const FURNITURE = {
   shelf: { name: 'Kệ sách', w: 0.8, h: 1.8, d: 0.35, color: '#8d5a3b', floorOnly: true },
@@ -509,6 +613,7 @@ const FURNITURE = {
 /**
  * Bày đồ mẫu phù hợp kích thước kho (kho xe: ô tô; tủ: kệ, vali...; kho lớn: sofa, nệm, tủ...),
  * xếp bằng autoPack rồi chất thêm thùng carton cho đầy tới ~2 m (vẫn chừa lối đi).
+ * Được gọi khi mở trình xem 3D ở chế độ "đồ mẫu" (ThreeUnitScene).
  * @param {object} geo kết quả unitGeometry().
  * @returns {{items: object[], aisles: object[]}}
  */
@@ -534,7 +639,6 @@ export function sampleFurniture(geo) {
   return { items: filled, aisles }
 }
 
-/* Tên đồ mẫu gom theo loại, ví dụ "Kệ sách, 4 thùng vừa, ghế". */
 /**
  * Gom tên đồ theo loại thành câu mô tả, ví dụ "Kệ sách, 4 thùng vừa, Ghế".
  */

@@ -1,10 +1,19 @@
 /**
  * ======================================================================
- * FILE: src/features/unit/UnitPackPlanner.jsx  —  2 CHẾ ĐỘ 3D TRONG CỬA SỔ XEM KHO
- * - SampleRoom: kho có đồ mẫu bày sẵn theo cỡ kho (dùng sampleFurniture trong utils/packing.js).
- * - PackPlanner: khách nhập số thùng thực tế, tự kéo thả, xoay, chồng lên nhau, hoặc bấm "Xếp thử vào kho này"
- *   (thuật toán Extreme Point Best-Fit). Hiển thị % thể tích đã dùng và còn chứa thêm bao nhiêu thùng.
- * Hình 3D vẽ bằng ThreeUnitScene.jsx. Không gọi API.
+ * FILE: src/features/unit/UnitPackPlanner.jsx  —  ĐỒ MẪU & TỰ XẾP THÙNG (2 CHẾ ĐỘ 3D)
+ * CHỨC NĂNG: Hai chế độ 3D (Three.js) trong cửa sổ xem kho Unit3DViewer:
+ *   - SampleRoom: kho có đồ mẫu bày sẵn theo cỡ kho (sampleFurniture trong utils/packing.js) + câu mô tả.
+ *   - PackPlanner: khách nhập số đồ thực tế, tự thêm / kéo thả / xoay / chồng / xóa, hoặc bấm "Xếp thử vào kho này"
+ *     (thuật toán Extreme Point Best-Fit chạy trong Web Worker). Hiển thị số món, % thể tích đã dùng và
+ *     "còn chứa thêm" bao nhiêu thùng vừa.
+ * THÀNH PHẦN CHÍNH: SampleRoom, PackPlanner (named export); hàm nhỏ roomOf, pct, fmtPct, fmtM3.
+ * DÙNG Ở: features/unit/Unit3DViewer.jsx.
+ * PHỤ THUỘC: ./ThreeUnitScene (vẽ 3D), ./ItemCountsInput, utils/packing.js, utils/packingClient.js (usePackChannel),
+ *   react-dom (createPortal: vẽ khối điều khiển sang cột phải của Unit3DViewer). CSS: UnitPackPlanner.css.
+ * API: Không gọi API.
+ * LUỒNG: khách bấm "Xếp thử vào kho này" -> runAutoPack -> packChannel.run('autoPack') trong worker
+ *   -> nhận { placed, failed } -> setItems -> ThreeUnitScene vẽ lại -> useEffect tính lại "còn chứa thêm"
+ *   (capacityChannel.run('remainingCapacity')). Thêm tay: bấm loại đồ -> add -> placeAt / findPosition -> setItems.
  * ======================================================================
  */
 import React, { useEffect, useMemo, useState } from 'react'
@@ -14,11 +23,6 @@ import { CUSTOM_BOX_KEY, EXACT_PACK_LIMIT, PACK_EFFICIENCY, PACK_ITEMS, aisleZon
 import { CANCELLED, usePackChannel } from '../../utils/packingClient'
 import ItemCountsInput from './ItemCountsInput'
 
-/*
- * 2 chế độ 3D (Three.js) trong khung xem kho:
- *  - SampleRoom: kho có đồ mẫu bày sẵn theo cỡ kho.
- *  - PackPlanner: khách chọn thùng / đồ, tự kéo thả, xoay, chồng; hoặc bấm "Tự xếp giúp tôi".
- */
 /**
  * Đổi hình học kho thành kích thước phòng { w: rộng, h: cao, l: dài }.
  */
@@ -33,7 +37,9 @@ const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : 0)
 const fmtPct = value => `${Number(value).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`
 
 /**
- * Component "Có đồ mẫu": bày đồ mẫu theo cỡ kho và hiển thị % thể tích đã dùng.
+ * Component "Có đồ mẫu": bày đồ mẫu theo cỡ kho (sampleFurniture, chỉ tính lại khi kích thước kho đổi - useMemo),
+ * vẽ bằng ThreeUnitScene mode="sample" và hiển thị câu mô tả + % thể tích đồ chiếm.
+ * Được gọi bởi Unit3DViewer khi chọn tab "Có đồ mẫu".
  * @param {{geo:object, color:string}} props geo = unitGeometry(unit), color = màu của loại kho.
  */
 export function SampleRoom({ geo, color }) {
@@ -59,7 +65,9 @@ const fmtM3 = value => Number(value).toLocaleString('vi-VN', { maximumFractionDi
 /**
  * Component "Tự xếp thùng": cho khách tự thêm/kéo/xoay/xóa đồ trong kho hoặc tự động xếp.
  * Số thùng thực tế (counts) và "chừa lối đi" (aisleOn) do Unit3DViewer giữ, để sidebar gợi ý kho vừa dùng chung.
- * @param {object} props geo, color, counts { 'box-s', 'box-m', 'box-l' }, onCountsChange(counts),
+ * Chạy Web Worker qua 2 kênh usePackChannel: 'autoPack' (nút Xếp thử) và 'remainingCapacity' (ô Còn chứa thêm).
+ * Được gọi bởi Unit3DViewer khi chọn tab "Tự xếp thùng" (key = mã kho, nên đổi kho thì component làm mới).
+ * @param {object} props geo, color, counts (số đồ, xem boxCounts.js), onCountsChange(counts),
  *   aisleOn, onAisleChange(on), autoRun (true = tự xếp ngay khi mở, dùng khi khách chọn kho được gợi ý),
  *   slot (phần tử DOM ở cột phải của Unit3DViewer: danh sách đồ + khối nhập số thùng được vẽ vào đó,
  *   để cảnh 3D bên trái luôn nhìn thấy khi thêm đồ; không có slot thì vẽ ngay dưới cảnh 3D).
@@ -67,14 +75,14 @@ const fmtM3 = value => Number(value).toLocaleString('vi-VN', { maximumFractionDi
 export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAisleChange, autoRun = false, slot = null }) {
   const room = roomOf(geo)
   const roomVolume = room.w * room.h * room.l
-  const [items, setItems] = useState([])
-  const [selectedId, setSelectedId] = useState(null)
+  const [items, setItems] = useState([]) // các món đang có trong kho { id, x, y, z, w, h, d, name, color... }
+  const [selectedId, setSelectedId] = useState(null) // id món đang chọn (để xoay / xóa / chồng lên)
   const [message, setMessage] = useState(null) // { tone, text }
   // Danh sách vùng lối đi (khi bật "chừa lối đi").
   const zones = useMemo(() => (aisleOn ? aisleZones(room, { isLocker: geo.isLocker, vehicle: geo.band === 'V' }) : []), [aisleOn, room.w, room.l, room.h, geo.isLocker, geo.band])
   // Ghép danh sách món với các vùng lối đi (để tính va chạm).
   const withZones = list => [...list, ...zones]
-  const seq = React.useRef(0)
+  const seq = React.useRef(0) // bộ đếm để tạo id món duy nhất
 
   const selected = items.find(it => it.id === selectedId) || null
   const used = volumeOf(items)
@@ -84,6 +92,8 @@ export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAis
   const [packing, setPacking] = useState(false)
   // "Còn chứa thêm" (thùng vừa): hiện ước tính ngay (≈), rồi thay bằng số xếp thử thật từ worker. Không giới hạn số thùng.
   const [capacity, setCapacity] = useState({ value: null, exact: false })
+  // Chạy mỗi khi danh sách món hoặc lối đi đổi: ước tính ngay theo thể tích còn trống × PACK_EFFICIENCY,
+  // rồi sau 150 ms gửi 'remainingCapacity' cho worker để ra số chính xác. Cleanup bỏ kết quả cũ.
   useEffect(() => {
     const box = itemType('box-m')
     const boxVolume = box.w * box.h * box.d
@@ -100,8 +110,9 @@ export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAis
   }, [items, zones])
 
   /**
-   * Thêm 1 món loại `key`: nếu đang chọn 1 món thì ưu tiên chồng lên trên món đó, không thì tìm chỗ
-   * từ vách trong ra; hết chỗ thì báo lỗi.
+   * Thêm 1 món loại `key` (khi khách bấm một loại đồ trong bảng "Thêm đồ vào kho"): nếu đang chọn 1 món thì ưu tiên
+   * chồng lên trên món đó (placeAt, thử 2 hướng xoay), không thì tìm chỗ từ vách trong ra (findPosition 'back');
+   * hết chỗ thì báo lỗi. Cập nhật items, selectedId, message.
    */
   const add = key => {
     const type = key === CUSTOM_BOX_KEY ? customBoxType(counts.customSize) : itemType(key)
@@ -131,13 +142,13 @@ export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAis
       : `Đã thêm ${type.name.toLowerCase()} (xếp từ vách trong ra, chồng lên khi có thể). Kéo để đổi chỗ — kéo đè lên thùng khác để chồng.` })
   }
 
-  // Cập nhật vị trí món sau khi kéo thả.
+  // Cập nhật vị trí món sau khi kéo thả (ThreeUnitScene gọi onMove với vị trí đã kiểm tra hợp lệ).
   const move = (id, pos) => {
     setItems(list => list.map(it => (it.id === id ? { ...it, ...pos } : it)))
     setMessage(null)
   }
 
-  // Xoay món đang chọn 90° (đổi rộng/sâu), tìm chỗ khác nếu tại chỗ không đủ.
+  // Nút "↻ Xoay": xoay món đang chọn 90° (đổi rộng/sâu), thử tại chỗ trước, không đủ thì tìm chỗ khác.
   const rotate = () => {
     if (!selected) return
     const w = selected.d
@@ -151,7 +162,7 @@ export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAis
     setItems(list => list.map(it => (it.id === selected.id ? { ...it, ...spot, w, d } : it)))
   }
 
-  // Xóa món đang chọn; các món nằm phía trên sẽ "rơi" xuống theo trọng lực.
+  // Nút "Xóa món": xóa món đang chọn; các món nằm phía trên sẽ "rơi" xuống theo trọng lực.
   const remove = () => {
     if (!selected) return
     // Món nằm trên món bị xóa sẽ "rơi" xuống: xếp lại theo thứ tự độ cao.
@@ -165,10 +176,10 @@ export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAis
     setSelectedId(null)
   }
 
-  // Xóa toàn bộ đồ trong kho.
+  // Nút "Xóa hết": xóa toàn bộ đồ trong kho.
   const clearAll = () => { setItems([]); setSelectedId(null); setMessage(null) }
 
-  // Bật/tắt chừa lối đi; khi bật mà có món nằm trên lối đi thì báo lỗi và không bật.
+  // Ô "Chừa lối đi 80 cm": bật/tắt lối đi (báo lên Unit3DViewer qua onAisleChange); khi bật mà có món nằm trên lối đi thì báo lỗi và không bật.
   const toggleAisle = on => {
     if (on) {
       const next = aisleZones(room, { isLocker: geo.isLocker, vehicle: geo.band === 'V' })
@@ -181,11 +192,11 @@ export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAis
     onAisleChange(on)
   }
 
+  const boxes = boxRequests(counts) // yêu cầu xếp + tổng số món / thể tích từ số đồ khách nhập
   /**
-   * "Tự xếp giúp tôi": xếp số thùng nhỏ/vừa/lớn khách nhập bằng autoPack (chọn biến thể tốt nhất),
-   * báo số thùng xếp được và % thể tích kho đã dùng.
+   * Nút "Xếp thử vào kho này": xếp toàn bộ đồ khách nhập bằng autoPack trong worker ('best' = thử 3 biến thể;
+   * trên EXACT_PACK_LIMIT món chỉ chạy 'back' cho nhanh), thay danh sách món, báo số món xếp được và % thể tích.
    */
-  const boxes = boxRequests(counts)
   const runAutoPack = () => {
     const { requests, total } = boxes
     if (!total) {
@@ -213,7 +224,7 @@ export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAis
         setMessage({ tone: 'err', text: 'Không xếp thử được, vui lòng thử lại.' })
       })
   }
-  // Mở từ gợi ý ở sidebar: xếp luôn số thùng khách đã nhập vào kho vừa chọn.
+  // Chạy 1 lần khi mở: nếu mở từ gợi ý ở sidebar (autoRun) thì xếp luôn số đồ khách đã nhập vào kho vừa chọn.
   useEffect(() => { if (autoRun) runAutoPack() }, [])
 
   // Danh sách đồ + khối nhập số thùng (vẽ ở cột phải nếu có slot).

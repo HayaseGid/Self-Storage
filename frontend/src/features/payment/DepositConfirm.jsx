@@ -1,9 +1,19 @@
 /**
  * ======================================================================
- * FILE: src/features/payment/DepositConfirm.jsx  —  KHUNG "XÁC NHẬN ĐẶT CỌC" ĐẶT NGAY TRÊN NÚT THANH TOÁN
- * Khách phải tick đủ 2 ô (đã kiểm tra thông tin + đồng ý chính sách cọc) mới được thanh toán
- * -> làm bằng chứng khách đã xác nhận. Nội dung chính sách lấy từ usePolicies() (GET /api/policies, có cache).
- * Dùng ở: App.jsx (đặt 1 kho), CartPage (giỏ hàng), ContractRenewal (gia hạn).
+ * FILE: src/features/payment/DepositConfirm.jsx  —  KHUNG "XÁC NHẬN ĐẶT CỌC" TRƯỚC NÚT THANH TOÁN
+ * CHỨC NĂNG: Khung tóm tắt đặt ngay trên nút thanh toán: các dòng thông tin (kho, thời gian thuê), các dòng tiền và
+ *   tổng "Cần thanh toán bây giờ", cùng 2 ô tick bắt buộc (đã kiểm tra thông tin + đồng ý chính sách cọc). Khách tick
+ *   đủ 2 ô thì trang cha mới mở nút thanh toán -> làm bằng chứng khách đã xác nhận. Dùng lại cho gia hạn hợp đồng
+ *   bằng cách thay chữ của 2 ô (infoText / policyText / hint).
+ * THÀNH PHẦN CHÍNH:
+ *   - DepositConfirm (default export): component khung xác nhận.
+ *   - money: định dạng tiền.
+ * DÙNG Ở: src/App.jsx (đặt 1 kho), src/pages/customer/CartPage.jsx (giỏ hàng),
+ *   src/features/contract/ContractRenewal.jsx (bước xác nhận gia hạn trong RenewalModal).
+ * PHỤ THUỘC: services/policies (describePolicy, usePolicies), services/storageRules (formatVnd), DepositConfirm.css.
+ * API: Không gọi API trực tiếp; nội dung chính sách đặt cọc / giữ chỗ lấy qua usePolicies() -> GET /api/policies (có cache).
+ * LUỒNG: trang cha truyền rows / lines / amount -> khách tick 2 ô -> toggle() -> onChange(true/false) -> cha bật/tắt
+ *   nút "Thanh toán" -> khách thanh toán (VNPay / mô phỏng) ở trang cha.
  * ======================================================================
  */
 import React, { useState } from 'react'
@@ -11,25 +21,27 @@ import { describePolicy, usePolicies } from '../../services/policies'
 import { formatVnd } from '../../services/storageRules'
 import './DepositConfirm.css'
 
-/*
- * Khung "Xác nhận đặt cọc" đặt ngay trên nút thanh toán (trang đặt 1 kho + giỏ hàng).
- * Khách phải tick đủ 2 ô thì mới thanh toán được -> có bằng chứng khách đã xác nhận cọc.
- *
- * rows:   [[nhãn, giá trị], ...]  tóm tắt kho / thời gian thuê
- * lines:  [[nhãn, số tiền], ...]  các dòng tiền (giá thuê, tiền cọc...)
- * amount: số tiền cần thanh toán ngay
- * onChange(agreed: boolean)
- * infoText / policyText / hint: thay nội dung 2 ô xác nhận (dùng cho gia hạn hợp đồng).
- */
 /**
- * Định dạng tiền làm tròn kèm "đ".
+ * Định dạng số tiền (làm tròn) thành chuỗi kiểu Việt Nam kèm "đ".
+ * @param {number|string} value số tiền.
+ * @returns {string}
  */
 const money = value => `${formatVnd(Math.round(Number(value) || 0))}đ`
 
 /**
- * Component khung xác nhận đặt cọc.
- * @param {object} props title, rows ([[nhãn, giá trị]] tóm tắt kho/thời gian), lines ([[nhãn, số tiền]] các dòng tiền),
- *   amount (số tiền cần trả ngay), onChange(agreed:boolean), infoText / policyText / hint (đổi nội dung cho trường hợp gia hạn).
+ * Vẽ khung xác nhận đặt cọc: tiêu đề, bảng thông tin, bảng tiền + tổng, 2 ô tick và dòng gợi ý khi chưa tick đủ.
+ * Trạng thái tick được giữ bên trong; muốn reset thì cha đổi `key` của component (như RenewalModal làm).
+ * @param {object} props
+ * @param {string} [props.title='Xác nhận đặt cọc'] tiêu đề khung.
+ * @param {Array<[string, any]>} [props.rows] [[nhãn, giá trị], ...] tóm tắt kho / cơ sở / thời gian thuê.
+ * @param {Array<[string, number|string]>} [props.lines] [[nhãn, số tiền hoặc chữ], ...] các dòng tiền (số thì tự định dạng).
+ * @param {number} props.amount số tiền cần thanh toán ngay (dòng tổng).
+ * @param {Function} [props.onChange] onChange(agreed:boolean) — báo cha mỗi lần tick, true khi đủ cả 2 ô.
+ * @param {JSX.Element} [props.infoText] thay chữ ô 1 (mặc định: đã kiểm tra kho, cơ sở, thời gian thuê).
+ * @param {JSX.Element} [props.policyText] thay chữ ô 2 (mặc định: đồng ý chính sách đặt cọc + giữ chỗ hiện hành).
+ * @param {string} [props.hint] thay dòng gợi ý khi chưa tick đủ.
+ * @returns {JSX.Element}
+ * Được gọi bởi: App.jsx, CartPage, ContractRenewal (RenewalModal).
  */
 export default function DepositConfirm({ title = 'Xác nhận đặt cọc', rows = [], lines = [], amount, onChange, infoText, policyText, hint }) {
   const policies = usePolicies()
@@ -37,7 +49,8 @@ export default function DepositConfirm({ title = 'Xác nhận đặt cọc', row
   const [checkedPolicy, setCheckedPolicy] = useState(false)
   const agreed = checkedInfo && checkedPolicy
   /**
-   * Tick/bỏ tick 1 trong 2 ô xác nhận và báo lên cha khi cả 2 ô cùng được tick.
+   * Chạy khi tick/bỏ tick 1 trong 2 ô: cập nhật state của ô đó rồi gọi onChange(info && policy) với giá trị MỚI
+   * (tự tính lại vì setState chưa áp dụng ngay).
    * @param {'info'|'policy'} which ô nào.
    * @param {boolean} value trạng thái mới.
    */
@@ -49,6 +62,7 @@ export default function DepositConfirm({ title = 'Xác nhận đặt cọc', row
     onChange?.(info && policy)
   }
 
+  // Câu tóm tắt chính sách đặt cọc và giữ chỗ hiện hành, chèn vào chữ của ô tick thứ 2.
   const deposit = describePolicy('deposit', policies.values?.deposit).summary
   const reservation = describePolicy('reservation', policies.values?.reservation).summary
 

@@ -1,29 +1,30 @@
 /**
  * ======================================================================
  * FILE: src/components/common/PriceInput.jsx  —  Ô NHẬP GIÁ THUÊ THEO THÁNG (VNĐ)
- * - Tự thêm dấu chấm phân cách hàng nghìn khi gõ (1.250.000), chỉ nhận chữ số.
- * - Rời ô thì tự làm tròn theo bước giá 1.000đ.
- * - Hiện cách đọc ("≈ 1,25 triệu/tháng"), lỗi (dưới tối thiểu / trên tối đa) và cảnh báo lệch giá tham chiếu.
- * Quy tắc kiểm tra lấy từ services/storageRules.js (validateMonthlyPrice). Không gọi API.
- * Dùng ở: FacilityManagerAccount, ManagerPriceTable, BusinessPolicyEditor, BusinessPriceBands.
+ * CHỨC NĂNG: Ô nhập tiền dùng cho các màn đặt giá: tự thêm dấu chấm phân cách hàng nghìn khi gõ
+ *   (1.250.000), chỉ nhận chữ số, rời ô thì tự làm tròn theo bước giá 1.000đ, và hiện dòng gợi ý bên dưới:
+ *   cách đọc ("≈ 1,25 triệu/tháng"), lỗi (dưới tối thiểu / trên tối đa) hoặc cảnh báo lệch giá tham chiếu.
+ * THÀNH PHẦN CHÍNH:
+ *   - PriceInput (default) : component ô nhập giá.
+ * DÙNG Ở: src/pages/manager/FacilityManagerAccount.jsx, src/pages/manager/ManagerPriceTable.jsx,
+ *   src/pages/business/BusinessPolicyEditor.jsx, src/pages/business/BusinessPriceBands.jsx.
+ * PHỤ THUỘC: react, src/services/storageRules (PRICE_RULES, validateMonthlyPrice, formatVnd, parseVnd,
+ *   roundPrice, describeVnd), ./PriceInput.css.
+ * API: Không gọi API.
+ * LUỒNG: Người dùng gõ -> handleChange() lọc chữ số, định dạng, gọi onChange(number) báo trang cha
+ *   -> validateMonthlyPrice() tính lỗi/cảnh báo -> rời ô -> handleBlur() làm tròn 1.000đ.
  * ======================================================================
  */
 import React, { useEffect, useState } from 'react'
 import { PRICE_RULES, describeVnd, formatVnd, parseVnd, roundPrice, validateMonthlyPrice } from '../../services/storageRules'
 import './PriceInput.css'
 
-/*
- * Ô nhập giá thuê theo tháng (VNĐ):
- * - Hiển thị dấu phân cách hàng nghìn khi gõ (1.250.000).
- * - Chỉ nhận chữ số; rời ô thì tự làm tròn theo 1.000đ.
- * - Hiện cách đọc ("1,25 triệu/tháng"), lỗi (dưới tối thiểu, trên tối đa) và cảnh báo lệch giá tham chiếu.
- *
- * value: số (hoặc chuỗi số) | onChange(number|null) | reference: giá tham chiếu | referenceLabel: nguồn tham chiếu
- */
 /**
- * Component ô nhập giá.
- * @param {object} props value (số), onChange(number|null), reference (giá tham chiếu), referenceLabel,
- *   readOnly, id, name, ariaLabel, placeholder, showErrorsBeforeTouch (hiện lỗi ngay cả khi chưa rời ô).
+ * Component ô nhập giá thuê theo tháng.
+ * @param {object} props value (số hoặc chuỗi số), onChange(number|null) (báo giá mới cho trang cha),
+ *   reference (giá tham chiếu để cảnh báo lệch), referenceLabel (tên nguồn tham chiếu), readOnly, id, name,
+ *   ariaLabel, placeholder, showErrorsBeforeTouch (hiện lỗi ngay cả khi chưa rời ô).
+ * @returns {JSX.Element}
  */
 export default function PriceInput({
   value,
@@ -37,10 +38,11 @@ export default function PriceInput({
   placeholder = 'Ví dụ: 500.000',
   showErrorsBeforeTouch = false
 }) {
-  const [text, setText] = useState(() => (value === '' || value == null ? '' : formatVnd(value)))
-  const [touched, setTouched] = useState(false)
+  const [text, setText] = useState(() => (value === '' || value == null ? '' : formatVnd(value))) // chuỗi hiển thị trong ô
+  const [touched, setTouched] = useState(false) // đã rời ô ít nhất 1 lần -> mới hiện lỗi
 
-  // Đồng bộ khi giá trị thay đổi từ bên ngoài (đổi loại/size có biểu giá, khôi phục giá trị ban đầu).
+  // Chạy khi prop value đổi: đồng bộ chuỗi hiển thị khi giá trị thay đổi từ bên ngoài
+  // (đổi loại/size có biểu giá, khôi phục giá trị ban đầu).
   useEffect(() => {
     const current = parseVnd(text)
     const next = value === '' || value == null ? null : Number(value)

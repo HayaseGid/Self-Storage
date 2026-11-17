@@ -1,18 +1,33 @@
 /**
  * ======================================================================
- * FILE: src/features/unit/boxCounts.js  —  NHỚ "ĐỒ CỦA BẠN" KHÁCH ĐÃ NHẬP
- * counts = { 'box-s', 'box-m', 'box-l', 'box-custom', mattress, fridge, shelf, motorbike: số lượng,
- *            customSize: { w, d, h } (cm, kích thước thùng tự nhập) }.
- * Lưu trong sessionStorage (chỉ trong tab đang mở), dùng chung giữa cửa sổ xem kho 3D và bộ lọc ở trang Tìm kho,
- * để khách nhập 1 lần rồi xem nhiều kho. Kèm hàm đổi qua lại với tham số URL (?items=box-m.500,fridge.1&cs=50x40x30).
+ * FILE: src/features/unit/boxCounts.js  —  LƯU & CHUẨN HÓA "ĐỒ CỦA BẠN"
+ * CHỨC NĂNG: Quản lý object counts = số đồ khách đã nhập:
+ *     { 'box-s', 'box-m', 'box-l', 'box-custom', mattress, fridge, shelf, motorbike: số lượng,
+ *       customSize: { w, d, h } (cm, kích thước thùng tự nhập) }.
+ *   Lưu trong sessionStorage (chỉ trong tab đang mở), dùng chung giữa cửa sổ xem kho 3D và bộ lọc ở trang Tìm kho,
+ *   để khách nhập 1 lần rồi xem nhiều kho. Kèm hàm đổi qua lại với tham số URL (?items=box-m.500,fridge.1&cs=50x40x30)
+ *   để chia sẻ / giữ bộ lọc khi tải lại trang.
+ * THÀNH PHẦN CHÍNH:
+ *   - DEFAULT_BOX_COUNTS: mặc định 10 thùng vừa.
+ *   - normalizeBoxCounts: ép mọi số lượng về số nguyên >= 0, kích thước thùng tự nhập hợp lệ.
+ *   - loadBoxCounts / saveBoxCounts: đọc / ghi sessionStorage (khóa 'storespace.boxCounts').
+ *   - countsFromParams / writeCountsParams: đọc / ghi tham số URL items, cs.
+ * DÙNG Ở: src/App.jsx, features/unit/ItemCountsInput.jsx, features/unit/Unit3DViewer.jsx.
+ * PHỤ THUỘC: utils/packing.js (COUNT_KEYS, CUSTOM_BOX_KEY, DEFAULT_CUSTOM_SIZE).
+ * API: Không gọi API.
+ * LUỒNG: khách nhập số lượng ở ItemCountsInput -> onChange(counts) -> nơi dùng gọi saveBoxCounts (sessionStorage)
+ *   và/hoặc writeCountsParams (URL) -> lần sau mở trang / mở kho khác: loadBoxCounts hoặc countsFromParams đọc lại.
  * ======================================================================
  */
 import { COUNT_KEYS, CUSTOM_BOX_KEY, DEFAULT_CUSTOM_SIZE } from '../../utils/packing'
 
-const STORAGE_KEY = 'storespace.boxCounts'
-export const DEFAULT_BOX_COUNTS = normalizeBoxCounts({ 'box-m': 10 })
+const STORAGE_KEY = 'storespace.boxCounts' // khóa trong sessionStorage
+export const DEFAULT_BOX_COUNTS = normalizeBoxCounts({ 'box-m': 10 }) // mặc định khi khách chưa nhập: 10 thùng vừa
 
-/* Kích thước thùng tự nhập: số nguyên 5–300 cm, sai thì dùng mặc định. */
+/**
+ * Chuẩn hóa kích thước thùng tự nhập: làm tròn thành số nguyên, kẹp trong 5–300 cm; trống / sai thì dùng mặc định.
+ * @param {{w,d,h}} size @returns {{w:number, d:number, h:number}}
+ */
 function normalizeCustomSize(size) {
   const out = {}
   ;['w', 'd', 'h'].forEach(dim => {
@@ -23,7 +38,10 @@ function normalizeCustomSize(size) {
 }
 
 /**
- * Chuẩn hóa counts: mọi số lượng là số nguyên không âm, customSize hợp lệ.
+ * Chuẩn hóa counts: mọi loại trong COUNT_KEYS có số lượng là số nguyên không âm (thiếu = 0), customSize hợp lệ.
+ * Được gọi ở mọi hàm đọc/ghi trong file này và bởi ItemCountsInput trước khi hiển thị.
+ * @param {object} value counts thô (có thể thiếu trường hoặc là chuỗi).
+ * @returns {object} counts đầy đủ.
  */
 export function normalizeBoxCounts(value) {
   const out = {}
@@ -33,7 +51,8 @@ export function normalizeBoxCounts(value) {
 }
 
 /**
- * Đọc đồ đã lưu (không có thì trả mặc định).
+ * Đọc đồ đã lưu từ sessionStorage (khóa 'storespace.boxCounts'); không có hoặc trình duyệt chặn thì trả mặc định.
+ * @returns {object} counts.
  */
 export function loadBoxCounts() {
   try {
@@ -44,7 +63,8 @@ export function loadBoxCounts() {
 }
 
 /**
- * Lưu đồ khách vừa nhập.
+ * Lưu đồ khách vừa nhập vào sessionStorage (đã chuẩn hóa). Lỗi lưu trữ thì bỏ qua.
+ * @param {object} counts
  */
 export function saveBoxCounts(counts) {
   try {
@@ -54,6 +74,9 @@ export function saveBoxCounts(counts) {
 
 /**
  * Đọc counts từ tham số URL: items=box-m.500,fridge.1 và cs=50x40x30 (kích thước thùng tự nhập, cm).
+ * Key không có trong COUNT_KEYS bị bỏ qua.
+ * @param {URLSearchParams} params
+ * @returns {object} counts đã chuẩn hóa.
  */
 export function countsFromParams(params) {
   const value = {}
@@ -68,6 +91,8 @@ export function countsFromParams(params) {
 
 /**
  * Ghi counts vào URLSearchParams (chỉ ghi món có số lượng; cs chỉ ghi khi có thùng tự nhập).
+ * Sửa trực tiếp object qs truyền vào, không trả gì.
+ * @param {URLSearchParams} qs @param {object} counts
  */
 export function writeCountsParams(qs, counts) {
   const value = normalizeBoxCounts(counts)

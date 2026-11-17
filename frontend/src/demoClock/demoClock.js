@@ -1,23 +1,34 @@
 /**
  * ======================================================================
  * FILE: src/demoClock/demoClock.js  —  TIỆN ÍCH "ĐỒNG HỒ GIẢ LẬP" (DEMO CLOCK / TIME TRAVEL)
- * Công dụng: cho phép chọn một ngày giả lập để demo/kiểm thử các nghiệp vụ phụ thuộc thời gian
- * (quá hạn, phí trễ, gia hạn, hết hạn hợp đồng...) mà không phải đợi ngày thật.
- * - Ngày giả lập lưu ở localStorage key 'storespace_demo_date' (dạng YYYY-MM-DD).
- * - api.js đọc ngày này và gửi header 'X-Simulated-Date' cho backend (backend dùng BusinessClock.Today).
- * - Mọi chỗ ở frontend cần "hôm nay" nên gọi getTodayISO()/getTodayDate() thay vì new Date().
- * Được dùng bởi: api/api.js, services/storageRules.js, các trang dashboard, lịch thuê, giỏ hàng...
+ * CHỨC NĂNG: Cho phép chọn một ngày giả lập để demo / kiểm thử các nghiệp vụ phụ thuộc thời gian
+ *   (quá hạn, phí trễ, gia hạn, hết hạn hợp đồng...) mà không phải đợi ngày thật. Ngày giả lập lưu ở
+ *   localStorage key 'storespace_demo_date' (YYYY-MM-DD); api.js đọc ngày này và gửi header
+ *   'X-Simulated-Date' cho backend (backend dùng BusinessClock.Today). Mọi chỗ ở frontend cần "hôm nay"
+ *   nên gọi getTodayISO() / getTodayDate() thay vì new Date().
+ * THÀNH PHẦN CHÍNH:
+ *   - DEMO_DATE_STORAGE_KEY, SIMULATED_DATE_HEADER : hằng số key localStorage và tên header.
+ *   - getTodayISO / getTodayDate : "hôm nay" của hệ thống (có tính giả lập).
+ *   - getRealTodayISO / getSimulatedDateISO : ngày thật / ngày giả lập đang lưu.
+ *   - setSimulatedDateISO / clearSimulatedDate : bật-đổi / tắt giả lập.
+ *   - formatISODate / addDaysISO / addMonthsISO / formatDateVN : tiện ích ngày.
+ * DÙNG Ở: src/api/api.js (header), src/demoClock/DemoClockWidget.jsx, src/App.jsx,
+ *   src/services (storageRules, customerNoticeData), src/components/common/RentalCalendar.jsx,
+ *   src/features/contract/ContractCard.jsx, src/features/return/StaffReturns.jsx,
+ *   src/pages (customer/CartPage, manager/FacilityManagerAccount, staff/FacilityStaffAccount,
+ *   business/BusinessPanels, business/BusinessPolicyEditor).
+ * PHỤ THUỘC: localStorage.
+ * API: Không gọi API (chỉ cung cấp giá trị header cho src/api/api.js).
+ * LUỒNG: Người demo chọn ngày ở DemoClockWidget -> setSimulatedDateISO() lưu localStorage -> tải lại trang
+ *   -> mọi request qua apiRequest() gắn X-Simulated-Date -> backend tính theo ngày giả lập; frontend
+ *   getTodayISO() cũng trả ngày giả lập.
  * ======================================================================
- */
-/*
- * Tiện ích giả lập ngày hệ thống (Time Travel / Demo Clock) phục vụ báo cáo & kiểm thử.
- * - Lưu ngày giả lập (YYYY-MM-DD) trong localStorage.
- * - Mọi request qua api.js tự động gửi kèm header "X-Simulated-Date" xuống Backend (BusinessClock.Today).
  */
 
 export const DEMO_DATE_STORAGE_KEY = 'storespace_demo_date'
 export const SIMULATED_DATE_HEADER = 'X-Simulated-Date'
 
+// Mẫu kiểm tra chuỗi ngày đúng dạng 'YYYY-MM-DD'.
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 /**
@@ -42,7 +53,7 @@ export function getRealTodayISO() {
 }
 
 /**
- * Đọc ngày giả lập đang lưu trong localStorage.
+ * Đọc ngày giả lập đang lưu trong localStorage. Được gọi bởi apiRequest() (src/api/api.js) ở MỌI request.
  * @returns {string|null} 'YYYY-MM-DD' nếu đang bật giả lập và hợp lệ, ngược lại null.
  */
 export function getSimulatedDateISO() {
@@ -57,6 +68,8 @@ export function getSimulatedDateISO() {
 
 /**
  * Trả về "hôm nay" của hệ thống: ngày giả lập nếu có, không thì ngày thật. Dạng 'YYYY-MM-DD'.
+ * Được dùng bởi storageRules, các trang Manager/Staff/Business khi so sánh ngày.
+ * @returns {string}
  */
 export function getTodayISO() {
   return getSimulatedDateISO() || getRealTodayISO()
@@ -64,6 +77,8 @@ export function getTodayISO() {
 
 /**
  * Giống getTodayISO() nhưng trả về đối tượng Date (00:00:00 giờ địa phương).
+ * Được dùng bởi App.jsx, CartPage, RentalCalendar, ContractCard, customerNoticeData.
+ * @returns {Date}
  */
 export function getTodayDate() {
   const [y, m, d] = getTodayISO().split('-').map(Number)
@@ -73,6 +88,7 @@ export function getTodayDate() {
 /**
  * Bật/đổi ngày giả lập. Nếu truyền chuỗi rỗng, sai định dạng hoặc trùng ngày thật thì TẮT giả lập.
  * @param {string} iso ngày muốn giả lập 'YYYY-MM-DD'.
+ * Ghi localStorage. Được gọi khi bấm "Xác nhận" trong DemoClockWidget.
  */
 export function setSimulatedDateISO(iso) {
   if (typeof window === 'undefined') return
@@ -90,6 +106,7 @@ export function setSimulatedDateISO(iso) {
 
 /**
  * Tắt chế độ giả lập ngày (xóa key khỏi localStorage) -> hệ thống quay về ngày thật.
+ * Được gọi khi bấm "Về hôm nay" trong DemoClockWidget.
  */
 export function clearSimulatedDate() {
   if (typeof window === 'undefined') return
@@ -114,7 +131,9 @@ export function addDaysISO(baseIso, days) {
 
 /**
  * Cộng số tháng vào một ngày ISO; nếu tháng đích ngắn hơn thì lấy ngày cuối tháng
- * (ví dụ 31/01 + 1 tháng -> 28/02 hoặc 29/02).
+ * (ví dụ 31/01 + 1 tháng -> 28/02 hoặc 29/02). Dùng cho các nút nhảy nhanh của DemoClockWidget.
+ * @param {string} baseIso 'YYYY-MM-DD' (sai định dạng -> lấy "hôm nay").
+ * @param {number} months số tháng cần cộng.
  * @returns {string} 'YYYY-MM-DD'
  */
 export function addMonthsISO(baseIso, months) {
@@ -127,6 +146,7 @@ export function addMonthsISO(baseIso, months) {
 
 /**
  * Đổi 'YYYY-MM-DD' sang định dạng hiển thị Việt Nam 'DD/MM/YYYY' (sai định dạng -> '—').
+ * @param {string} iso ngày ISO. @returns {string}
  */
 export function formatDateVN(iso) {
   if (!iso || !ISO_DATE_RE.test(iso)) return '—'

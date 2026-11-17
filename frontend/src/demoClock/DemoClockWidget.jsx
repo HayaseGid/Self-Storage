@@ -1,10 +1,17 @@
 /**
  * ======================================================================
  * FILE: src/demoClock/DemoClockWidget.jsx  —  NÚT NỔI "GIẢ LẬP NGÀY HỆ THỐNG" (DEMO TIME TRAVEL)
- * Hiển thị ngày đang áp dụng ở góc màn hình; bấm vào để chọn ngày giả lập, nhảy nhanh +1 ngày/+7 ngày/+1 tháng...,
- * hoặc quay về ngày thực tế. Sau khi xác nhận sẽ tải lại trang để toàn bộ dữ liệu tính theo ngày mới
- * (api.js gửi header X-Simulated-Date cho backend). Không gọi API trực tiếp.
- * Dùng ở: App.jsx.
+ * CHỨC NĂNG: Hiển thị ngày đang áp dụng ở góc màn hình; bấm vào để mở bảng chọn ngày giả lập, nhảy nhanh
+ *   +1 ngày / +7 ngày / +1 tháng / +6 tháng / +1 năm, hoặc quay về ngày thực tế. Sau khi xác nhận sẽ tải lại
+ *   trang để toàn bộ dữ liệu tính theo ngày mới (api.js gửi header X-Simulated-Date cho backend).
+ * THÀNH PHẦN CHÍNH:
+ *   - DemoClockWidget (default) : nút thu gọn + bảng điều chỉnh.
+ *   - ClockIcon : biểu tượng đồng hồ SVG.
+ * DÙNG Ở: src/App.jsx.
+ * PHỤ THUỘC: ./demoClock (đọc/ghi ngày giả lập, cộng ngày/tháng, định dạng), ./DemoClockWidget.css.
+ * API: Không gọi API trực tiếp.
+ * LUỒNG: Bấm nút đồng hồ -> toggleOpen() mở bảng -> chọn ngày / bấm nhảy nhanh (setDraftDate)
+ *   -> bấm "Xác nhận" -> handleConfirm() -> setSimulatedDateISO() -> window.location.reload().
  * ======================================================================
  */
 import React, { useState } from 'react'
@@ -33,16 +40,17 @@ function ClockIcon() {
 }
 
 /**
- * Component tiện ích giả lập ngày: nút thu gọn + bảng điều chỉnh khi mở rộng.
+ * Component tiện ích giả lập ngày: nút nổi hiển thị ngày đang áp dụng + bảng điều chỉnh khi mở rộng.
+ * Không nhận props. Đọc ngày từ localStorage qua ./demoClock mỗi lần render. Được App.jsx render 1 lần ở góc màn hình.
  */
 export default function DemoClockWidget() {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(false) // bảng điều chỉnh đang mở?
   const realToday = getRealTodayISO()
   const simulated = getSimulatedDateISO()
   const activeDate = simulated || realToday
   const isSimulated = Boolean(simulated && simulated !== realToday)
 
-  const [draftDate, setDraftDate] = useState(activeDate)
+  const [draftDate, setDraftDate] = useState(activeDate) // ngày đang chọn trong ô date, chưa áp dụng
 
   // Mở/thu gọn bảng điều chỉnh; khi mở thì nạp ngày đang áp dụng vào ô chọn ngày.
   const toggleOpen = () => {

@@ -1,27 +1,30 @@
 /**
  * ======================================================================
  * FILE: src/api/vnpay.js  —  API THANH TOÁN QUA CỔNG VNPAY (SANDBOX)
- * Backend: VnPayController (/api/vnpay/create, /api/vnpay/return-verify, /api/vnpay/status).
- * Dùng ở: App.jsx, CartPage, CustomerAccount, PendingPayments, ContractRenewal, UnitReturn, PaymentResultPage.
- * Luồng thanh toán:
- *  1. startVnPayPayment() -> POST /api/vnpay/create -> nhận paymentUrl -> lưu thông tin giao dịch đang chờ
- *     vào sessionStorage -> chuyển trình duyệt sang trang VNPay.
- *  2. VNPay xử lý xong -> chuyển về /payment-result?vnp_... (PaymentResultPage).
- *  3. PaymentResultPage gọi /api/vnpay/return-verify để backend kiểm tra chữ ký & ghi nhận thanh toán,
- *     đọc lại thông tin chờ bằng readPendingVnPay() rồi xóa bằng clearPendingVnPay().
- * Dùng cho nhiều loại khoản thu: tiền cọc (deposit), tiền thuê, gia hạn, phí trả kho... (tham số kind).
+ * CHỨC NĂNG: Khởi tạo giao dịch VNPay cho 1 hoặc nhiều đơn đặt kho, ghi nhớ giao dịch đang chờ vào
+ *   sessionStorage rồi chuyển trình duyệt sang trang VNPay; cung cấp hàm đọc/xóa giao dịch chờ cho
+ *   trang kết quả. Dùng cho nhiều khoản thu: tiền cọc (deposit), tiền thuê, gia hạn, phí trả kho... (tham số kind).
+ *   Thẻ test sandbox (ngân hàng NCB): 9704198526191432198 · NGUYEN VAN A · 07/15 · OTP 123456.
+ * THÀNH PHẦN CHÍNH:
+ *   - startVnPayPayment         : tạo giao dịch + chuyển sang VNPay.
+ *   - readPendingVnPay / clearPendingVnPay : đọc / xóa giao dịch đang chờ trong sessionStorage.
+ *   - SIMULATED_PAYMENT_ENABLED : cờ bật nút "thanh toán mô phỏng" (VITE_ALLOW_SIMULATED_PAYMENT=true).
+ *   - VNPAY_PENDING_KEY, PAYMENT_RESULT_PATH : hằng số key sessionStorage và đường dẫn trang kết quả.
+ * DÙNG Ở: src/App.jsx, src/pages/customer/CartPage.jsx, src/pages/customer/CustomerAccount.jsx,
+ *   src/features/payment/PendingPayments.jsx, src/features/contract/ContractRenewal.jsx,
+ *   src/features/return/UnitReturn.jsx (startVnPayPayment, SIMULATED_PAYMENT_ENABLED);
+ *   src/pages/payment/PaymentResultPage.jsx (readPendingVnPay, clearPendingVnPay).
+ * PHỤ THUỘC: ./api (apiPost); sessionStorage key 'storespace_vnpay_pending'.
+ * API: POST /api/vnpay/create (VnPayController). Bước kiểm tra kết quả /api/vnpay/return-verify
+ *   do PaymentResultPage tự gọi, không nằm trong file này.
+ * LUỒNG: Khách bấm "Thanh toán VNPay" -> startVnPayPayment(ids) -> POST /api/vnpay/create -> nhận paymentUrl
+ *   -> lưu giao dịch chờ vào sessionStorage -> chuyển sang VNPay -> VNPay trả về /payment-result?vnp_...
+ *   -> PaymentResultPage gọi return-verify, đọc readPendingVnPay() để biết khoản gì, rồi clearPendingVnPay().
  * ======================================================================
  */
 import { apiPost } from './api'
 
-/*
- * Thanh toán tiền cọc qua VNPay (sandbox).
- *  1. startVnPayPayment(): backend tạo giao dịch (POST /api/vnpay/create) -> chuyển trình duyệt sang trang VNPay.
- *  2. VNPay chuyển về /payment-result?vnp_... -> PaymentResultPage gọi /api/vnpay/return-verify để kiểm tra
- *     chữ ký và ghi nhận cọc -> "Đặt cọc thành công" -> mở tab Hợp đồng để ký.
- * Thẻ test sandbox (ngân hàng NCB): 9704198526191432198 · NGUYEN VAN A · 07/15 · OTP 123456.
- */
-
+// Key sessionStorage lưu giao dịch VNPay đang chờ, và đường dẫn trang VNPay trả về sau khi thanh toán.
 export const VNPAY_PENDING_KEY = 'storespace_vnpay_pending'
 export const PAYMENT_RESULT_PATH = '/payment-result'
 /* Chỉ bật nút "thanh toán mô phỏng" khi cần demo không có mạng: VITE_ALLOW_SIMULATED_PAYMENT=true trong .env */
@@ -60,7 +63,8 @@ export async function startVnPayPayment(reservationIds, { amount, count, label, 
 
 /**
  * Đọc thông tin giao dịch VNPay đang chờ (đã lưu khi bắt đầu thanh toán) từ sessionStorage.
- * @returns {object|null}
+ * Được gọi bởi PaymentResultPage khi VNPay chuyển trình duyệt về /payment-result.
+ * @returns {object|null} { reservationIds, amount, count, label, kind, txnRef, createdAt } hoặc null.
  */
 export function readPendingVnPay() {
   try {
@@ -71,7 +75,8 @@ export function readPendingVnPay() {
 }
 
 /**
- * Xóa thông tin giao dịch VNPay đang chờ khỏi sessionStorage (gọi sau khi đã xử lý xong kết quả).
+ * Xóa thông tin giao dịch VNPay đang chờ khỏi sessionStorage.
+ * Được gọi bởi PaymentResultPage sau khi đã xử lý xong kết quả thanh toán.
  */
 export function clearPendingVnPay() {
   try { sessionStorage.removeItem(VNPAY_PENDING_KEY) } catch { /* bỏ qua */ }

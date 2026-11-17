@@ -1,12 +1,27 @@
 /**
  * ======================================================================
- * FILE: src/features/contract/ContractDocument.jsx  —  VĂN BẢN HỢP ĐỒNG THUÊ KHO (dùng chung cho màn hình ký & xem chi tiết)
- * group: { code, rentals: [...] } — mỗi phần tử là 1 đơn đặt chỗ; 1 đơn có thể gồm nhiều kho (rental.units)
- *        và tương ứng MỘT hợp đồng (ContractNumber).
- * signature: { image, signerName, signedAt } nếu đã ký -> hiện khối chữ ký cuối văn bản.
- * showTerms: in kèm các nhóm điều khoản chi tiết. group.renewedFrom có giá trị -> văn bản là PHỤ LỤC GIA HẠN.
- * Điều khoản lấy từ chính sách hiện hành (usePolicies -> GET /api/policies, có cache).
- * Dùng ở: ContractSignFlow, ContractDetailModal, FacilityManagerAccount, api/contractEmail.js.
+ * FILE: src/features/contract/ContractDocument.jsx  —  VĂN BẢN HỢP ĐỒNG THUÊ KHO (DÙNG CHUNG)
+ * CHỨC NĂNG: Dựng toàn văn "HỢP ĐỒNG THUÊ KHO LƯU TRỮ" (hoặc "PHỤ LỤC GIA HẠN") dạng HTML: Điều 1 Các bên, Điều 2 Đối
+ *   tượng & thời hạn, Điều 3 Giá thuê & tiền cọc, Điều 4 Quyền nghĩa vụ / mã ra vào / chìa khóa, Điều 5 Hiệu lực,
+ *   (tuỳ chọn) Điều 6 Điều khoản chi tiết, Phụ lục 01 Danh sách kho và khối chữ ký. Dùng chung cho màn hình ký,
+ *   màn hình chi tiết hợp đồng của khách và màn hình của Quản lý cơ sở.
+ *   Dữ liệu vào:
+ *   - group: { code, rentals: [...] } — mỗi phần tử là 1 đơn đặt chỗ (Reservation); 1 đơn có thể gồm nhiều kho
+ *     (rental.units: [{ number, type, size, monthlyPrice }]) và tương ứng MỘT hợp đồng (ContractNumber).
+ *   - group.renewedFrom = { contractNumber, startDate, endDate } -> văn bản là PHỤ LỤC GIA HẠN của hợp đồng đó.
+ *   - signature: { image, signerName, signedAt } nếu đã ký -> hiện ảnh chữ ký cuối văn bản.
+ *   - showTerms: in kèm các nhóm điều khoản chi tiết (màn hình chi tiết).
+ * THÀNH PHẦN CHÍNH:
+ *   - ContractDocument (default export): component văn bản hợp đồng.
+ *   - contractUnits(rentals): gộp danh sách kho của mọi đơn trong nhóm (cũng dùng để đếm số kho, dựng email).
+ *   - money, fmtIso, fmtTime: hàm định dạng tiền / ngày / giờ.
+ * DÙNG Ở: src/features/contract/ContractSignFlow.jsx, src/features/contract/ContractDetailModal.jsx,
+ *   src/pages/manager/FacilityManagerAccount.jsx, src/api/contractEmail.js (chỉ dùng contractUnits).
+ * PHỤ THUỘC: services/policies (POLICY_KEYS, POLICY_TITLES, buildContractTerms, fmtDay, usePolicies),
+ *   services/storageRules (formatVnd), ContractSignFlow.css.
+ * API: Không gọi API trực tiếp; điều khoản lấy từ chính sách hiện hành qua usePolicies() -> GET /api/policies (có cache).
+ * LUỒNG: component cha truyền group/customer/signature -> usePolicies() lấy chính sách (số ngày hoàn cọc, báo trả kho,
+ *   phiên bản chính sách) -> tính tổng tiền thuê / cọc + danh sách kho (contractUnits) -> vẽ văn bản.
  * ======================================================================
  */
 import React from 'react'
@@ -14,24 +29,22 @@ import { POLICY_KEYS, POLICY_TITLES, buildContractTerms, fmtDay, usePolicies } f
 import { formatVnd } from '../../services/storageRules'
 import './ContractSignFlow.css'
 
-/*
- * Văn bản hợp đồng thuê kho (dùng chung cho màn hình ký và màn hình chi tiết hợp đồng).
- * group: { code, rentals: [...] }  - mỗi phần tử là một đơn đặt chỗ (Reservation); một đơn có thể gồm nhiều kho
- *        (rental.units: [{ number, type, size, monthlyPrice }]) và tương ứng MỘT hợp đồng (ContractNumber).
- * signature: { image, signerName, signedAt } nếu đã ký -> hiện khối chữ ký cuối văn bản.
- * showTerms: in kèm các nhóm điều khoản chi tiết (dùng ở màn hình chi tiết).
- * group.renewedFrom = { contractNumber, startDate, endDate } -> văn bản là PHỤ LỤC GIA HẠN của hợp đồng đó.
- */
 /**
- * Định dạng tiền kèm "đ".
+ * Định dạng số tiền thành chuỗi kiểu Việt Nam kèm "đ" (rỗng -> "0đ").
+ * @param {number} value số tiền.
+ * @returns {string}
  */
 const money = value => `${formatVnd(value || 0)}đ`
 /**
- * Đổi ngày ISO thành 'dd/MM/yyyy' (rỗng nếu không có).
+ * Đổi ngày ISO ('2026-05-01...') thành 'dd/MM/yyyy' (rỗng nếu không có).
+ * @param {string} iso ngày dạng ISO.
+ * @returns {string}
  */
 const fmtIso = iso => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '')
 /**
- * Định dạng thời điểm thành "HH:mm dd/MM/yyyy" (không hợp lệ -> rỗng).
+ * Định dạng thời điểm ký thành "HH:mm dd/MM/yyyy" theo vi-VN (không hợp lệ -> rỗng).
+ * @param {string} iso thời điểm dạng ISO.
+ * @returns {string}
  */
 const fmtTime = iso => {
   if (!iso) return ''
@@ -39,12 +52,13 @@ const fmtTime = iso => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-/* Danh sách kho trong hợp đồng (gộp các đơn của nhóm). */
 /**
  * Gộp danh sách kho của mọi đơn trong nhóm hợp đồng thành 1 mảng để in Phụ lục danh sách kho.
  * Đơn chỉ có 1 kho thì lấy đúng giá/tháng và tiền cọc backend đã tính để khớp dòng tổng.
+ * Đơn nhiều kho: tiền cọc mỗi kho = giá/tháng × depositMonths (mặc định 2 tháng).
  * @param {object[]} rentals các đơn trong nhóm.
  * @returns {Array<{number, type, size, monthlyPrice, deposit, reservationCode, reservationId}>}
+ * Được gọi bởi: ContractDocument, ContractSignFlow, ContractDetailModal (đếm số kho), api/contractEmail.js (dựng email).
  */
 export function contractUnits(rentals) {
   // Đơn 1 kho: lấy đúng giá / tháng và tiền cọc của hợp đồng (số backend đã tính), để từng dòng khớp dòng Tổng cộng
@@ -61,9 +75,19 @@ export function contractUnits(rentals) {
 }
 
 /**
- * Component văn bản hợp đồng: các bên, đối tượng & thời hạn, giá thuê & tiền cọc, (tuỳ chọn) điều khoản chi tiết,
- * phụ lục danh sách kho, khối chữ ký; có dấu "BẢN XEM TRƯỚC" khi draft.
- * @param {object} props group, customer, facilityAddress, signature, showTerms, draft, id (id phần tử để in).
+ * Vẽ văn bản hợp đồng / phụ lục gia hạn: các bên, đối tượng & thời hạn, giá thuê & tiền cọc, quyền nghĩa vụ,
+ * hiệu lực, (tuỳ chọn) điều khoản chi tiết, phụ lục danh sách kho, khối chữ ký; có dấu "BẢN XEM TRƯỚC" khi draft.
+ * Số ngày hoàn cọc và số ngày báo trả kho lấy từ chính sách renewal_return (usePolicies -> GET /api/policies).
+ * @param {object} props
+ * @param {{code, rentals: object[], renewedFrom?}} props.group nhóm hợp đồng.
+ * @param {{name, email, phone}} props.customer bên thuê.
+ * @param {string} [props.facilityAddress] địa chỉ cơ sở (in ở Điều 1).
+ * @param {{image, signerName, signedAt}} [props.signature] chữ ký nếu đã ký.
+ * @param {boolean} [props.showTerms=false] in thêm Điều 6 (các điều khoản chi tiết từ buildContractTerms).
+ * @param {boolean} [props.draft=false] hiện dấu "BẢN XEM TRƯỚC · CHƯA CÓ HIỆU LỰC".
+ * @param {string} [props.id='csf-print'] id của thẻ <article> (CSS in ấn dùng id này).
+ * @returns {JSX.Element}
+ * Được gọi bởi: ContractSignFlow (bước 1), ContractDetailModal, FacilityManagerAccount.
  */
 export default function ContractDocument({ group, customer, facilityAddress, signature, showTerms = false, draft = false, id = 'csf-print' }) {
   const policies = usePolicies()
@@ -74,11 +98,13 @@ export default function ContractDocument({ group, customer, facilityAddress, sig
   const depositTotal = rentals.reduce((n, r) => n + Number(r.depositAmount || 0), 0)
   const units = contractUnits(rentals)
   const depositMonths = first.depositMonths || 2
+  // Chuỗi "<tên chính sách> v<số>, ..." của các chính sách có phiên bản (in ở dòng "Số: ..." đầu văn bản).
   const versionText = POLICY_KEYS
     .filter(key => policies.meta?.[key]?.version)
     .map(key => `${POLICY_TITLES[key]} v${policies.meta[key].version}`)
     .join(', ')
   const terms = showTerms ? buildContractTerms(policies.values) : []
+  // Có renewedFrom -> đây là PHỤ LỤC GIA HẠN; parentText = câu mô tả hợp đồng gốc để chèn vào các điều khoản.
   const renewedFrom = group.renewedFrom || first.renewedFrom || null
   const parentText = renewedFrom
     ? `hợp đồng số ${renewedFrom.contractNumber}${renewedFrom.startDate ? ` (${fmtIso(renewedFrom.startDate)} → ${fmtIso(renewedFrom.endDate)})` : ''}`

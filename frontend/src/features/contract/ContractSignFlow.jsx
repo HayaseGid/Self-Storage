@@ -1,11 +1,23 @@
 /**
  * ======================================================================
  * FILE: src/features/contract/ContractSignFlow.jsx  —  KÝ HỢP ĐỒNG / PHỤ LỤC GIA HẠN ONLINE (3 BƯỚC)
- * Bước 1: Xem hợp đồng · Bước 2: Xác nhận từng nhóm điều khoản · Bước 3: Ký tay + nhập đúng họ tên tài khoản.
- * Ký ngay sau khi khách đặt cọc (không còn bước Manager duyệt). Một hợp đồng có thể gồm nhiều kho cùng cơ sở.
- * File này KHÔNG tự gọi API: dữ liệu chữ ký được trả lên qua onSign(); CustomerAccount sẽ gửi
- * POST /api/contracts/{contractId}/signature (ContractsController) và gửi email hợp đồng.
- * Dùng ở: CustomerAccount.
+ * CHỨC NĂNG: Hộp thoại để khách ký hợp đồng thuê kho (ngay sau khi đặt cọc, không còn bước Manager duyệt) hoặc ký
+ *   phụ lục gia hạn. Gồm 3 bước: 1) Xem hợp đồng (ContractDocument) · 2) Tick xác nhận từng nhóm điều khoản
+ *   · 3) Ký tay (SignaturePad) + nhập đúng họ tên tài khoản. Một hợp đồng có thể gồm nhiều kho cùng cơ sở, cùng kỳ thuê
+ *   (đặt từ giỏ hàng) -> hiển thị thành Hợp đồng chính + Phụ lục danh sách kho.
+ * THÀNH PHẦN CHÍNH:
+ *   - ContractSignFlow (default export): component hộp thoại ký 3 bước.
+ *   - CONTRACT_TERMS_VERSION: mã phiên bản bộ điều khoản, gửi kèm chữ ký để lưu bằng chứng khách đồng ý bản nào.
+ *   - money: định dạng tiền.
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx (import cả CONTRACT_TERMS_VERSION).
+ * PHỤ THUỘC: ./SignaturePad, ./ContractDocument (ContractDocument, contractUnits), services/policies
+ *   (buildContractTerms, usePolicies), services/storageRules (formatVnd), ContractSignFlow.css.
+ * API: File này KHÔNG tự gọi API (chỉ đọc chính sách qua usePolicies -> GET /api/policies, có cache).
+ *   Dữ liệu chữ ký được trả lên qua onSign(); CustomerAccount gửi POST /api/contracts/{contractId}/signature
+ *   (ContractsController) rồi gửi email hợp đồng (api/contractEmail.js).
+ * LUỒNG: khách bấm "Ký hợp đồng" -> CustomerAccount mở ContractSignFlow -> bước 1 xem văn bản -> bước 2 tick đủ
+ *   điều khoản -> bước 3 ký + gõ họ tên -> bấm "Ký hợp đồng" -> submit() kiểm tra -> onSign({ image, acceptedPolicies,
+ *   termsVersion }) -> CustomerAccount gọi API lưu chữ ký; lỗi (nếu có) hiện ngay trong hộp thoại.
  * ======================================================================
  */
 import React, { useEffect, useState } from 'react'
@@ -15,37 +27,37 @@ import { formatVnd } from '../../services/storageRules'
 import ContractDocument, { contractUnits } from './ContractDocument'
 import './ContractSignFlow.css'
 
-/*
- * Ký hợp đồng thuê kho online (ngay sau khi khách đặt cọc; không còn bước Manager duyệt). Mỗi kho một hợp đồng.
- * Một hợp đồng có thể gồm nhiều kho cùng cơ sở, cùng kỳ thuê (đặt từ giỏ hàng) -> hiển thị
- * thành Hợp đồng chính + Phụ lục danh sách kho.
- *
- * Bước 1: Xem hợp đồng  ·  Bước 2: Xác nhận từng nhóm điều khoản  ·  Bước 3: Ký tay + nhập họ tên
- * Ký xong, bản hợp đồng được gửi qua email cho khách (EmailJS, xem contractEmail.js).
- */
-
 /**
- * Định dạng tiền kèm "đ".
+ * Định dạng số tiền thành chuỗi kiểu Việt Nam kèm "đ" (rỗng -> "0đ").
+ * @param {number} value số tiền.
+ * @returns {string}
  */
 const money = value => `${formatVnd(value || 0)}đ`
+/** Phiên bản bộ điều khoản hợp đồng; gửi kèm chữ ký (termsVersion) để backend lưu khách đã đồng ý bản nào. */
 export const CONTRACT_TERMS_VERSION = 'storage-rental-v1'
 
 /**
- * Component hộp thoại ký hợp đồng 3 bước.
- * @param {object} props group (nhóm hợp đồng), customer ({ name, email }), onClose,
- *   onSign({ image, acceptedPolicies, termsVersion }) — Promise, lỗi sẽ hiện trong hộp thoại.
+ * Hộp thoại ký hợp đồng / phụ lục gia hạn 3 bước. Nhấn Esc hoặc bấm nền tối để đóng (trừ khi đang gửi chữ ký).
+ * @param {object} props
+ * @param {{title, rentals: object[], renewedFrom?}} props.group nhóm hợp đồng cần ký (có renewedFrom -> phụ lục gia hạn).
+ * @param {{name, email}} props.customer khách đang đăng nhập; họ tên gõ ở bước 3 phải trùng customer.name.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} props.onSign onSign({ image, acceptedPolicies, termsVersion }) — trả Promise; nếu reject thì hiện lỗi.
+ * @returns {JSX.Element}
+ * Được gọi bởi: CustomerAccount (khi khách bấm Ký trên ContractCard / ContractDetailModal / sau khi gia hạn).
  */
 export default function ContractSignFlow({ group, customer, onClose, onSign }) {
-  const [step, setStep] = useState(1)
-  const [accepted, setAccepted] = useState(() => new Set())
-  const [signature, setSignature] = useState(null)
-  const [typedName, setTypedName] = useState('')
+  const [step, setStep] = useState(1) // bước hiện tại: 1 xem, 2 điều khoản, 3 ký
+  const [accepted, setAccepted] = useState(() => new Set()) // tập key các nhóm điều khoản đã tick
+  const [signature, setSignature] = useState(null) // ảnh chữ ký PNG base64 từ SignaturePad
+  const [typedName, setTypedName] = useState('') // họ tên khách gõ để xác nhận
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   // Điều khoản lấy từ chính sách hiện hành do Business Operations thiết lập.
   const policies = usePolicies()
   const TERM_POLICIES = buildContractTerms(policies.values)
 
+  // Chạy khi mở hộp thoại và khi submitting đổi: bắt phím Esc để đóng + khóa cuộn trang nền; dọn dẹp khi đóng.
   useEffect(() => {
     // Nhấn Esc để đóng (khi không đang gửi chữ ký).
     const onKey = event => { if (event.key === 'Escape' && !submitting) onClose() }
@@ -61,10 +73,11 @@ export default function ContractSignFlow({ group, customer, onClose, onSign }) {
   const rentTotal = rentals.reduce((n, r) => n + Number(r.rentalAmount || Number(r.monthlyPrice || 0) * Number(r.months || 0)), 0)
   const depositTotal = rentals.reduce((n, r) => n + Number(r.depositAmount || 0), 0)
   const unitCount = contractUnits(rentals).length
+  // allAccepted: đã tick đủ mọi nhóm điều khoản; nameMatches: họ tên gõ trùng tên tài khoản (không phân biệt hoa/thường).
   const allAccepted = TERM_POLICIES.every(policy => accepted.has(policy.key))
   const nameMatches = typedName.trim().toLowerCase() === String(customer?.name || '').trim().toLowerCase()
 
-  // Tick/bỏ tick đồng ý 1 nhóm điều khoản.
+  // Chạy khi tick/bỏ tick ô của 1 nhóm điều khoản ở bước 2: thêm/bớt key trong tập accepted.
   const toggle = key => setAccepted(current => {
     const next = new Set(current)
     if (next.has(key)) next.delete(key)
@@ -75,6 +88,7 @@ export default function ContractSignFlow({ group, customer, onClose, onSign }) {
   /**
    * Gửi ký: kiểm tra đã đồng ý đủ điều khoản, đã ký và họ tên khớp tài khoản; rồi gọi onSign với ảnh chữ ký,
    * danh sách điều khoản đã đồng ý và phiên bản điều khoản.
+   * Chạy khi bấm nút "Ký hợp đồng" / "Ký phụ lục gia hạn" ở bước 3. Lỗi từ onSign được hiện trong state error.
    */
   const submit = async () => {
     if (!allAccepted) return setError('Bạn cần xác nhận đồng ý tất cả các nhóm điều khoản.')

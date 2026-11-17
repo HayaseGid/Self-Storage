@@ -1,28 +1,30 @@
 /**
  * ======================================================================
- * FILE: src/components/common/DataGrid.jsx  —  BẢNG DỮ LIỆU DÙNG CHUNG (sắp xếp, tìm kiếm, lọc, phân trang ở frontend)
- * columns: [{ key, label, render?(row), sortValue?(row), align?, sortable?, minWidth? }]
- * filters: [{ key, label, options: [{ value, label }], match(row, value) }]
- * getCreatedAt(row): khi chưa bấm sắp xếp cột thì xếp MỚI NHẤT LÊN ĐẦU và tô sáng bản ghi mới.
- * Không gọi API (dữ liệu truyền vào qua rows).
- * Dùng ở: CustomerAccount, BusinessCatalog.
+ * FILE: src/components/common/DataGrid.jsx  —  BẢNG DỮ LIỆU DÙNG CHUNG (XỬ LÝ Ở FRONTEND)
+ * CHỨC NĂNG: Bảng hiển thị một mảng dữ liệu có sẵn với ô tìm kiếm, các ô lọc, bấm tiêu đề cột để sắp xếp
+ *   và phân trang — tất cả làm ở frontend. Khi chưa chọn cột sắp xếp và có getCreatedAt thì xếp MỚI NHẤT
+ *   LÊN ĐẦU và tô sáng bản ghi mới. Cấu hình:
+ *     columns: [{ key, label, render?(row), sortValue?(row), align?: 'left'|'right'|'center', sortable?, minWidth? }]
+ *     filters: [{ key, label, options: [{ value, label }], match(row, value) }]
+ * THÀNH PHẦN CHÍNH:
+ *   - DataGrid (default) : component bảng.
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx, src/pages/business/BusinessCatalog.jsx (trang chưa được dùng).
+ * PHỤ THUỘC: react, ./listKit (DEFAULT_PAGE_SIZE, Pager, newestFirst, rowClass), ./DataGrid.css.
+ * API: Không gọi API (dữ liệu truyền vào qua props rows).
+ * LUỒNG: Trang truyền rows + columns -> người dùng gõ tìm kiếm / chọn lọc -> filtered -> bấm cột -> sorted
+ *   -> cắt trang pageRows -> hiển thị; bấm dòng -> onRowClick(row) của trang.
  * ======================================================================
  */
 import React, { useMemo, useState } from 'react'
 import './DataGrid.css'
 import { DEFAULT_PAGE_SIZE, Pager, newestFirst, rowClass } from './listKit'
 
-/*
- * Bảng dữ liệu dùng chung: sắp xếp theo cột, tìm kiếm, lọc, phân trang.
- *
- * columns: [{ key, label, render?(row), sortValue?(row), align?: 'left'|'right'|'center', sortable?: boolean, minWidth? }]
- * filters: [{ key, label, options: [{ value, label }], match(row, value) }]
- * getCreatedAt(row): [THÊM] ngày tạo -> chưa bấm sắp xếp cột thì MỚI NHẤT LÊN ĐẦU, bản ghi mới tạo được tô sáng.
- */
 /**
- * Component bảng dữ liệu.
- * @param {object} props columns, rows, getRowId (lấy khóa dòng), searchText(row) (chuỗi để tìm kiếm),
- *   searchPlaceholder, filters, pageSize, initialSort ({key, dir}), onRowClick, emptyText, toolbarExtra, caption, getCreatedAt.
+ * Component bảng dữ liệu có tìm kiếm / lọc / sắp xếp / phân trang ở frontend.
+ * @param {object} props columns, rows, getRowId (lấy khóa dòng), searchText(row) (chuỗi để tìm kiếm; không truyền thì ẩn ô tìm),
+ *   searchPlaceholder, filters, pageSize, initialSort ({key, dir}), onRowClick, emptyText, toolbarExtra (nút thêm ở thanh công cụ),
+ *   caption, getCreatedAt(row) (ngày tạo để xếp mới nhất lên đầu + tô sáng bản ghi mới).
+ * @returns {JSX.Element}
  */
 export default function DataGrid({
   columns,
@@ -39,8 +41,8 @@ export default function DataGrid({
   caption,
   getCreatedAt = null
 }) {
-  const [query, setQuery] = useState('')
-  const [filterValues, setFilterValues] = useState(() => Object.fromEntries(filters.map(f => [f.key, 'all'])))
+  const [query, setQuery] = useState('') // nội dung ô tìm kiếm
+  const [filterValues, setFilterValues] = useState(() => Object.fromEntries(filters.map(f => [f.key, 'all']))) // giá trị từng ô lọc
   const [sort, setSort] = useState(initialSort || null) // { key, dir: 'asc' | 'desc' }
   const [page, setPage] = useState(1)
   const size = pageSize

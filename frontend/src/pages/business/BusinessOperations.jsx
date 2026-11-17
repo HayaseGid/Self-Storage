@@ -1,15 +1,30 @@
 /**
  * ======================================================================
- * FILE: src/pages/business/BusinessOperations.jsx  —  TRANG LÀM VIỆC CỦA BUSINESS OPERATIONS MANAGER (route /business)
- * Menu: Tổng quan · Cơ sở theo khu vực · Khung giá · Chính sách · Doanh thu & hiệu suất · Báo cáo.
- * Luồng API (OperationsController):
+ * FILE: src/pages/business/BusinessOperations.jsx  —  TRANG LÀM VIỆC CỦA BUSINESS OPERATIONS MANAGER
+ * CHỨC NĂNG: Khung trang chính (sidebar + topbar + nội dung) cho vai trò Business Operations.
+ *   Tải toàn bộ dữ liệu vận hành + báo cáo từ backend, điều hướng giữa 6 mục menu:
+ *   Tổng quan · Cơ sở toàn hệ thống · Kích thước & giá · Chính sách · Doanh thu & hiệu suất · Báo cáo & xuất file.
+ *   Tự xử lý thêm / sửa / ngừng hoạt động / xóa cơ sở; các mục còn lại giao cho component con.
+ * THÀNH PHẦN CHÍNH:
+ *   - BusinessOperations (export default): component trang, giữ state dữ liệu và mục menu đang mở.
+ *     + loadBusinessData: tải dữ liệu vận hành + báo cáo.
+ *     + runOperation / showOperationError: chạy 1 thao tác API rồi tải lại ngầm / hiện lỗi.
+ *     + updateFacility / deleteFacility / handleAddFacility: sửa / xóa / tạo cơ sở.
+ *   - BusinessLiveDashboard (nội bộ): màn hình "Tổng quan" (thẻ KPI + bảng doanh thu theo tháng).
+ * DÙNG Ở: src/App.jsx (khi người dùng có vai trò BUSINESS_OPERATIONS).
+ * PHỤ THUỘC: api/api, mappers/operationsState (mapOperationsState), components/common/Dialog,
+ *   services/storageRules (generateUnitCodePrefix), features/unit/unitTypes.css, BusinessOperations.css,
+ *   các màn hình con cùng folder: BusinessPanels, BusinessPolicyEditor, BusinessPriceBands, BusinessFacilityForm.
+ * API (OperationsController):
  *   GET    /api/operations/state?email=...      -> toàn bộ dữ liệu vận hành (cơ sở, kho, đơn, quản lý...) -> mapOperationsState()
  *   GET    /api/operations/reports               -> số liệu báo cáo, doanh thu theo tháng
  *   POST   /api/operations/facilities            -> tạo cơ sở mới (mã chi nhánh tự sinh từ tên)
  *   PUT    /api/operations/facilities/{id}       -> sửa tên / địa chỉ / quản lý / trạng thái cơ sở
  *   DELETE /api/operations/facilities/{id}       -> xóa cơ sở
- * Các màn hình con: BusinessPanels, BusinessPolicyEditor, BusinessPriceBands, BusinessFacilityForm.
- * Dùng ở: App.jsx (role BUSINESS_OPERATIONS).
+ *   (Các component con tự gọi thêm API riêng: khung giá, chính sách...)
+ * LUỒNG: mở trang -> loadBusinessData (GET state + reports) -> tính mảng `facilities` (kèm số kho / đang thuê)
+ *   -> người dùng chọn menu -> component con hiển thị; khi sửa / xóa cơ sở -> runOperation gọi API
+ *   -> tải lại ngầm (silent) -> giao diện cập nhật.
  * ======================================================================
  */
 import React, { useEffect, useState } from "react";
@@ -25,18 +40,24 @@ import BusinessFacilityForm from "./BusinessFacilityForm";
 import BusinessPriceBands from "./BusinessPriceBands";
 
 /**
- * Component trang Business Operations: tải dữ liệu vận hành + báo cáo, điều hướng giữa các mục menu,
- * thêm/sửa/xóa cơ sở, đăng xuất.
- * @param {object} props currentUser (người đăng nhập), navigate, currentUserKey (key localStorage lưu phiên).
+ * Trang Business Operations: tải dữ liệu vận hành + báo cáo, điều hướng giữa các mục menu,
+ * thêm / sửa / ngừng hoạt động / xóa cơ sở và đăng xuất (xóa phiên trong localStorage).
+ * Được gọi bởi: App.jsx khi người dùng đăng nhập là Business Operations Manager.
+ * @param {object} props
+ * @param {object} props.currentUser người đang đăng nhập (cần `email` để gọi /api/operations/state, `name` để hiển thị).
+ * @param {Function} props.navigate hàm điều hướng của App.
+ * @param {string} [props.currentUserKey] khóa localStorage lưu phiên đăng nhập (mặc định "storespace_current_user").
+ * @returns {JSX.Element} bố cục trang Business Operations.
  */
 function BusinessOperations({ currentUser, navigate, currentUserKey = "storespace_current_user" }) {
     const dialog = useDialog();
-    const [activeMenu, setActiveMenu] = useState("dashboard");
-    const [showAddFacility, setShowAddFacility] = useState(false);
-    const [operationState, setOperationState] = useState(null);
-    const [reports, setReports] = useState(null);
+    const [activeMenu, setActiveMenu] = useState("dashboard"); // 'dashboard' | 'facilities' | 'prices' | 'policies' | 'revenue' | 'reports'
+    const [showAddFacility, setShowAddFacility] = useState(false); // bật/tắt modal "Thêm cơ sở mới"
+    const [operationState, setOperationState] = useState(null); // dữ liệu vận hành đã chuẩn hóa (facilities, units, managers...)
+    const [reports, setReports] = useState(null); // số liệu báo cáo từ /api/operations/reports
     const [loading, setLoading] = useState(true);
     const [apiError, setApiError] = useState("");
+    // Danh sách cơ sở để hiển thị: ghép thông tin cơ sở với số kho, số kho đang thuê / bảo trì của cơ sở đó.
     const facilities = operationState?.facilities.map(facility => {
         const units = operationState.units.filter(unit => unit.facilityDbId === facility.facilityId);
         return {
@@ -56,10 +77,12 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
         };
     }) || [];
 
-    // silent: tải lại ngầm sau mỗi thao tác, không thay cả trang bằng màn hình "Đang tải".
     /**
-     * Tải song song dữ liệu vận hành và báo cáo; silent = true thì tải ngầm (không hiện màn hình "Đang tải").
+     * Tải song song dữ liệu vận hành và báo cáo, chuẩn hóa bằng mapOperationsState rồi lưu vào state.
      * API: GET /api/operations/state?email=...  +  GET /api/operations/reports
+     * Được gọi khi: mở trang / đổi email (useEffect), bấm "Thử lại", sau khi tạo cơ sở, và trong runOperation.
+     * @param {{silent?: boolean}} [options] silent = true: tải lại ngầm sau thao tác,
+     *   không thay cả trang bằng màn hình "Đang tải".
      */
     const loadBusinessData = async ({ silent = false } = {}) => {
         if (!currentUser?.email) {
@@ -83,8 +106,10 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
         }
     };
 
+    // Chạy khi mở trang và mỗi khi email người đăng nhập thay đổi: tải lại toàn bộ dữ liệu.
     useEffect(() => { loadBusinessData(); }, [currentUser?.email]);
 
+    // Dữ liệu đang nhập trong modal "Thêm cơ sở mới".
     const [newFacility, setNewFacility] = useState({
         name: "",
         unitCodePrefix: "",
@@ -95,15 +120,16 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
     });
 
 
-    // Lỗi thao tác hiện bằng pop-up (không chỉ một dòng nhỏ ở đầu trang).
-    // Hiện lỗi thao tác bằng pop-up (và lưu vào apiError).
+    // Hiện lỗi thao tác bằng pop-up (không chỉ một dòng nhỏ ở đầu trang) và lưu vào apiError.
+    // Trả về Promise của hộp thoại để nơi gọi có thể await đến khi người dùng đóng.
     const showOperationError = (error, title = "Thao tác không thành công") => {
         setApiError(error.message);
         return dialog.alert({ tone: "danger", title, message: error.message });
     };
 
     /**
-     * Chạy 1 thao tác gọi API, thành công thì tải lại dữ liệu ngầm, lỗi thì hiện pop-up.
+     * Chạy 1 thao tác gọi API, thành công thì tải lại dữ liệu ngầm (silent), lỗi thì hiện pop-up.
+     * Được gọi bởi: updateFacility, deleteFacility.
      * @param {Function} operation hàm trả về Promise (lời gọi API).
      * @param {string} errorTitle tiêu đề pop-up khi lỗi.
      * @returns {Promise<boolean>} true nếu thành công.
@@ -120,11 +146,17 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
         }
     };
 
-    const [editingFacility, setEditingFacility] = useState(null);
+    const [editingFacility, setEditingFacility] = useState(null); // cơ sở đang mở trong BusinessFacilityForm (null = đóng)
 
     /**
-     * Cập nhật thông tin cơ sở (hỏi xác nhận khi chuyển sang ngừng hoạt động, trừ khi skipConfirm).
+     * Cập nhật thông tin cơ sở; trường nào không có trong `values` thì giữ giá trị cũ.
+     * Hỏi xác nhận khi chuyển sang ngừng hoạt động (trừ khi skipConfirm).
      * API: PUT /api/operations/facilities/{facilityId}  body { facilityName, address, managerEmail, status }
+     * Được gọi khi: bấm bật/tắt trạng thái ở BusinessFacilitiesByArea, hoặc bấm Lưu ở BusinessFacilityForm.
+     * @param {object} facility cơ sở hiện tại.
+     * @param {object} values giá trị mới { name?, address?, managerEmail?, status? }.
+     * @param {{skipConfirm?: boolean}} [options] true = bỏ qua hộp thoại xác nhận.
+     * @returns {Promise<boolean|undefined>} true nếu thành công, undefined nếu người dùng hủy.
      */
     const updateFacility = async (facility, values, { skipConfirm = false } = {}) => {
         if (!skipConfirm && values.status === "inactive" && facility.status !== "inactive") {
@@ -148,8 +180,10 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
     };
 
     /**
-     * Xóa cơ sở (hỏi xác nhận, không hoàn tác).
+     * Xóa cơ sở sau khi hỏi xác nhận (không hoàn tác được).
      * API: DELETE /api/operations/facilities/{facilityId}
+     * Được gọi khi: bấm nút xóa cơ sở trong BusinessFacilitiesByArea (prop onDelete).
+     * @param {object} facility cơ sở cần xóa.
      */
     const deleteFacility = async facility => {
         const confirmed = await dialog.confirm({
@@ -171,8 +205,10 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
         : "";
 
     /**
-     * Tạo cơ sở mới từ form: kiểm tra tên, địa chỉ, quản lý; mã chi nhánh tự sinh (generateUnitCodePrefix).
+     * Tạo cơ sở mới từ modal: kiểm tra đã nhập tên, địa chỉ và chọn quản lý; mã chi nhánh lấy từ
+     * autoUnitCodePrefix (tự sinh). Thành công thì tải lại dữ liệu, xóa form và đóng modal.
      * API: POST /api/operations/facilities  body { facilityName, unitCodePrefix, address, managerEmail, status }
+     * Được gọi khi: bấm nút "Tạo cơ sở" trong modal.
      */
     const handleAddFacility = () => {
         if (
@@ -201,7 +237,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
         }).catch(error => showOperationError(error, "Không tạo được cơ sở"));
     };
 
-    // Đóng form thêm cơ sở và xóa dữ liệu đang nhập.
+    // Đóng modal thêm cơ sở và xóa dữ liệu đang nhập. Chạy khi bấm "Hủy" hoặc nút ✕.
     const handleCloseAddFacility = () => {
         setShowAddFacility(false);
 
@@ -215,12 +251,13 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
         });
     };
 
-    // Đăng xuất: xóa phiên đăng nhập khỏi localStorage và về trang chủ.
+    // Đăng xuất (nút ở cuối sidebar): xóa khóa currentUserKey khỏi localStorage và về trang chủ.
     const handleLogout = () => {
         localStorage.removeItem(currentUserKey);
         navigate("/");
     };
 
+    // Đang tải lần đầu -> màn hình chờ; lỗi mà chưa có dữ liệu -> báo lỗi + nút "Thử lại".
     if (loading) return <main className="customer-main" style={{ padding: 32 }}>Đang tải dữ liệu kinh doanh từ backend...</main>;
     if (apiError && !operationState) {
         return <main className="customer-main" style={{ padding: 32 }}>
@@ -567,8 +604,12 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
 }
 
 /**
- * Component "Tổng quan" của Business Operations: thẻ số liệu tổng (cơ sở, kho, tỷ lệ lấp đầy, doanh thu...).
- * @param {object} props facilities, reports.
+ * Màn hình "Tổng quan" của Business Operations: 4 thẻ KPI (tổng cơ sở, tổng kho, kho đang sử dụng + % công suất,
+ * doanh thu đã ghi nhận) và bảng doanh thu theo tháng. Không gọi API, chỉ hiển thị dữ liệu được truyền vào.
+ * Được gọi bởi: BusinessOperations khi activeMenu === "dashboard".
+ * @param {object} props
+ * @param {Array} props.facilities danh sách cơ sở đã ghép số liệu kho.
+ * @param {object|null} props.reports số liệu từ GET /api/operations/reports (totalUnits, handedOverUnits, occupancyRate, totalRevenue, monthlyRevenue).
  */
 function BusinessLiveDashboard({ facilities, reports }) {
     // Định dạng tiền kiểu Việt Nam kèm "đ".

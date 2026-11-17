@@ -1,9 +1,22 @@
 /**
  * ======================================================================
- * FILE: src/features/contract/ContractModal.jsx  —  HỘP THOẠI HỢP ĐỒNG THUÊ KHO (bản giao diện cũ, dạng các mục thu gọn)
- * Hiện thông tin các bên, kho thuê, thanh toán, điều khoản, chữ ký; cho khách tick đồng ý + ký tay + nhập họ tên.
- * KHÔNG tự gọi API: dữ liệu chữ ký trả lên qua onSign(); CustomerAccount gửi lên backend.
- * (Luồng ký mới dùng ContractSignFlow.jsx; file này vẫn được CustomerAccount import.)
+ * FILE: src/features/contract/ContractModal.jsx  —  HỘP THOẠI HỢP ĐỒNG 1 ĐƠN (GIAO DIỆN CŨ, CÁC MỤC THU GỌN)
+ * CHỨC NĂNG: Hộp thoại xem và ký hợp đồng của MỘT đơn, chia thành 5 mục bấm để mở/thu gọn: Thông tin các bên,
+ *   Thông tin kho, Thời hạn & chi phí, Điều khoản (5 điều cố định viết sẵn trong file), Chữ ký. Nếu chưa ký, mục
+ *   Chữ ký cho khách ký tay (SignaturePad) + nhập họ tên + tick đồng ý rồi bấm "Ký và xác nhận hợp đồng".
+ *   Đây là giao diện cũ; luồng ký mới nhiều bước là ContractSignFlow.jsx, nhưng CustomerAccount vẫn mở hộp thoại này
+ *   khi khách bấm "✍ Ký hợp đồng" trên ContractCard.
+ * THÀNH PHẦN CHÍNH:
+ *   - ContractModal (default export): component hộp thoại.
+ *   - Hàm con: toggleSection, formatMoney, submit, renderSection, detailItem.
+ *   - CSS viết trực tiếp trong thẻ <style> cuối file (class contract-modal-*, contract-detail-*).
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx.
+ * PHỤ THUỘC: ./SignaturePad, services/contractSignatures (formatSignedAt).
+ * API: KHÔNG tự gọi API. Dữ liệu chữ ký trả lên qua onSign(); CustomerAccount (handleSign) gửi
+ *   POST /api/contracts/{contractId}/signature.
+ * LUỒNG: khách bấm "✍ Ký hợp đồng" trên ContractCard -> CustomerAccount mở ContractModal -> khách ký, gõ họ tên,
+ *   tick đồng ý -> bấm "Ký và xác nhận hợp đồng" -> submit() kiểm tra -> onSign({ image, signerName, signedAt,
+ *   contractId, unitId }) -> CustomerAccount lưu chữ ký lên backend.
  * ======================================================================
  */
 
@@ -12,9 +25,16 @@ import SignaturePad from './SignaturePad'
 import { formatSignedAt } from '../../services/contractSignatures'
 
 /**
- * Component hộp thoại hợp đồng.
- * @param {object} props rental (đơn), customerName, signature (chữ ký đã có, null nếu chưa ký), onClose,
- *   onSign({ image, signerName, signedAt, contractId, unitId }) — Promise.
+ * Hộp thoại hợp đồng của 1 đơn: 5 mục thu gọn được + khu vực ký (nếu chưa ký) hoặc ảnh chữ ký (nếu đã ký).
+ * Bấm nền tối hoặc nút × / "Đóng hợp đồng" để đóng.
+ * @param {object} props
+ * @param {object} props.rental đơn đặt kho (contractId, unitId, facility, type, size, startDate, endDate, price...).
+ * @param {string} props.customerName tên tài khoản khách; họ tên gõ xác nhận phải trùng.
+ * @param {object|null} props.signature chữ ký đã có ({ image, signerName, signedAt }), null nếu chưa ký.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} props.onSign onSign({ image, signerName, signedAt, contractId, unitId }) — trả Promise; reject thì hiện lỗi.
+ * @returns {JSX.Element}
+ * Được gọi bởi: CustomerAccount (state openRental) khi khách bấm "✍ Ký hợp đồng" trên ContractCard.
  */
 export default function ContractModal({
   rental,
@@ -23,12 +43,13 @@ export default function ContractModal({
   onClose,
   onSign
 }) {
-  const [agree, setAgree] = useState(false)
-  const [signatureImg, setSignatureImg] = useState(null)
-  const [typedName, setTypedName] = useState('')
+  const [agree, setAgree] = useState(false) // đã tick "Tôi đã đọc, hiểu và đồng ý"
+  const [signatureImg, setSignatureImg] = useState(null) // ảnh chữ ký PNG base64 từ SignaturePad
+  const [typedName, setTypedName] = useState('') // họ tên khách gõ để xác nhận
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Mục nào đang mở (mặc định mở hết cả 5 mục).
   const [expandedSections, setExpandedSections] = useState({
     parties: true,
     storage: true,
@@ -38,13 +59,14 @@ export default function ContractModal({
   })
 
   const isSigned = !!signature
+  // Mã hiển thị của hợp đồng (chưa có contractId thì tạm dùng mã kho); cũng là contractId gửi kèm onSign.
   const contractCode = rental.contractId || rental.unitId
 
   const nameMatches =
     typedName.trim().toLowerCase() ===
     String(customerName || '').trim().toLowerCase()
 
-  // Mở/thu gọn 1 mục (parties, storage, payment, terms, signature).
+  // Chạy khi bấm tiêu đề 1 mục: mở/thu gọn mục đó (parties, storage, payment, terms, signature).
   const toggleSection = (section) => {
     setExpandedSections(current => ({
       ...current,
@@ -65,7 +87,8 @@ export default function ContractModal({
     return value
   }
 
-  // Gửi ký: kiểm tra đã đồng ý điều khoản, đã ký, họ tên khớp tài khoản; rồi gọi onSign với dữ liệu chữ ký.
+  // Chạy khi bấm "✍ Ký và xác nhận hợp đồng": kiểm tra đã tick đồng ý, đã ký, họ tên khớp tài khoản;
+  // rồi gọi onSign với dữ liệu chữ ký (CustomerAccount gửi POST /api/contracts/{contractId}/signature). Lỗi -> state error.
   const submit = async () => {
     if (!agree) {
       setError('Bạn cần đồng ý với các điều khoản hợp đồng.')
@@ -100,6 +123,7 @@ export default function ContractModal({
     }
   }
 
+  // 5 điều khoản cố định hiển thị trong mục "Điều khoản hợp đồng" (khác ContractDocument: không lấy từ chính sách).
   const terms = [
     'Bên thuê sử dụng kho đúng mục đích lưu trữ hàng hoá hợp pháp, không lưu trữ hàng cấm, chất nguy hiểm, cháy nổ.',
     'Bên thuê được cấp 01 mã Access Code 6 số duy nhất để ra vào cơ sở; mỗi ô kho được cấp chìa khóa vật lý riêng bàn giao tại quầy lễ tân.',
@@ -109,8 +133,12 @@ export default function ContractModal({
   ]
 
   /**
-   * Vẽ 1 mục có tiêu đề + biểu tượng, bấm để mở/thu gọn nội dung.
-   * @param {string} id mã mục, title tiêu đề, subtitle mô tả, content nội dung JSX.
+   * Vẽ 1 mục có tiêu đề + biểu tượng, bấm để mở/thu gọn nội dung (gọi toggleSection).
+   * @param {string} id mã mục (quyết định biểu tượng và trạng thái mở trong expandedSections).
+   * @param {string} title tiêu đề mục.
+   * @param {string} subtitle dòng mô tả nhỏ dưới tiêu đề.
+   * @param {JSX.Element} content nội dung hiện khi mục đang mở.
+   * @returns {JSX.Element}
    */
   const renderSection = (id, title, subtitle, content) => (
     <section className="contract-detail-section" key={id}>
@@ -146,7 +174,7 @@ export default function ContractModal({
     </section>
   )
 
-  // Vẽ 1 dòng thông tin "nhãn: giá trị".
+  // Vẽ 1 ô thông tin "nhãn / giá trị" trong lưới (giá trị rỗng -> "Chưa cập nhật").
   const detailItem = (label, value) => (
     <div className="contract-detail-item" key={label}>
       <small>{label}</small>

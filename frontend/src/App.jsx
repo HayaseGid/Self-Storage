@@ -1,28 +1,48 @@
 /**
  * ======================================================================
- * FILE: src/App.jsx  —  ĐIỂM KHỞI ĐỘNG (ENTRY) + BỘ ĐỊNH TUYẾN + CÁC TRANG CÔNG KHAI / ĐĂNG NHẬP / ĐẶT KHO
- * index.html nạp file này (<script src="/src/App.jsx">). Cuối file: tải danh mục rồi render
- * <DialogProvider><Router/><DemoClockWidget/></DialogProvider> vào #root.
- * Nội dung chính:
- * - Tiện ích chung: điều hướng (navigate bằng History API), phiên đăng nhập (localStorage 'storespace_current_user'),
- *   ánh xạ vai trò backend -> frontend (mapBackendRole) và trang làm việc theo vai trò (roleHome).
- * - Trang công khai: Trang chủ, Danh sách cơ sở (theo khu vực + bản đồ), Chi tiết cơ sở, Chi tiết kho (xem 3D),
- *   Tìm kiếm, Đặt 1 kho (BookingPage), Giỏ kho (CartRoute -> pages/customer/CartPage).
- * - Xác thực: Đăng nhập, Đăng ký, Xác thực OTP.
- * - Router: chọn trang theo URL và vai trò; các dashboard theo vai trò nằm trong thư mục pages/.
- * Luồng API trong file:
- *   GET  /api/catalog/state                         (CatalogController) -> danh mục cơ sở + kho (tải lúc khởi động, làm mới 15 giây/lần)
+ * FILE: src/App.jsx  —  ĐIỂM KHỞI ĐỘNG APP + BỘ ĐỊNH TUYẾN + CÁC TRANG CÔNG KHAI
+ * CHỨC NĂNG: Đây là file JavaScript đầu tiên trình duyệt chạy (index.html nạp <script src="/src/App.jsx">).
+ *   Khi mở trang: tải danh mục cơ sở + kho từ backend, rồi vẽ <DialogProvider><Router/><DemoClockWidget/></DialogProvider>
+ *   vào thẻ #root. Router đọc URL để chọn trang cần hiện. File chứa toàn bộ trang công khai (trang chủ, cơ sở, kho,
+ *   tìm kho, đặt kho), trang đăng nhập / đăng ký / OTP và trang khách hàng; dashboard nhân viên / quản lý / admin
+ *   nằm trong thư mục pages/ và chỉ được gọi từ Router.
+ * THÀNH PHẦN CHÍNH:
+ *   - Biến dùng chung: facilities (danh sách cơ sở), storageUnits (tên cơ sở -> danh sách kho) — được loadDataFromApi nạp.
+ *   - Tiện ích: navigate (đổi URL kiểu SPA), getCurrentUser (đọc phiên localStorage), roleHome, mapBackendRole,
+ *     createSlug, formatMoney, getUnitPath / getBookingPath, getCatalogTypeKeys, resolveTypeParam.
+ *   - Giỏ hàng / đăng nhập trước khi đặt: handleAddToCart, handleAddManyToCart, promptLoginForBooking,
+ *     promptLoginForCart, resolvePostAuthPath, goAfterAuth, loginAndStoreUser.
+ *   - Giao diện chung: SiteHeader, SiteFooter, FacilityCard, UnitCard, DistrictPicker, FacilitiesMapSection, các icon SVG.
+ *   - Trang: HomePage, FacilitiesPage, FacilityDetailPage, UnitDetailPage, BookingPage, SearchPage,
+ *     LoginPage, RegisterPage, VerifyOtpPage, CartRoute, CustomerPage.
+ *   - Định tuyến & khởi động: getRoute, Router, RedirectTo, BookingLoginRedirect, loadDataFromApi, ApiStartupError.
+ * DÙNG Ở: index.html (không file nào import App.jsx).
+ * PHỤ THUỘC: react, react-dom/client; api/api (apiGet, apiPost), api/vnpay, api/otpService; components/common
+ *   (Dialog, RentalCalendar); features/unit (unitTypes, Unit3DViewer, boxCounts, ItemCountsInput, useBoxFit);
+ *   features/facility (FacilityMap, FacilityFloorPlan); features/booking/HandoverChoice; features/payment/DepositConfirm;
+ *   features/notification/HeaderNotificationBell; services (pricing, storageRules, afterDeposit); store (cart, bookingDraft);
+ *   utils (districts, packing); demoClock; pages/* (CartPage, CustomerAccount, PaymentResultPage, StaffAccount,
+ *   ManagerAccount, AdminAccount, BusinessOperations); styles/styles.css.
+ * API:
+ *   GET  /api/catalog/state                         -> danh mục cơ sở + kho (lúc khởi động, rồi làm mới 15 giây/lần)
  *   GET  /api/catalog/availability?facilityId=&unitTypeId=&startDate=&months=  -> kho còn trống trong kỳ thuê
- *   POST /api/reservation                           (ReservationController) -> tạo đơn giữ kho (Pending Deposit)
- *   POST /api/payment/confirm                       (PaymentController)     -> thanh toán cọc mô phỏng (chế độ demo)
- *   POST /api/vnpay/create                          (qua api/vnpay.js)      -> thanh toán cọc VNPay
+ *   POST /api/reservation                           -> tạo đơn giữ kho (trạng thái Pending Deposit)
+ *   POST /api/payment/confirm                       -> thanh toán cọc mô phỏng (chỉ chế độ demo)
+ *   POST /api/vnpay/create                          (qua api/vnpay.js)      -> tạo link thanh toán cọc VNPay
  *   POST /api/reservation-confirmations/mine        (qua services/afterDeposit.js) -> xác nhận đơn + tạo hợp đồng
- *   POST /api/auth/login                            (AuthController)        -> đăng nhập, nhận JWT
- *   POST /api/auth/register/start | resend | verify (qua api/otpService.js) -> đăng ký bằng OTP
- *   GET  /api/customer-reservations/mine            (CustomerReservationsController; 404 thì dùng
- *        GET /api/reservation/customer/{email})     -> đơn của khách (trang /customer và chuông thông báo)
+ *   POST /api/auth/login                            -> đăng nhập, nhận JWT
+ *   POST /api/auth/register/start | resend | verify (qua api/otpService.js) -> đăng ký tài khoản bằng mã OTP
+ *   GET  /api/customer-reservations/mine            (404 thì dùng GET /api/reservation/customer/{email})
+ *                                                   -> đơn của khách (trang /customer và chuông thông báo)
  *   GET  /api/facility-locations                    (qua FacilityMap.jsx)   -> tọa độ cơ sở cho bản đồ
- * Bảng route: / · /login · /register · /verify-otp · /search · /facilities · /facilities/{slug}
+ * LUỒNG:
+ *   - Khởi động: loadDataFromApi() -> GET /api/catalog/state -> nạp facilities/storageUnits -> render Router.
+ *     Router làm mới danh mục 15 giây/lần (dừng khi tab ẩn), chỉ vẽ lại khi dữ liệu đổi.
+ *   - Chuyển trang: bấm nút -> navigate(path) -> pushState + sự kiện popstate -> Router gọi getRoute() -> hiện trang mới.
+ *   - Đặt kho: UnitDetailPage "Đặt kho" -> BookingPage -> handleConfirmBooking (kiểm tra trống + tạo đơn)
+ *     -> handleDepositPaid (VNPay hoặc mô phỏng) -> xác nhận đơn -> trang khách mục Hợp đồng.
+ *   - Đăng ký: RegisterPage -> VerifyOtpPage -> LoginPage -> goAfterAuth quay lại trang đặt kho đang dở.
+ * BẢNG ROUTE: / · /login · /register · /verify-otp · /search · /facilities · /facilities/{slug}
  *   · /facilities/{slug}/unit/{mã kho} · .../booking · /cart · /payment-result · /customer · /staff · /manager
  *   · /admin · /business
  * ======================================================================
@@ -63,7 +83,7 @@ import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from './api/vnpay'
 import DemoClockWidget from './demoClock/DemoClockWidget'
 import { getTodayDate } from './demoClock/demoClock'
 import { CART_LIMIT, addToCart, isInCart, useCart } from './store/cart'
-import HeaderNotificationBell, { HeaderPendingDepositBar } from './features/notification/HeaderNotificationBell' // [THÊM] chuông thông báo + nhắc đơn chưa đặt cọc
+import HeaderNotificationBell, { HeaderPendingDepositBar } from './features/notification/HeaderNotificationBell' // chuông thông báo + thanh nhắc đơn chưa đặt cọc
 import {
   clearBookingDraft,
   draftMatchesUnit,
@@ -76,21 +96,22 @@ import CustomerDashboard from './pages/customer/CustomerAccount'
 import { startRegistration, resendRegistrationOtp, verifyRegistrationOtp } from './api/otpService'
 import HandoverChoice, { HANDOVER_METHODS, ONLINE_HANDOVER_NOTE, handoverChoiceError, slotLabel } from './features/booking/HandoverChoice'
 
+// Dashboard theo vai trò (chỉ Router dùng): nhân viên cơ sở (/staff)
 import StaffPortal from './pages/staff/FacilityStaffAccount'
-//Đã thêm: 04/10/2026
 
-//Đã cập nhật: Thêm cho FqcilityManager
+// Quản lý cơ sở (/manager)
 import FacilityManagerDashboard from './pages/manager/FacilityManagerAccount'
-//Đã thêm: 05/10/2026
 
-// Thêm: System Admin & Business Operations
+// Quản trị hệ thống (/admin) và Vận hành kinh doanh (/business)
 import Admin from './pages/admin/AdminAccount'
 import BusinessOperations from './pages/business/BusinessOperations'
 
-// Đường dẫn trang làm việc theo role
 /**
  * Trả về đường dẫn trang làm việc theo vai trò (SYSTEM_ADMIN -> /admin, BUSINESS_OPERATIONS -> /business,
  * FACILITY_MANAGER -> /manager, FACILITY_STAFF -> /staff, còn lại -> /customer).
+ * @param {string} role mã vai trò frontend (kết quả của mapBackendRole).
+ * @returns {string} đường dẫn trang chủ của vai trò đó.
+ * Được gọi bởi: SiteHeader (nút "Trang làm việc"), resolvePostAuthPath (sau đăng nhập), Router (chặn sai vai trò).
  */
 function roleHome(role) {
   switch (role) {
@@ -103,8 +124,12 @@ function roleHome(role) {
 }
 
 /**
- * Đổi tên vai trò backend trả về khi đăng nhập ("Storage Customer", "Facility Staff"...) thành mã vai trò frontend.
- * Vai trò lạ -> ném lỗi.
+ * Đổi tên vai trò backend trả về khi đăng nhập ("Storage Customer", "Facility Staff"...) thành mã vai trò frontend
+ * ('customer', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS', 'SYSTEM_ADMIN').
+ * @param {string} roleName tên vai trò từ backend (không phân biệt hoa thường).
+ * @returns {string} mã vai trò frontend.
+ * @throws {Error} khi vai trò chưa được giao diện hỗ trợ (trang đăng nhập hiện lỗi này).
+ * Được gọi bởi: loginAndStoreUser.
  */
 function mapBackendRole(roleName) {
   switch (roleName?.trim().toLowerCase()) {
@@ -119,26 +144,38 @@ function mapBackendRole(roleName) {
   }
 }
 
+// Danh mục dùng chung cho cả app, được loadDataFromApi() thay nội dung tại chỗ (không gán lại biến) mỗi lần tải.
+// facilities: mảng cơ sở { id, facilityId, name, location, image, available, total, typeKeys, district, ... }.
 const facilities = []
+// storageUnits: object tên cơ sở -> mảng kho { id (mã kho), unitId, unitTypeId, type, size, price, status, available }.
 const storageUnits = {}
+// Ảnh minh họa cơ sở (backend chưa có ảnh): gán xoay vòng theo thứ tự cơ sở.
 const facilityImages = [
   'https://images.pexels.com/photos/38573375/pexels-photo-38573375/free-photo-of-red-storage-unit-with-padlock-and-number.jpeg?h=1000&w=1500&fit=crop',
   'https://images.unsplash.com/photo-1565610222536-ef125c59da2e?auto=format&fit=crop&w=1200&q=85',
   'https://images.unsplash.com/photo-1565793298595-6a879b1d9492?auto=format&fit=crop&w=1200&q=85'
 ]
 
+// Khóa localStorage lưu phiên đăng nhập { name, email, role, userId, token, ... } (đọc bằng getCurrentUser).
 const CURRENT_USER_KEY = 'storespace_current_user'
+// Khóa sessionStorage lưu kho khách đang giữ chờ cọc { email, unitNumber, expiresAt } — để getRoute vẫn cho
+// khách đó vào trang đặt kho dù kho đã chuyển sang "không còn trống".
 const ACTIVE_BOOKING_HOLD_KEY = 'storespace_active_booking_hold'
 
 /**
  * Tạo slug URL từ tên cơ sở (bỏ dấu, chữ thường, nối bằng gạch ngang), vd "Kho Quận 7" -> "kho-quan-7".
+ * @param {string} name tên cơ sở.
+ * @returns {string} slug dùng trong /facilities/{slug}; getRoute so slug này để tìm lại cơ sở.
  */
 function createSlug(name) {
   return name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 /**
- * Điều hướng trong app (SPA): đổi URL bằng history.pushState rồi phát sự kiện popstate để Router vẽ lại.
+ * Điều hướng trong app (SPA) mà không tải lại trang: đổi URL bằng history.pushState rồi phát sự kiện popstate
+ * để Router (đang lắng nghe popstate) tính lại route và vẽ trang mới.
+ * @param {string} path đường dẫn mới, có thể kèm query (vd '/search?type=climate').
+ * Được gọi bởi: hầu hết nút bấm chuyển trang trong file; cũng được truyền xuống CartPage, CustomerDashboard, các dashboard.
  */
 function navigate(path) {
   window.history.pushState({}, '', path)
@@ -146,7 +183,9 @@ function navigate(path) {
 }
 
 /**
- * Đọc người dùng đang đăng nhập từ localStorage (lỗi -> null).
+ * Đọc người dùng đang đăng nhập từ localStorage (khóa CURRENT_USER_KEY).
+ * @returns {object|null} { name, email, role, userId, token, ... } hoặc null nếu chưa đăng nhập / dữ liệu hỏng.
+ * Được gọi bởi: SiteHeader, các trang đặt kho / giỏ hàng, Router (kiểm tra vai trò) và truyền xuống các trang con.
  */
 function getCurrentUser() {
   try {
@@ -158,7 +197,9 @@ function getCurrentUser() {
 }
 
 /**
- * Lấy danh sách kho của 1 cơ sở (theo tên) từ danh mục đã tải.
+ * Lấy danh sách kho của 1 cơ sở (theo tên) từ danh mục đã tải (biến storageUnits).
+ * @param {string} facilityName tên cơ sở.
+ * @returns {object[]} mảng kho, rỗng nếu không có.
  */
 function getStorageUnits(facilityName) {
   return storageUnits[facilityName] || []
@@ -166,30 +207,37 @@ function getStorageUnits(facilityName) {
 
 /**
  * Lấy toàn bộ kho của mọi cơ sở (object: tên cơ sở -> danh sách kho).
+ * Được gọi bởi: CustomerPage (truyền xuống CustomerDashboard).
  */
 function getAllStorageUnits() {
   return storageUnits
 }
 
 /**
- * Định dạng tiền kiểu Việt Nam kèm "đ".
+ * Định dạng tiền kiểu Việt Nam kèm "đ", vd 1500000 -> "1.500.000đ" (rỗng/null -> "0đ").
+ * @param {number} value số tiền.
+ * @returns {string}
  */
 function formatMoney(value) {
   return new Intl.NumberFormat('vi-VN').format(value || 0) + 'đ'
 }
 
-/* Các loại kho đang có trong hệ thống (lấy từ dữ liệu thật), theo thứ tự hiển thị. */
 /**
- * Các loại kho đang có trong hệ thống (từ dữ liệu thật), theo thứ tự hiển thị UNIT_TYPE_ORDER.
+ * Liệt kê các loại kho thật sự có trong danh sách kho (mã loại như 'standard', 'climate'...), theo thứ tự UNIT_TYPE_ORDER.
+ * @param {object[]} [unitList] danh sách kho cần xét; mặc định là toàn bộ kho của mọi cơ sở.
+ * @returns {string[]} mã loại kho.
+ * Được gọi bởi: SiteHeader (menu "Loại kho"), FacilityDetailPage, SearchPage, loadDataFromApi (typeKeys của cơ sở).
  */
 function getCatalogTypeKeys(unitList = Object.values(storageUnits).flat()) {
   const keys = new Set(unitList.map(unit => getUnitTypeKey(unit.type)))
   return UNIT_TYPE_ORDER.filter(key => keys.has(key))
 }
 
-/* Nhận cả mã loại mới (?type=climate) lẫn tên cũ (?type=Kho mát / Cool). */
 /**
- * Đọc tham số ?type= trên URL: nhận cả mã loại mới (climate) lẫn tên cũ ("Kho mát" / "Cool").
+ * Chuẩn hóa tham số ?type= trên URL về mã loại kho: nhận cả mã mới (?type=climate) lẫn tên cũ (?type=Kho mát / Cool).
+ * @param {string} value giá trị đọc từ URL.
+ * @returns {string} mã loại kho, hoặc '' nếu không có.
+ * Được gọi bởi: FacilityDetailPage, SearchPage.
  */
 function resolveTypeParam(value) {
   if (!value) return ''
@@ -197,27 +245,31 @@ function resolveTypeParam(value) {
 }
 
 /**
- * Đường dẫn trang đặt kho: /facilities/{slug}/unit/{mã kho}/booking.
+ * Tạo đường dẫn trang đặt kho: /facilities/{slug}/unit/{mã kho}/booking.
+ * @param {object} facility cơ sở (cần name). @param {object} unit kho (cần id = mã kho).
+ * @returns {string}
  */
 function getBookingPath(facility, unit) {
   return `/facilities/${createSlug(facility.name)}/unit/${unit.id}/booking`
 }
 
 /**
- * Đường dẫn trang chi tiết kho: /facilities/{slug}/unit/{mã kho}.
+ * Tạo đường dẫn trang chi tiết kho: /facilities/{slug}/unit/{mã kho}.
+ * @param {object} facility cơ sở (cần name). @param {object} unit kho (cần id = mã kho).
+ * @returns {string}
+ * Được gọi bởi: UnitCard, FacilityDetailPage, UnitDetailPage, Router; truyền xuống CartPage.
  */
 function getUnitPath(facility, unit) {
   return `/facilities/${createSlug(facility.name)}/unit/${unit.id}`
 }
 
-/*
- * Hỏi khách đăng nhập / đăng ký trước khi đặt kho.
- * Thông tin đang chọn được lưu vào bản nháp để khôi phục sau khi đăng nhập.
- */
 /**
- * Hỏi khách đăng nhập / đăng ký trước khi đặt kho; lưu lựa chọn hiện tại vào bản nháp (bookingDraft) để khôi phục
- * sau khi đăng nhập, rồi chuyển tới /login hoặc /register kèm ?next=.
- * @returns {Promise<'login'|'register'|null>} lựa chọn của khách.
+ * Hỏi khách đăng nhập / đăng ký trước khi đặt kho; lưu lựa chọn hiện tại vào bản nháp (saveBookingDraft, lưu trên
+ * trình duyệt) để khôi phục sau khi đăng nhập, rồi chuyển tới /login hoặc /register kèm ?next=<trang đặt kho>.
+ * @param {object} dialog đối tượng hộp thoại từ useDialog().
+ * @param {object} options { facility, unit, title?, message?, draftFields? (ngày bắt đầu, số tháng... cần giữ lại) }.
+ * @returns {Promise<'login'|'register'|null>} lựa chọn của khách (null = "Để sau").
+ * Được gọi bởi: UnitDetailPage (bấm "Đặt kho" khi chưa đăng nhập), BookingPage.handleConfirmBooking (phiên đã hết).
  */
 async function promptLoginForBooking(dialog, { facility, unit, title, message, draftFields = {} }) {
   const bookingPath = getBookingPath(facility, unit)
@@ -247,10 +299,12 @@ async function promptLoginForBooking(dialog, { facility, unit, title, message, d
   return choice
 }
 
-/* Thêm kho vào giỏ hàng. Khách chưa đăng nhập vẫn thêm được (giỏ lưu trên trình duyệt). */
 /**
- * Thêm kho vào giỏ hàng (khách chưa đăng nhập vẫn thêm được); báo giỏ đầy / đã có; hỏi "Xem giỏ hàng".
- * Tài khoản không phải khách hàng thì báo không đặt được.
+ * Thêm 1 kho vào giỏ hàng (store/cart, lưu trên trình duyệt nên khách chưa đăng nhập vẫn thêm được).
+ * Báo khi giỏ đầy (CART_LIMIT) hoặc kho đã có; sau đó hỏi "Tiếp tục xem kho" / "Xem giỏ hàng" (-> /cart).
+ * Tài khoản nhân viên / quản lý thì báo không đặt được (alertNotCustomer). Kho không còn trống thì bỏ qua.
+ * @param {object} dialog từ useDialog(). @param {object} facility cơ sở. @param {object} unit kho.
+ * Được gọi bởi: nút "+ giỏ" trên UnitCard và nút "Thêm vào giỏ" trên UnitDetailPage.
  */
 async function handleAddToCart(dialog, facility, unit) {
   const user = getCurrentUser()
@@ -278,7 +332,10 @@ async function handleAddToCart(dialog, facility, unit) {
 }
 
 /**
- * Thêm nhiều kho cùng cơ sở vào giỏ cùng lúc (lựa chọn "thuê thêm 1 kho" trong cửa sổ 3D), hiện 1 hộp thoại tóm tắt.
+ * Thêm nhiều kho cùng cơ sở vào giỏ cùng lúc rồi hiện 1 hộp thoại tóm tắt (kho đã thêm, kho đã có sẵn, tổng tiền/tháng).
+ * Dừng lại khi giỏ đầy. Bỏ qua kho không còn trống.
+ * @param {object} dialog từ useDialog(). @param {object} facility cơ sở. @param {object[]} unitsToAdd các kho cần thêm.
+ * Được gọi bởi: onAddToCart của FacilityFloorPlan (sơ đồ kho) và Unit3DViewer (lựa chọn "thuê thêm kho" trong cửa sổ 3D).
  */
 async function handleAddManyToCart(dialog, facility, unitsToAdd) {
   const user = getCurrentUser()
@@ -315,7 +372,10 @@ async function handleAddManyToCart(dialog, facility, unitsToAdd) {
 }
 
 /**
- * Hỏi khách đăng nhập / đăng ký để đặt kho từ giỏ hàng (giỏ được giữ nguyên), quay lại /cart sau khi đăng nhập.
+ * Hỏi khách đăng nhập / đăng ký để đặt kho từ giỏ hàng (giỏ được giữ nguyên); chọn xong thì chuyển tới
+ * /login hoặc /register kèm ?next=/cart để quay lại giỏ sau khi đăng nhập.
+ * @param {object} dialog từ useDialog().
+ * Được gọi bởi: CartRoute (truyền vào CartPage qua prop onRequireLogin, khi khách chưa đăng nhập bấm đặt cọc).
  */
 async function promptLoginForCart(dialog) {
   const choice = await dialog.open({
@@ -333,14 +393,17 @@ async function promptLoginForCart(dialog) {
 }
 
 /**
- * Biểu tượng giỏ hàng (SVG).
+ * Biểu tượng giỏ hàng (SVG) dùng trên header, UnitCard và UnitDetailPage.
  */
 function CartIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.2 10.2a1.5 1.5 0 0 0 1.5 1.2h8.6a1.5 1.5 0 0 0 1.5-1.1L21 8H6.2" /><circle cx="9.5" cy="19.5" r="1.4" /><circle cx="17" cy="19.5" r="1.4" /></svg>
 }
 
 /**
- * Báo "Tài khoản này không đặt kho được" (chỉ tài khoản khách hàng mới đặt kho).
+ * Hiện hộp thoại cảnh báo "Tài khoản này không đặt kho được" (chỉ tài khoản khách hàng mới đặt kho).
+ * @param {object} dialog từ useDialog().
+ * @returns {Promise} kết thúc khi người dùng đóng hộp thoại.
+ * Được gọi bởi: handleAddToCart, handleAddManyToCart, UnitDetailPage.handleBookClick, BookingPage.handleConfirmBooking.
  */
 function alertNotCustomer(dialog) {
   return dialog.alert({
@@ -350,16 +413,14 @@ function alertNotCustomer(dialog) {
   })
 }
 
-/*
- * Xác định trang cần chuyển tới sau khi đăng nhập / đăng ký.
- * - Nhân viên, quản lý: về trang làm việc theo role.
- * - Khách hàng: quay lại trang đặt kho đang dở (theo ?next= hoặc bản nháp),
- *   nếu kho đó đã có người khác đặt thì đưa về trang cơ sở kèm thông báo.
- */
 /**
- * Xác định trang cần chuyển tới sau khi đăng nhập / đăng ký: nhân viên -> trang theo vai trò; khách -> quay lại
- * trang đặt kho đang dở (?next= hoặc bản nháp); kho đó đã hết thì về trang cơ sở kèm thông báo.
- * @returns {{path:string, notice?:object}}
+ * Xác định trang cần chuyển tới sau khi đăng nhập / đăng ký:
+ * - Nhân viên, quản lý: về trang làm việc theo vai trò (roleHome).
+ * - Khách hàng: quay lại trang đặt kho đang dở (theo ?next= hoặc bản nháp bookingDraft); không có thì về /customer.
+ *   Nếu kho trong bản nháp đã bị người khác đặt / ngưng cho thuê thì xóa bản nháp, đưa về trang cơ sở kèm thông báo.
+ * @param {object} user người dùng vừa đăng nhập. @param {string|null} nextPath giá trị ?next= an toàn.
+ * @returns {{path:string, notice?:object}} notice là nội dung hộp thoại cần báo trước khi chuyển trang.
+ * Được gọi bởi: goAfterAuth.
  */
 function resolvePostAuthPath(user, nextPath) {
   if (user.role !== 'customer') return { path: roleHome(user.role) }
@@ -389,7 +450,12 @@ function resolvePostAuthPath(user, nextPath) {
 }
 
 /**
- * Component dải thông báo "Bạn đang đặt kho X tại Y..." trên trang đăng nhập/đăng ký, có nút bỏ đặt kho này.
+ * Component dải thông báo "Bạn đang đặt kho X tại Y..." trên trang đăng nhập/đăng ký, có nút "Bỏ đặt kho này".
+ * @param {object} props
+ * @param {object|null} props.draft bản nháp đặt kho (null thì không hiện gì).
+ * @param {string} props.action câu hướng dẫn thêm (vd "Đăng nhập để tiếp tục đặt kho.").
+ * @param {Function} [props.onClear] bấm "Bỏ đặt kho này" -> xóa bản nháp (usePendingBooking.discard).
+ * Dùng ở: LoginPage, RegisterPage.
  */
 function BookingDraftNote({ draft, action, onClear }) {
   if (!draft) return null
@@ -405,10 +471,11 @@ function BookingDraftNote({ draft, action, onClear }) {
   )
 }
 
-/* Bản nháp + tham số ?next= dùng chung cho trang đăng nhập và đăng ký. */
 /**
- * Hook: bản nháp đặt kho + tham số ?next= dùng chung cho trang đăng nhập và đăng ký.
- * @returns {{draft, nextPath, discard}}
+ * Hook đọc bản nháp đặt kho (loadBookingDraft) và tham số ?next= an toàn (getSafeNextPath) một lần khi trang mở.
+ * @returns {{draft: object|null, nextPath: string|null, discard: Function}} discard() xóa bản nháp và bỏ ?next= nếu
+ *   ?next= đang trỏ tới trang đặt kho đó.
+ * Được gọi bởi: LoginPage, RegisterPage, VerifyOtpPage.
  */
 function usePendingBooking() {
   const [draft, setDraft] = useState(() => loadBookingDraft())
@@ -471,11 +538,12 @@ function HomeIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 10 8-7 8 7" /><path d="M6 9v11h12V9" /><path d="M10 20v-6h4v6" /></svg>
 }
 
-/* [THÊM] Danh sách đơn của khách cho chuông thông báo trên header: cùng API + cùng cách lọc / đổi dữ liệu với trang khách (CustomerPage). */
 /**
- * Tải danh sách đơn của khách cho chuông thông báo trên header (cùng API, cùng cách lọc với trang khách).
- * API: GET /api/customer-reservations/mine (404 -> GET /api/reservation/customer/{email})
- * @returns {Promise<object[]>} đơn đã map bằng mapCustomerReservation, bỏ đơn bỏ dở.
+ * Tải danh sách đơn của khách đang đăng nhập cho chuông thông báo và thanh nhắc đặt cọc trên header
+ * (cùng API, cùng cách lọc đơn bỏ dở và cùng mapCustomerReservation với CustomerPage.loadReservations).
+ * API: GET /api/customer-reservations/mine (backend trả 404 thì dùng GET /api/reservation/customer/{email})
+ * @returns {Promise<object[]>} đơn đã chuẩn hóa; chưa đăng nhập thì trả mảng rỗng.
+ * Được gọi bởi: HeaderNotificationBell và HeaderPendingDepositBar (qua prop loadRentals trong SiteHeader).
  */
 function fetchCustomerRentals() {
   const user = getCurrentUser()
@@ -495,19 +563,22 @@ function fetchCustomerRentals() {
 }
 
 /**
- * Component header các trang công khai: logo, menu loại kho, cơ sở, tìm kiếm, giỏ hàng, chuông thông báo,
- * đăng nhập / tài khoản / đăng xuất, menu điện thoại, thanh nhắc đơn chưa đặt cọc.
+ * Component header dùng trên mọi trang công khai: logo (về trang chủ), "Tìm kho", menu thả "Loại kho" (mở /search?type=),
+ * nút giỏ hàng có số lượng (chỉ khách / chưa đăng nhập), chuông thông báo (khách), lời chào + "Trang làm việc" /
+ * "Đăng xuất" hoặc "Đăng nhập", menu điện thoại, và thanh nhắc đơn chưa đặt cọc (HeaderPendingDepositBar).
+ * Đọc phiên bằng getCurrentUser; giỏ hàng bằng hook useCart (tự vẽ lại khi giỏ đổi).
+ * Dùng ở: mọi trang công khai trong file, CartRoute, trang /payment-result.
  */
 function SiteHeader() {
-  const [storageOpen, setStorageOpen] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [mobileStorageOpen, setMobileStorageOpen] = useState(false)
+  const [storageOpen, setStorageOpen] = useState(false) // menu thả "Loại kho" trên máy tính
+  const [menuOpen, setMenuOpen] = useState(false) // menu trượt trên điện thoại
+  const [mobileStorageOpen, setMobileStorageOpen] = useState(false) // menu con "Loại kho" trong menu điện thoại
   const [currentUser, setCurrentUser] = useState(getCurrentUser())
   const catalogTypeKeys = getCatalogTypeKeys()
   const cartItems = useCart()
   const showCart = !currentUser || currentUser.role === 'customer'
 
-  // Đóng các menu đang mở rồi điều hướng tới đường dẫn.
+  // Đóng các menu đang mở rồi điều hướng tới đường dẫn (dùng cho mọi nút trong header và truyền cho chuông thông báo).
   const go = path => {
     setMenuOpen(false)
     setStorageOpen(false)
@@ -515,7 +586,7 @@ function SiteHeader() {
     navigate(path)
   }
 
-  // Đăng xuất: xóa phiên khỏi localStorage và về trang chủ.
+  // Bấm "Đăng xuất": xóa phiên (CURRENT_USER_KEY) khỏi localStorage, xóa state currentUser và về trang chủ.
   const logout = () => {
     localStorage.removeItem(CURRENT_USER_KEY)
     setCurrentUser(null)
@@ -567,7 +638,7 @@ function SiteHeader() {
           <button className="menu-button" type="button" onClick={() => setMenuOpen(v => !v)} aria-label="Mở menu"><MenuIcon /></button>
         </div>
       </header>
-      {/* [THÊM] Nhắc đơn chưa đặt cọc (khách thoát VNPay giữa chừng) - ẩn ở giỏ hàng / trang đặt kho / kết quả thanh toán vì ở đó đã có đồng hồ riêng */}
+      {/* Thanh nhắc đơn chưa đặt cọc (vd khách thoát VNPay giữa chừng) - ẩn ở giỏ hàng / trang kho / kết quả thanh toán vì ở đó đã có đồng hồ riêng */}
       {currentUser?.role === 'customer' && !['/cart', '/payment-result'].includes(window.location.pathname) && !window.location.pathname.includes('/unit/') && (
         <HeaderPendingDepositBar user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />
       )}
@@ -627,15 +698,20 @@ function SiteHeader() {
 }
 
 /**
- * Component chân trang (footer).
+ * Component chân trang (footer) tĩnh: logo, tên hệ thống, bản quyền. Dùng ở cuối mọi trang công khai.
  */
 function SiteFooter() {
   return <footer className="footer"><div className="container footer-inner"><div className="footer-brand"><span className="footer-mark">S</span><strong>StoreSpace</strong><span>Self-Storage Facility Rental & Management System</span></div><span>© 2026 StoreSpace</span></div></footer>
 }
 
 /**
- * Component thẻ cơ sở: ảnh, tên, khu vực, địa chỉ, số kho trống / tổng, các loại kho; bấm để mở trang cơ sở.
- * @param {object} props facility, index, typeKey (loại kho đang lọc, để mở trang cơ sở kèm bộ lọc).
+ * Component thẻ cơ sở: ảnh, số thứ tự, tên, địa chỉ, khu vực, các loại kho, số kho trống / tổng.
+ * Bấm thẻ -> navigate tới /facilities/{slug} (kèm ?type= nếu có typeKey).
+ * @param {object} props
+ * @param {object} props.facility cơ sở (từ biến facilities).
+ * @param {number} props.index vị trí trong danh sách (hiện thành "01", "02"...).
+ * @param {string} [props.typeKey] loại kho đang lọc, để mở trang cơ sở với bộ lọc loại kho sẵn.
+ * Dùng ở: HomePage, FacilitiesPage.
  */
 function FacilityCard({ facility, index, typeKey = '' }) {
   return (
@@ -662,9 +738,11 @@ function FacilityCard({ facility, index, typeKey = '' }) {
   )
 }
 
-/* Danh sách khu vực có cơ sở, kèm số cơ sở và số kho còn trống. */
 /**
- * Danh sách khu vực có cơ sở, kèm số cơ sở và tổng số kho còn trống.
+ * Nhóm cơ sở theo khu vực (quận) bằng groupFacilitiesByDistrict, thêm tổng số kho còn trống của mỗi khu vực.
+ * @param {object[]} [facilityList] danh sách cơ sở; mặc định toàn bộ facilities.
+ * @returns {object[]} mỗi phần tử { slug, label, facilities, availableUnits }.
+ * Được gọi bởi: HomePage, FacilitiesPage, SearchPage (để vẽ DistrictPicker).
  */
 function getDistrictGroups(facilityList = facilities) {
   return groupFacilitiesByDistrict(facilityList).map(group => ({
@@ -673,10 +751,16 @@ function getDistrictGroups(facilityList = facilities) {
   }))
 }
 
-/* Bộ chọn khu vực dạng chip (dùng ở trang chủ, danh sách cơ sở, tìm kiếm). */
 /**
- * Component bộ chọn khu vực dạng chip (trang chủ, danh sách cơ sở, tìm kiếm).
- * @param {object} props groups, active, onSelect(slug), showAll, large, label.
+ * Component bộ chọn khu vực dạng chip, mỗi chip hiện tên khu vực + số cơ sở + số kho trống.
+ * Bấm chip đang chọn lần nữa thì bỏ chọn (chỉ khi showAll = true).
+ * @param {object} props
+ * @param {object[]} props.groups danh sách khu vực từ getDistrictGroups (rỗng thì không hiện gì).
+ * @param {string} [props.active] slug khu vực đang chọn ('' = tất cả).
+ * @param {Function} props.onSelect gọi với slug khu vực được chọn ('' = tất cả).
+ * @param {boolean} [props.showAll] có hiện chip "Tất cả khu vực" không.
+ * @param {boolean} [props.large] kiểu chip lớn (trang chủ). @param {string} [props.label] nhãn trợ năng (aria-label).
+ * Dùng ở: HomePage, FacilitiesPage, SearchPage.
  */
 function DistrictPicker({ groups, active = '', onSelect, showAll = true, large = false, label = 'Lọc theo khu vực' }) {
   if (!groups.length) return null
@@ -704,9 +788,12 @@ function DistrictPicker({ groups, active = '', onSelect, showAll = true, large =
   )
 }
 
-/* Gộp danh sách cơ sở với tọa độ từ /api/facility-locations để vẽ bản đồ. */
 /**
- * Gộp danh sách cơ sở với tọa độ từ /api/facility-locations thành các điểm để vẽ bản đồ.
+ * Ghép danh sách cơ sở với dữ liệu vị trí (tọa độ, giờ mở cửa, điện thoại) lấy từ GET /api/facility-locations
+ * thành các "điểm" để FacilityMap vẽ ghim. Cơ sở chưa có tọa độ thì latitude/longitude = null.
+ * @param {object[]} list danh sách cơ sở. @param {object[]} locations dữ liệu từ useFacilityLocations().
+ * @returns {object[]} { id, name, address, latitude, longitude, available, total, phone, hours, facility }.
+ * Được gọi bởi: FacilitiesMapSection, FacilityLocationCard, FacilityDetailPage.
  */
 function toMapPoints(list, locations) {
   return list.map(f => {
@@ -727,13 +814,18 @@ function toMapPoints(list, locations) {
 }
 
 /**
- * Component khối "Bản đồ cơ sở": bản đồ các cơ sở (ẩn/hiện được), số cơ sở có tọa độ, bấm ghim để mở trang cơ sở.
- * API: GET /api/facility-locations (qua useFacilityLocations)
+ * Component khối "Bản đồ cơ sở": bản đồ các cơ sở (nút Ẩn/Xem bản đồ) + danh sách bên cạnh.
+ * Bấm 1 cơ sở trong danh sách -> chọn ghim đó trên bản đồ (chưa có tọa độ thì mở thẳng trang cơ sở);
+ * bấm ghim trên bản đồ -> mở trang cơ sở.
+ * API: GET /api/facility-locations (qua hook useFacilityLocations)
+ * @param {object} props
+ * @param {object[]} props.list các cơ sở cần hiện (đã lọc theo khu vực / từ khóa).
+ * Dùng ở: HomePage, FacilitiesPage.
  */
 function FacilitiesMapSection({ list }) {
   const { loading, error, locations } = useFacilityLocations()
-  const [show, setShow] = useState(true)
-  const [selectedId, setSelectedId] = useState(null)
+  const [show, setShow] = useState(true) // đang hiện bản đồ hay không
+  const [selectedId, setSelectedId] = useState(null) // facilityId đang được chọn để bản đồ phóng tới
   const points = toMapPoints(list, locations)
   const mapped = points.filter(p => p.latitude != null && p.longitude != null).length
   return (
@@ -769,7 +861,13 @@ function FacilitiesMapSection({ list }) {
 }
 
 /**
- * Component thẻ vị trí cơ sở (địa chỉ, chỉ đường Google Maps, bản đồ 1 điểm).
+ * Component thẻ vị trí của 1 cơ sở: bản đồ 1 điểm (có thể ẩn), địa chỉ, giờ mở cửa, điện thoại, link chỉ đường Google Maps.
+ * Không hiện gì nếu lỗi tải vị trí hoặc cơ sở chưa có tọa độ.
+ * API: GET /api/facility-locations (qua useFacilityLocations)
+ * @param {object} props
+ * @param {object} props.facility cơ sở cần hiện.
+ * @param {boolean} [props.hideMap] ẩn bản đồ (khi sơ đồ kho FacilityFloorPlan đã có bản đồ riêng).
+ * Dùng ở: FacilityDetailPage.
  */
 function FacilityLocationCard({ facility, hideMap = false }) {
   const { error, locations } = useFacilityLocations()
@@ -790,7 +888,9 @@ function FacilityLocationCard({ facility, hideMap = false }) {
 }
 
 /**
- * Component trang "Danh sách cơ sở" (/facilities): lọc theo khu vực (?district=), bản đồ, danh sách theo khu vực.
+ * Component trang "Danh sách cơ sở" (route /facilities): bộ chọn khu vực (lưu trên URL ?district=), bản đồ cơ sở,
+ * rồi các nhóm thẻ cơ sở theo từng khu vực. Dữ liệu lấy từ biến facilities (không gọi API riêng, trừ bản đồ).
+ * Được Router hiển thị khi URL là /facilities.
  */
 function FacilitiesPage() {
   const district = new URLSearchParams(window.location.search).get('district') || ''
@@ -825,7 +925,11 @@ function FacilitiesPage() {
 }
 
 /**
- * Component thẻ kho trong trang cơ sở: ảnh minh họa loại kho, mã kho, size, giá, trạng thái, nút Đặt / Thêm vào giỏ.
+ * Component thẻ 1 kho: ảnh minh họa loại kho, trạng thái (Còn trống / Đang giữ chỗ / Không khả dụng), mã kho,
+ * diện tích, hạng size, giá/tháng; nút "+ giỏ" (handleAddToCart) và nút "Xem kho" (mở trang chi tiết kho).
+ * @param {object} props
+ * @param {object} props.facility cơ sở chứa kho. @param {object} props.unit kho cần hiện.
+ * Dùng ở: FacilityDetailPage, SearchPage.
  */
 function UnitCard({ facility, unit }) {
   const dialog = useDialog()
@@ -884,8 +988,13 @@ function UnitCard({ facility, unit }) {
 }
 
 /**
- * Component trang chi tiết cơ sở: thông tin, vị trí, sơ đồ kho (FacilityFloorPlan), bộ lọc kho (từ khóa, loại, size,
- * trạng thái, giá), danh sách thẻ kho (kho trống lên trước).
+ * Component trang chi tiết cơ sở (route /facilities/{slug}): ảnh + thông tin cơ sở, thẻ vị trí, sơ đồ kho
+ * (FacilityFloorPlan — từ đây có thể mở chi tiết / đặt / thêm nhiều kho vào giỏ), ghi chú đặt kho theo yêu cầu,
+ * bộ lọc kho (loại, từ khóa, diện tích, tình trạng, giá) và lưới thẻ kho (kho trống lên trước).
+ * Bộ lọc loại kho lấy giá trị ban đầu từ ?type= trên URL; các bộ lọc khác chỉ là state trong trang.
+ * @param {object} props
+ * @param {object} props.facility cơ sở do getRoute tìm theo slug.
+ * Được Router hiển thị khi route.type === 'detail'.
  */
 function FacilityDetailPage({ facility }) {
   const dialog = useDialog()
@@ -904,6 +1013,7 @@ function FacilityDetailPage({ facility }) {
   const [availability, setAvailability] = useState('all')
   const [priceRange, setPriceRange] = useState('all')
   const sizes = [...new Set(units.map(unit => unit.size))]
+  // Lọc kho theo đủ 5 bộ lọc (tính lại mỗi lần render khi state bộ lọc đổi).
   const filteredUnits = units.filter(unit => {
     const q = query.trim().toLowerCase()
     const price = unit.price
@@ -916,7 +1026,7 @@ function FacilityDetailPage({ facility }) {
   })
   // Kho còn trống lên trước để khách dễ chọn.
   const sortedUnits = [...filteredUnits].sort((a, b) => Number(b.available) - Number(a.available))
-  // Xóa toàn bộ bộ lọc kho.
+  // Bấm "Đặt lại": đưa cả 5 bộ lọc kho về mặc định.
   const resetFilters = () => {
     setQuery('')
     setType('all')
@@ -1006,14 +1116,19 @@ function FacilityDetailPage({ facility }) {
 }
 
 /**
- * Component trang chi tiết kho: thông tin, giá, đặc điểm loại kho, xem 3D, nút Đặt kho / Thêm vào giỏ.
+ * Component trang chi tiết kho (route /facilities/{slug}/unit/{mã kho}): ảnh, mã kho, loại, hạng size, giá/tháng,
+ * đặc điểm loại kho; các nút "Đặt kho này", "Thêm vào giỏ", "Xem kho 3D" (mở Unit3DViewer), "Xem các kho khác".
+ * @param {object} props
+ * @param {object} props.facility cơ sở. @param {object} props.unit kho (getRoute chỉ cho vào khi kho còn trống).
+ * Được Router hiển thị khi route.type === 'unit-detail'.
  */
 function UnitDetailPage({ facility, unit }) {
   const dialog = useDialog()
-  useCart()
-  const [show3D, setShow3D] = useState(false)
+  useCart() // vẽ lại khi giỏ hàng thay đổi (nút "Đã có trong giỏ")
+  const [show3D, setShow3D] = useState(false) // đang mở cửa sổ xem kho 3D
 
   // Bấm "Đặt kho": chưa đăng nhập thì hỏi đăng nhập (lưu bản nháp); không phải khách hàng thì báo; ngược lại mở trang đặt kho.
+  // Cũng được gọi khi khách bấm "Đặt" chính kho này trong cửa sổ 3D.
   const handleBookClick = async () => {
     const user = getCurrentUser()
     if (!user) {
@@ -1086,13 +1201,18 @@ function UnitDetailPage({ facility, unit }) {
   )
 }
 
-/* Các gói thời hạn thuê mới (theo tháng): chỉ 6 hoặc 12 tháng. */
+// Các gói thời hạn thuê (theo tháng) hiện trên BookingPage — lấy từ services/storageRules (hiện là 6 và 12 tháng).
 const DURATION_PACKAGES = RENTAL_TERMS
+// Chữ phụ cho từng gói khi khách chưa chọn ngày bắt đầu (chưa tính được ngày kết thúc).
 const DURATION_PACKAGE_NOTES = { 6: 'Nửa năm', 12: 'Một năm' }
 
 /**
- * Khôi phục form đặt kho từ bản nháp (nếu đúng kho): ngày bắt đầu (bỏ nếu đã qua), số tháng, hình thức trả, chu kỳ.
- * @returns {object|null}
+ * Khôi phục form đặt kho từ bản nháp (loadBookingDraft) nếu bản nháp đúng là của kho này:
+ * ngày bắt đầu (bỏ nếu đã qua so với ngày demo getTodayDate), số tháng, hình thức trả, chu kỳ trả.
+ * @param {object} facility cơ sở. @param {object} unit kho.
+ * @returns {object|null} { startDay, startMonth, startYear, duration, paymentMode, paymentCycle, restored, pastDate }
+ *   hoặc null nếu không có bản nháp phù hợp. restored = đã khôi phục được gì đó; pastDate = ngày cũ đã qua.
+ * Được gọi bởi: BookingPage (một lần khi trang mở, để làm giá trị ban đầu cho các state).
  */
 function getRestoredBookingForm(facility, unit) {
   const draft = loadBookingDraft()
@@ -1102,10 +1222,7 @@ function getRestoredBookingForm(facility, unit) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(draft.startDate || '')) {
     const [year, month, day] = draft.startDate.split('-').map(Number)
     const date = new Date(year, month - 1, day)
-    // [THỜI GIAN THỰC]:
-    // const today = new Date()
-    // today.setHours(0, 0, 0, 0)
-    // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+    // Dùng "hôm nay" theo Demo Clock (đồng hồ giả lập để demo) thay cho new Date() thật.
     const today = getTodayDate()
     today.setHours(0, 0, 0, 0)
     if (date.getTime() >= today.getTime()) {
@@ -1129,19 +1246,26 @@ function getRestoredBookingForm(facility, unit) {
 }
 
 /**
- * Component trang đặt 1 kho (2 bước):
- *  1. Chọn ngày bắt đầu, số tháng, hình thức trả, cách nhận kho -> kiểm tra kho còn trống trong kỳ -> tạo đơn giữ kho.
- *  2. Đếm ngược giờ giữ kho, tick xác nhận cọc -> thanh toán VNPay (hoặc mô phỏng) -> xác nhận đơn -> tab Hợp đồng.
+ * Component trang đặt 1 kho (route /facilities/{slug}/unit/{mã kho}/booking), gồm 2 bước:
+ *  1. Chọn ngày bắt đầu (RentalCalendar), gói 6/12 tháng, hình thức trả tiền thuê, cách nhận kho (HandoverChoice),
+ *     xem bảng giá (services/pricing.quote) -> bấm "Xác nhận đặt kho" (handleConfirmBooking): kiểm tra kho còn trống
+ *     trong kỳ, tạo đơn giữ kho.
+ *  2. Đếm ngược thời gian giữ kho, tick xác nhận cọc (DepositConfirm) -> "Thanh toán cọc" (handleDepositPaid):
+ *     VNPay (hoặc mô phỏng ở chế độ demo) -> xác nhận đơn + tạo hợp đồng -> mở trang khách mục Hợp đồng.
+ * Nếu khách từng chọn trước khi đăng nhập, form được điền lại từ bản nháp (getRestoredBookingForm).
  * API: GET /api/catalog/availability, POST /api/reservation, POST /api/vnpay/create, POST /api/payment/confirm,
  *      POST /api/reservation-confirmations/mine
- * @param {object} props facility, unit.
+ * Lưu trữ: ghi sessionStorage ACTIVE_BOOKING_HOLD_KEY khi tạo đơn, xóa khi cọc xong; xóa bản nháp đặt kho khi tạo đơn.
+ * @param {object} props
+ * @param {object} props.facility cơ sở. @param {object} props.unit kho khách chọn.
+ * Được Router hiển thị khi route.type === 'booking' và người dùng là khách hàng đã đăng nhập.
  */
 function BookingPage({ facility, unit }) {
   const dialog = useDialog()
-  const [restoredForm] = useState(() => getRestoredBookingForm(facility, unit))
-  const [step, setStep] = useState(1)
-  const [availableUnits, setAvailableUnits] = useState([])
-  const [selectedUnitNumber, setSelectedUnitNumber] = useState(unit.id)
+  const [restoredForm] = useState(() => getRestoredBookingForm(facility, unit)) // form khôi phục từ bản nháp (chỉ đọc 1 lần)
+  const [step, setStep] = useState(1) // 1 = điền thông tin thuê, 2 = thanh toán cọc
+  const [availableUnits, setAvailableUnits] = useState([]) // kho cùng loại còn trống, hiện khi kho đã chọn bị trùng kỳ
+  const [selectedUnitNumber, setSelectedUnitNumber] = useState(unit.id) // mã kho sẽ đặt (có thể đổi sang kho thay thế)
 
   const [startDay, setStartDay] = useState(restoredForm?.startDay || '')
   const [startMonth, setStartMonth] = useState(restoredForm?.startMonth || '')
@@ -1152,15 +1276,17 @@ function BookingPage({ facility, unit }) {
   const [handoverMethod, setHandoverMethod] = useState(HANDOVER_METHODS.InPerson) // 'InPerson' | 'Online'
   const [appointmentSlot, setAppointmentSlot] = useState('') // '08:00' | '10:00' | '12:00' | '14:00'
   const [paymentCycle, setPaymentCycle] = useState(restoredForm?.paymentCycle || 1)
-  const [showRestoredNote, setShowRestoredNote] = useState(Boolean(restoredForm?.restored || restoredForm?.pastDate))
+  const [showRestoredNote, setShowRestoredNote] = useState(Boolean(restoredForm?.restored || restoredForm?.pastDate)) // hiện dải "Đã khôi phục..."
 
   const [error, setError] = useState('')
-  const [booking, setBooking] = useState(null)
+  const [booking, setBooking] = useState(null) // đơn giữ kho vừa tạo (dữ liệu hiển thị ở bước 2)
   const [depositPaid, setDepositPaid] = useState(false)
-  const [depositAgreed, setDepositAgreed] = useState(false)
-  const [depositSecondsRemaining, setDepositSecondsRemaining] = useState(null)
+  const [depositAgreed, setDepositAgreed] = useState(false) // khách đã tick đồng ý trong DepositConfirm
+  const [depositSecondsRemaining, setDepositSecondsRemaining] = useState(null) // giây còn lại để cọc (null = không đếm)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Đồng hồ đếm ngược giữ kho: chạy khi đang ở bước 2 và đơn còn "Pending Deposit" có hạn cọc;
+  // chạy lại khi step / trạng thái đơn / hạn cọc đổi; mỗi giây cập nhật depositSecondsRemaining; dọn interval khi rời.
   useEffect(() => {
     if (step !== 2 || booking?.status !== 'Pending Deposit' || !booking.depositExpiresAt) {
       setDepositSecondsRemaining(null)
@@ -1180,6 +1306,7 @@ function BookingPage({ facility, unit }) {
     return () => window.clearInterval(timerId)
   }, [step, booking?.status, booking?.depositExpiresAt])
 
+  // Kho đang đặt (có thể là kho thay thế khách chọn trong danh sách "Kho còn trống trong kỳ thuê").
   const selectedUnit = getStorageUnits(facility.name).find(item => item.id === selectedUnitNumber) || unit
   const monthlyPrice = Number(selectedUnit.price)
   const totalMonths = Number(duration)
@@ -1191,13 +1318,14 @@ function BookingPage({ facility, unit }) {
   const holdMinutes = holdMinutesFor(facility.facilityId)
   const deposit = booking?.deposit ?? priceQuote.deposit
 
+  // Năm được chọn trên lịch: từ năm nay tới 5 năm sau (dùng làm ngày tối đa của RentalCalendar).
   const years = Array.from(
     { length: 6 },
     (_, index) => new Date().getFullYear() + index
   )
 
 
-  // Định dạng tiền kiểu Việt Nam kèm "đ".
+  // Định dạng tiền kiểu Việt Nam kèm "đ" (giống formatMoney ở đầu file).
   const formatPrice = value =>
     new Intl.NumberFormat('vi-VN').format(value) + 'đ'
 
@@ -1229,7 +1357,7 @@ function BookingPage({ facility, unit }) {
     const year = Number(startYear)
     const date = new Date(year, month - 1, day)
 
-    // Reject impossible dates such as 31/02.
+    // Loại ngày không tồn tại như 31/02 (Date tự nhảy sang tháng sau nên so lại ngày/tháng/năm).
     if (
       date.getFullYear() !== year ||
       date.getMonth() !== month - 1 ||
@@ -1264,8 +1392,7 @@ function BookingPage({ facility, unit }) {
 
   const endDate = calculateEndDate()
 
-  // Ngày kết thúc dự kiến cho một gói bất kỳ (dùng cùng quy tắc với calculateEndDate).
-  // Tính ngày kết thúc dự kiến cho một gói bất kỳ (cùng quy tắc với calculateEndDate).
+  // Tính ngày kết thúc dự kiến cho một gói bất kỳ (cùng quy tắc với calculateEndDate), hiện trên nút chọn gói.
   const getEndDateFor = months => {
     if (!startDate) return null
     const targetMonth = startDate.getMonth() + months
@@ -1275,13 +1402,11 @@ function BookingPage({ facility, unit }) {
     return date
   }
 
-  // [THỜI GIAN THỰC]:
-  // const today = new Date()
-  // today.setHours(0, 0, 0, 0)
-  // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+  // "Hôm nay" theo Demo Clock (đồng hồ giả lập để demo) thay cho new Date() thật.
   const today = getTodayDate()
   today.setHours(0, 0, 0, 0)
 
+  // Ngày bắt đầu hợp lệ = đã chọn đủ và không ở quá khứ.
   const isValidStartDate =
     !!startDate && startDate.getTime() >= today.getTime()
 
@@ -1290,14 +1415,14 @@ function BookingPage({ facility, unit }) {
     isValidStartDate &&
     RENTAL_TERMS.includes(duration)
 
-  // Hiện lỗi cả ở đầu trang và bằng pop-up để khách không bỏ sót.
-  // Hiện lỗi đặt kho cả ở đầu trang và bằng pop-up.
+  // Hiện lỗi đặt kho cả ở đầu trang (state error) và bằng pop-up để khách không bỏ sót.
   const showBookingError = (message, title = 'Chưa thể đặt kho', tone = 'danger') => {
     setError(message)
     return dialog.alert({ tone, title, message })
   }
 
-  // Lấy các lựa chọn hiện tại của form (ngày bắt đầu, số tháng, hình thức trả...) để lưu vào bản nháp.
+  // Lấy các lựa chọn hiện tại của form (ngày bắt đầu, số tháng, hình thức trả...) để lưu vào bản nháp
+  // khi phải chuyển sang đăng nhập giữa chừng.
   const currentFormDraft = () => ({
     startDate: startDate ? toApiDate(startDate) : undefined,
     duration: totalMonths,
@@ -1306,9 +1431,11 @@ function BookingPage({ facility, unit }) {
   })
 
   /**
-   * "Xác nhận đặt kho": kiểm tra đăng nhập/vai trò/ngày/khung giờ; kiểm tra kho còn trống trong kỳ (không còn thì gợi ý
-   * kho cùng loại khác); tạo đơn giữ kho; lưu thông tin giữ kho vào sessionStorage; chuyển sang bước đặt cọc.
-   * API: GET /api/catalog/availability?...  rồi  POST /api/reservation
+   * Chạy khi bấm "Xác nhận đặt kho" (bước 1): kiểm tra đăng nhập / vai trò / ngày bắt đầu / khung giờ nhận kho;
+   * hỏi backend kho còn trống trong cả kỳ thuê không (không còn thì hiện danh sách kho cùng loại khác để chọn);
+   * tạo đơn giữ kho; lưu thông tin giữ kho vào sessionStorage (ACTIVE_BOOKING_HOLD_KEY); xóa bản nháp;
+   * cập nhật state booking và chuyển sang bước 2 (đặt cọc).
+   * API: GET /api/catalog/availability?facilityId=&unitTypeId=&startDate=&months=  rồi  POST /api/reservation
    */
   const handleConfirmBooking = async () => {
     setError('')
@@ -1397,6 +1524,7 @@ function BookingPage({ facility, unit }) {
         appointmentSlot: handoverMethod === HANDOVER_METHODS.Online ? null : appointmentSlot
       })
       const reservationId = reservation.reservationId
+      // Dữ liệu đơn để hiển thị ở bước 2 (ưu tiên số tiền / ngày kết thúc do backend tính).
       const bookingData = {
         id: `RSV-${reservationId}`,
         reservationId,
@@ -1439,8 +1567,10 @@ function BookingPage({ facility, unit }) {
   }
 
   /**
-   * Thanh toán tiền cọc: hết giờ giữ kho thì báo; mặc định chuyển sang VNPay; chế độ demo cho thanh toán mô phỏng
-   * rồi xác nhận đơn + tạo hợp đồng và mở tab Hợp đồng.
+   * Chạy khi bấm "Thanh toán cọc qua VNPay" (bước 2, cần đã tick DepositConfirm). Hết giờ giữ kho thì báo lỗi.
+   * - Mặc định: startVnPayPayment -> trình duyệt chuyển sang VNPay; VNPay trả về /payment-result (PaymentResultPage xử lý tiếp).
+   * - Chế độ demo (SIMULATED_PAYMENT_ENABLED) và khách chọn "Mô phỏng": ghi nhận cọc, xóa ACTIVE_BOOKING_HOLD_KEY,
+   *   confirmAfterDeposit (xác nhận đơn + tạo hợp đồng), báo thành công rồi mở trang khách mục Hợp đồng.
    * API: POST /api/vnpay/create | POST /api/payment/confirm + POST /api/reservation-confirmations/mine
    */
   const handleDepositPaid = async () => {
@@ -1514,11 +1644,12 @@ function BookingPage({ facility, unit }) {
     }
   }
 
+  // Các chu kỳ trả (tháng) không vượt quá số tháng thuê. (Hiện chưa được dùng trong giao diện.)
   const paymentCycleOptions = [1, 3, 6, 12].filter(
     value => value <= totalMonths
   )
 
-  // Đổi số tháng thuê (giới hạn 1..12); nếu chu kỳ thanh toán lớn hơn số tháng thì đưa về 1.
+  // Chạy khi bấm 1 gói thời hạn: đổi số tháng thuê (giới hạn 1..12); nếu chu kỳ thanh toán lớn hơn số tháng thì đưa về 1.
   const handleDurationChange = value => {
     const nextDuration = Math.max(1, Math.min(12, value))
     setDuration(nextDuration)
@@ -1978,11 +2109,13 @@ function BookingPage({ facility, unit }) {
     </div>
   )
 }
+// Các mức giá lọc trên SearchPage (?price=): value lưu trên URL, match(p) kiểm tra giá/tháng của kho.
 const PRICE_FILTERS = [
   { value: 'under1', label: 'Dưới 1 triệu', match: p => p < 1000000 },
   { value: '1to2', label: '1 – 2 triệu', match: p => p >= 1000000 && p <= 2000000 },
   { value: 'over2', label: 'Trên 2 triệu', match: p => p > 2000000 }
 ]
+// Các hạng kích thước lọc trên SearchPage (?size=), so với parseUnitSize(unit.size).sizeClass.key.
 const SIZE_FILTERS = [
   { value: 'S', label: 'Nhỏ' },
   { value: 'M', label: 'Vừa' },
@@ -1991,12 +2124,17 @@ const SIZE_FILTERS = [
 ]
 
 /**
- * Component trang tìm kiếm (/search): lọc kho theo từ khóa, khu vực, loại kho, hạng size, khoảng giá, chỉ kho trống;
- * bộ lọc lưu trên URL; hiện số kết quả cho từng lựa chọn.
+ * Component trang tìm kho (route /search): lọc tới từng kho theo từ khóa (?q=), khu vực (?district=), loại kho (?type=),
+ * hạng size (?size=), mức giá (?price=), đồ cần gửi (?items=...&cs=... — chỉ hiện kho xếp vừa, tính bằng useBoxFit)
+ * và "chỉ kho còn trống" (?all=1 để xem cả kho đang thuê). Mọi bộ lọc nằm trên URL nên mỗi lần đổi là navigate tới
+ * URL mới và Router vẽ lại trang. Kết quả nhóm theo cơ sở, mỗi chip lọc hiện trước số kho sẽ khớp.
+ * Lưu trữ: số thùng/đồ đã nhập được nhớ bằng saveBoxCounts / loadBoxCounts (features/unit/boxCounts).
+ * Được Router hiển thị khi URL là /search.
  */
 function SearchPage() {
   const params = new URLSearchParams(window.location.search)
   const initial = params.get('q') || ''
+  // Bộ lọc hiện tại, đọc từ URL mỗi lần render.
   const filters = {
     q: initial.trim(),
     type: resolveTypeParam(params.get('type') || ''),
@@ -2008,16 +2146,16 @@ function SearchPage() {
     // Đồ khách cần gửi (?items=box-m.500,fridge.1&cs=50x40x30): chỉ hiện kho xếp vừa.
     boxes: countsFromParams(params)
   }
-  const boxTotal = boxRequests(filters.boxes).total
-  const [boxDraft, setBoxDraft] = useState(() => (boxTotal ? filters.boxes : loadBoxCounts()))
+  const boxTotal = boxRequests(filters.boxes).total // tổng số món đồ đang lọc (0 = không lọc theo đồ)
+  const [boxDraft, setBoxDraft] = useState(() => (boxTotal ? filters.boxes : loadBoxCounts())) // số đồ khách đang nhập, chưa áp dụng
   // Kho xếp vừa số thùng (ước tính ngay, rồi xếp thử thật trong Web Worker; đã chừa lối đi 80 cm).
   const boxFit = useBoxFit(facilities.flatMap(facility => getStorageUnits(facility.name)), filters.boxes)
-  const [query, setQuery] = useState(initial)
+  const [query, setQuery] = useState(initial) // chữ đang gõ trong ô tìm kiếm (chỉ đưa lên URL khi bấm "Tìm kho")
   const catalogTypeKeys = getCatalogTypeKeys()
   const districtGroups = getDistrictGroups()
   const activeDistrict = districtGroups.find(group => group.slug === filters.district)
 
-  // Tạo URL /search?... từ bộ lọc hiện tại cộng các thay đổi.
+  // Tạo URL /search?... từ bộ lọc hiện tại cộng các thay đổi (changes, vd { type: 'climate' }); bỏ tham số rỗng.
   const buildUrl = changes => {
     const next = { ...filters, ...changes }
     const qs = new URLSearchParams()
@@ -2031,7 +2169,7 @@ function SearchPage() {
     const text = qs.toString()
     return text ? `/search?${text}` : '/search'
   }
-  // Điều hướng tới URL tìm kiếm với bộ lọc mới.
+  // Điều hướng tới URL tìm kiếm với bộ lọc mới (được gọi khi bấm mọi chip lọc / checkbox / nút xóa lọc).
   const go = changes => navigate(buildUrl(changes))
 
   // Lọc tới từng kho theo mọi tiêu chí khách đã chọn.
@@ -2051,6 +2189,7 @@ function SearchPage() {
     }
     return true
   }
+  // Kết quả: mỗi cơ sở kèm các kho khớp (kho trống trước, rồi giá thấp trước); bỏ cơ sở không có kho khớp.
   const groups = facilities
     .map(facility => ({
       facility,
@@ -2060,12 +2199,12 @@ function SearchPage() {
     }))
     .filter(group => group.units.length > 0)
   const totalUnits = groups.reduce((n, g) => n + g.units.length, 0)
-  // Số kho cho từng lựa chọn (tính theo các bộ lọc còn lại) để khách biết trước kết quả.
-  // Đếm số kho khớp các bộ lọc còn lại và điều kiện predicate (hiện số trên từng chip lọc).
+  // Đếm số kho khớp các bộ lọc còn lại (bỏ qua bộ lọc `ignore`) và điều kiện predicate — hiện số trên từng chip lọc
+  // để khách biết trước kết quả.
   const countWith = (ignore, predicate) => facilities.reduce((n, facility) =>
     n + getStorageUnits(facility.name).filter(unit => unitMatches(facility, unit, ignore) && predicate(facility, unit)).length, 0)
   const hasFilter = Boolean(filters.q || filters.type || activeDistrict || filters.size || filters.price || boxTotal)
-  // Áp dụng bộ lọc số thùng (và nhớ lại cho cửa sổ xem kho 3D).
+  // Gửi form "Lọc kho xếp vừa": chuẩn hóa số đồ, lưu lại (saveBoxCounts, để cửa sổ xem kho 3D dùng) rồi đưa lên URL.
   const applyBoxes = e => {
     e.preventDefault()
     const next = normalizeBoxCounts(boxDraft)
@@ -2073,13 +2212,13 @@ function SearchPage() {
     go({ boxes: next })
   }
 
-  // Gửi ô tìm kiếm: cập nhật từ khóa trên URL.
+  // Gửi ô tìm kiếm (bấm "Tìm kho" / Enter): đưa từ khóa lên URL ?q=.
   const submit = e => {
     e.preventDefault()
     go({ q: query.trim() })
   }
 
-  // Vẽ 1 chip lọc (đang chọn, nhãn, số lượng).
+  // Vẽ 1 nút chip lọc: active (đang chọn), label, onClick, count (số kho, có thể bỏ), style (màu loại kho).
   const chip = (active, label, onClick, count, style) => (
     <button
       type="button"
@@ -2216,7 +2355,10 @@ function SearchPage() {
 }
 
 /**
- * Component khung chung cho trang đăng nhập / đăng ký / OTP (logo, tiêu đề, phụ đề, nội dung).
+ * Component khung chung cho trang đăng nhập / đăng ký / OTP: nền, thẻ giữa màn hình, logo (bấm về trang chủ), tiêu đề.
+ * @param {object} props
+ * @param {React.ReactNode} props.children nội dung form. @param {string} props.title tiêu đề. @param {string} props.subtitle phụ đề.
+ * Dùng ở: LoginPage, RegisterPage, VerifyOtpPage.
  */
 function AuthShell({ children, title, subtitle }) {
   return (
@@ -2233,9 +2375,13 @@ function AuthShell({ children, title, subtitle }) {
 }
 
 /**
- * Đăng nhập và lưu phiên vào localStorage ({ name, email, role, userId, accessCode, token, tokenExpiresAt }).
+ * Gọi backend đăng nhập, đổi vai trò sang mã frontend (mapBackendRole) và lưu phiên vào localStorage
+ * (khóa CURRENT_USER_KEY: { name, email, role, userId, accessCode, accessCodeStatus, token, tokenExpiresAt }).
+ * Token JWT này được api/api.js đọc để gắn vào các request sau.
  * API: POST /api/auth/login  body { email, password }
- * @returns {Promise<object>} người dùng đã lưu.
+ * @param {string} email @param {string} password
+ * @returns {Promise<object>} người dùng đã lưu. Lỗi (sai mật khẩu, vai trò lạ) được ném ra cho trang hiển thị.
+ * Được gọi bởi: LoginPage.login.
  */
 async function loginAndStoreUser(email, password) {
   const data = await apiPost('/api/auth/login', { email, password })
@@ -2253,9 +2399,10 @@ async function loginAndStoreUser(email, password) {
   return user
 }
 
-/* Chuyển trang sau khi đăng nhập; nếu kho trong bản nháp đã hết thì báo bằng pop-up. */
 /**
- * Chuyển trang sau khi đăng nhập (resolvePostAuthPath); nếu kho trong bản nháp đã hết thì báo bằng pop-up trước.
+ * Chuyển trang sau khi đăng nhập theo resolvePostAuthPath; nếu kho trong bản nháp đã hết thì báo bằng pop-up trước.
+ * @param {object} dialog từ useDialog(). @param {object} user người dùng vừa đăng nhập. @param {string|null} nextPath ?next=.
+ * Được gọi bởi: LoginPage.login (sau 0,5 giây hiện thông báo thành công).
  */
 async function goAfterAuth(dialog, user, nextPath) {
   const { path, notice } = resolvePostAuthPath(user, nextPath)
@@ -2264,7 +2411,10 @@ async function goAfterAuth(dialog, user, nextPath) {
 }
 
 /**
- * Component trang đăng nhập (/login).
+ * Component trang đăng nhập (route /login): form email + mật khẩu, dải nhắc "Bạn đang đặt kho..." nếu có bản nháp,
+ * link sang đăng ký (giữ nguyên ?next=).
+ * API: POST /api/auth/login (qua loginAndStoreUser)
+ * Được Router hiển thị khi URL là /login.
  */
 function LoginPage() {
   const dialog = useDialog()
@@ -2274,7 +2424,8 @@ function LoginPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  // Gửi form đăng nhập: gọi loginAndStoreUser, báo thành công rồi chuyển trang.
+  // Gửi form đăng nhập (bấm "Đăng nhập"): gọi loginAndStoreUser, hiện thông báo thành công, sau 0,5 giây gọi goAfterAuth
+  // để chuyển trang; lỗi thì hiện ở state error.
   const login = async e => {
     e.preventDefault()
     setError('')
@@ -2301,14 +2452,18 @@ function LoginPage() {
 }
 
 /**
- * Component trang đăng ký (/register): họ tên, giới tính, ngày sinh, SĐT, email, mật khẩu.
+ * Component trang đăng ký (route /register): họ, tên, giới tính, ngày sinh, SĐT, email, mật khẩu + xác nhận.
+ * Bấm "Gửi mã xác thực" -> sendRegistrationOtp -> chuyển sang /verify-otp để nhập mã gửi qua email.
+ * API: POST /api/auth/register/start (qua api/otpService.startRegistration)
+ * Lưu trữ: ghi sessionStorage 'storespace_register_pending'.
+ * Được Router hiển thị khi URL là /register.
  */
 function RegisterPage() {
   const { draft, nextPath, discard } = usePendingBooking()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
-  const [gender, setGender] = useState('')
-  const [birthDate, setBirthDate] = useState('')
+  const [gender, setGender] = useState('') // chỉ hiển thị trên form, hiện chưa gửi lên backend
+  const [birthDate, setBirthDate] = useState('') // chỉ hiển thị trên form, hiện chưa gửi lên backend
   const [phoneNumber, setPhoneNumber] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -2317,8 +2472,9 @@ function RegisterPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   /**
-   * Gửi form đăng ký: kiểm tra dữ liệu, gọi backend tạo bản đăng ký + gửi OTP, lưu email + thời hạn vào sessionStorage
-   * (không lưu mật khẩu hay mã OTP), chuyển sang /verify-otp.
+   * Chạy khi gửi form đăng ký: kiểm tra họ tên / email / mật khẩu (>= 6 ký tự, khớp xác nhận); gọi backend tạo bản
+   * đăng ký + gửi OTP qua email; lưu { fullName, email, expiresAt, resendAvailableAt, nextPath } vào sessionStorage
+   * 'storespace_register_pending' (không lưu mật khẩu hay mã OTP); chuyển sang /verify-otp. Lỗi -> state error.
    * API: POST /api/auth/register/start (qua startRegistration)
    */
   const sendRegistrationOtp = async e => {
@@ -2430,20 +2586,24 @@ function RegisterPage() {
 }
 
 /**
- * Component trang nhập mã OTP (/verify-otp): đếm ngược hạn mã và thời gian được gửi lại, xác thực, gửi lại mã, đổi email.
+ * Component trang nhập mã OTP (route /verify-otp): đọc phiên đăng ký đang chờ từ sessionStorage
+ * 'storespace_register_pending', đếm ngược hạn mã và thời gian được gửi lại, cho xác thực mã, gửi lại mã, đổi email.
+ * Không có phiên đang chờ thì hiện thông báo và nút quay lại đăng ký.
+ * API: POST /api/auth/register/verify, POST /api/auth/register/resend (qua api/otpService)
+ * Được Router hiển thị khi URL là /verify-otp (RegisterPage chuyển tới).
  */
 function VerifyOtpPage() {
   const dialog = useDialog()
   const { nextPath } = usePendingBooking()
-  const [pending, setPending] = useState(null)
+  const [pending, setPending] = useState(null) // phiên đăng ký đang chờ { fullName, email, expiresAt, resendAvailableAt, nextPath }
   const [otp, setOtp] = useState('')
-  const [secondsRemaining, setSecondsRemaining] = useState(0)
-  const [resendSecondsRemaining, setResendSecondsRemaining] = useState(0)
+  const [secondsRemaining, setSecondsRemaining] = useState(0) // giây còn lại trước khi mã OTP hết hạn
+  const [resendSecondsRemaining, setResendSecondsRemaining] = useState(0) // giây còn phải chờ mới được gửi lại mã
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Đọc phiên đăng ký đang chờ từ sessionStorage.
+  // Đọc phiên đăng ký đang chờ từ sessionStorage vào state pending (lỗi -> null) và xóa ô OTP.
   const loadPending = () => {
     try {
       const saved = JSON.parse(sessionStorage.getItem('storespace_register_pending') || 'null')
@@ -2456,10 +2616,12 @@ function VerifyOtpPage() {
     }
   }
 
+  // Chạy 1 lần khi trang mở: nạp phiên đăng ký đang chờ.
   useEffect(() => {
     loadPending()
   }, [])
 
+  // Chạy lại mỗi khi pending đổi (mới nạp / vừa gửi lại mã): đếm ngược mỗi giây; dọn interval khi đổi / rời trang.
   useEffect(() => {
     if (!pending?.expiresAt) return undefined
 
@@ -2474,7 +2636,7 @@ function VerifyOtpPage() {
     return () => window.clearInterval(timerId)
   }, [pending])
 
-  // Xóa phiên đăng ký đang chờ khỏi sessionStorage.
+  // Xóa phiên đăng ký đang chờ khỏi sessionStorage (sau khi xác thực xong hoặc khi đổi email).
   const clearPending = () => {
     sessionStorage.removeItem('storespace_register_pending')
   }
@@ -2487,7 +2649,8 @@ function VerifyOtpPage() {
   }
 
   /**
-   * Xác thực mã OTP (6 chữ số, chưa hết hạn); đúng thì tài khoản được tạo và chuyển sang đăng nhập.
+   * Chạy khi bấm "Xác nhận OTP": kiểm tra mã đủ 6 chữ số và chưa hết hạn; gửi backend xác thực. Đúng thì backend tạo
+   * tài khoản, xóa phiên chờ và sau 0,7 giây chuyển sang /login (giữ ?next= để quay lại trang đặt kho). Sai -> state error.
    * API: POST /api/auth/register/verify (qua verifyRegistrationOtp)
    */
   const verifyOtp = async e => {
@@ -2528,7 +2691,8 @@ function VerifyOtpPage() {
   }
 
   /**
-   * Gửi lại mã OTP mới (khi hết thời gian chờ) và cập nhật thời hạn.
+   * Chạy khi bấm "Gửi lại mã OTP" (chỉ được khi hết thời gian chờ): xin mã mới, cập nhật thời hạn mới vào
+   * sessionStorage + state pending (làm đồng hồ đếm ngược chạy lại), xóa ô OTP.
    * API: POST /api/auth/register/resend (qua resendRegistrationOtp)
    */
   const resendOtp = async () => {
@@ -2554,7 +2718,7 @@ function VerifyOtpPage() {
     }
   }
 
-  // Bỏ phiên đăng ký hiện tại và quay lại trang đăng ký để đổi email.
+  // Bấm "Đổi email": bỏ phiên đăng ký hiện tại và quay lại trang đăng ký (giữ ?next=).
   const changeEmail = () => {
     clearPending()
     navigate(withNext('/register', pending?.nextPath || nextPath))
@@ -2624,11 +2788,13 @@ function VerifyOtpPage() {
 }
 
 /**
- * Component trang chủ: ô tìm kiếm, số kho trống, loại kho, khu vực, danh sách cơ sở, bản đồ.
+ * Component trang chủ (route /, và mọi URL không khớp): phần giới thiệu có ô tìm kiếm, số kho đang trống,
+ * bộ chọn khu vực (bấm -> /search?district=), lưới cơ sở (lọc ngay theo chữ đang gõ) + bản đồ, giới thiệu loại kho,
+ * giới thiệu StoreSpace và hỗ trợ. Dữ liệu lấy từ facilities / storageUnits đã tải sẵn.
  */
 function HomePage() {
-  const [query, setQuery] = useState('')
-  const [submittedQuery, setSubmittedQuery] = useState('')
+  const [query, setQuery] = useState('') // chữ đang gõ: lọc thẻ cơ sở ngay khi gõ
+  const [submittedQuery, setSubmittedQuery] = useState('') // từ khóa đã gửi, dùng để hiện dòng "Đang hiển thị kết quả cho ..."
   const availableUnitCount = Object.values(storageUnits).flat().filter(unit => unit.available).length
   const visible = facilities.filter(f => {
     const unitText = getStorageUnits(f.name)
@@ -2636,7 +2802,7 @@ function HomePage() {
       .join(' ')
     return `${f.name} ${f.location} ${unitText}`.toLowerCase().includes(query.trim().toLowerCase())
   })
-  // Gửi ô tìm kiếm trang chủ: lọc danh sách cơ sở và cuộn tới phần cơ sở.
+  // Gửi ô tìm kiếm trang chủ (bấm "Tìm kho"): ghi nhận từ khóa đã gửi và cuộn mượt tới phần danh sách cơ sở.
   const search = e => {
     e.preventDefault()
     setSubmittedQuery(query.trim())
@@ -2683,8 +2849,13 @@ function HomePage() {
 }
 
 /**
- * Phân tích URL hiện tại thành route { type, facility?, unit? }. Kho đã có người thuê thì về trang cơ sở,
- * trừ khi chính khách đang giữ kho đó ở bước đặt cọc (thông tin giữ kho trong sessionStorage).
+ * Phân tích URL hiện tại (window.location.pathname) thành route { type, facility?, unit? } cho Router.
+ * - Đường dẫn cố định (/login, /search, /cart, /staff...) -> type tương ứng.
+ * - /facilities/{slug} -> 'detail'; /facilities/{slug}/unit/{mã} -> 'unit-detail'; thêm /booking -> 'booking'.
+ * - Không tìm thấy cơ sở / kho -> 'home'. Kho không còn trống -> về trang cơ sở ('detail'), trừ khi chính khách đang
+ *   giữ kho đó ở bước đặt cọc (đọc sessionStorage ACTIVE_BOOKING_HOLD_KEY: cùng mã kho, cùng email, chưa hết hạn).
+ * @returns {{type: string, facility?: object, unit?: object}}
+ * Được gọi bởi: Router (lúc đầu, khi popstate, và khi danh mục làm mới có thay đổi).
  */
 function getRoute() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/'
@@ -2698,13 +2869,10 @@ function getRoute() {
   if (path === '/cart') return { type: 'cart' }
   if (path === '/payment-result') return { type: 'payment-result' }
 
-  //Đã cập nhật: Route /staff trong getRoute()
+  // Dashboard theo vai trò (Router sẽ kiểm tra quyền trước khi hiển thị).
   if (path === '/staff') return { type: 'staff' }
-  //Đã thêm: 05/10/2026
 
-  //Đã cập nhật: Route /manager trong getRoute()
   if (path === '/manager') return { type: 'manager' }
-  //Đã thêm 05/10/2026
 
   if (path === '/admin') return { type: 'admin' }
   if (path === '/business') return { type: 'business' }
@@ -2717,7 +2885,7 @@ function getRoute() {
       const unit = getStorageUnits(facility.name).find(item => item.id.toLowerCase() === parts[2].toLowerCase())
       if (!unit) return { type: 'home' }
 
-      //Đã cập nhật: Đường dẫn kho đã thuê thì quay về trang cơ sở
+      // Kho không còn trống: quay về trang cơ sở, trừ khi chính khách này đang giữ kho đó chờ đặt cọc.
       if (!unit.available) {
         let activeHold = null
         try {
@@ -2732,7 +2900,6 @@ function getRoute() {
           Date.parse(activeHold?.expiresAt) > Date.now()
         if (!ownsActiveBooking) return { type: 'detail', facility }
       }
-      //Đã thêm: 05/10/2026
 
 
       if (parts[3] === 'booking') return { type: 'booking', facility, unit }
@@ -2743,9 +2910,11 @@ function getRoute() {
   return { type: 'home' }
 }
 
-//Đã cập nhật: Component chuyển hướng
 /**
- * Component route /cart: hiển thị CartPage với các hàm dùng chung của App.
+ * Component route /cart: bọc pages/customer/CartPage bằng header/footer và truyền các hàm dùng chung của App
+ * (facilities, getStorageUnits, navigate, getCurrentUser, getUnitPath, onRequireLogin = promptLoginForCart).
+ * Việc đặt cọc nhiều kho trong giỏ do CartPage xử lý.
+ * Được Router hiển thị khi URL là /cart (tài khoản không phải khách bị chuyển về trang làm việc).
  */
 function CartRoute() {
   const dialog = useDialog()
@@ -2766,7 +2935,10 @@ function CartRoute() {
 }
 
 /**
- * Component chuyển hướng tới đường dẫn khác ngay khi hiển thị.
+ * Component chuyển hướng: không vẽ gì, sau khi hiển thị thì navigate(path) (useEffect chạy lại nếu path đổi).
+ * @param {object} props
+ * @param {string} props.path đường dẫn đích.
+ * Dùng ở: Router (chặn người dùng sai vai trò / chưa đăng nhập).
  */
 function RedirectTo({ path }) {
   useEffect(() => { navigate(path) }, [path])
@@ -2774,9 +2946,14 @@ function RedirectTo({ path }) {
 }
 
 /**
- * Component chuyển hướng tới đăng nhập khi khách chưa đăng nhập mở trang đặt kho (lưu bản nháp trước).
+ * Component chuyển hướng khi khách chưa đăng nhập mở thẳng link đặt kho: lưu bản nháp (saveBookingDraft) rồi
+ * chuyển tới /login?next=<trang đặt kho> để đăng nhập xong quay lại đúng chỗ.
+ * @param {object} props
+ * @param {object} props.facility cơ sở. @param {object} props.unit kho.
+ * Dùng ở: Router (route 'booking' khi chưa đăng nhập).
  */
 function BookingLoginRedirect({ facility, unit }) {
+  // Chạy khi hiển thị (và nếu đổi cơ sở / kho): lưu bản nháp rồi chuyển trang.
   useEffect(() => {
     const bookingPath = getBookingPath(facility, unit)
     saveBookingDraft({
@@ -2791,10 +2968,12 @@ function BookingLoginRedirect({ facility, unit }) {
   }, [facility.facilityId, unit.id])
   return null
 }
-// Đã thêm: 05/10/2026
 
 /**
- * Đổi ngày 'YYYY-MM-DD' thành 'dd/MM/yyyy' để hiển thị trên dashboard khách.
+ * Đổi ngày 'YYYY-MM-DD' (hoặc chuỗi ISO) thành 'dd/MM/yyyy' để hiển thị trên trang khách; rỗng -> '—'.
+ * @param {string} value ngày từ backend.
+ * @returns {string}
+ * Được gọi bởi: mapCustomerReservation.
  */
 function formatDashboardDate(value) {
   if (!value) return '—'
@@ -2803,8 +2982,13 @@ function formatDashboardDate(value) {
 }
 
 /**
- * Chuẩn hóa 1 đơn của khách từ backend cho trang khách: nhãn trạng thái tiếng Việt, ngày hiển thị, tiến độ sử dụng,
- * số ngày còn lại, tiền thuê/cọc, kho, hợp đồng, chữ ký, hoàn tiền, gia hạn, mã truy cập...
+ * Chuẩn hóa 1 đơn của khách từ backend thành dữ liệu hiển thị cho trang khách / chuông thông báo:
+ * đổi "Pending Payment" -> "Pending Deposit", ngày dạng dd/MM/yyyy, tổng số ngày / số ngày còn lại / % tiến độ
+ * (theo ngày Demo Clock), danh sách kho trong đơn (bổ sung loại, size, giá từ danh mục), giá/tháng dạng chữ,
+ * và nhãn trạng thái tiếng Việt (statusLabel) có xét hợp đồng, hoàn tiền, gia hạn, tiền thuê chưa đóng.
+ * @param {object} reservation 1 đơn từ API đơn của khách.
+ * @returns {object} đơn gốc + các trường đã chuẩn hóa (status, units, startDate, endDate, remainingDays, progress, statusLabel...).
+ * Được gọi bởi: CustomerPage.loadReservations, fetchCustomerRentals.
  */
 function mapCustomerReservation(reservation) {
   const start = new Date(`${String(reservation.startDate).slice(0, 10)}T00:00:00`)
@@ -2875,15 +3059,20 @@ function mapCustomerReservation(reservation) {
 }
 
 /**
- * Component route /customer: tải đơn của khách rồi hiển thị CustomerDashboard.
+ * Component route /customer: tải đơn của khách đang đăng nhập rồi hiển thị pages/customer/CustomerAccount
+ * (CustomerDashboard). Đang tải -> chữ "Đang tải..."; lỗi -> màn hình lỗi có nút "Thử lại".
+ * API: GET /api/customer-reservations/mine (404 -> GET /api/reservation/customer/{email})
+ * Được Router hiển thị khi URL là /customer và người dùng là khách hàng đã đăng nhập.
  */
 function CustomerPage() {
-  const [reservations, setReservations] = useState(null)
+  const [reservations, setReservations] = useState(null) // null = đang tải; mảng = đơn đã chuẩn hóa
   const [error, setError] = useState('')
   const user = getCurrentUser()
 
   /**
-   * Tải đơn của khách (bỏ đơn bỏ dở); silent = true thì tải ngầm và giữ dữ liệu cũ khi lỗi.
+   * Tải đơn của khách, bỏ đơn "bỏ dở", chuẩn hóa bằng mapCustomerReservation rồi lưu vào state reservations.
+   * silent = true: tải ngầm (không hiện "Đang tải"), lỗi thì giữ dữ liệu cũ.
+   * Chạy khi: trang mở / email đổi (useEffect), bấm "Thử lại", hoặc CustomerDashboard gọi onReloadRentals (vd sau gia hạn).
    * API: GET /api/customer-reservations/mine (404 -> GET /api/reservation/customer/{email})
    */
   const loadReservations = ({ silent = false } = {}) => {
@@ -2904,7 +3093,6 @@ function CustomerPage() {
         if (!Array.isArray(data)) {
           throw new Error('Backend trả về danh sách đặt chỗ không hợp lệ.')
         }
-        // Ẩn đơn bỏ dở ở bước đặt cọc: hết hạn giữ kho, hoặc đã hủy khi chưa cọc (không hợp đồng, không hoàn tiền)
         // Đơn "bỏ dở" cần ẩn: hết hạn giữ kho, hoặc đã hủy khi chưa cọc (không hợp đồng, không hoàn tiền).
         const abandoned = r => r.status === 'Expired' ||
           (r.status === 'Cancelled' && !r.contractId && !(Number(r.refundAmount) > 0))
@@ -2917,6 +3105,7 @@ function CustomerPage() {
       })
   }
 
+  // Tải đơn khi trang mở và khi email người dùng đổi.
   useEffect(() => {
     loadReservations()
   }, [user?.email])
@@ -2953,11 +3142,15 @@ function CustomerPage() {
 }
 
 /**
- * Component bộ định tuyến: theo dõi URL (popstate), làm mới danh mục kho định kỳ 15 giây (dừng khi tab ẩn),
- * kiểm tra vai trò và hiển thị đúng trang.
+ * Component bộ định tuyến gốc của app: giữ route hiện tại (getRoute), theo dõi URL (sự kiện popstate do navigate
+ * hoặc nút Back phát ra), làm mới danh mục kho định kỳ, kiểm tra vai trò rồi trả về đúng component trang.
+ * Bảng URL -> component: xem khối mô tả đầu file và các lệnh if bên dưới.
+ * API: GET /api/catalog/state (qua loadDataFromApi, làm mới định kỳ)
+ * Được render ở cuối file, bên trong <DialogProvider>.
  */
 function Router() {
   const [route, setRoute] = useState(getRoute())
+  // Chạy 1 lần: lắng nghe popstate để tính lại route khi URL đổi; gỡ khi unmount.
   useEffect(() => {
     // Khi URL đổi (popstate): tính lại route và cuộn lên đầu trang.
     const onPop = () => {
@@ -2967,18 +3160,19 @@ function Router() {
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
+  // Cuộn lên đầu trang mỗi khi sang trang khác (loại trang / cơ sở / kho đổi).
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [route.type, route.facility?.name, route.unit?.id])
-  // Làm mới danh mục kho định kỳ (trước đây 2 giây/lần, gây tải nặng và render lại liên tục).
-  // - 15 giây/lần, tạm dừng khi tab bị ẩn.
-  // - Làm mới ngay khi quay lại tab hoặc chuyển trang.
-  // - Chỉ render lại khi dữ liệu thực sự thay đổi.
+  // Chạy 1 lần: làm mới danh mục kho định kỳ để trạng thái kho (còn trống / đã đặt) luôn mới.
+  // - 15 giây/lần (CATALOG_REFRESH_MS), tạm dừng khi tab bị ẩn.
+  // - Làm mới ngay khi quay lại tab hoặc chuyển trang (nếu đã quá 3 giây từ lần trước).
+  // - Chỉ render lại (setRoute) khi dữ liệu thực sự thay đổi.
   useEffect(() => {
     let refreshing = false
     let lastRefresh = Date.now()
     /**
-     * Làm mới danh mục kho từ backend; chỉ vẽ lại khi dữ liệu thực sự thay đổi.
+     * Làm mới danh mục kho từ backend (bỏ qua nếu đang làm mới dở hoặc tab đang ẩn); chỉ vẽ lại khi dữ liệu đổi.
      * API: GET /api/catalog/state (qua loadDataFromApi)
      */
     const refresh = async () => {
@@ -3023,7 +3217,7 @@ function Router() {
     return <CartRoute />
   }
 
-  // Chỉ đúng role mới được vào khu Admin / Business
+  // Chỉ đúng vai trò mới được vào khu Admin / Business, sai thì về /login.
   if (route.type === 'admin') {
     return getCurrentUser()?.role === 'SYSTEM_ADMIN' ? <Admin /> : <RedirectTo path="/login" />
   }
@@ -3033,24 +3227,23 @@ function Router() {
       : <RedirectTo path="/login" />
   }
 
-  //Đã cập nhật: Router render StaffPortal
+  // /staff: chỉ nhân viên cơ sở; người khác về trang làm việc của mình (hoặc /login nếu chưa đăng nhập).
   if (route.type === 'staff') {
     const user = getCurrentUser()
     return user?.role === 'FACILITY_STAFF'
       ? <StaffPortal embedded currentUser={user} navigate={navigate} currentUserKey={CURRENT_USER_KEY} />
       : <RedirectTo path={user ? roleHome(user.role) : '/login'} />
   }
-  //Đã thêm: 05/10/2026
 
-  //Đã cập nhật: Router render FacilityManagerDashboard
+  // /manager: chỉ quản lý cơ sở; người khác về trang làm việc của mình (hoặc /login).
   if (route.type === 'manager') {
     const user = getCurrentUser()
     return user?.role === 'FACILITY_MANAGER'
       ? <FacilityManagerDashboard embedded currentUser={user} navigate={navigate} currentUserKey={CURRENT_USER_KEY} />
       : <RedirectTo path={user ? roleHome(user.role) : '/login'} />
   }
-  //Đã thêm: 05/10/2026
 
+  // /payment-result: VNPay chuyển về đây sau khi thanh toán; PaymentResultPage xác minh kết quả.
   if (route.type === 'payment-result') {
     return (
       <div className="app">
@@ -3061,9 +3254,8 @@ function Router() {
   }
   if (route.type === 'customer') {
 
-    //Đã cập nhật: Staff vào /customer thì chuyển sang /staff
+    // Tài khoản không phải khách (nhân viên, quản lý...) vào /customer thì chuyển về trang làm việc của họ.
     { const r = getCurrentUser()?.role; if (r && r !== 'customer') return <RedirectTo path={roleHome(r)} /> }
-    //Đã thêm: 05/10/2026
 
     return getCurrentUser()
       ? <CustomerPage />
@@ -3082,15 +3274,19 @@ function Router() {
   return <HomePage />
 }
 
+// Chu kỳ Router làm mới danh mục (mili giây).
 const CATALOG_REFRESH_MS = 15000
+// Chuỗi JSON của lần tải danh mục trước, để biết dữ liệu có đổi không (tránh vẽ lại thừa).
 let lastCatalogSignature = ''
 
-/* Tải danh mục cơ sở + kho. Trả về true nếu dữ liệu khác lần tải trước. */
 /**
- * Tải danh mục cơ sở + kho từ backend, nạp cấu hình tính giá, chuẩn hóa dữ liệu cơ sở (khu vực, số kho trống, loại kho)
- * và kho của từng cơ sở vào biến dùng chung `facilities` / `storageUnits`.
- * API: GET /api/catalog/state  (CatalogController)
- * @returns {Promise<boolean>} true nếu dữ liệu khác lần tải trước.
+ * Tải danh mục cơ sở + kho từ backend, nạp cấu hình tính giá (setCatalogPricing), rồi chuẩn hóa dữ liệu cơ sở
+ * (ảnh, khu vực, số kho trống / tổng, loại kho) và kho của từng cơ sở, ghi đè TẠI CHỖ vào biến dùng chung
+ * `facilities` / `storageUnits` (mọi component đọc trực tiếp hai biến này).
+ * API: GET /api/catalog/state
+ * @returns {Promise<boolean>} true nếu dữ liệu khác lần tải trước, false nếu giống hệt (không cập nhật gì).
+ * @throws {Error} khi backend trả dữ liệu sai định dạng hoặc mã cơ sở không hợp lệ.
+ * Được gọi bởi: đoạn khởi động cuối file (lần đầu) và Router.refresh (định kỳ).
  */
 async function loadDataFromApi() {
   const catalog = await apiGet('/api/catalog/state')
@@ -3103,6 +3299,7 @@ async function loadDataFromApi() {
   if (signature === lastCatalogSignature) return false
   lastCatalogSignature = signature
 
+  // Chuẩn hóa từng cơ sở (đếm kho trống / tổng từ danh sách kho của cơ sở đó).
   const nextFacilities = catalog.facilities.map((item, index) => {
     const facilityId = Number(item.id)
     if (!Number.isInteger(facilityId)) {
@@ -3124,6 +3321,7 @@ async function loadDataFromApi() {
     }
   })
 
+  // Nhóm kho theo tên cơ sở; available = trạng thái "available".
   const nextStorageUnits = {}
   for (const item of catalog.facilities) {
     const key = String(item.id)
@@ -3145,6 +3343,7 @@ async function loadDataFromApi() {
       }))
   }
 
+  // Ghi đè tại chỗ (giữ nguyên tham chiếu mảng / object để mọi nơi đang dùng thấy dữ liệu mới).
   facilities.splice(0, facilities.length, ...nextFacilities)
   Object.keys(storageUnits).forEach(key => delete storageUnits[key])
   Object.assign(storageUnits, nextStorageUnits)
@@ -3152,7 +3351,10 @@ async function loadDataFromApi() {
 }
 
 /**
- * Component màn hình lỗi khi không tải được dữ liệu từ backend lúc khởi động (nút "Thử kết nối lại").
+ * Component màn hình lỗi khi không tải được danh mục từ backend lúc khởi động; nút "Thử kết nối lại" tải lại trang.
+ * @param {object} props
+ * @param {Error} props.error lỗi từ loadDataFromApi (hiện error.message).
+ * Dùng ở: đoạn khởi động cuối file.
  */
 function ApiStartupError({ error }) {
   return (
@@ -3170,6 +3372,8 @@ function ApiStartupError({ error }) {
   )
 }
 
+// KHỞI ĐỘNG APP: tạo gốc React trong #root, tải danh mục lần đầu; thành công thì vẽ Router (bọc DialogProvider để
+// mọi trang dùng được useDialog, kèm DemoClockWidget chỉnh ngày demo); thất bại thì vẽ màn hình lỗi ApiStartupError.
 const root = createRoot(document.getElementById('root'))
 loadDataFromApi()
   .then(() => root.render(<DialogProvider><Router /><DemoClockWidget /></DialogProvider>))

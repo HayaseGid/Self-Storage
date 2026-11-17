@@ -1,16 +1,40 @@
 /**
  * ======================================================================
- * FILE: src/pages/customer/CartPage.jsx  —  TRANG GIỎ KHO (route /cart): ĐẶT NHIỀU KHO CÙNG LÚC
- * Luồng 2 bước:
- *  1. 'cart'    : chọn cơ sở (mỗi lần đặt chỉ 1 cơ sở, tối đa CHECKOUT_LIMIT kho), bỏ chọn kho, chọn ngày bắt đầu,
- *                 số tháng, hình thức trả (Monthly/Upfront), cách nhận kho + khung giờ -> "Giữ kho & đặt cọc".
- *                 -> Mỗi kho tạo 1 đơn: POST /api/reservation (ReservationController) -> đơn Pending Deposit (giữ chỗ có hạn).
- *  2. 'payment' : đếm ngược giờ giữ kho, tick xác nhận đặt cọc (DepositConfirm) rồi thanh toán:
- *                 - VNPay: POST /api/vnpay/create (qua startVnPayPayment) -> trang VNPay -> /payment-result;
- *                 - Mô phỏng (khi bật VITE_ALLOW_SIMULATED_PAYMENT): POST /api/payment/confirm (PaymentController) từng đơn,
- *                   rồi POST /api/reservation-confirmations/mine (qua confirmAfterDeposit) -> mở tab Hợp đồng để ký.
- *                 Hủy đặt / rời trang khi chưa trả: POST /api/reservation-cancellations/{id} + trả kho về giỏ.
- * Dùng ở: App.jsx (route /cart).
+ * FILE: src/pages/customer/CartPage.jsx  —  TRANG GIỎ KHO / ĐẶT NHIỀU KHO & ĐẶT CỌC (route /cart)
+ * CHỨC NĂNG: Trang khách dùng để đặt thuê các kho đã bỏ vào giỏ hàng. Trang có 2 bước:
+ *   bước 'cart' (chọn kho + điền thông tin thuê, bấm "Xác nhận đặt") và bước 'payment' (thanh toán tiền cọc
+ *   để giữ kho). Mỗi lần đặt chỉ được chọn kho của MỘT cơ sở, tối đa CHECKOUT_LIMIT kho; mỗi kho tạo một đơn
+ *   đặt chỗ và một hợp đồng riêng.
+ * THÀNH PHẦN CHÍNH:
+ *   - CartPage (export default): component trang, giữ toàn bộ state của 2 bước.
+ *   - checkout():     bước 1 -> tạo đơn giữ kho cho từng kho đã chọn.
+ *   - payDeposit():   bước 2 -> trả cọc qua VNPay, hoặc mô phỏng (chế độ demo).
+ *   - cancelOrder():  bước 2 -> hủy các đơn đang giữ, trả kho về giỏ.
+ *   - endDateFor(), toApiDate(), fmtDate(), money(): hàm tiện ích tính / định dạng ngày và tiền.
+ *   - ArrowIcon: icon mũi tên SVG dùng trong nút.
+ * DÙNG Ở: src/App.jsx (route /cart, truyền facilities, getStorageUnits, navigate, getCurrentUser, onRequireLogin, getUnitPath).
+ * PHỤ THUỘC:
+ *   - store/cart (useCart, removeFromCart, removeManyFromCart, restoreToCart, saveCartOrder, cancelHeldReservations,
+ *     rememberVnPayCartItems, newOrderCode, CHECKOUT_LIMIT): giỏ hàng lưu trong trình duyệt.
+ *   - services/pricing (quote, holdMinutesFor): tính tiền thuê / tiền cọc / phút giữ kho theo cơ sở.
+ *   - services/afterDeposit (confirmAfterDeposit, announceDepositSuccess, openCustomerSection): việc sau khi trả cọc.
+ *   - api/vnpay (startVnPayPayment, SIMULATED_PAYMENT_ENABLED), api/api (apiPost).
+ *   - features/booking/HandoverChoice (chọn cách nhận kho + khung giờ), features/payment/DepositConfirm (ô tick xác nhận cọc),
+ *     components/common/RentalCalendar (lịch chọn ngày), components/common/Dialog (hộp thoại), demoClock (ngày "hôm nay" giả lập).
+ * API:
+ *   - POST /api/reservation                          : tạo 1 đơn giữ kho (trạng thái Pending Deposit) cho mỗi kho.
+ *   - POST /api/vnpay/create                         : tạo giao dịch VNPay (qua startVnPayPayment).
+ *   - POST /api/payment/confirm                      : ghi nhận cọc mô phỏng cho từng đơn (chỉ chế độ demo).
+ *   - POST /api/reservation-confirmations/mine       : xác nhận đơn đã cọc + tạo hợp đồng (qua confirmAfterDeposit).
+ *   - POST /api/reservation-cancellations/{id}       : hủy đơn đang giữ (qua cancelHeldReservations).
+ * LUỒNG:
+ *   1. Bước 'cart': khách chọn cơ sở -> tick/bỏ tick kho -> chọn ngày bắt đầu, gói 6/12 tháng, hình thức trả
+ *      (Monthly/Upfront), cách nhận kho + khung giờ -> bấm "Xác nhận đặt N kho" -> checkout() kiểm tra hợp lệ ->
+ *      POST /api/reservation cho từng kho -> lưu đơn giỏ (saveCartOrder), bỏ các kho đã giữ khỏi giỏ -> setStep('payment').
+ *   2. Bước 'payment': đồng hồ đếm ngược hạn giữ kho; khách tick DepositConfirm -> payDeposit():
+ *      - VNPay: POST /api/vnpay/create -> trình duyệt sang VNPay -> quay về /payment-result (PaymentResultPage xử lý tiếp);
+ *      - Mô phỏng: POST /api/payment/confirm từng đơn -> confirmAfterDeposit -> báo thành công -> mở tab Hợp đồng để ký.
+ *   3. Bấm "Hủy" hoặc rời trang khi chưa trả cọc: hủy các đơn đang giữ + trả kho về giỏ.
  * ======================================================================
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
@@ -29,7 +53,8 @@ import { getTodayDate } from '../../demoClock/demoClock'
 import './CartPage.css'
 
 /**
- * Biểu tượng mũi tên (SVG).
+ * Vẽ icon mũi tên sang phải (SVG) đặt cạnh chữ trong các nút "Xác nhận đặt", "Tìm kho lưu trữ ngay".
+ * @returns {JSX.Element} thẻ <svg> 18x18, màu theo chữ (currentColor).
  */
 function ArrowIcon() {
   return (
@@ -41,23 +66,31 @@ function ArrowIcon() {
 }
 
 /**
- * Định dạng tiền kèm "đ".
+ * Định dạng số tiền kiểu Việt Nam kèm chữ "đ" (vd 1500000 -> "1.500.000đ"); giá trị rỗng coi là 0.
+ * @param {number|string} value số tiền.
+ * @returns {string}
  */
 const money = value => `${formatVnd(value || 0)}đ`
 /**
- * Đổi Date thành chuỗi 'YYYY-MM-DD' để gửi lên API.
+ * Đổi Date thành chuỗi 'YYYY-MM-DD' (theo giờ máy) để gửi trường startDate lên API POST /api/reservation.
+ * @param {Date} date ngày cần đổi (không được null).
+ * @returns {string}
  */
 const toApiDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 /**
- * Định dạng Date thành 'dd/MM/yyyy' (null -> '—').
+ * Định dạng Date thành 'dd/MM/yyyy' để hiển thị cho khách; chưa có ngày (null) thì trả '—'.
+ * @param {Date|null} date
+ * @returns {string}
  */
 const fmtDate = date => date ? `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}` : '—'
 
 /**
- * Tính ngày kết thúc thuê = ngày bắt đầu + số tháng - 1 ngày (tháng đích ngắn hơn thì lấy ngày cuối tháng).
- * @param {Date} start ngày bắt đầu.
- * @param {number} months số tháng.
- * @returns {Date|null}
+ * Tính ngày kết thúc thuê = ngày bắt đầu + số tháng - 1 ngày (vd 15/01 + 6 tháng -> 14/07).
+ * Nếu tháng đích ngắn hơn (vd 31/01 + 1 tháng) thì lấy ngày cuối của tháng đích rồi mới trừ 1 ngày.
+ * Được gọi khi vẽ trang (ngày kết thúc dự kiến) và khi vẽ từng gói thời hạn 6/12 tháng.
+ * @param {Date|null} start ngày bắt đầu khách chọn trên lịch.
+ * @param {number} months số tháng thuê (6 hoặc 12).
+ * @returns {Date|null} ngày kết thúc, hoặc null nếu chưa chọn ngày bắt đầu.
  */
 function endDateFor(start, months) {
   if (!start) return null
@@ -69,30 +102,43 @@ function endDateFor(start, months) {
 }
 
 /**
- * Component trang giỏ kho.
- * @param {object} props facilities (danh sách cơ sở), getStorageUnits(facilityName) (lấy kho của cơ sở),
- *   navigate, getCurrentUser(), onRequireLogin() (chuyển đăng nhập), getUnitPath (đường dẫn trang kho).
+ * Trang giỏ kho (route /cart): cho khách chọn kho trong giỏ, điền thông tin thuê, giữ kho rồi trả tiền cọc.
+ * Đọc giỏ hàng qua hook useCart() (store/cart, lưu ở trình duyệt). Gọi API qua checkout(), payDeposit(), cancelOrder().
+ * Được App.jsx hiển thị khi đường dẫn là /cart.
+ * @param {object} props
+ * @param {Array} props.facilities danh sách cơ sở (mỗi phần tử có facilityId, name...).
+ * @param {(facilityName: string) => Array} props.getStorageUnits lấy danh sách kho hiện tại của 1 cơ sở
+ *   (dùng để biết kho trong giỏ còn trống không và giá mới nhất).
+ * @param {(path: string) => void} props.navigate chuyển trang trong SPA.
+ * @param {() => object|null} props.getCurrentUser lấy người đang đăng nhập (email, role...).
+ * @param {() => Promise} props.onRequireLogin mở luồng đăng nhập khi khách chưa đăng nhập.
+ * @param {(facility: object, unit: object) => string} props.getUnitPath tạo đường dẫn trang chi tiết kho.
+ * @returns {JSX.Element}
  */
 export default function CartPage({ facilities, getStorageUnits, navigate, getCurrentUser, onRequireLogin, getUnitPath }) {
   const dialog = useDialog()
-  const items = useCart()
-  const [step, setStep] = useState('cart')
-  const [facilityId, setFacilityId] = useState(null)
-  const [excluded, setExcluded] = useState(() => new Set())
+  const items = useCart() // các kho đang nằm trong giỏ (tự cập nhật khi giỏ đổi)
+  const [step, setStep] = useState('cart') // bước hiện tại: 'cart' (chọn kho) | 'payment' (trả cọc)
+  const [facilityId, setFacilityId] = useState(null) // cơ sở đang được chọn để đặt
+  const [excluded, setExcluded] = useState(() => new Set()) // các kho (key) khách đã bỏ tick
   const [startDate, setStartDate] = useState(null)
   const [months, setMonths] = useState(RENTAL_TERMS[0])
   const [paymentPlan, setPaymentPlan] = useState('Monthly') // 'Monthly' | 'Upfront'
   const [handoverMethod, setHandoverMethod] = useState(HANDOVER_METHODS.InPerson) // 'InPerson' | 'Online'
   const [appointmentSlot, setAppointmentSlot] = useState('') // '08:00' | '10:00' | '12:00' | '14:00'
-  const [submitting, setSubmitting] = useState(false)
-  const [order, setOrder] = useState(null)
-  const [now, setNow] = useState(Date.now())
-  const [depositAgreed, setDepositAgreed] = useState(false)
+  const [submitting, setSubmitting] = useState(false) // đang gọi API -> khóa nút
+  const [order, setOrder] = useState(null) // "đơn giỏ" vừa tạo ở bước 1: { code, entries[{item, reservation, paid}], ... }
+  const [now, setNow] = useState(Date.now()) // thời điểm hiện tại, cập nhật mỗi giây để đếm ngược
+  const [depositAgreed, setDepositAgreed] = useState(false) // khách đã tick xác nhận đặt cọc chưa
 
+  // Lưu bước / đơn mới nhất vào ref để hàm dọn dẹp lúc rời trang đọc được giá trị cuối cùng.
+  // toVnPay = true nghĩa là đang chuyển sang VNPay -> KHÔNG được hủy đơn khi rời trang.
   const leaveRef = useRef({ step: 'cart', order: null, toVnPay: false })
   leaveRef.current.step = step
   leaveRef.current.order = order
 
+  // Chạy 1 lần khi trang đóng (unmount): nếu khách rời trang ở bước thanh toán mà chưa trả cọc
+  // (và không phải đi sang VNPay) thì trả kho về giỏ và hủy các đơn đang giữ (POST /api/reservation-cancellations/{id}).
   useEffect(() => () => {
     const { step: lastStep, order: lastOrder, toVnPay } = leaveRef.current
     if (lastStep !== 'payment' || !lastOrder || toVnPay) return
@@ -102,7 +148,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
     cancelHeldReservations(unpaid.map(entry => entry.reservation.reservationId), 'Khách rời trang thanh toán cọc')
   }, [])
 
-  // Trạng thái hiện tại của từng kho trong giỏ (còn trống hay đã có người đặt).
+  // Ghép mỗi kho trong giỏ với dữ liệu cơ sở / kho mới nhất: key duy nhất, giá hiện tại,
+  // available = kho còn trống (kho đã có người đặt sẽ bị khóa checkbox).
   const enriched = items.map(item => {
     const facility = facilities.find(f => String(f.facilityId) === String(item.facilityId))
     const unit = facility && getStorageUnits(facility.name).find(u => u.id === item.unitId)
@@ -116,7 +163,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
     }
   })
 
-  // Gom các kho trong giỏ theo cơ sở.
+  // Gom các kho trong giỏ theo cơ sở -> [{ facilityId, name, facility, items }]; dùng cho thanh chọn cơ sở.
+  // Tính lại khi giỏ hoặc danh sách cơ sở đổi.
   const groups = useMemo(() => {
     const map = new Map()
     enriched.forEach(item => {
@@ -126,19 +174,23 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
     return [...map.values()]
   }, [items, facilities])
 
-  // Chọn sẵn cơ sở đầu tiên còn kho trống.
+  // Chạy khi số nhóm cơ sở đổi: nếu cơ sở đang chọn không còn trong giỏ thì chọn sẵn
+  // cơ sở đầu tiên còn kho trống (không có thì lấy cơ sở đầu tiên).
   useEffect(() => {
     if (facilityId && groups.some(g => String(g.facilityId) === String(facilityId))) return
     const first = groups.find(g => g.items.some(i => i.available)) || groups[0]
     setFacilityId(first ? first.facilityId : null)
   }, [groups.length])
 
+  // Chạy khi đổi bước: ở bước 'payment' cập nhật `now` mỗi giây để đồng hồ giữ kho đếm ngược; rời bước thì dừng.
   useEffect(() => {
     if (step !== 'payment') return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [step])
 
+  // Các giá trị tính lại mỗi lần vẽ: nhóm cơ sở đang chọn, các kho được tick (còn trống), báo giá
+  // (quote: tiền thuê/tháng, tổng tiền thuê, tiền cọc, giảm giá theo gói) và số phút giữ kho của cơ sở.
   const activeGroup = groups.find(g => String(g.facilityId) === String(facilityId))
   const selected = (activeGroup?.items || []).filter(item => item.available && !excluded.has(item.key))
   const cartQuote = quote(selected.map(item => item.price), months, activeGroup?.facilityId)
@@ -153,11 +205,11 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
   // [THỜI GIAN THỰC]:
   // const today = new Date()
   // today.setHours(0, 0, 0, 0)
-  // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
+  // [DEMO CLOCK]: "hôm nay" lấy theo đồng hồ demo (có thể tua ngày) để chặn chọn ngày bắt đầu trong quá khứ.
   const today = getTodayDate()
   today.setHours(0, 0, 0, 0)
 
-  // Chọn / bỏ chọn 1 kho trong nhóm cơ sở đang đặt.
+  // Khi khách bấm checkbox của 1 kho: thêm / bỏ key kho khỏi tập `excluded` (kho bị bỏ chọn).
   const toggleItem = key => setExcluded(current => {
     const next = new Set(current)
     if (next.has(key)) next.delete(key)
@@ -165,16 +217,21 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
     return next
   })
 
-  // Bỏ 1 kho khỏi giỏ (hỏi xác nhận).
+  // Khi bấm nút "×" của 1 kho: hỏi xác nhận rồi xóa kho khỏi giỏ (removeFromCart, chỉ ở trình duyệt, không gọi API).
   const removeItem = async item => {
     const ok = await dialog.confirm({ tone: 'warning', title: `Bỏ kho ${item.unitId} khỏi giỏ?`, message: `${item.type} · ${item.size} tại ${item.facility?.name || item.facilityName}.`, confirmLabel: 'Bỏ khỏi giỏ' })
     if (ok) removeFromCart(item.facilityId, item.unitId)
   }
 
   /**
-   * "Giữ kho & đặt cọc": kiểm tra đăng nhập + vai trò khách hàng, số kho, ngày bắt đầu, khung giờ nhận kho;
-   * hỏi xác nhận rồi tạo từng đơn giữ kho; lưu "đơn giỏ hàng", bỏ các kho đã giữ khỏi giỏ và chuyển sang bước thanh toán.
+   * Bước 1 -> 2: giữ các kho đã chọn và chuyển sang bước trả cọc.
+   * Chạy khi khách bấm nút "Xác nhận đặt N kho".
+   * Các bước: kiểm tra đã đăng nhập (chưa thì gọi onRequireLogin), vai trò phải là 'customer', có kho được chọn,
+   * không quá CHECKOUT_LIMIT kho, đã chọn ngày bắt đầu (không ở quá khứ), đã chọn khung giờ nhận kho (handoverChoiceError)
+   * -> hộp thoại tóm tắt đơn -> gọi API tạo đơn cho TỪNG kho (kho lỗi vẫn ở lại giỏ) -> lưu "đơn giỏ" (saveCartOrder,
+   * localStorage) -> bỏ kho đã giữ khỏi giỏ -> setOrder + setStep('payment').
    * API: POST /api/reservation  body { unitID, unitNumber, units, startDate, months, paymentPlan, handoverMethod, appointmentSlot }
+   *      -> trả về đơn { reservationId, reservationCode, depositAmount, depositExpiresAt, ... } (trạng thái Pending Deposit).
    */
   const checkout = async () => {
     const user = getCurrentUser()
@@ -290,7 +347,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
     setStep('payment')
   }
 
-  // Thời hạn giữ kho: lấy hạn sớm nhất trong các đơn.
+  // Hạn giữ kho = hạn sớm nhất (depositExpiresAt) trong các đơn vừa tạo; secondsLeft = số giây còn lại (0 = hết hạn).
   const expiresAt = order ? Math.min(...order.entries.map(entry => Date.parse(entry.reservation.depositExpiresAt)).filter(Number.isFinite)) : null
   const secondsLeft = Number.isFinite(expiresAt) ? Math.max(0, Math.ceil((expiresAt - now) / 1000)) : null
   // Tính tổng 1 trường tiền (depositAmount, monthlyPrice, rentalAmount) của các đơn vừa tạo.
@@ -300,9 +357,13 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
   const orderRent = sumOf('rentalAmount')
 
   /**
-   * Thanh toán tiền cọc cho các đơn chưa trả: hết giờ giữ kho thì báo; mặc định chuyển sang VNPay;
-   * chế độ demo cho chọn thanh toán mô phỏng rồi xác nhận đơn và mở tab Hợp đồng.
-   * API: POST /api/vnpay/create | POST /api/payment/confirm + POST /api/reservation-confirmations/mine
+   * Bước 2: trả tiền cọc cho các đơn chưa trả. Chạy khi bấm "Thanh toán cọc qua VNPay" (chỉ bấm được khi đã tick xác nhận).
+   * - Hết giờ giữ kho -> báo lỗi, dừng.
+   * - Mặc định (hoặc khi demo mà khách chọn "Qua VNPay"): đặt leaveRef.toVnPay = true (để không bị hủy đơn khi rời trang),
+   *   nhớ các kho để trả về giỏ nếu VNPay thất bại (rememberVnPayCartItems) -> startVnPayPayment -> trình duyệt sang VNPay.
+   * - Chế độ demo (SIMULATED_PAYMENT_ENABLED) và khách chọn "Mô phỏng": ghi nhận cọc từng đơn; lỗi giữa chừng thì giữ lại
+   *   các đơn đã ghi nhận (paid = true) để bấm lại; xong thì confirmAfterDeposit -> announceDepositSuccess -> mở tab Hợp đồng.
+   * API: POST /api/vnpay/create | POST /api/payment/confirm (từng đơn) + POST /api/reservation-confirmations/mine
    */
   const payDeposit = async () => {
     if (!depositAgreed) return
@@ -375,7 +436,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
   }
 
   /**
-   * Hủy đặt kho ở bước thanh toán: hủy các đơn đang giữ (chưa trả cọc), trả kho về giỏ và quay lại bước giỏ.
+   * Hủy đặt kho ở bước thanh toán. Chạy khi bấm "Hủy đặt, quay lại giỏ hàng" hoặc nút quay lại phía trên.
+   * Hỏi xác nhận -> hủy các đơn chưa trả cọc -> trả kho về giỏ (restoreToCart) -> xóa order, quay lại bước 'cart'.
    * API: POST /api/reservation-cancellations/{id} (qua cancelHeldReservations)
    */
   const cancelOrder = async () => {

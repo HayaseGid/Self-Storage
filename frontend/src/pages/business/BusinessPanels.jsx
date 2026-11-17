@@ -1,12 +1,24 @@
 /**
  * ======================================================================
- * FILE: src/pages/business/BusinessPanels.jsx  —  CÁC MÀN HÌNH CỦA BUSINESS OPERATIONS MANAGER (phần hiển thị)
- *  1. BusinessFacilitiesByArea : danh sách cơ sở toàn hệ thống, gom theo khu vực, tìm kiếm, phân trang.
- *  4. BusinessPerformance      : doanh thu theo tháng, tỷ lệ sử dụng, hiệu suất từng cơ sở.
- *  5. BusinessReportsCenter    : xem và xuất báo cáo CSV (theo cơ sở, loại kho, doanh thu tháng, trạng thái thuê).
- * (2. Chính sách: BusinessPolicyEditor.jsx · 3. Khung giá: BusinessPriceBands.jsx)
- * File này KHÔNG gọi API: dữ liệu (cơ sở, kho, báo cáo) do BusinessOperations tải
- * (GET /api/operations/state, GET /api/operations/reports) rồi truyền vào; các thao tác gọi callback của cha.
+ * FILE: src/pages/business/BusinessPanels.jsx  —  CÁC MÀN HÌNH HIỂN THỊ CỦA BUSINESS OPERATIONS
+ * CHỨC NĂNG: Gom 3 màn hình chỉ hiển thị dữ liệu của trang Business Operations: danh sách cơ sở theo khu vực,
+ *   doanh thu & hiệu suất, và trung tâm báo cáo (xem + xuất CSV). Hai màn hình còn lại nằm ở file riêng:
+ *   Chính sách -> BusinessPolicyEditor.jsx, Khung giá -> BusinessPriceBands.jsx.
+ * THÀNH PHẦN CHÍNH:
+ *   - BusinessFacilitiesByArea (export): cơ sở toàn hệ thống, gom theo khu vực (quận), tìm kiếm, phân trang, nút Sửa/Tạm ngưng/Xóa.
+ *   - BusinessPerformance (export): KPI, biểu đồ cột doanh thu theo tháng, bảng hiệu suất từng cơ sở có sắp xếp.
+ *   - BusinessReportsCenter (export): 4 loại báo cáo (cơ sở, loại kho, doanh thu tháng, trạng thái thuê) + xuất CSV.
+ *   - downloadCsv (export): tạo file CSV (BOM UTF-8) và tải về máy.
+ *   - money, percent, PinIcon, OccupancyBar (nội bộ): hàm/thành phần hiển thị phụ trợ.
+ * DÙNG Ở: src/pages/business/BusinessOperations.jsx.
+ * PHỤ THUỘC: utils/districts (nhận diện / gom khu vực), features/unit/unitTypes (loại kho, chip loại kho),
+ *   services/storageRules (formatVnd, nhãn trạng thái đơn), components/common/listKit (phân trang, NewBadge, Code),
+ *   demoClock/demoClock (ngày "hôm nay" theo đồng hồ demo), BusinessPanels.css.
+ * API: Không gọi API. Dữ liệu (cơ sở, kho, đơn, báo cáo) do BusinessOperations tải
+ *   (GET /api/operations/state, GET /api/operations/reports) rồi truyền vào qua props;
+ *   các thao tác (sửa, tạm ngưng, xóa cơ sở) gọi callback của cha.
+ * LUỒNG: BusinessOperations truyền facilities / units / reports -> component tính số liệu (useMemo / map)
+ *   -> hiển thị thẻ, bảng; người dùng bấm nút -> gọi onEdit / onUpdateStatus / onDelete hoặc downloadCsv.
  * ======================================================================
  */
 import React, { useMemo, useState } from 'react'
@@ -17,33 +29,30 @@ import './BusinessPanels.css'
 import { Code, NewBadge, Pager, newestFirst, rowClass, useClientPaging } from '../../components/common/listKit'
 import { getTodayISO } from '../../demoClock/demoClock'
 
-/*
- * Các màn hình của Business Operations Manager, đúng 5 nhóm chức năng:
- *  1. Quản lý danh sách cơ sở toàn hệ thống        -> BusinessFacilitiesByArea
- *  2. Thiết lập chính sách thuê chung               -> BusinessPolicyCenter
- *  3. Quản lý khung giá, phụ phí, phí quá hạn, giảm giá -> BusinessFeesPanel
- *  4. Theo dõi doanh thu, tỷ lệ sử dụng, hiệu suất  -> BusinessPerformance
- *  5. Xem và xuất báo cáo toàn hệ thống             -> BusinessReportsCenter
- */
-
 /**
- * Định dạng tiền kèm "đ".
+ * Định dạng số tiền kiểu Việt Nam kèm "đ" (null/undefined coi là 0).
+ * @param {number} value số tiền.
+ * @returns {string} vd "1.200.000đ".
  */
 const money = value => `${formatVnd(value || 0)}đ`
 /**
- * Tính phần trăm part/total (1 chữ số thập phân), total = 0 thì trả 0.
+ * Tính phần trăm part/total, làm tròn 1 chữ số thập phân; total = 0 thì trả 0 (tránh chia cho 0).
+ * @param {number} part phần.
+ * @param {number} total tổng.
+ * @returns {number} phần trăm, vd 66.7.
  */
 const percent = (part, total) => (total ? Math.round((part / total) * 1000) / 10 : 0)
 
 /**
- * Biểu tượng ghim bản đồ (SVG).
+ * Biểu tượng ghim bản đồ (SVG) hiển thị cạnh tên khu vực.
  */
 function PinIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
 }
 
 /**
- * Component thanh tỷ lệ lấp đầy kho, tô màu theo mức (>=85% cao, >=50% vừa, còn lại thấp).
+ * Thanh tỷ lệ sử dụng kho, tô màu theo mức (>=85% cao, >=50% vừa, còn lại thấp), độ rộng tối đa 100%.
+ * @param {{value: number}} props value = phần trăm sử dụng.
  */
 function OccupancyBar({ value }) {
   const tone = value >= 85 ? 'high' : value >= 50 ? 'mid' : 'low'
@@ -59,13 +68,22 @@ function OccupancyBar({ value }) {
 /* ===================== 1. CƠ SỞ THEO KHU VỰC ===================== */
 
 /**
- * Component "Cơ sở theo khu vực": thẻ khu vực (tổng kho, đang thuê, số cơ sở tạm ngưng), danh sách cơ sở kèm số liệu
- * (tổng kho, đang thuê, còn trống, tỷ lệ lấp đầy, loại kho), nút Sửa / Tạm ngưng-Mở lại / Xóa.
- * @param {object} props facilities, units, onAdd(), onEdit(f), onUpdateStatus(f, status), onDelete(f).
+ * Màn hình "Cơ sở toàn hệ thống": thẻ chọn khu vực (số cơ sở, tổng kho, % đang thuê, số cơ sở tạm ngưng),
+ * ô tìm nhanh, lưới thẻ cơ sở kèm số liệu (tổng kho, đang thuê, còn trống, tỷ lệ sử dụng, loại kho),
+ * nút Sửa / Tạm ngưng-Mở lại / Xóa; chia trang 12 cơ sở / trang, cơ sở mới thêm lên đầu.
+ * Không gọi API: mọi thao tác gọi callback do BusinessOperations truyền vào.
+ * Được gọi bởi: BusinessOperations khi activeMenu === "facilities".
+ * @param {object} props
+ * @param {Array} props.facilities danh sách cơ sở.
+ * @param {Array} props.units mọi kho (dùng facilityDbId, status, type để tính số liệu).
+ * @param {Function} props.onAdd mở modal thêm cơ sở (nút "+ Thêm cơ sở").
+ * @param {Function} props.onEdit (f) mở form sửa cơ sở.
+ * @param {Function} props.onUpdateStatus (f, status) đổi trạng thái 'active' / 'inactive'.
+ * @param {Function} props.onDelete (f) xóa cơ sở.
  */
 export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onUpdateStatus, onDelete }) {
-  const [district, setDistrict] = useState('__all')
-  const [query, setQuery] = useState('')
+  const [district, setDistrict] = useState('__all') // slug khu vực đang chọn, '__all' = tất cả
+  const [query, setQuery] = useState('') // từ khóa tìm nhanh; có từ khóa thì ẩn thẻ khu vực
 
   // Tính số liệu cho từng cơ sở từ danh sách kho: tổng kho, đang thuê, còn trống, tỷ lệ lấp đầy, các loại kho có, khu vực.
   const withStats = useMemo(() => facilities.map(facility => {
@@ -84,13 +102,15 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
     }
   }), [facilities, units])
 
-  const groups = groupFacilitiesByDistrict(withStats)
+  const groups = groupFacilitiesByDistrict(withStats) // gom cơ sở theo khu vực (quận)
   const keyword = query.trim().toLowerCase()
+  // Kết quả tìm theo tên, địa chỉ, mã chi nhánh, email quản lý (null khi không tìm).
   const searchResults = keyword
     ? withStats.filter(f => `${f.name} ${f.address} ${f.unitCodePrefix} ${f.manager || ''}`.toLowerCase().includes(keyword))
     : null
   const activeGroup = groups.find(group => group.slug === district)
-  // [SỬA] Mặc định hiện TẤT CẢ cơ sở (mới thêm lên đầu, tô sáng), chọn khu vực để thu hẹp; chia trang 12 cơ sở / trang
+  // Mặc định hiện TẤT CẢ cơ sở (mới thêm lên đầu, tô sáng), chọn khu vực để thu hẹp; chia trang 12 cơ sở / trang.
+  // Đổi khu vực hoặc từ khóa (resetKey) thì quay về trang 1.
   const showAll = district === '__all'
   const shown = newestFirst(searchResults || (showAll ? withStats : activeGroup?.facilities) || [], { id: f => f.facilityId })
   const paging = useClientPaging(shown, { resetKey: `${district}|${keyword}` })
@@ -187,12 +207,17 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
 /* ===================== DOANH THU & HIỆU SUẤT ===================== */
 
 /**
- * Component "Doanh thu & hiệu suất": biểu đồ cột doanh thu theo tháng, cơ sở lấp đầy cao nhất, cơ sở dưới 50%,
- * bảng hiệu suất từng cơ sở có sắp xếp.
- * @param {object} props reports (từ GET /api/operations/reports), facilities.
+ * Màn hình "Doanh thu & hiệu suất": 4 thẻ KPI (doanh thu, tỷ lệ sử dụng toàn hệ thống, cơ sở sử dụng cao nhất,
+ * số cơ sở dưới 50% công suất), biểu đồ cột doanh thu theo tháng và bảng hiệu suất từng cơ sở có ô sắp xếp.
+ * Không gọi API.
+ * Được gọi bởi: BusinessOperations khi activeMenu === "revenue".
+ * @param {object} props
+ * @param {object|null} props.reports dữ liệu từ GET /api/operations/reports (facilities[], monthlyRevenue[], totalRevenue...).
+ * @param {Array} props.facilities danh sách cơ sở (để tra khu vực theo địa chỉ).
  */
 export function BusinessPerformance({ reports, facilities }) {
-  const [sortKey, setSortKey] = useState('revenue')
+  const [sortKey, setSortKey] = useState('revenue') // cột sắp xếp: 'revenue' | 'occupancy' | 'totalUnits' | 'name'
+  // Mỗi dòng = số liệu 1 cơ sở trong báo cáo, bổ sung tên khu vực và đổi tỷ lệ / doanh thu sang số.
   const rows = (reports?.facilities || []).map(f => ({
     ...f,
     district: getFacilityDistrict(facilities.find(x => x.facilityId === f.facilityId) || { name: f.name })?.label || '—',
@@ -201,8 +226,8 @@ export function BusinessPerformance({ reports, facilities }) {
   }))
   const sorted = [...rows].sort((a, b) => sortKey === 'name' ? a.name.localeCompare(b.name, 'vi') : (b[sortKey] - a[sortKey]))
   const months = reports?.monthlyRevenue || []
-  const maxMonth = Math.max(1, ...months.map(m => Number(m.receivedAmount) || 0))
-  const best = [...rows].sort((a, b) => b.occupancy - a.occupancy)[0]
+  const maxMonth = Math.max(1, ...months.map(m => Number(m.receivedAmount) || 0)) // tháng cao nhất = cột 100% chiều cao
+  const best = [...rows].sort((a, b) => b.occupancy - a.occupancy)[0] // cơ sở có tỷ lệ sử dụng cao nhất
   const low = rows.filter(r => r.totalUnits > 0 && r.occupancy < 50)
 
   return (
@@ -261,9 +286,10 @@ export function BusinessPerformance({ reports, facilities }) {
 
 /* ===================== 5. BÁO CÁO + XUẤT FILE ===================== */
 
-/* Xuất CSV có BOM UTF-8 để Excel đọc đúng tiếng Việt. */
 /**
- * Xuất file CSV (có BOM UTF-8 để Excel đọc đúng tiếng Việt) và tải về máy.
+ * Xuất file CSV (thêm ký tự BOM UTF-8 ở đầu để Excel đọc đúng tiếng Việt) và tải về máy:
+ * tạo Blob -> tạo thẻ <a download> tạm -> bấm giả lập -> gỡ thẻ, giải phóng URL sau 1 giây.
+ * Được gọi bởi: BusinessReportsCenter (nút "Xuất báo cáo này" / "Xuất tất cả").
  * @param {string} filename tên file.
  * @param {string[]} headers dòng tiêu đề.
  * @param {any[][]} rows các dòng dữ liệu.
@@ -287,18 +313,23 @@ export function downloadCsv(filename, headers, rows) {
 }
 
 /**
- * Component "Trung tâm báo cáo": chọn loại báo cáo (cơ sở / loại kho / doanh thu tháng / trạng thái thuê), xem bảng,
- * xuất CSV báo cáo đang xem hoặc tất cả.
- * @param {object} props reports, operationState (dữ liệu vận hành đã map), facilities.
+ * Màn hình "Báo cáo & xuất file": chọn tab báo cáo (cơ sở / loại kho / doanh thu tháng / trạng thái thuê), xem bảng,
+ * xuất CSV báo cáo đang xem hoặc cả 4 báo cáo. Ngày trong tên file lấy theo Demo Clock. Không gọi API.
+ * Được gọi bởi: BusinessOperations khi activeMenu === "reports".
+ * @param {object} props
+ * @param {object|null} props.reports dữ liệu từ GET /api/operations/reports.
+ * @param {object} props.operationState dữ liệu vận hành đã map (dùng units, reservations).
+ * @param {Array} props.facilities danh sách cơ sở (để tra khu vực).
  */
 export function BusinessReportsCenter({ reports, operationState, facilities }) {
-  const [tab, setTab] = useState('facility')
+  const [tab, setTab] = useState('facility') // báo cáo đang xem: 'facility' | 'type' | 'revenue' | 'status'
   const units = operationState?.units || []
   const reservations = operationState?.reservations || []
   // [THỜI GIAN THỰC]: const today = new Date().toISOString().slice(0, 10)
   // [DEMO CLOCK]: Đồng bộ ngày theo Demo Clock
   const today = getTodayISO()
 
+  // Định nghĩa 4 báo cáo: mỗi báo cáo có tiêu đề, dòng tiêu đề cột và các dòng dữ liệu (dùng chung cho bảng và CSV).
   const reportsByKey = {
     facility: {
       title: 'Báo cáo theo cơ sở',
@@ -339,11 +370,12 @@ export function BusinessReportsCenter({ reports, operationState, facilities }) {
     }
   }
   const current = reportsByKey[tab]
+  // Vị trí các cột tiền (tiêu đề có "(đ") để hiển thị dạng tiền trong bảng (CSV vẫn giữ số thô).
   const moneyCols = new Set(current.headers.map((h, i) => (/\(đ/.test(h) ? i : -1)).filter(i => i >= 0))
 
-  // Xuất báo cáo đang xem ra CSV.
+  // Nút "Xuất báo cáo này": xuất báo cáo đang xem ra CSV.
   const exportCurrent = () => downloadCsv(`storespace-${tab}-${today}.csv`, current.headers, current.rows)
-  // Xuất lần lượt tất cả báo cáo ra các file CSV.
+  // Nút "Xuất tất cả (4 file)": xuất lần lượt từng báo cáo, cách nhau 300ms để trình duyệt không chặn tải nhiều file.
   const exportAll = () => {
     Object.entries(reportsByKey).forEach(([key, report], index) => {
       setTimeout(() => downloadCsv(`storespace-${key}-${today}.csv`, report.headers, report.rows), index * 300)

@@ -1,31 +1,37 @@
 /**
  * ======================================================================
  * FILE: src/services/storageRules.js  —  QUY TẮC NGHIỆP VỤ DÙNG CHUNG (KHÔNG GỌI API)
- * Tương đương: Constants + một phần Services ở backend.
- * Chứa:
- * - Hằng số nghiệp vụ: thời gian giữ chỗ chờ cọc, các kỳ hạn thuê (6/12 tháng), số tháng cọc.
- * - Nhãn tiếng Việt cho trạng thái kho (UnitStatus) và trạng thái đơn (ReservationStatus).
- * - Định dạng mã đơn đặt kho (RS-2026-00012).
- * - Xác định kho có đang bị "khóa" (đã có đơn) để chặn sửa.
- * - Tự sinh tiền tố mã kho theo tên cơ sở, dự đoán mã kho kế tiếp.
- * - Định dạng / kiểm tra giá thuê VNĐ, tính ngày kết thúc hợp đồng, tính tiền cọc.
- * Được import ở rất nhiều nơi (App, các dashboard, hợp đồng, giá...).
+ * CHỨC NĂNG: Tương đương "Constants + một phần Services" ở backend. Gom các hằng số và hàm thuần mà
+ *   gần như mọi màn hình cần: kỳ hạn thuê, số tháng cọc, nhãn trạng thái kho/đơn tiếng Việt, định dạng
+ *   mã đơn, xác định kho bị "khóa" (đã có đơn) để chặn sửa, tự sinh tiền tố mã kho, định dạng / kiểm tra
+ *   giá thuê VNĐ, tính ngày kết thúc hợp đồng. Là file được import nhiều nhất của frontend.
+ * THÀNH PHẦN CHÍNH:
+ *   - DEPOSIT_HOLD_MINUTES, RENTAL_TERMS ([6,12]), DEPOSIT_MONTHS (2), UNIT_TYPE_CODES, PRICE_RULES : hằng số.
+ *   - UNIT_STATUS_LABELS, EDITABLE_UNIT_STATUSES, ACTIVE_RESERVATION_STATUSES, RESERVATION_STATUS_LABELS : trạng thái.
+ *   - formatReservationCode : 12 -> "RS-2026-00012".
+ *   - getActiveReservationsForUnit / getUnitLock : đơn còn hiệu lực của kho / kho có bị khóa sửa không.
+ *   - generateUnitCodePrefix / getUnitTypeCode / previewNextUnitCode : sinh mã chi nhánh, mã loại, mã kho kế tiếp.
+ *   - calculateEndDate : ngày kết thúc = bắt đầu + số tháng - 1 ngày.
+ *   - formatVnd / parseVnd / roundPrice / describeVnd / validateMonthlyPrice / medianPrice / computeDeposit : tiền.
+ * DÙNG Ở: src/App.jsx, src/components/common/PriceInput.jsx, src/mappers/operationsState.js,
+ *   src/services (policies, customerNoticeData, priceBands, priceBandRules), src/api/contractEmail.js,
+ *   hầu hết src/features/* (booking, contract, facility, payment, return, unit, notification) và
+ *   src/pages/* (customer, manager, staff, business, payment).
+ * PHỤ THUỘC: src/demoClock/demoClock (getTodayISO: "hôm nay" theo Demo Clock).
+ * API: Không gọi API.
+ * LUỒNG: Trang Manager hiển thị danh sách kho -> getUnitLock(unit, reservations) -> locked thì khóa nút Sửa
+ *   và hiện reason; Manager nhập giá -> validateMonthlyPrice() -> báo lỗi / cảnh báo lệch giá tham chiếu (medianPrice).
  * ======================================================================
- */
-/*
- * Quy tắc nghiệp vụ dùng chung cho frontend:
- * - Định dạng mã đơn (mã đặt chỗ) thống nhất ở mọi màn hình.
- * - Xác định kho nào đang bị khóa (đã có đơn) để không cho sửa.
- * - Tự sinh mã chi nhánh (tiền tố mã kho) từ tên cơ sở.
- * - Kiểm tra giá thuê, tiền cọc và kỳ hạn thuê.
  */
 
 import { getTodayISO } from '../demoClock/demoClock'
 
+// Phút giữ chỗ chờ cọc mặc định, các gói thời hạn thuê mới (tháng), số tháng tiền cọc mặc định.
 export const DEPOSIT_HOLD_MINUTES = 15
 export const RENTAL_TERMS = [6, 12]
 export const DEPOSIT_MONTHS = 2
 
+// Mã 3 ký tự cho các loại kho quen thuộc (dùng bởi getUnitTypeCode).
 export const UNIT_TYPE_CODES = {
   'Climate-Control Unit': 'CLM',
   'Drive-up Unit': 'DRV',
@@ -52,6 +58,7 @@ export function formatReservationCode(id) {
 
 /* ---------- Trạng thái kho ---------- */
 
+// Nhãn tiếng Việt cho trạng thái kho (UnitStatus) để hiển thị.
 export const UNIT_STATUS_LABELS = {
   AVAILABLE: 'Còn trống',
   BOOKING: 'Đang giữ chỗ chờ cọc',
@@ -74,13 +81,13 @@ const LOCKED_UNIT_STATUSES = ['BOOKING', 'RESERVED', 'RENTED', 'IN_USE']
 /* Trạng thái đơn còn hiệu lực (chưa hủy, chưa hết hạn). */
 export const ACTIVE_RESERVATION_STATUSES = ['PENDING_PAYMENT', 'PENDING_APPROVAL', 'CONFIRMED', 'HANDED_OVER']
 
+// Nhãn tiếng Việt cho trạng thái đơn đặt kho (ReservationStatus).
 export const RESERVATION_STATUS_LABELS = {
   PENDING_PAYMENT: 'Chờ khách trả cọc',
 
-  //Đã cập nhật: Vì bỏ luôn phần xét duyệt từ Facility Manager
+  // PENDING_APPROVAL và CONFIRMED cùng nhãn vì đã bỏ bước Facility Manager xét duyệt đơn.
   PENDING_APPROVAL: 'Đã cọc · Chờ bàn giao',
   CONFIRMED: 'Đã cọc · Chờ bàn giao',
-  //Đã sửa: 29/10/2026
 
   HANDED_OVER: 'Đang thuê',
   COMPLETED: 'Đã hoàn tất',
@@ -109,9 +116,9 @@ function isReservationActive(reservation) {
   return !end || end >= todayISO()
 }
 
-/* Các đơn còn hiệu lực đang gắn với kho, đơn gần nhất trước. */
 /**
- * Lấy các đơn còn hiệu lực đang gắn với 1 kho (cùng cơ sở), sắp xếp theo ngày bắt đầu tăng dần.
+ * Lấy các đơn còn hiệu lực đang gắn với 1 kho (cùng cơ sở), sắp xếp theo ngày bắt đầu tăng dần (đơn gần nhất trước).
+ * Được gọi bởi getUnitLock (cùng file).
  * @param {object[]} reservations danh sách đơn.
  * @param {object} unit kho cần kiểm tra ({ id, facilityId }).
  * @returns {object[]}
@@ -126,13 +133,12 @@ export function getActiveReservationsForUnit(reservations = [], unit) {
     .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)))
 }
 
-/*
- * Kho bị khóa (không cho sửa) khi đang ở trạng thái giữ chỗ / đang thuê,
- * hoặc đã có đơn còn hiệu lực (kể cả đơn cho kỳ thuê tương lai).
- */
 /**
  * Xác định kho có bị khóa không (khóa = không cho quản lý sửa thông tin kho).
  * Khóa khi: kho đã có đơn còn hiệu lực (kể cả đơn tương lai) HOẶC trạng thái kho là giữ chỗ / đang thuê.
+ * Được gọi bởi FacilityManagerAccount khi hiển thị / mở form sửa kho.
+ * @param {object} unit kho ({ id, facilityId, status }).
+ * @param {object[]} reservations danh sách đơn của cơ sở.
  * @returns {{locked:boolean, reservation:object|null, reservations:object[], reason:string}}
  *   reason = câu giải thích hiển thị cho người dùng.
  */
@@ -160,11 +166,14 @@ export function getUnitLock(unit, reservations = []) {
 
 /* ---------- Mã chi nhánh tự sinh ---------- */
 
+// Các từ chung bị bỏ qua khi sinh mã chi nhánh từ tên cơ sở.
 const IGNORED_WORDS = new Set(['storespace', 'store', 'space', 'kho', 'co', 'so', 'chi', 'nhanh', 'tp', 'hcm', 'cs'])
 
 /**
  * Chuẩn hóa tên cơ sở thành mảng từ không dấu, chữ thường (bỏ dấu tiếng Việt, đ->d, bỏ ký tự đặc biệt,
- * bỏ cụm "thành phố") để làm đầu vào sinh mã.
+ * bỏ cụm "thành phố") để làm đầu vào sinh mã. Được gọi bởi generateUnitCodePrefix.
+ * @param {string} name tên cơ sở.
+ * @returns {string[]} mảng từ đã chuẩn hóa.
  */
 function normalizeWords(name) {
   return String(name || '')
@@ -177,17 +186,11 @@ function normalizeWords(name) {
     .filter(Boolean)
 }
 
-/*
- * Sinh mã chi nhánh từ tên cơ sở, ví dụ:
- *   "StoreSpace Thủ Đức"  -> "TD"
- *   "StoreSpace Quận 7"   -> "Q7"
- *   "Kho Bình Thạnh"      -> "BT"
- * Nếu trùng với mã đã có thì thêm số: "TD2", "TD3"...
- */
 /**
  * Sinh tiền tố mã kho (mã chi nhánh) từ tên cơ sở, bỏ qua các từ chung (storespace, kho, chi nhánh...).
- * Ví dụ: "StoreSpace Thủ Đức" -> "TD", "StoreSpace Quận 7" -> "Q7".
+ * Ví dụ: "StoreSpace Thủ Đức" -> "TD", "StoreSpace Quận 7" -> "Q7", "Kho Bình Thạnh" -> "BT".
  * Nếu trùng với tiền tố đã có thì thêm chữ/số phía sau ("Q7B", "TD2"...).
+ * Được gọi bởi BusinessOperations khi tạo cơ sở mới (gợi ý mã chi nhánh).
  * @param {string} name tên cơ sở.
  * @param {string[]} existingPrefixes các tiền tố đã dùng.
  * @returns {string} tiền tố tối đa 10 ký tự.
@@ -223,6 +226,9 @@ export function generateUnitCodePrefix(name, existingPrefixes = []) {
 
 /**
  * Lấy mã 3 ký tự của loại kho (Climate-Control Unit -> CLM...). Loại lạ thì lấy chữ cái đầu mỗi từ.
+ * (Hiện không file nào ngoài file này dùng.)
+ * @param {string} typeName tên loại kho.
+ * @returns {string} mã 3 ký tự ('UNT' nếu rỗng).
  */
 export function getUnitTypeCode(typeName) {
   if (!typeName) return 'UNT'
@@ -242,6 +248,8 @@ export function getUnitTypeCode(typeName) {
  * Chỉ để xem trước trên form; mã thật do backend sinh.
  * @param {string} unitCodePrefix tiền tố mã kho của cơ sở.
  * @param {object[]} units các kho hiện có.
+ * @returns {string} mã kho dự kiến, ví dụ "Q7-U06".
+ * Được gọi bởi FacilityManagerAccount ở form thêm kho.
  */
 export function previewNextUnitCode(unitCodePrefix, units = []) {
   const prefix = String(unitCodePrefix || 'FAC').trim().toUpperCase() || 'FAC'
@@ -259,8 +267,9 @@ export function previewNextUnitCode(unitCodePrefix, units = []) {
  * Tính ngày kết thúc hợp đồng = ngày bắt đầu + số tháng - 1 ngày.
  * Ví dụ 2026-01-15 + 6 tháng -> 2026-07-14.
  * @param {string} startDate 'YYYY-MM-DD'
- * @param {number} months
+ * @param {number} months số tháng thuê.
  * @returns {string} 'YYYY-MM-DD' (rỗng nếu ngày bắt đầu không hợp lệ).
+ * Được gọi bởi App.jsx khi khách chọn ngày bắt đầu + gói thuê.
  */
 export function calculateEndDate(startDate, months) {
   if (!startDate) return ''
@@ -274,6 +283,7 @@ export function calculateEndDate(startDate, months) {
 
 /* ---------- Giá thuê ---------- */
 
+// Giới hạn giá thuê/tháng: tối thiểu, tối đa, bước làm tròn (đ) và ngưỡng lệch so với giá tham chiếu để cảnh báo (30%).
 export const PRICE_RULES = {
   min: 50000,
   max: 100000000,
@@ -283,6 +293,9 @@ export const PRICE_RULES = {
 
 /**
  * Định dạng số tiền theo kiểu Việt Nam (1500000 -> "1.500.000"), không kèm đơn vị.
+ * Được dùng ở gần như mọi màn hình hiển thị tiền.
+ * @param {number|string} value số tiền.
+ * @returns {string} chuỗi đã định dạng ('' nếu không phải số).
  */
 export function formatVnd(value) {
   const number = Number(value)
@@ -358,6 +371,8 @@ export function validateMonthlyPrice(rawValue, reference = null) {
 
 /**
  * Tính giá trung vị của danh sách giá (bỏ giá trị không hợp lệ), dùng làm giá tham chiếu.
+ * Được gọi bởi FacilityManagerAccount để truyền vào validateMonthlyPrice.
+ * @param {Array<number|string>} values danh sách giá.
  * @returns {number|null}
  */
 export function medianPrice(values) {
@@ -369,6 +384,9 @@ export function medianPrice(values) {
 
 /**
  * Tính tiền cọc mặc định = giá thuê tháng × DEPOSIT_MONTHS (2 tháng).
+ * (Hiện không file nào khác dùng; tiền cọc thực tế tính theo services/policies + backend.)
+ * @param {number} monthlyPrice giá thuê/tháng.
+ * @returns {number} tiền cọc.
  */
 export function computeDeposit(monthlyPrice) {
   return Math.round(Number(monthlyPrice || 0) * DEPOSIT_MONTHS)

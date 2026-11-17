@@ -1,11 +1,21 @@
 /**
  * ======================================================================
- * FILE: src/features/contract/ContractCard.jsx  —  THẺ HỢP ĐỒNG Ở TAB "HỢP ĐỒNG" CỦA KHÁCH
- * Chia nhóm thông tin: Vị trí (cơ sở, quận, địa chỉ) · Kho thuê · Thời hạn · Chi phí · Tiền thuê/phí trễ hạn · Chữ ký,
- * kèm trạng thái gia hạn / trả kho / kiểm kho và các nút Ký, Chi tiết, Gia hạn, Trả kho, Đóng tiền.
- * File này KHÔNG tự gọi API — mọi dữ liệu (đơn, chữ ký, gia hạn, trả kho, phí trễ hạn, kiểm kho) do CustomerAccount
- * tải rồi truyền vào; các nút gọi callback của cha.
- * Dùng ở: CustomerAccount.
+ * FILE: src/features/contract/ContractCard.jsx  —  THẺ HỢP ĐỒNG (TAB "HỢP ĐỒNG" CỦA KHÁCH)
+ * CHỨC NĂNG: Vẽ 1 thẻ cho mỗi hợp đồng / phụ lục gia hạn của khách trong tab "Hợp đồng". Thẻ chia nhóm rõ ràng:
+ *   Vị trí (cơ sở, quận, địa chỉ) · Kho thuê · Thời hạn (+ cách nhận kho) · Chi phí · Tiền thuê & phí trễ hạn · Chữ ký.
+ *   Thẻ còn hiện trạng thái gia hạn, trả kho, kiểm kho và các nút Ký, Xem chi tiết, Gia hạn, Trả kho, Đóng tiền.
+ * THÀNH PHẦN CHÍNH:
+ *   - ContractCard (default export): component thẻ hợp đồng.
+ *   - money, parseVnDate, daysFromToday: hàm tiện ích định dạng tiền / đổi ngày / đếm ngày tới hạn.
+ *   - STATUS_TONE: bảng màu chip theo trạng thái đơn.
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx.
+ * PHỤ THUỘC: components/common/listKit (Code, NewBadge, UnitCodes), utils/districts, services/contractSignatures,
+ *   services/storageRules, ./ContractRenewal (fmtIsoDate), api/lateFees (lateFeePolicyText), demoClock,
+ *   ../booking/HandoverChoice (ONLINE_HANDOVER_NOTE), ContractCard.css, ../return/UnitReturn.css.
+ * API: Không gọi API. Mọi dữ liệu (đơn, chữ ký, gia hạn, trả kho, phí trễ hạn, kiểm kho) do CustomerAccount tải rồi truyền vào.
+ * LUỒNG: CustomerAccount tải dữ liệu -> truyền props vào ContractCard -> thẻ tính số tiền cần đóng, nhãn trạng thái
+ *   -> khách bấm nút (Ký / Chi tiết / Gia hạn / Trả kho / Đóng tiền) -> gọi callback onSign / onDetail / onRenew /
+ *   onReturn / onOpenPayment của CustomerAccount để mở hộp thoại hoặc chuyển trang tương ứng.
  * ======================================================================
  */
 import React from 'react'
@@ -20,24 +30,26 @@ import './ContractCard.css'
 import '../return/UnitReturn.css'
 import { ONLINE_HANDOVER_NOTE } from '../booking/HandoverChoice'
 
-/*
- * Thẻ hợp đồng ở tab "Hợp đồng" của khách: chia rõ từng nhóm
- *   Vị trí (cơ sở, quận, địa chỉ) · Kho thuê · Thời hạn · Chi phí · Chữ ký.
- */
-
 /**
- * Định dạng tiền làm tròn kèm "đ".
+ * Định dạng số tiền (làm tròn) thành chuỗi kiểu Việt Nam kèm "đ", vd 1500000 -> "1.500.000đ".
+ * @param {number|string} value số tiền (rỗng -> 0).
+ * @returns {string}
  */
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
 /**
- * Đổi chuỗi ngày 'dd/MM/yyyy' thành đối tượng Date (sai định dạng -> null).
+ * Đổi chuỗi ngày 'dd/MM/yyyy' (dạng backend trả cho startDate) thành đối tượng Date.
+ * @param {string} text chuỗi ngày.
+ * @returns {Date|null} null nếu sai định dạng.
  */
 const parseVnDate = text => {
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(text || ''))
   return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null
 }
 /**
- * Tính số ngày từ "hôm nay" (theo Demo Clock) tới một ngày (dương = tương lai).
+ * Tính số ngày từ "hôm nay" tới một ngày. "Hôm nay" lấy theo Demo Clock (getTodayDate) để demo tua thời gian được.
+ * Dùng để biết hợp đồng đã bắt đầu chưa ("Bắt đầu sau N ngày").
+ * @param {Date|null} date ngày cần so.
+ * @returns {number|null} số ngày (dương = tương lai, âm = đã qua), null nếu không có ngày.
  */
 const daysFromToday = date => {
   if (!date) return null
@@ -50,6 +62,7 @@ const daysFromToday = date => {
   return Math.round((date - today) / 86400000)
 }
 
+/** Màu chip trạng thái (class CSS ok/info/warn/muted/bad) theo trạng thái đơn đặt kho do backend trả. */
 const STATUS_TONE = {
   'Handed Over': 'ok',
   Confirmed: 'info',
@@ -61,11 +74,27 @@ const STATUS_TONE = {
 }
 
 /**
- * Component thẻ hợp đồng.
- * @param {object} props rental (đơn), facility (cơ sở), customerName, signature / signatureLoaded / signatureError
- *   (trạng thái chữ ký), renewal (thông tin gia hạn), returnInfo (yêu cầu trả kho), lateFee (phí trễ hạn),
- *   inspection (kết quả kiểm kho), các callback onReloadSignature, onSign, onDetail, onRenew, onReturn,
- *   onPayRent, onOpenPayment, cờ payingRent.
+ * Vẽ thẻ của MỘT hợp đồng: đầu thẻ (số HĐ, chip trạng thái, mã đơn, mã kho), vị trí, ghi chú gia hạn / trả kho,
+ * 3 nhóm thông tin (kho, thời hạn, chi phí), khối tiền thuê & phí trễ hạn, chân thẻ (chữ ký + các nút).
+ * Không gọi API; mọi hành động đều gọi callback của CustomerAccount.
+ * @param {object} props
+ * @param {object} props.rental đơn đặt kho / hợp đồng (contractNumber, status, units, startDate, endDate, rentPayableNow...).
+ * @param {object} [props.facility] cơ sở (location, district) để hiện quận và địa chỉ.
+ * @param {string} props.customerName tên bên thuê.
+ * @param {object|null} props.signature chữ ký đã có ({ signedAt, ... }), null nếu chưa ký.
+ * @param {boolean} props.signatureLoaded đã tải xong trạng thái chữ ký chưa.
+ * @param {string} [props.signatureError] lỗi khi tải chữ ký (hiện nút "Thử lại" -> onReloadSignature).
+ * @param {object} [props.renewal] thông tin gia hạn (renewedFrom / renewedBy).
+ * @param {object} [props.returnInfo] yêu cầu trả kho ({ request: { status, scheduledDate, refundAmount... } }).
+ * @param {object} [props.lateFee] phí trễ hạn ({ lateFees, overdueRent, policy }).
+ * @param {object} [props.inspection] kết quả kiểm kho khi trả kho (status: Pending Manager / Awaiting Customer / Disputed / Settled).
+ * @param {Function} [props.onSign] bấm "Ký hợp đồng".
+ * @param {Function} props.onDetail bấm "Xem chi tiết hợp đồng".
+ * @param {Function} [props.onRenew] bấm "Gia hạn" (không truyền thì ẩn nút).
+ * @param {Function} [props.onReturn] bấm "Trả kho" (không truyền thì ẩn nút).
+ * @param {Function} [props.onOpenPayment] bấm nút đóng tiền -> sang trang Thanh toán (ưu tiên hơn onPayRent).
+ * @param {Function} [props.onPayRent] bấm nút đóng tiền trực tiếp; props.payingRent = true khi đang xử lý.
+ * @returns {JSX.Element}
  */
 export default function ContractCard({
   rental, facility, customerName, signature, signatureLoaded, signatureError, renewal,
@@ -73,7 +102,8 @@ export default function ContractCard({
   lateFee, inspection // [14] kết quả kiểm kho
 }) {
   const isSigned = Boolean(signature)
-  // [7a] Phí trễ hạn: khoản chưa đóng (trừ khoản đang chờ VNPay) + các kỳ tiền thuê đang trễ
+  // Phí trễ hạn: lấy các khoản chưa đóng; lateUnpaid = tổng khoản chưa đóng (bỏ khoản đang chờ VNPay xác nhận);
+  // payNow = tiền thuê đến hạn + phí trễ = số tiền hiện trên nút đóng tiền.
   const unpaidLateFees = (lateFee?.lateFees || []).filter(f => f.status === 'Unpaid')
   const lateUnpaid = unpaidLateFees.filter(f => !f.pendingPayment).reduce((n, f) => n + Number(f.amount || 0), 0)
   const overdueItems = lateFee?.overdueRent || []
@@ -83,11 +113,13 @@ export default function ContractCard({
   const address = facility?.location
   const units = rental.units?.length ? rental.units : [{ number: rental.unitId, type: rental.type, size: rental.size }]
 
+  // notStarted: hợp đồng chưa tới ngày bắt đầu; ended: đơn đã kết thúc (thẻ bị làm mờ, ẩn thanh tiến độ).
   const start = parseVnDate(rental.startDate)
   const startsIn = daysFromToday(start)
   const notStarted = startsIn != null && startsIn > 0
   const ended = ['Completed', 'Cancelled', 'Expired'].includes(rental.status)
 
+  // Đang có kết quả kiểm kho chưa chốt -> chip đầu thẻ hiện trạng thái kiểm kho thay cho trạng thái đơn.
   const inspectionHeld = inspection && inspection.status !== 'Settled'
   const chipLabel = inspectionHeld
     ? (inspection.status === 'Pending Manager' ? 'Chờ Quản lý duyệt' : inspection.status === 'Awaiting Customer' ? 'Chờ xác nhận phí' : 'Đang khiếu nại')

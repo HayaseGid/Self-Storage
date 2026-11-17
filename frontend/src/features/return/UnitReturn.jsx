@@ -1,16 +1,34 @@
 /**
  * ======================================================================
  * FILE: src/features/return/UnitReturn.jsx  —  TRẢ KHO (phía KHÁCH HÀNG)
- * Backend: UnitReturnsController (+ ReturnInspectionsController cho phần kiểm kho).
+ * CHỨC NĂNG: Toàn bộ giao diện trả kho của khách: hộp thoại "Báo trả kho" (chọn ngày, khung giờ còn nhân viên
+ *   rảnh, ghi chú, đồng ý quy trình), khối "Trả kho" ở trang Hợp đồng hiển thị tiến trình 4 bước của từng yêu cầu,
+ *   bảng quyết toán tiền cọc, hủy lịch và đóng phí phát sinh còn thiếu. Phần kiểm kho có phí (xem ảnh, đồng ý /
+ *   khiếu nại) dùng CustomerInspectionBox của ReturnInspection.jsx.
+ * THÀNH PHẦN CHÍNH:
+ *   - money, toInput (nội bộ), fmtDay (export): hàm định dạng tiền / ngày.
+ *   - useUnitReturns (export): hook tải dữ liệu trả kho của khách.
+ *   - returnStage (export): xác định bước hiện tại của 1 yêu cầu trả kho.
+ *   - payReturnFees (export): đóng phí phát sinh (mô phỏng hoặc VNPay).
+ *   - ReturnProgress (nội bộ): thẻ tiến trình 1 yêu cầu trả kho.
+ *   - ReturnSection (export): khối "Trả kho" đầu trang Hợp đồng.
+ *   - ReturnRequestModal (export): hộp thoại báo trả kho.
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx (useUnitReturns, ReturnSection, ReturnRequestModal),
+ *   src/features/notification/HeaderNotificationBell.jsx (useUnitReturns), src/features/return/StaffReturns.jsx (fmtDay).
+ * PHỤ THUỘC: api/api (apiGet, apiPost), components/common/Dialog (useDialog), services/storageRules (formatVnd),
+ *   services/policies (usePolicies), api/vnpay (SIMULATED_PAYMENT_ENABLED, startVnPayPayment),
+ *   services/afterDeposit (focusContract), ./ReturnInspection, ContractSignFlow.css, UnitReturn.css.
+ * API (backend UnitReturnsController):
  *   GET  /api/unit-returns/mine                         -> các hợp đồng có thể trả + yêu cầu trả kho + quy định + bảng phí
  *   GET  /api/unit-returns/{reservationId}/slots?date=  -> khung giờ còn nhân viên rảnh trong ngày
  *   POST /api/unit-returns                              -> { reservationId, returnDate, returnTime, note } đặt lịch trả kho
  *   POST /api/unit-returns/{reservationId}/cancel       -> hủy lịch trả kho
  *   POST /api/unit-returns/{reservationId}/pay-demo     -> đóng (mô phỏng) phí phát sinh còn thiếu; thật thì qua VNPay
- * Luồng: khách báo trả kho (chọn ngày + giờ) -> Staff nhận lại & kiểm tra kho -> Manager duyệt kết quả
- * -> không phí: hoàn cọc sau N ngày; có phí: khách xem ảnh, Đồng ý/Khiếu nại (ReturnInspection.jsx) -> trừ vào cọc,
- * thiếu thì khách đóng thêm.
- * Dùng ở: CustomerAccount, HeaderNotificationBell, StaffReturns.
+ *   (gián tiếp) GET /api/return-inspections/mine qua useMyInspections; POST /api/vnpay/create qua startVnPayPayment.
+ * LUỒNG: khách bấm "Báo trả kho" ở thẻ hợp đồng -> ReturnRequestModal tải khung giờ (slots) -> bấm "Đặt lịch"
+ *   -> POST /api/unit-returns -> Staff nhận lại & kiểm tra kho (StaffReturns.jsx) -> Manager duyệt kết quả
+ *   -> không phí: hoàn cọc sau N ngày; có phí: khách xem ảnh, Đồng ý/Khiếu nại (ReturnInspection.jsx) -> trừ vào cọc,
+ *   thiếu thì khách bấm "Đóng ..." -> payReturnFees.
  * ======================================================================
  */
 import React, { useCallback, useEffect, useState } from 'react'
@@ -22,32 +40,34 @@ import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from '../../api/vnpay'
 import { focusContract } from '../../services/afterDeposit'
 import '../contract/ContractSignFlow.css'
 import './UnitReturn.css'
-import { CustomerInspectionBox, INSPECTION, useMyInspections, parseReturnNotes } from './ReturnInspection' // [THÊM 14]
-
-/*
- * TRẢ KHO (khách hàng) - UnitReturnsController.
- *   Khách báo trả kho (chọn ngày) -> Staff đã bàn giao kho nhận lại + kiểm tra (kho "Đang kiểm tra")
- *   -> kết quả: không vấn đề -> hoàn cọc sau N ngày; có phí -> trừ vào cọc, thiếu thì khách đóng thêm.
- *   [14] Có phí kiểm kho: khách xem ảnh, Đồng ý hoặc Khiếu nại trong N ngày trước khi trừ cọc (ReturnInspection.jsx).
- */
+import { CustomerInspectionBox, INSPECTION, useMyInspections, parseReturnNotes } from './ReturnInspection'
 
 /**
- * Định dạng tiền làm tròn kèm "đ".
+ * Định dạng số tiền (làm tròn) thành chuỗi VND kèm "đ", vd 150000 -> "150.000đ".
+ * @param {number|string} value số tiền (rỗng coi là 0).
+ * @returns {string}
  */
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
 /**
- * Đổi ngày ISO thành 'dd/MM/yyyy' (rỗng -> '—').
+ * Đổi ngày ISO ('2026-11-17T...') thành 'dd/MM/yyyy' để hiển thị (rỗng -> '—').
+ * Dùng trong file này và StaffReturns.jsx.
+ * @param {string} iso ngày dạng ISO.
+ * @returns {string}
  */
 export const fmtDay = iso => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—')
 /**
  * Cắt ngày ISO về 'YYYY-MM-DD' để gán vào ô input type="date".
+ * @param {string} iso ngày dạng ISO.
+ * @returns {string} chuỗi rỗng nếu không có ngày.
  */
 const toInput = iso => (iso ? String(iso).slice(0, 10) : '')
 
 /**
- * Hook: tải dữ liệu trả kho của khách.
- * API: GET /api/unit-returns/mine  -> { items, rules, fees }
- * @returns {{loading, error, data, items, rules, fees, byReservation, reload}}
+ * Hook: tải dữ liệu trả kho của khách đang đăng nhập (tự tải khi mount) và cung cấp hàm tải lại.
+ * API: GET /api/unit-returns/mine  -> { items (hợp đồng + request trả kho), rules (quy định), fees (bảng phí) }
+ * Được gọi bởi: CustomerAccount.jsx (trang Hợp đồng, thông báo), HeaderNotificationBell.jsx (useHeaderNotices).
+ * @returns {{loading:boolean, error:string, data:object, items:object[], rules:object, fees:object[],
+ *   byReservation:(id)=>object|null, reload:()=>Promise}}
  */
 export function useUnitReturns() {
   const [state, setState] = useState({ loading: true, error: '', data: null })
@@ -62,6 +82,7 @@ export function useUnitReturns() {
         error: error?.status === 404 ? 'Backend chưa có chức năng trả kho (UnitReturnsController.cs). Chép file rồi chạy lại backend.' : error.message
       }))
   }, [])
+  // Chạy 1 lần khi mount: tải dữ liệu trả kho lần đầu.
   useEffect(() => { reload() }, [reload])
   const items = Array.isArray(state.data?.items) ? state.data.items : []
   return {
@@ -75,29 +96,36 @@ export function useUnitReturns() {
   }
 }
 
-/* Các bước của một yêu cầu trả kho, dùng chung cho khách và thông báo. */
 /**
- * Xác định bước hiện tại của yêu cầu trả kho: 'scheduled' (đã hẹn), 'inspecting' (đang kiểm tra),
- * 'pending_manager' (chờ Quản lý duyệt), 'confirm' (chờ khách xác nhận phí), 'disputed' (đang khiếu nại),
- * 'owed' (còn nợ phí), 'refunding' (đang hoàn cọc), 'done' (xong).
- * @param {object} req yêu cầu trả kho; inspection kết quả kiểm kho (nếu có).
+ * Xác định bước hiện tại của 1 yêu cầu trả kho (dựa vào trạng thái yêu cầu + kết quả kiểm kho):
+ * 'scheduled' (đã hẹn), 'inspecting' (đang kiểm tra), 'pending_manager' (chờ Quản lý duyệt),
+ * 'confirm' (chờ khách xác nhận phí), 'disputed' (đang khiếu nại), 'owed' (còn nợ phí),
+ * 'refunding' (đang hoàn cọc), 'done' (xong).
+ * Được gọi bởi: ReturnProgress (chọn nhãn, bước, nút) và ReturnSection (lọc yêu cầu còn hiển thị).
+ * @param {object} req yêu cầu trả kho (status, amountOwed, refundAmount, refundStatus...).
+ * @param {object} [inspection] kết quả kiểm kho của hợp đồng này (nếu có).
+ * @returns {string|null} mã bước, hoặc null nếu không có yêu cầu.
  */
 export function returnStage(req, inspection) {
   if (!req) return null
   if (req.status === 'Scheduled') return 'scheduled'
   if (req.status === 'In Progress') return 'inspecting'
   if (inspection?.status === INSPECTION.PENDING_MANAGER) return 'pending_manager'
-  if (inspection?.status === INSPECTION.AWAITING) return 'confirm' // [THÊM 14] chờ khách xác nhận phí kiểm kho
-  if (inspection?.status === INSPECTION.DISPUTED) return 'disputed' // [THÊM 14] đang giải quyết khiếu nại
+  if (inspection?.status === INSPECTION.AWAITING) return 'confirm' // chờ khách xác nhận phí kiểm kho
+  if (inspection?.status === INSPECTION.DISPUTED) return 'disputed' // đang giải quyết khiếu nại
   if (Number(req.amountOwed) > 0) return 'owed'
   if (Number(req.refundAmount) > 0 && req.refundStatus !== 'Completed') return 'refunding'
   return 'done'
 }
 
 /**
- * Đóng phí phát sinh còn thiếu khi trả kho: chế độ demo cho chọn mô phỏng, không thì qua VNPay (kind 'fee').
- * API: POST /api/unit-returns/{reservationId}/pay-demo  |  POST /api/vnpay/create
- * @returns {Promise<object>} { redirected: true } nếu đã chuyển sang VNPay.
+ * Đóng phí phát sinh còn thiếu khi trả kho: nếu bật chế độ demo thì hỏi khách chọn "Mô phỏng" hay "Qua VNPay";
+ * mô phỏng gọi API pay-demo, còn lại chuyển trình duyệt sang VNPay (kind 'fee').
+ * API: POST /api/unit-returns/{reservationId}/pay-demo  |  POST /api/vnpay/create (qua startVnPayPayment)
+ * Được gọi bởi: hàm pay trong ReturnProgress (khi khách bấm nút "Đóng ...").
+ * @param {object} dialog đối tượng từ useDialog() để hiện hộp thoại xác nhận.
+ * @param {object} item hợp đồng trả kho (reservationId, contractNumber, request.amountOwed).
+ * @returns {Promise<object>} kết quả API pay-demo, hoặc { redirected: true } nếu đã chuyển sang VNPay.
  */
 export async function payReturnFees(dialog, item) {
   const amount = item.request?.amountOwed
@@ -111,16 +139,23 @@ export async function payReturnFees(dialog, item) {
 }
 
 /**
- * Component tiến trình 1 yêu cầu trả kho: 4 bước (Báo trả kho -> Nhận lại & kiểm tra -> Quản lý duyệt & quyết toán
- * -> Hoàn cọc), bảng quyết toán phí, hộp xác nhận/khiếu nại kiểm kho, nút Hủy lịch / Đóng phí.
- * @param {object} props item (hợp đồng + request), inspection, onChanged().
+ * Thẻ tiến trình của 1 yêu cầu trả kho: thanh 4 bước (Báo trả kho -> Nhận lại & kiểm tra -> Quản lý duyệt &
+ * quyết toán -> Hoàn cọc), bảng quyết toán tiền cọc, hộp xác nhận/khiếu nại kiểm kho (CustomerInspectionBox),
+ * nút "Hủy lịch trả kho" / "Đóng ...". Bấm vào thẻ (ngoài nút) thì cuộn tới thẻ hợp đồng (focusContract).
+ * Được gọi bởi: ReturnSection (mỗi yêu cầu trả kho đang hiển thị).
+ * @param {object} props
+ * @param {object} props.item hợp đồng trả kho kèm item.request (yêu cầu trả kho).
+ * @param {object} [props.inspection] kết quả kiểm kho của hợp đồng (nếu có).
+ * @param {Function} props.onChanged gọi sau khi hủy lịch / đóng phí để cha tải lại dữ liệu.
+ * @returns {JSX.Element}
  */
 function ReturnProgress({ item, inspection, onChanged }) {
   const dialog = useDialog()
   const [busy, setBusy] = useState(false)
   const req = item.request
   const stage = returnStage(req, inspection)
-  const held = stage === 'pending_manager' || stage === 'confirm' || stage === 'disputed' // [THÊM 14] phí kiểm kho chưa quyết toán
+  const held = stage === 'pending_manager' || stage === 'confirm' || stage === 'disputed' // phí kiểm kho chưa quyết toán xong
+  // steps: [tên bước, dòng ghi chú] cho 4 bước; current: chỉ số bước hiện tại (4 = đã xong hết).
   const steps = [
     ['Báo trả kho', `Hẹn ${req.scheduledTime ? `${req.scheduledTime} ` : ''}ngày ${fmtDay(req.scheduledDate)}${req.staffName ? ` · NV ${req.staffName}` : ''}`],
     ['Nhận lại & kiểm tra kho', stage === 'scheduled' ? 'Chờ đến ngày hẹn' : stage === 'inspecting' ? 'Nhân viên đang kiểm tra' : (req.conditionResult === 'Damaged' ? 'Có vấn đề' : 'Không có vấn đề')],
@@ -132,7 +167,7 @@ function ReturnProgress({ item, inspection, onChanged }) {
   const current = { scheduled: 0, inspecting: 1, pending_manager: 2, confirm: 2, disputed: 2, owed: 2, refunding: 3, done: 4 }[stage]
 
   /**
-   * Hủy lịch trả kho (hỏi xác nhận trước).
+   * Khi bấm "Hủy lịch trả kho": hỏi xác nhận, rồi hủy lịch và gọi onChanged() để tải lại.
    * API: POST /api/unit-returns/{reservationId}/cancel
    */
   const cancel = async () => {
@@ -143,7 +178,8 @@ function ReturnProgress({ item, inspection, onChanged }) {
     catch (error) { await dialog.alert({ tone: 'danger', title: 'Chưa hủy được', message: error.message }) }
     finally { setBusy(false) }
   }
-  // Đóng phí phát sinh còn thiếu (qua payReturnFees) rồi tải lại dữ liệu.
+  // Khi bấm "Đóng <số tiền>": đóng phí phát sinh còn thiếu (qua payReturnFees); nếu mô phỏng thành công
+  // thì tải lại dữ liệu và báo đã thanh toán, nếu chuyển sang VNPay thì dừng ở đây.
   const pay = async () => {
     setBusy(true)
     try {
@@ -169,7 +205,7 @@ function ReturnProgress({ item, inspection, onChanged }) {
         </span>
       </div>
 
-      {/* [SỬA] Bước đã xong (✓ xanh lá) / bước hiện tại (số xanh dương + "Bạn đang ở bước này") / bước chưa tới (xám) */}
+      {/* Bước đã xong (✓ xanh lá) / bước hiện tại (số xanh dương + "Bạn đang ở bước này") / bước chưa tới (xám) */}
       <ol className="ur-steps">
         {steps.map(([label, note], i) => {
           const state = i < current ? 'done' : i === current ? 'current' : 'todo'
@@ -187,7 +223,8 @@ function ReturnProgress({ item, inspection, onChanged }) {
         })}
       </ol>
 
-      {/* [THÊM 14] Phí kiểm kho chờ xác nhận / khiếu nại: hộp xác nhận thay cho bảng quyết toán (chưa có số hoàn) */}
+      {/* Phí kiểm kho đang chờ duyệt / xác nhận / khiếu nại: hiện hộp xác nhận thay cho bảng quyết toán (chưa có số hoàn).
+          Đã quyết toán xong: hiện bảng tiền cọc - các khoản phí - số cần đóng thêm / được hoàn. */}
       {held && <CustomerInspectionBox inspection={inspection} depositTotal={req.depositTotal} debtDeducted={req.deductedFromDeposit} onChanged={onChanged} />}
       {req.inspectedAt && !held && (
         <div className={`ur-result ${req.conditionResult === 'Damaged' ? 'bad' : 'ok'}`}>
@@ -233,17 +270,21 @@ function ReturnProgress({ item, inspection, onChanged }) {
   )
 }
 
-/* Khối "Trả kho" ở đầu trang Hợp đồng: các yêu cầu trả kho đang xử lý / vừa xong. */
 /**
- * Component khối "Trả kho" đầu trang Hợp đồng: liệt kê các yêu cầu trả kho đang xử lý / vừa xong.
- * Tải thêm kết quả kiểm kho (useMyInspections -> GET /api/return-inspections/mine); nếu có kết quả tự xác nhận
- * do quá hạn thì tải lại dữ liệu trả kho.
- * @param {object} props returns (kết quả useUnitReturns), onChanged().
+ * Khối "Trả kho" đầu trang Hợp đồng: liệt kê các yêu cầu trả kho đang xử lý hoặc mới xong trong 30 ngày,
+ * mỗi yêu cầu là 1 ReturnProgress. Tự tải kết quả kiểm kho (useMyInspections -> GET /api/return-inspections/mine).
+ * Đang tải lần đầu hoặc không có yêu cầu nào thì không vẽ gì.
+ * Được gọi bởi: CustomerAccount.jsx (tab Hợp đồng).
+ * @param {object} props
+ * @param {object} props.returns kết quả useUnitReturns() do trang cha tạo.
+ * @param {Function} [props.onChanged] gọi thêm khi dữ liệu trả kho đổi (cha tải lại danh sách đơn).
+ * @returns {JSX.Element|null}
  */
 export function ReturnSection({ returns, onChanged }) {
-  // [THÊM 14] Kết quả kiểm kho (ảnh, xác nhận / khiếu nại). Lần tải này cũng tự xác nhận các kết quả quá hạn -> tải lại trả kho.
+  // Kết quả kiểm kho (ảnh, xác nhận / khiếu nại). Lần tải này cũng tự xác nhận các kết quả quá hạn -> tải lại trả kho.
   const inspections = useMyInspections()
   const { reload: reloadReturns } = returns
+  // Chạy khi dữ liệu kiểm kho đổi: nếu backend vừa tự xác nhận kết quả quá hạn (autoSettled > 0) thì tải lại trả kho.
   useEffect(() => { if (inspections.autoSettled > 0) reloadReturns() }, [inspections.data, inspections.autoSettled, reloadReturns])
 
   if (returns.loading && !returns.data) return null
@@ -261,23 +302,33 @@ export function ReturnSection({ returns, onChanged }) {
   )
 }
 
-/* Hộp thoại báo trả kho. */
 /**
- * Component hộp thoại báo trả kho: chọn ngày (trong khoảng cho phép), khung giờ còn trống, ghi chú, tick đồng ý.
- * @param {object} props item (hợp đồng), rules (quy định trả kho), fees (bảng phí), onClose, onDone(result).
+ * Hộp thoại "Báo trả kho": khách chọn ngày (trong khoảng min/max cho phép), khung giờ còn nhân viên rảnh,
+ * ghi chú cho nhân viên, tick đồng ý quy trình, rồi bấm "Đặt lịch trả kho". Hiện quy trình và các khoản phí
+ * có thể phát sinh (lấy từ chính sách renewal_return + bảng phí backend).
+ * API: GET /api/unit-returns/{reservationId}/slots?date=... (mỗi lần đổi ngày), POST /api/unit-returns (khi gửi).
+ * Được gọi bởi: CustomerAccount.jsx (khi khách bấm "Báo trả kho" ở thẻ hợp đồng / thông báo).
+ * @param {object} props
+ * @param {object} props.item hợp đồng muốn trả (reservationId, contractNumber, units, endDate, minReturnDate, maxReturnDate...).
+ * @param {object} props.rules quy định trả kho từ backend (returnNoticeDays, depositRefundDays).
+ * @param {object[]} props.fees bảng phí trả kho từ backend.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} [props.onDone] (result) => void, gọi sau khi đặt lịch thành công.
+ * @returns {JSX.Element}
  */
 export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
   const dialog = useDialog()
   const policies = usePolicies()
-  const rr = policies.values?.renewal_return || {}
-  const [date, setDate] = useState(toInput(item.minReturnDate))
-  const [time, setTime] = useState('')
-  const [slots, setSlots] = useState({ loading: false, list: [], error: '' })
+  const rr = policies.values?.renewal_return || {} // chính sách "Gia hạn & trả kho" (yêu cầu, phí trả kho)
+  const [date, setDate] = useState(toInput(item.minReturnDate)) // ngày trả, mặc định ngày sớm nhất được phép
+  const [time, setTime] = useState('') // khung giờ đã chọn
+  const [slots, setSlots] = useState({ loading: false, list: [], error: '' }) // khung giờ còn trống của ngày đã chọn
   const [note, setNote] = useState('')
-  const [agreed, setAgreed] = useState(false)
+  const [agreed, setAgreed] = useState(false) // đã tick đồng ý quy trình chưa (bắt buộc để gửi)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
+  // Đăng ký phím Esc để đóng hộp thoại; đăng ký lại khi busy / onClose đổi.
   useEffect(() => {
     // Nhấn Esc để đóng hộp thoại (khi không đang gửi).
     const onKey = e => { if (e.key === 'Escape' && !busy) onClose() }
@@ -285,7 +336,9 @@ export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, busy])
 
-  // Chỉ hiện khung giờ còn nhân viên rảnh (backend tính bằng luật phân công chung)
+  // Chạy mỗi khi đổi ngày: gọi GET /api/unit-returns/{id}/slots?date= để lấy khung giờ còn nhân viên rảnh
+  // (backend tính bằng luật phân công chung); giữ giờ đang chọn nếu còn trống, không thì chọn giờ đầu tiên.
+  // Biến cancelled bỏ qua kết quả cũ nếu người dùng đổi ngày nhanh.
   useEffect(() => {
     if (!date) { setSlots({ loading: false, list: [], error: '' }); setTime(''); return }
     let cancelled = false
@@ -301,9 +354,9 @@ export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
     return () => { cancelled = true }
   }, [date, item.reservationId])
 
-  const early = date && toInput(item.endDate) > date
+  const early = date && toInput(item.endDate) > date // trả trước ngày hết hạn -> nhắc không hoàn tiền thuê còn lại
   /**
-   * Gửi yêu cầu đặt lịch trả kho rồi báo thành công.
+   * Khi bấm "Đặt lịch trả kho": gửi yêu cầu, gọi onDone, đóng hộp thoại và báo thành công; lỗi thì hiện trong hộp thoại.
    * API: POST /api/unit-returns  body { reservationId, returnDate, returnTime, note }
    */
   const submit = async () => {
@@ -318,6 +371,7 @@ export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
     }
   }
 
+  // Danh sách chuỗi mô tả phí có thể phát sinh: phí trong chính sách trước, rồi phí trong bảng phí backend chưa trùng tên.
   const feeList = [
     ...(rr.returnFees || []).map(f => `${f.name}${f.amount ? `: ${money(f.amount)}` : ''}${f.condition ? ` (${f.condition})` : ''}`),
     ...fees.filter(f => !(rr.returnFees || []).some(x => x.name === f.name)).map(f => `${f.name}: ${f.valueType === 'Percentage' ? `${f.minValue}–${f.maxValue}%` : f.minValue === f.maxValue ? money(f.maxValue) : `${money(f.minValue)}–${money(f.maxValue)}`}`)

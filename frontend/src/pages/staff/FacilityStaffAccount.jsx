@@ -1,9 +1,24 @@
 /**
  * ======================================================================
  * FILE: src/pages/staff/FacilityStaffAccount.jsx  —  TRANG LÀM VIỆC CỦA NHÂN VIÊN CƠ SỞ (Facility Staff, route /staff)
- * Mục: Tổng quan · Bàn giao kho (đơn được giao cho mình, chia Hôm nay / Quá hẹn / Sắp tới) · Đơn đặt chỗ (phân trang)
- * · Kho tại cơ sở (đổi trạng thái, báo cáo sự cố) · Việc được giao · Trả kho (StaffReturns) · Nhật ký.
- * Luồng API:
+ * CHỨC NĂNG: Toàn bộ cổng làm việc của nhân viên cơ sở. Khi mở trang, tải dữ liệu vận hành của cơ sở
+ *   (đơn, kho, việc được giao), tự phân công đơn đã cọc và cập nhật phí trễ hạn, rồi hiển thị các mục:
+ *   Tổng quan · Bàn giao kho (đơn được giao cho mình, chia Hôm nay / Quá hẹn / Sắp tới; kiểm tra điều kiện,
+ *   xác nhận đơn đã cọc, chụp ảnh kho và bàn giao) · Đơn đặt chỗ (phân trang server) · Kho tại cơ sở (đổi trạng
+ *   thái, báo cáo sự cố kèm ảnh) · Việc được giao · Trả kho (StaffReturns) · Nhật ký thao tác.
+ * THÀNH PHẦN CHÍNH:
+ *   - Hàm tiện ích: pad, fmtISO, todayStr, addMonths, fmtDate, fmtMoney, fmtDateTime, compressImage,
+ *     endOf, overlaps, unitsOf, resCode, dayGroup.
+ *   - Bảng hằng số: RES_STATUS, PAY_STATUS, UNIT_STATUS, ACCESS_TYPES, TASK_TYPE, TASK_STATUS, ... (nhãn + màu).
+ *   - Kiểm tra bàn giao: findClashes, myMoveInTasks, isAssignedToMe, checkHandover.
+ *   - Component nhỏ: Badge, Info, DayTag, AuthFrame, NoAccess, cùng các mục giao diện bên dưới.
+ *   - StaffPortal (export default): component trang, giữ state chung và điều hướng giữa các mục.
+ * DÙNG Ở: src/App.jsx (route /staff, role FACILITY_STAFF; import tên StaffPortal).
+ * PHỤ THUỘC: api/api (apiGet, apiPost, apiPut), features/return/StaffReturns, mappers/operationsState
+ *   (mapOperationsState), hooks/opsLists (RESERVATION_SORTS, UNIT_SORTS, useOpsList), components/common/Dialog,
+ *   components/common/listKit, services/storageRules (formatReservationCode), demoClock/demoClock (getTodayISO),
+ *   styles/styles.css, styles/staffstyles.css.
+ * API:
  *   GET  /api/operations/state?email=...                       (OperationsController)  -> dữ liệu vận hành -> mapOperationsState()
  *   POST /api/manager-tools/facilities/{id}/auto-assign        (ManagerToolsController) -> tự phân công đơn đã cọc chưa có người
  *   POST /api/late-fees/facilities/{id}/sync                   (LateFeesController)     -> cập nhật phí trễ hạn tới hôm nay
@@ -14,14 +29,18 @@
  *   PUT  /api/staff-tools/units/{unitId}/status                -> đổi trạng thái kho (Còn trống / Chờ kiểm tra / Bảo trì)
  *   GET  /api/operations/reservations | units  (qua useOpsList) -> danh sách có phân trang
  * Điều kiện bàn giao hiển thị ở checkHandover() chỉ để xem trước; quyết định cuối cùng ở backend (HandoverService).
- * Dùng ở: App.jsx (role FACILITY_STAFF).
+ * LUỒNG (bàn giao kho): mở trang -> GET /api/operations/state + /api/staff-tools/tasks -> mapOperationsState
+ *   -> mục "Bàn giao kho" liệt kê đơn được giao -> chọn 1 đơn -> checkHandover hiển thị danh sách điều kiện
+ *   -> (nếu đơn chưa xác nhận) bấm "Xác nhận đơn đã cọc" -> POST .../reservations/{id}/confirm -> tick đối chiếu
+ *   giấy tờ + tình trạng kho, thêm ảnh -> bấm "Xác nhận bàn giao" -> POST /api/staff-tools/handover (hệ thống tự cấp
+ *   mã truy cập và KEY-<mã kho>) -> tải lại dữ liệu, ghi nhật ký, kho chuyển "Đang thuê".
  * ======================================================================
  */
 import { useEffect, useMemo, useState } from "react";
 import "../../styles/styles.css";
 import "../../styles/staffstyles.css";
 import { apiGet, apiPost, apiPut } from "../../api/api";
-import StaffReturns from "../../features/return/StaffReturns"; // [MAIN-10] luồng trả kho của nhóm
+import StaffReturns from "../../features/return/StaffReturns"; // mục "Trả kho" (nhận lại & kiểm tra kho)
 import { mapOperationsState } from "../../mappers/operationsState";
 import { RESERVATION_SORTS, UNIT_SORTS, useOpsList } from "../../hooks/opsLists";
 import { useDialog } from "../../components/common/Dialog";
@@ -31,19 +50,27 @@ import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, isNewItem, m
 
 /* ---------- helpers ---------- */
 /**
- * Thêm số 0 phía trước cho đủ 2 chữ số.
+ * Thêm số 0 phía trước cho đủ 2 chữ số (vd 5 -> "05").
+ * @param {number} n
+ * @returns {string}
  */
 const pad = (n) => String(n).padStart(2, "0");
 /**
- * Định dạng Date thành 'YYYY-MM-DD'.
+ * Định dạng đối tượng Date thành 'YYYY-MM-DD' (theo giờ máy).
+ * @param {Date} d
+ * @returns {string}
  */
 const fmtISO = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 /**
- * "Hôm nay" dạng 'YYYY-MM-DD' theo Demo Clock.
+ * "Hôm nay" dạng 'YYYY-MM-DD' theo Demo Clock (đồng hồ giả lập để test), dùng để chia nhóm ngày hẹn.
+ * @returns {string}
  */
 const todayStr = () => getTodayISO();
 /**
  * Cộng n tháng vào ngày 'YYYY-MM-DD' (kẹp về cuối tháng nếu tháng đích ngắn hơn, vd 31/01 + 1 tháng = 28/02).
+ * @param {string} s ngày bắt đầu 'YYYY-MM-DD'.
+ * @param {number} n số tháng.
+ * @returns {string} ngày kết quả, hoặc "" nếu ngày vào không hợp lệ.
  */
 const addMonths = (s, n) => {
   const [y, m, d] = String(s || "").split("-").map(Number);
@@ -52,15 +79,21 @@ const addMonths = (s, n) => {
   return fmtISO(new Date(y, m - 1 + n, Math.min(d, last)));
 };
 /**
- * Đổi 'YYYY-MM-DD' thành 'dd/MM/yyyy' (rỗng -> '—').
+ * Đổi 'YYYY-MM-DD' (hoặc ISO) thành 'dd/MM/yyyy' để hiển thị (rỗng -> '—').
+ * @param {string} s
+ * @returns {string}
  */
 const fmtDate = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
 /**
- * Định dạng tiền kiểu Việt Nam kèm "đ".
+ * Định dạng tiền kiểu Việt Nam kèm "đ" (vd 1500000 -> "1.500.000đ").
+ * @param {number|string} n
+ * @returns {string}
  */
 const fmtMoney = (n) => new Intl.NumberFormat("vi-VN").format(Number(n) || 0) + "đ";
 /**
- * Định dạng ngày giờ theo vi-VN (không hợp lệ -> '—').
+ * Định dạng ngày giờ theo vi-VN (không hợp lệ -> '—'), dùng cho nhật ký / thời điểm báo cáo.
+ * @param {string} s thời điểm ISO.
+ * @returns {string}
  */
 const fmtDateTime = (s) => {
   if (!s) return "—";
@@ -68,9 +101,12 @@ const fmtDateTime = (s) => {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("vi-VN");
 };
 
-// [AUTO-ASSIGN] Nén ảnh trước khi gửi: cạnh dài tối đa 1280px, JPEG chất lượng 0.7
 /**
- * Nén ảnh trước khi gửi: cạnh dài tối đa 1280px, JPEG chất lượng 0.7, trả về data URL.
+ * Nén ảnh trước khi gửi: vẽ lên canvas thu nhỏ (cạnh dài tối đa 1280px), xuất JPEG chất lượng 0.7, trả về data URL.
+ * Được gọi bởi: ReservationDetail (ảnh kho khi bàn giao) và UnitReportModal (ảnh báo cáo sự cố kho).
+ * (Trùng ý với compressImage trong features/return/ReturnInspection.jsx.)
+ * @param {File} file file ảnh người dùng chọn.
+ * @returns {Promise<string>}
  */
 const compressImage = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -91,29 +127,37 @@ const compressImage = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
-// Ngày kết thúc: ưu tiên ngày backend trả về (khớp hợp đồng), chỉ tự tính khi thiếu
 /**
- * Ngày kết thúc của đơn: ưu tiên ngày backend trả về, thiếu thì tự tính = ngày bắt đầu + số tháng.
+ * Ngày kết thúc của đơn: ưu tiên ngày backend trả về (khớp hợp đồng), thiếu thì tự tính = ngày bắt đầu + số tháng.
+ * @param {object} r đơn đặt chỗ (endDate, startDate, months).
+ * @returns {string} 'YYYY-MM-DD'.
  */
 const endOf = (r) => r.endDate || addMonths(r.startDate, r.months);
 /**
  * Kiểm tra 2 đơn có trùng kỳ thuê (khoảng thời gian giao nhau) không.
+ * @param {object} a đơn thứ nhất.
+ * @param {object} b đơn thứ hai.
+ * @returns {boolean}
  */
 const overlaps = (a, b) => a.startDate < endOf(b) && b.startDate < endOf(a);
 
-// Tất cả kho của một đơn (đơn có thể gồm nhiều kho)
 /**
- * Lấy danh sách mã kho của 1 đơn (đơn có thể gồm nhiều kho).
+ * Lấy danh sách mã kho của 1 đơn (đơn có thể gồm nhiều kho: unitNumbers; đơn cũ chỉ có assignedUnitId / unitId).
+ * @param {object} r đơn đặt chỗ.
+ * @returns {string[]}
  */
 const unitsOf = (r) => {
   const list = Array.isArray(r.unitNumbers) && r.unitNumbers.length ? r.unitNumbers : [r.assignedUnitId || r.unitId];
   return list.filter(Boolean);
 };
 /**
- * Mã đơn hiển thị (reservationCode, không có thì định dạng từ id).
+ * Mã đơn hiển thị (reservationCode, không có thì định dạng từ id bằng formatReservationCode).
+ * @param {object} r đơn đặt chỗ.
+ * @returns {string}
  */
 const resCode = (r) => r.reservationCode || formatReservationCode(r.id);
 
+/** Nhãn + màu (tone) cho trạng thái đơn đặt chỗ (khóa = status đã chuẩn hóa bởi mapOperationsState). */
 const RES_STATUS = {
   PENDING_PAYMENT: { label: "Chờ khách trả cọc", tone: "warn" },
   PENDING_CONFIRMATION: { label: "Chờ xác nhận thanh toán", tone: "warn" },
@@ -124,12 +168,14 @@ const RES_STATUS = {
   CANCELLED: { label: "Đã hủy", tone: "bad" },
   EXPIRED: { label: "Hết hạn giữ chỗ", tone: "bad" },
 };
+/** Nhãn + màu cho trạng thái thanh toán cọc. */
 const PAY_STATUS = {
   PENDING: { label: "Chưa thanh toán", tone: "warn" },
   PENDING_CONFIRMATION: { label: "Chờ xác nhận", tone: "warn" },
   PAID: { label: "Đã xác nhận cọc", tone: "ok" },
   FAILED: { label: "Thất bại", tone: "bad" },
 };
+/** Nhãn + màu cho trạng thái kho (nhiều khóa cùng nghĩa vì backend có thể trả các tên khác nhau). */
 const UNIT_STATUS = {
   AVAILABLE: { label: "Còn trống", tone: "ok" },
   BOOKING: { label: "Đang giữ chỗ chờ cọc", tone: "warn" },
@@ -151,7 +197,7 @@ const ACCESS_TYPES = [
   { value: "QR", label: "Mã QR", field: "Mã QR", placeholder: "VD: QR-55120" },
 ];
 
-// [STAFF-TOOLS] Việc được giao (HandoverTask) – giá trị khớp CHECK trong DB
+// Loại việc được giao (bảng HandoverTask) – giá trị khớp CHECK trong DB, giá trị là nhãn tiếng Việt
 const TASK_TYPE = {
   "Move In": "Nhận kho",
   "Move Out": "Trả kho",
@@ -164,12 +210,13 @@ const TASK_STATUS = {
   Completed: { label: "Hoàn thành", tone: "ok" },
   Cancelled: { label: "Đã hủy", tone: "bad" },
 };
-// [STAFF-TOOLS] Trạng thái kho Staff được đổi (backend chỉ nhận 3 giá trị này)
+// Trạng thái kho Staff được đổi (backend chỉ nhận 3 giá trị này)
 const STAFF_UNIT_STATUS_OPTIONS = [
   { value: "Available", label: "Còn trống" },
   { value: "Pending Inspection", label: "Chờ kiểm tra" },
   { value: "Maintenance", label: "Bảo trì" },
 ];
+// Chỉ kho đang ở các trạng thái này mới hiện ô đổi trạng thái cho Staff
 const STAFF_EDITABLE_UNIT = ["AVAILABLE", "MAINTENANCE", "PENDING_INSPECTION", "NEEDS_INSPECTION"];
 
 // Đơn đã cọc, đang chờ bàn giao
@@ -177,9 +224,12 @@ const AWAITING = ["PENDING_APPROVAL", "CONFIRMED"];
 // Đơn đang giữ kho (dùng để phát hiện trùng lịch)
 const HOLDING = ["PENDING_PAYMENT", "PENDING_APPROVAL", "CONFIRMED", "HANDED_OVER"];
 
-// Nhóm theo ngày hẹn so với hôm nay
 /**
- * Phân nhóm đơn theo ngày hẹn so với hôm nay: 'overdue' (quá hẹn), 'today' (hôm nay), 'upcoming' (sắp tới / chưa hẹn).
+ * Phân nhóm đơn theo ngày hẹn (appointmentDate) so với hôm nay: 'overdue' (quá hẹn), 'today' (hôm nay),
+ * 'upcoming' (sắp tới hoặc chưa có ngày hẹn). Dùng cho bộ lọc mục "Bàn giao kho" và nhãn DayTag.
+ * @param {object} r đơn đặt chỗ.
+ * @param {string} today 'YYYY-MM-DD'.
+ * @returns {'overdue'|'today'|'upcoming'}
  */
 const dayGroup = (r, today) => {
   if (!r.appointmentDate) return "upcoming";
@@ -189,10 +239,12 @@ const dayGroup = (r, today) => {
 };
 
 /* ---------- handover checks ---------- */
-// Các kho của đơn đang bị đơn khác giữ trùng kỳ thuê
 /**
- * Tìm các kho của đơn đang bị đơn khác giữ trùng kỳ thuê (để chặn bàn giao).
- * @returns {Array<{unitId, reservation}>}
+ * Tìm các kho của đơn đang bị đơn khác (trạng thái HOLDING) giữ trùng kỳ thuê, để cảnh báo / chặn bàn giao.
+ * Được gọi bởi: checkHandover (điều kiện "clash") và phần chi tiết bàn giao.
+ * @param {object} db dữ liệu vận hành (db.reservations).
+ * @param {object} res đơn đang xét.
+ * @returns {Array<{unitId:string, reservation:object}>}
  */
 const findClashes = (db, res) =>
   unitsOf(res).flatMap((unitId) =>
@@ -200,14 +252,20 @@ const findClashes = (db, res) =>
       .filter((r) => r.id !== res.id && HOLDING.includes(r.status) && unitsOf(r).includes(unitId) && overlaps(r, res))
       .map((r) => ({ unitId, reservation: r })));
 
-// [STAFF-TOOLS] Việc nhận kho Manager đã giao cho chính mình ở đơn này (db.staffTasks = GET /api/staff-tools/tasks)
 /**
- * Lấy các việc "Nhận kho" Manager đã giao cho chính nhân viên này ở đơn đang xét (từ db.staffTasks).
+ * Lấy các việc "Nhận kho" (Move In, chưa hủy) đã giao cho chính nhân viên này ở đơn đang xét.
+ * db.staffTasks lấy từ GET /api/staff-tools/tasks.
+ * @param {object} db dữ liệu vận hành.
+ * @param {object} res đơn đang xét.
+ * @returns {object[]}
  */
 const myMoveInTasks = (db, res) =>
   (db.staffTasks || []).filter((t) => t.taskType === "Move In" && Number(t.reservationId) === Number(res.id) && t.status !== "Cancelled");
 /**
- * Kiểm tra mọi kho của đơn đều đã được giao cho nhân viên này (mới được bàn giao).
+ * Kiểm tra mọi kho của đơn đều đã được giao cho nhân viên này (điều kiện để được bàn giao).
+ * @param {object} db dữ liệu vận hành.
+ * @param {object} res đơn đang xét.
+ * @returns {boolean}
  */
 const isAssignedToMe = (db, res) => {
   const mine = myMoveInTasks(db, res);
@@ -215,6 +273,7 @@ const isAssignedToMe = (db, res) => {
   return units.length > 0 && units.every((u) => mine.some((t) => t.unitNumber === u));
 };
 
+// Các lựa chọn sắp xếp / lọc ở mục "Việc được giao": [giá trị, nhãn].
 const TASK_SORTS = [
   ["date_asc", "Ngày hẹn gần nhất"],
   ["date_desc", "Ngày hẹn xa nhất"],
@@ -245,7 +304,11 @@ const UNIT_NOT_READY = ["IN_USE", "RENTED", "PENDING_INSPECTION", "NEEDS_INSPECT
 /**
  * Kiểm tra trước các điều kiện bàn giao (đúng cơ sở, đơn Confirmed, đã xác nhận cọc, đã ký hợp đồng, đang trong kỳ thuê,
  * được phân công, kho sẵn sàng, không trùng lịch). Chỉ để hiển thị — backend (HandoverService) quyết định cuối cùng.
- * @returns {{checks: Array<{key,label,ok}>, canHandover: boolean}}
+ * Được gọi bởi: phần chi tiết đơn trong mục "Bàn giao kho" (hiện danh sách ✓/✗ và bật/tắt nút bàn giao).
+ * @param {object} res đơn đang xét.
+ * @param {object} staff nhân viên hiện tại (facilityId).
+ * @param {object} db dữ liệu vận hành (reservations, units, staffTasks).
+ * @returns {{checks: Array<{key:string, label:string, ok:boolean}>, canHandover: boolean}}
  */
 function checkHandover(res, staff, db) {
   const units = unitsOf(res);
@@ -269,32 +332,51 @@ function checkHandover(res, staff, db) {
 
 /* ---------- small UI parts ---------- */
 /**
- * Component nhãn trạng thái có màu (tra nhãn + tone trong bảng map).
+ * Nhãn trạng thái có màu: tra nhãn + tone của `value` trong bảng `map` (không có thì hiện nguyên giá trị).
+ * @param {object} props
+ * @param {object} props.map bảng tra, vd RES_STATUS, UNIT_STATUS.
+ * @param {string} props.value giá trị trạng thái.
+ * @returns {JSX.Element}
  */
 const Badge = ({ map, value }) => {
   const s = map[value] || { label: value, tone: "info" };
   return <span className={`st-badge st-${s.tone}`}>{s.label}</span>;
 };
 /**
- * Component 1 dòng thông tin "nhãn: giá trị" trong khung chi tiết.
+ * 1 ô thông tin "nhãn: giá trị" trong khung chi tiết đơn.
+ * @param {object} props
+ * @param {string} props.k nhãn.
+ * @param {React.ReactNode} props.children giá trị.
+ * @param {boolean} [props.strong=false] true thì tô nổi (class st-info-key).
+ * @returns {JSX.Element}
  */
 const Info = ({ k, children, strong = false }) => (
   <div className={strong ? "st-info-key" : ""}><small>{k}</small><strong>{children}</strong></div>
 );
 /**
- * Component nhãn ngày hẹn của đơn đang chờ bàn giao (hiện đang trả null — không hiển thị).
+ * Nhãn ngày hẹn cho đơn đang chờ bàn giao: "Hôm nay" hoặc "Quá hẹn"; đơn khác / ngày sắp tới thì không hiện gì.
+ * @param {object} props
+ * @param {object} props.res đơn đặt chỗ.
+ * @param {string} props.today 'YYYY-MM-DD'.
+ * @returns {JSX.Element|null}
  */
 const DayTag = ({ res, today }) => {
-  if (!AWAITING.includes(res.status)) return null; // [SỬA] chỉ nhắc ngày hẹn cho đơn đang chờ bàn giao
+  if (!AWAITING.includes(res.status)) return null; // chỉ nhắc ngày hẹn cho đơn đang chờ bàn giao
   const group = dayGroup(res, today);
   if (group === "today") return <span className="st-badge st-new">Hôm nay</span>;
   if (group === "overdue") return <span className="st-badge st-bad">Quá hẹn</span>;
   return null;
 };
 
-/* Khung đăng nhập dùng lại class auth-* của trang khách */
 /**
- * Component khung trang dùng lại class auth-* (tiêu đề, phụ đề, logo bấm về trang chủ).
+ * Khung trang kiểu màn hình đăng nhập (dùng lại class auth-* của trang khách): logo bấm về trang chủ, tiêu đề, phụ đề.
+ * Được gọi bởi: NoAccess (và các màn hình thông báo toàn trang khác).
+ * @param {object} props
+ * @param {string} props.title tiêu đề lớn.
+ * @param {string} props.subtitle mô tả dưới tiêu đề.
+ * @param {Function} props.onBrand chạy khi bấm logo.
+ * @param {React.ReactNode} props.children nội dung bên dưới.
+ * @returns {JSX.Element}
  */
 function AuthFrame({ title, subtitle, onBrand, children }) {
   return (
@@ -318,7 +400,11 @@ function AuthFrame({ title, subtitle, onBrand, children }) {
 }
 
 /**
- * Component màn hình "Không có quyền truy cập" (tài khoản không phải nhân viên / chưa được phân công).
+ * Màn hình "Cần tài khoản nhân viên": hiện khi tài khoản không phải nhân viên hoặc chưa được phân công cơ sở;
+ * có nút đến trang đăng nhập và về trang chủ.
+ * @param {object} props
+ * @param {Function} props.navigate hàm chuyển trang của App.
+ * @returns {JSX.Element}
  */
 function NoAccess({ navigate }) {
   return (
@@ -333,21 +419,30 @@ function NoAccess({ navigate }) {
 
 /* ---------- Reservation detail + handover ---------- */
 /**
- * Component chi tiết đơn + bàn giao: thông tin khách/kho/thanh toán, danh sách điều kiện bàn giao, tick kiểm tra CCCD
- * và tình trạng kho, ảnh bằng chứng (tối đa 3), ghi chú, nút Bàn giao / Xác nhận đơn / Kiểm tra chống bàn giao 2 lần.
- * @param {object} props res (đơn), staff, db (dữ liệu vận hành), actions ({ handover, confirm }).
+ * Khung chi tiết 1 đơn + bàn giao kho: cảnh báo (chưa cọc, quá hẹn, trùng lịch...), thông tin khách / kho / thanh toán,
+ * danh sách điều kiện bàn giao (checkHandover), 2 ô tick (đối chiếu giấy tờ, kho nguyên vẹn), ảnh bằng chứng (tối đa 3),
+ * ghi chú, nút "Xác nhận bàn giao" / "Xác nhận đơn đã cọc" / "Thử bàn giao lại (kiểm tra chống trùng)".
+ * API (qua actions do StaffPortal truyền vào): POST /api/staff-tools/handover, POST /api/staff-tools/reservations/{id}/confirm.
+ * Được gọi bởi: mục "Bàn giao kho" và "Đơn đặt chỗ" khi chọn 1 đơn.
+ * @param {object} props
+ * @param {object} props.res đơn đang xem.
+ * @param {object} props.staff nhân viên hiện tại.
+ * @param {object} props.db dữ liệu vận hành (reservations, units, staffTasks).
+ * @param {{handover:Function, confirm:Function}} props.actions hàm gọi API của trang cha.
+ * @returns {JSX.Element}
  */
 function ReservationDetail({ res, staff, db, actions }) {
-  const [idChecked, setIdChecked] = useState(false);
-  const [conditionChecked, setConditionChecked] = useState(false);
-  const [handoverImages, setHandoverImages] = useState([]);
+  const [idChecked, setIdChecked] = useState(false); // đã tick "đối chiếu giấy tờ"
+  const [conditionChecked, setConditionChecked] = useState(false); // đã tick "kho nguyên vẹn"
+  const [handoverImages, setHandoverImages] = useState([]); // ảnh kho khi bàn giao (data URL)
   const [handoverNotes, setHandoverNotes] = useState("");
   const [imageError, setImageError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(null); // { tone, message } kết quả thao tác gần nhất
   const [confirming, setConfirming] = useState(false);
   const dialog = useDialog();
 
+  // Chạy khi chuyển sang đơn khác: đánh dấu đơn đã xem (bỏ nhãn "Mới") và xóa sạch các ô tick / ảnh / kết quả cũ.
   useEffect(() => {
     if (res?.id) {
       markItemSeen(res.id);
@@ -366,9 +461,9 @@ function ReservationDetail({ res, staff, db, actions }) {
   const clashes = findClashes(db, res);
   const handedOver = res.status === "HANDED_OVER";
   const group = dayGroup(res, today);
-  const ready = canHandover && idChecked && conditionChecked && !busy;
+  const ready = canHandover && idChecked && conditionChecked && !busy; // bật nút "Xác nhận bàn giao"
 
-  // Thêm ảnh bằng chứng bàn giao (tối đa 3 ảnh, có nén).
+  // Khi chọn file ở ô "+ Thêm ảnh kho": nén và thêm ảnh bằng chứng bàn giao (tối đa 3 ảnh).
   const addHandoverImages = async (fileList) => {
     setImageError("");
     const remaining = 3 - handoverImages.length;
@@ -383,7 +478,7 @@ function ReservationDetail({ res, staff, db, actions }) {
   };
 
   /**
-   * Bàn giao kho cho khách (hỏi xác nhận) rồi hiện kết quả.
+   * Khi bấm "Xác nhận bàn giao N kho": hỏi xác nhận, gửi yêu cầu bàn giao (tình trạng Good, ghi chú, ảnh) rồi hiện kết quả.
    * API: POST /api/staff-tools/handover (qua actions.handover)
    */
   const doHandover = async () => {
@@ -413,9 +508,9 @@ function ReservationDetail({ res, staff, db, actions }) {
     }
   };
 
-  // [STAFF-TOOLS] Xác nhận đơn đã cọc: Paid -> Confirmed + tạo hợp đồng (thay bước Manager duyệt đã bỏ)
   /**
-   * Xác nhận đơn đã cọc: Paid -> Confirmed + tạo hợp đồng (hỏi xác nhận).
+   * Khi bấm "Xác nhận đơn đã cọc": hỏi xác nhận, chuyển đơn Paid -> Confirmed + tạo hợp đồng để khách ký
+   * (thay cho bước Manager duyệt trước đây).
    * API: POST /api/staff-tools/reservations/{id}/confirm (qua actions.confirm)
    */
   const doConfirm = async () => {
@@ -438,8 +533,8 @@ function ReservationDetail({ res, staff, db, actions }) {
     }
   };
 
-  // Kiểm tra chống bàn giao 2 lần: gửi lại yêu cầu cho đơn đã bàn giao, hệ thống phải từ chối
-  // Kiểm tra chống bàn giao 2 lần: gửi lại yêu cầu bàn giao cho đơn đã bàn giao, backend phải từ chối.
+  // Khi bấm "Thử bàn giao lại (kiểm tra chống trùng)" ở đơn đã bàn giao: gửi lại yêu cầu bàn giao,
+  // backend phải từ chối (lỗi = đúng, thành công = có lỗi cần báo nhóm phát triển).
   const retryHandover = async () => {
     setBusy(true);
     try {
@@ -669,23 +764,27 @@ function ReservationDetail({ res, staff, db, actions }) {
   );
 }
 
-/* Danh sách đặt chỗ + chi tiết */
+/* ---------- Báo cáo sự cố kho ---------- */
 
-/* [AUTO-ASSIGN] Báo cáo tình trạng / sự cố kho (POST /api/staff-tools/unit-reports)
-   Hư hỏng: kho trống chuyển Bảo trì. Bình thường: kho đang Bảo trì / Chờ kiểm tra được mở lại. */
 /**
- * Component form báo cáo tình trạng kho: Hư hỏng (kho trống chuyển Bảo trì) / Bình thường (kho Bảo trì/Chờ kiểm tra
- * được mở lại), ghi chú (bắt buộc khi hư hỏng), ảnh (tối đa 3).
- * @param {object} props unit, onClose, onSubmit({ unitId, result, notes, evidenceImages }).
+ * Hộp thoại "Báo cáo tình trạng kho": chọn Hư hỏng (kho trống chuyển Bảo trì) hoặc Bình thường (kho đang Bảo trì /
+ * Chờ kiểm tra được mở lại), mô tả (bắt buộc khi hư hỏng), ảnh minh chứng (tối đa 3).
+ * API: POST /api/staff-tools/unit-reports (gọi qua onSubmit của trang cha).
+ * Được gọi bởi: mục "Kho tại cơ sở" khi bấm nút báo cáo ở 1 kho.
+ * @param {object} props
+ * @param {object} props.unit kho được báo cáo (id = mã kho, unitId = id số).
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} props.onSubmit async ({ unitId, result, notes, evidenceImages }) => void.
+ * @returns {JSX.Element}
  */
 function UnitReportModal({ unit, onClose, onSubmit }) {
-  const [result, setResult] = useState("Damaged");
+  const [result, setResult] = useState("Damaged"); // 'Damaged' | 'Good'
   const [notes, setNotes] = useState("");
   const [images, setImages] = useState([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Thêm ảnh sự cố (tối đa 3 ảnh, có nén).
+  // Khi chọn file ở ô "+ Thêm ảnh": nén và thêm ảnh sự cố (tối đa 3 ảnh).
   const addImages = async (fileList) => {
     const files = [...fileList].slice(0, 3 - images.length);
     try {
@@ -696,7 +795,7 @@ function UnitReportModal({ unit, onClose, onSubmit }) {
     }
   };
 
-  // Gửi báo cáo: bắt buộc mô tả khi hư hỏng, gọi onSubmit (-> POST /api/staff-tools/unit-reports).
+  // Khi bấm gửi báo cáo (submit form): bắt buộc mô tả khi hư hỏng, gọi onSubmit (-> POST /api/staff-tools/unit-reports).
   const submit = async (e) => {
     e.preventDefault();
     if (result === "Damaged" && !notes.trim()) return setError("Vui lòng mô tả tình trạng hư hỏng.");
@@ -763,15 +862,20 @@ function UnitReportModal({ unit, onClose, onSubmit }) {
   );
 }
 
-/* [STAFF-TASKS] Modal xem chi tiết công việc */
 /**
- * Component hộp thoại chi tiết 1 việc được giao: loại việc, trạng thái, lịch hẹn, khách, kho, ghi chú, ảnh bằng chứng,
- * nút chuyển tới đơn liên quan.
- * @param {object} props task, onClose, onGoToReservation(reservationId).
+ * Hộp thoại chi tiết 1 việc được giao: loại việc, trạng thái, lịch hẹn, hình thức nhận/trả, khách, kho, kết quả / ghi chú,
+ * ảnh bằng chứng (bấm để mở ảnh lớn ở tab mới), nút "Xem đơn đặt kho →" chuyển tới đơn liên quan.
+ * Không gọi API (dữ liệu việc đã có trong db.staffTasks).
+ * Được gọi bởi: Portal, khi bấm 1 việc trong mục "Việc được giao".
+ * @param {object} props
+ * @param {object|null} props.task việc đang xem (null thì không vẽ gì).
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} [props.onGoToReservation] (reservationId) => void, mở đơn liên quan.
+ * @returns {JSX.Element|null}
  */
 function TaskDetailModal({ task, onClose, onGoToReservation }) {
   if (!task) return null;
-  // Đọc danh sách ảnh bằng chứng của việc (chuỗi JSON hoặc mảng).
+  // Đọc danh sách ảnh bằng chứng của việc (backend trả chuỗi JSON hoặc mảng); lỗi thì coi như không có ảnh.
   const parsedImages = useMemo(() => {
     if (!task.evidenceImages) return [];
     try {
@@ -913,12 +1017,20 @@ function TaskDetailModal({ task, onClose, onGoToReservation }) {
 }
 
 /**
- * Component 1 dòng đơn trong danh sách bên trái (mã đơn, khách, kho, lịch hẹn, trạng thái, nhãn "Giao cho bạn").
- * @param {object} props r (đơn), active, onSelect(), db, today.
+ * 1 dòng đơn trong danh sách bên trái: mã đơn, khách, nhãn Mới / Hôm nay / Quá hẹn, kho, lịch hẹn, trạng thái,
+ * nhãn "Giao cho bạn" / "Chưa giao cho bạn".
+ * Được gọi bởi: Workspace (mỗi đơn trong danh sách).
+ * @param {object} props
+ * @param {object} props.r đơn đặt chỗ.
+ * @param {boolean} props.active đang được chọn hay không.
+ * @param {Function} props.onSelect gọi khi bấm vào dòng.
+ * @param {object} props.db dữ liệu vận hành.
+ * @param {string} props.today 'YYYY-MM-DD'.
+ * @returns {JSX.Element}
  */
 function ReservationItem({ r, active, onSelect, db, today }) {
   const units = unitsOf(r);
-  // Chọn đơn: đánh dấu đã xem (tắt nhãn Mới) rồi gọi onSelect.
+  // Khi bấm vào dòng: đánh dấu đã xem (tắt nhãn Mới, lưu ở listKit) rồi gọi onSelect.
   const handleSelect = () => {
     markItemSeen(r.id);
     onSelect();
@@ -948,11 +1060,19 @@ function ReservationItem({ r, active, onSelect, db, today }) {
   );
 }
 
-/* Danh sách (trái) + chi tiết (phải). pager / toolbar: phân trang + bộ lọc của từng màn hình. */
 /**
- * Component bố cục danh sách (trái) + chi tiết (phải) dùng chung cho các màn hình đơn.
- * @param {object} props list, query, setQuery, selected, selectedId, setSelectedId, staff, db, actions, chips, toolbar,
- *   pager, loading, error, ...
+ * Bố cục 2 cột dùng chung cho mục "Bàn giao kho" và "Đơn đặt chỗ": bên trái ô tìm kiếm + bộ lọc + danh sách đơn
+ * (ReservationItem) + phân trang; bên phải chi tiết đơn đang chọn (ReservationDetail).
+ * Được gọi bởi: Portal.
+ * @param {object} props
+ * @param {object[]} props.list các đơn của trang hiện tại.
+ * @param {string} props.query / @param {Function} props.setQuery ô tìm kiếm.
+ * @param {object|null} props.selected đơn đang chọn; props.selectedId / props.setSelectedId: id đơn đang chọn.
+ * @param {object} props.staff, props.db, props.actions truyền tiếp xuống ReservationDetail.
+ * @param {React.ReactNode} [props.chips] / [props.toolbar] bộ lọc riêng của từng mục.
+ * @param {object} [props.pager] props cho <Pager>.
+ * @param {boolean} [props.loading] / [props.error] / [props.emptyText] trạng thái tải, lỗi, câu khi rỗng.
+ * @returns {JSX.Element}
  */
 function Workspace({ list, query, setQuery, selected, selectedId, setSelectedId, staff, db, actions, chips, toolbar, pager, loading, error, emptyText }) {
   const today = todayStr();
@@ -984,7 +1104,7 @@ function Workspace({ list, query, setQuery, selected, selectedId, setSelectedId,
 }
 
 /* ---------- Portal (khung giống Customer Portal) ---------- */
-/* [SỬA] Tên mục nói rõ việc của mục đó; số bên cạnh = việc đang chờ */
+/* Menu bên trái: [khóa mục, biểu tượng, tên mục, mô tả]. Số bên cạnh tên mục = việc đang chờ. */
 const NAV = [
   ["overview", "⌂", "Tổng quan", "Việc hôm nay, số liệu nhanh"],
   ["today", "◷", "Bàn giao kho", "Đơn đã cọc chờ giao kho cho khách"],
@@ -995,6 +1115,7 @@ const NAV = [
   ["log", "◫", "Nhật ký bàn giao", "Lịch sử bàn giao kho"],
 ];
 
+// Nút lọc trạng thái ở mục "Đơn đặt chỗ" và "Kho tại cơ sở": [giá trị gửi backend (nhiều trạng thái cách bằng dấu phẩy), nhãn].
 const STAFF_RES_FILTERS = [
   ["", "Tất cả"],
   ["PENDING_APPROVAL,CONFIRMED", "Chờ bàn giao"],
@@ -1012,25 +1133,40 @@ const STAFF_UNIT_FILTERS = [
   ["INACTIVE", "Ngừng dùng"],
 ];
 /**
- * Tính tổng các giá trị trong object đếm.
+ * Tính tổng các giá trị trong object đếm (vd { AVAILABLE: 3, RENTED: 5 } -> 8), dùng cho số "Tất cả" trên nút lọc.
+ * @param {Object<string, number>} counts
+ * @returns {number}
  */
 const sumCounts = (counts) => Object.values(counts || {}).reduce((a, b) => a + b, 0);
 
 /**
- * Component phần làm việc chính của nhân viên: menu, các màn hình (Tổng quan, Bàn giao, Đơn đặt chỗ, Kho, Việc được giao,
- * Trả kho, Nhật ký), đổi cơ sở (nếu làm nhiều cơ sở), lọc/sắp xếp/phân trang.
- * @param {object} props staff, facilities, onSwitchFacility, db, onLogout, onRefresh, onHandover, onConfirm,
- *   onUnitStatus, onReportUnit.
+ * Phần giao diện chính của nhân viên (sau khi đã tải dữ liệu): menu bên trái, các mục (Tổng quan, Bàn giao kho,
+ * Đơn đặt chỗ, Kho tại cơ sở, Trả kho, Việc được giao, Nhật ký), đổi cơ sở (nếu làm nhiều cơ sở), lọc / sắp xếp / phân trang.
+ * Không tự gọi API ghi dữ liệu: mọi thao tác đi qua các hàm on... do StaffPortal truyền vào;
+ * riêng danh sách phân trang gọi GET /api/operations/reservations | units qua useOpsList.
+ * Được gọi bởi: StaffPortal.
+ * @param {object} props
+ * @param {object} props.staff nhân viên hiện tại (facilityId = tên/mã cơ sở đang chọn).
+ * @param {object[]} props.facilities các cơ sở nhân viên được phân công.
+ * @param {Function} props.onSwitchFacility đổi cơ sở đang làm.
+ * @param {object} props.db dữ liệu vận hành đã chuẩn hóa (mapOperationsState).
+ * @param {Function} props.onLogout đăng xuất.
+ * @param {Function} props.onRefresh tải lại dữ liệu.
+ * @param {Function} props.onHandover (id, payload) => Promise, bàn giao kho.
+ * @param {Function} props.onConfirm (id) => Promise, xác nhận đơn đã cọc.
+ * @param {Function} props.onUnitStatus (unitId, status) => Promise, đổi trạng thái kho.
+ * @param {Function} props.onReportUnit (payload) => Promise, gửi báo cáo sự cố kho.
+ * @returns {JSX.Element}
  */
 function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, onHandover, onConfirm, onUnitStatus, onReportUnit }) {
-  const [section, setSection] = useState("overview");
-  const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState(null);
-  const [dayFilter, setDayFilter] = useState("today");
-  // [STAFF-TOOLS] việc được giao + đổi trạng thái kho
+  const [section, setSection] = useState("overview"); // mục đang mở (khóa trong NAV)
+  const [query, setQuery] = useState(""); // ô tìm kiếm đơn
+  const [selectedId, setSelectedId] = useState(null); // id đơn đang xem chi tiết
+  const [dayFilter, setDayFilter] = useState("today"); // bộ lọc mục Bàn giao: today | overdue | upcoming | all
+  // Kho đang gọi API đổi trạng thái (để khóa ô chọn)
   const [unitBusy, setUnitBusy] = useState("");
-  const [reportUnit, setReportUnit] = useState(null); // [AUTO-ASSIGN] kho đang mở form báo cáo
-  // [PHÂN TRANG] bộ lọc của "Đơn đặt chỗ" và "Kho tại cơ sở" (lọc / chia trang ở backend)
+  const [reportUnit, setReportUnit] = useState(null); // kho đang mở form báo cáo sự cố
+  // Bộ lọc của "Đơn đặt chỗ" và "Kho tại cơ sở" (lọc / chia trang ở backend), và của "Việc được giao" (ở frontend)
   const [allStatus, setAllStatus] = useState("");
   const [allSort, setAllSort] = useState("newest");
   const [unitQuery, setUnitQuery] = useState("");
@@ -1040,7 +1176,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   const [taskStatusFilter, setTaskStatusFilter] = useState("");
   const [taskTypeFilter, setTaskTypeFilter] = useState("");
   const [taskSort, setTaskSort] = useState("date_asc");
-  const [selectedTask, setSelectedTask] = useState(null);
+  const [selectedTask, setSelectedTask] = useState(null); // việc đang mở TaskDetailModal
   const dialog = useDialog();
 
   const facility = db.facilities.find((f) => f.id === staff.facilityId);
@@ -1057,9 +1193,8 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
     return !q || [r.id, resCode(r), r.customerName, r.customerEmail, ...unitsOf(r)].some((v) => String(v ?? "").toLowerCase().includes(q));
   };
 
-  // Đơn cần bàn giao (đã cọc, chưa bàn giao) MÀ MÌNH PHỤ TRÁCH, chia theo ngày hẹn
-  // [AUTO-ASSIGN] Hệ thống tự phân công nên mỗi nhân viên chỉ thấy đơn được giao cho mình
-  // Các đơn đã cọc, chưa bàn giao MÀ nhân viên này được phân công, sắp theo lịch hẹn.
+  // Đơn cần bàn giao (đã cọc, chưa bàn giao) MÀ MÌNH PHỤ TRÁCH, sắp theo lịch hẹn rồi chia theo ngày hẹn.
+  // Hệ thống tự phân công nên mỗi nhân viên chỉ thấy đơn được giao cho mình.
   const awaiting = useMemo(() => mine.filter((r) => AWAITING.includes(r.status) && isAssignedToMe(db, r)).sort(bySort), [mine, db]);
   const groups = {
     today: awaiting.filter((r) => dayGroup(r, today) === "today"),
@@ -1070,7 +1205,8 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   const handoverVisible = groups[dayFilter].filter(matches);
   const allVisible = [...mine].sort(bySort).filter(matches);
 
-  // Việc cần xử lý ngay = hôm nay + quá hẹn
+  // Việc cần xử lý ngay = hôm nay + quá hẹn; counts: số liệu cho mục Tổng quan
+  // (sẵn sàng bàn giao / còn vướng điều kiện / số lần bàn giao hôm nay theo nhật ký).
   const actionable = [...groups.overdue, ...groups.today];
   const facilityActivity = db.activity.filter((a) => a.facilityId === staff.facilityId);
   const counts = {
@@ -1081,28 +1217,31 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
   const units = db.units.filter((u) => u.facilityId === staff.facilityId);
   const freeUnits = units.filter((u) => u.status === "AVAILABLE").length;
 
-  // [PHÂN TRANG] Đơn đặt chỗ: backend lọc + chia trang (GET /api/operations/reservations)
+  // Đơn đặt chỗ: backend lọc + chia trang (GET /api/operations/reservations), chỉ tải khi đang mở mục "all"
   const allList = useOpsList("reservations", {
     q: query, status: allStatus, sort: allSort, facilityId: facility?.facilityId,
     reloadKey: db, fallbackRows: mine, enabled: section === "all" && facility?.facilityId != null,
   });
-  // [PHÂN TRANG] Kho tại cơ sở (GET /api/operations/units)
+  // Kho tại cơ sở: backend lọc + chia trang (GET /api/operations/units), chỉ tải khi đang mở mục "units"
   const unitList = useOpsList("units", {
     q: unitQuery, status: unitStatus, sort: unitSort, facilityId: facility?.facilityId,
     reloadKey: db, fallbackRows: units, enabled: section === "units" && facility?.facilityId != null,
   });
   // Bàn giao kho: danh sách nhỏ (đơn giao cho mình) -> chia trang ở frontend
   const handoverPaging = useClientPaging(handoverVisible, { resetKey: `${dayFilter}|${query}` });
+  // Số việc được giao chưa xong tại cơ sở này (hiện cạnh mục "Việc được giao")
   const pendingTasks = (db.staffTasks || []).filter((t) =>
     (t.facilityName === staff.facilityId || (facility?.facilityId != null && Number(t.facilityId) === Number(facility.facilityId))) &&
     t.status !== "Completed" && t.status !== "Cancelled"
   ).length;
 
+  // Đơn đang chọn: tìm trong đơn của cơ sở, không có thì tìm trong trang danh sách server.
   const selected = mine.find((r) => r.id === selectedId) || allList.items.find((r) => r.id === selectedId) || null;
 
+  // Gói các hàm thao tác truyền xuống ReservationDetail.
   const actions = { handover: (id, access) => onHandover(id, access), confirm: (id) => onConfirm(id) };
 
-  // [STAFF-TOOLS] Việc được giao tại cơ sở đang chọn (tải cùng state, xem StaffPortal.loadState)
+  // Việc được giao tại cơ sở đang chọn (tải cùng state, xem loadState trong StaffPortal)
   const rawTasks = (db.staffTasks || []).filter((t) =>
     t.facilityName === staff.facilityId ||
     (facility?.facilityId != null && Number(t.facilityId) === Number(facility.facilityId))
@@ -1169,12 +1308,13 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
     });
   }, [rawTasks, taskQuery, taskStatusFilter, taskTypeFilter, taskSort]);
 
+  // Chia trang ở frontend cho "Việc được giao" (đổi bộ lọc thì về trang 1) và "Nhật ký".
   const taskPaging = useClientPaging(filteredTasks, { resetKey: `${taskQuery}|${taskStatusFilter}|${taskTypeFilter}|${taskSort}` });
   const logPaging = useClientPaging(facilityActivity);
 
-  // [STAFF-TOOLS] Đổi trạng thái kho (PUT /api/staff-tools/units/{unitId}/status)
   /**
-   * Đổi trạng thái kho (hỏi xác nhận).
+   * Khi chọn trạng thái mới ở ô trạng thái của 1 kho (mục "Kho tại cơ sở"): hỏi xác nhận rồi đổi trạng thái;
+   * lỗi thì hiện hộp thoại báo lỗi.
    * API: PUT /api/staff-tools/units/{unitId}/status (qua onUnitStatus)
    */
   const changeUnitStatus = async (unit, nextStatus) => {
@@ -1196,9 +1336,10 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
       setUnitBusy("");
     }
   };
-  // Mở chi tiết 1 đơn trong màn hình Bàn giao kho (bỏ lọc ngày).
+  // Mở chi tiết 1 đơn trong màn hình Bàn giao kho (bỏ lọc ngày); dùng khi bấm 1 dòng "Việc cần làm hôm nay" ở Tổng quan.
   const open = (id) => { setSelectedId(id); setDayFilter("all"); setSection("today"); };
 
+  // Tiêu đề đầu trang theo mục đang mở: [nhãn nhỏ, tiêu đề, mô tả].
   const HEAD = {
     overview: ["STAFF DASHBOARD", `Xin chào, ${staff.fullName}!`, `Nhận kho và bàn giao cho khách tại ${facility?.name || staff.facilityId}.`],
     today: ["CHECK-IN & HANDOVER", "Bàn giao kho", "Đơn đã cọc được giao cho bạn: kiểm tra điều kiện và bàn giao kho cho khách theo lịch hẹn."],
@@ -1208,8 +1349,9 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
     tasks: ["MY TASKS", "Việc được giao", "Các công việc nhận kho, trả kho, kiểm tra được giao cho bạn."],
     log: ["ACTIVITY LOG", "Nhật ký bàn giao", "Lịch sử bàn giao kho tại cơ sở của bạn."],
   }[section];
-  const initial = staff.fullName.trim().split(" ").pop().charAt(0).toUpperCase();
+  const initial = staff.fullName.trim().split(" ").pop().charAt(0).toUpperCase(); // chữ cái avatar (chữ đầu của tên)
 
+  // Nút lọc theo ngày hẹn của mục "Bàn giao kho".
   const dayChips = (
     <div className="st-chips">
       {[
@@ -1273,6 +1415,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
           <button type="button" className="customer-profile-button" onClick={() => setSection("overview")}>{initial}</button>
         </div>
 
+        {/* TỔNG QUAN: 4 thẻ số liệu + danh sách việc hôm nay / quá hẹn */}
         {section === "overview" && (
           <div>
             <section className="customer-stats">
@@ -1306,6 +1449,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
           </div>
         )}
 
+        {/* BÀN GIAO KHO (lọc + chia trang ở frontend) và ĐƠN ĐẶT CHỖ (lọc + chia trang ở backend) */}
         {section === "today" && (
           <Workspace list={handoverPaging.pageRows} query={query} setQuery={setQuery} selected={selected} selectedId={selectedId} setSelectedId={setSelectedId} staff={staff} db={db} actions={actions} chips={dayChips}
             pager={handoverPaging.pagerProps} emptyText="Không có đơn nào cần bàn giao trong nhóm này." />
@@ -1317,6 +1461,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
             pager={allList.pagerProps} loading={allList.loading} error={allList.error} />
         )}
 
+        {/* KHO TẠI CƠ SỞ: bảng kho, đổi trạng thái (changeUnitStatus), nút "Báo cáo" mở UnitReportModal */}
         {section === "units" && (
           <div className="st-card">
             <div className="ss-toolbar" style={{ flexWrap: "wrap", gap: "8px" }}>
@@ -1373,9 +1518,10 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
           </div>
         )}
 
+        {/* TRẢ KHO & KIỂM KHO: toàn bộ nằm trong features/return/StaffReturns.jsx */}
         {section === "returns" && <StaffReturns staff={staff} />}
 
-        {/* [STAFF-TOOLS] VIỆC ĐƯỢC GIAO */}
+        {/* VIỆC ĐƯỢC GIAO: tìm kiếm, lọc theo trạng thái / loại việc, bấm 1 dòng mở TaskDetailModal */}
         {section === "tasks" && (
           <div className="st-card">
             <div className="ss-toolbar" style={{ flexWrap: "wrap", gap: "8px" }}>
@@ -1516,6 +1662,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
           />
         )}
 
+        {/* NHẬT KÝ BÀN GIAO tại cơ sở (db.activity), chia trang ở frontend */}
         {section === "log" && (
           <div className="st-card">
             {facilityActivity.length === 0 && <div className="st-empty">Chưa có lần bàn giao nào.</div>}
@@ -1533,26 +1680,37 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
 }
 
 /* ---------- Root ---------- */
-/* Uses the authenticated site session and backend operations API. */
+/* Dùng phiên đăng nhập của trang (currentUser) và API vận hành của backend. */
+/** Khóa localStorage lưu cơ sở nhân viên chọn làm việc gần nhất (khi được phân công nhiều cơ sở). */
 const FACILITY_KEY = "storespace_staff_facility";
 
 /**
- * Component gốc trang nhân viên: tải dữ liệu, xác định cơ sở đang làm (có thể nhiều cơ sở), cung cấp các hàm gọi API
- * cho Portal, hiện màn hình không có quyền nếu cần.
- * @param {object} props embedded, currentUser, navigate, currentUserKey.
+ * Component gốc trang nhân viên (route /staff): tải dữ liệu vận hành, xác định cơ sở đang làm (có thể nhiều cơ sở,
+ * lựa chọn lưu ở localStorage), cung cấp các hàm gọi API ghi dữ liệu cho Portal; tài khoản không phải nhân viên
+ * đang hoạt động thì hiện NoAccess.
+ * API: xem loadState, handover, confirmReservation, reportUnitCondition, updateUnitStatus bên dưới.
+ * Được gọi bởi: App.jsx (import tên StaffPortal) khi người dùng mở /staff.
+ * @param {object} [props]
+ * @param {boolean} [props.embedded=false] (hiện không dùng trong thân hàm).
+ * @param {object} [props.currentUser] người dùng đăng nhập ({ email, role }).
+ * @param {Function} [props.navigate] hàm chuyển trang của App.
+ * @param {string} [props.currentUserKey] khóa localStorage lưu phiên đăng nhập (xóa khi đăng xuất).
+ * @returns {JSX.Element}
  */
 export default function StaffPortal({ embedded = false, currentUser = null, navigate = null, currentUserKey = "storespace_current_user" } = {}) {
-  const [db, setDb] = useState({ facilities: [], units: [], reservations: [], activity: [], staff: [] });
+  const [db, setDb] = useState({ facilities: [], units: [], reservations: [], activity: [], staff: [] }); // dữ liệu vận hành đã chuẩn hóa
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Cơ sở đang chọn, đọc lại từ localStorage khi mở trang
   const [facilityChoice, setFacilityChoice] = useState(() => {
     try { return localStorage.getItem(FACILITY_KEY) || ""; } catch { return ""; }
   });
 
-  // silent = tải lại ngầm, không che trang (dùng sau bàn giao / xác nhận / đổi trạng thái)
   /**
-   * Tải dữ liệu: trạng thái vận hành -> tự phân công đơn chưa có người -> đồng bộ phí trễ hạn -> việc được giao.
-   * silent = true thì tải ngầm (không che trang).
+   * Tải dữ liệu: trạng thái vận hành -> tự phân công đơn chưa có người -> đồng bộ phí trễ hạn -> việc được giao,
+   * rồi lưu vào state db. Không phải FACILITY_STAFF thì dừng ngay.
+   * silent = true thì tải ngầm, không che trang (dùng sau bàn giao / xác nhận / đổi trạng thái).
+   * Gọi khi: mở trang (useEffect), bấm "Thử lại" / tải lại, và sau mỗi thao tác ghi dữ liệu.
    * API: GET /api/operations/state, POST /api/manager-tools/facilities/{id}/auto-assign,
    *      POST /api/late-fees/facilities/{id}/sync, GET /api/staff-tools/tasks
    */
@@ -1565,7 +1723,7 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
     setError("");
     try {
       const data = await apiGet(`/api/operations/state?email=${encodeURIComponent(currentUser.email)}`);
-      // [AUTO-ASSIGN] Tự phân công đơn đã cọc chưa có người ở các cơ sở mình làm việc, rồi mới tải việc của mình
+      // Tự phân công đơn đã cọc chưa có người ở các cơ sở mình làm việc, rồi mới tải việc của mình (lỗi bỏ qua)
       const mapped = mapOperationsState(data);
       const myFacilityNames = (mapped.staff || [])
         .filter((s) => s.email?.toLowerCase() === currentUser.email.toLowerCase() && s.status?.toLowerCase() === "active")
@@ -1574,9 +1732,9 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
         .filter((f) => myFacilityNames.includes(f.id) && f.facilityId != null)
         .map((f) => f.facilityId);
       await Promise.all(facilityIds.map((id) => apiPost(`/api/manager-tools/facilities/${id}/auto-assign`, {}).catch(() => null)));
-      // [7a] Cập nhật phí trễ hạn tiền thuê của cơ sở tới hôm nay (lỗi không chặn trang)
+      // Cập nhật phí trễ hạn tiền thuê của cơ sở tới hôm nay (lỗi không chặn trang)
       await Promise.all(facilityIds.map((id) => apiPost(`/api/late-fees/facilities/${id}/sync`, {}).catch(() => null)));
-      // [STAFF-TOOLS] Việc Manager giao cho mình: dùng để kiểm tra quyền bàn giao và hiện mục "Việc được giao"
+      // Việc Manager giao cho mình: dùng để kiểm tra quyền bàn giao và hiện mục "Việc được giao" (lỗi lưu vào staffTasksError)
       let staffTasks = [];
       let staffTasksError = "";
       try {
@@ -1593,11 +1751,13 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
     }
   };
 
+  // Chạy khi mở trang và khi đổi tài khoản (email / role đổi): tải dữ liệu vận hành.
   useEffect(() => {
     loadState();
   }, [currentUser?.email, currentUser?.role]);
 
-  // Một nhân viên có thể được phân công ở nhiều cơ sở
+  // Một nhân viên có thể được phân công ở nhiều cơ sở: lấy các phân công đang hoạt động của tài khoản,
+  // chọn cơ sở theo facilityChoice (không có thì cơ sở đầu tiên) và tạo đối tượng staff cho Portal.
   const assignments = db.staff.filter(item =>
     item.email?.toLowerCase() === currentUser?.email?.toLowerCase() &&
     item.status?.toLowerCase() === "active"
@@ -1612,23 +1772,27 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
     role: "FACILITY_STAFF"
   } : null;
 
-  // Đổi cơ sở đang làm việc và nhớ lựa chọn vào localStorage.
+  // Khi chọn cơ sở khác ở ô "Cơ sở đang làm việc": đổi cơ sở và nhớ lựa chọn vào localStorage.
   const switchFacility = (facilityId) => {
     setFacilityChoice(facilityId);
     try { localStorage.setItem(FACILITY_KEY, facilityId); } catch { /* bỏ qua */ }
   };
 
-  // Đăng xuất: xóa phiên khỏi localStorage và về trang chủ.
+  // Khi bấm "Đăng xuất": xóa phiên (currentUserKey) khỏi localStorage và về trang chủ.
   const logout = () => {
     localStorage.removeItem(currentUserKey);
     navigate("/");
   };
   /**
-   * Bàn giao kho (backend kiểm tra phân công, tự sinh mã truy cập) rồi tải lại ngầm.
+   * Bàn giao kho rồi tải lại ngầm. Backend kiểm tra phân công và điều kiện, tự sinh mã truy cập & KEY-<mã kho>.
    * API: POST /api/staff-tools/handover  body { reservationID, notes, unitConditionConfirmed, conditionResult, evidenceImages }
+   * Được gọi bởi: ReservationDetail (doHandover, retryHandover) qua actions.handover.
+   * @param {number|string} reservationId mã đơn.
+   * @param {object} [payload] { notes, unitConditionConfirmed, conditionResult, evidenceImages }.
+   * @returns {Promise<object>} phản hồi backend ({ message, ... }).
    */
   const handover = async (reservationId, payload = {}) => {
-    // [STAFF-TOOLS] Bàn giao qua API có kiểm tra phân công (hệ thống tự sinh AccessCode & KEY-UnitNumber)
+    // Bàn giao qua API có kiểm tra phân công (hệ thống tự sinh AccessCode & KEY-UnitNumber)
     const response = await apiPost("/api/staff-tools/handover", {
       reservationID: Number(reservationId),
       notes: payload?.notes || "",
@@ -1640,10 +1804,12 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
     return response;
   };
 
-  // [STAFF-TOOLS] Paid -> Confirmed + tạo hợp đồng
   /**
    * Xác nhận đơn đã cọc (Paid -> Confirmed + tạo hợp đồng) rồi tải lại ngầm.
    * API: POST /api/staff-tools/reservations/{reservationId}/confirm
+   * Được gọi bởi: ReservationDetail (doConfirm) qua actions.confirm.
+   * @param {number|string} reservationId mã đơn.
+   * @returns {Promise<object>}
    */
   const confirmReservation = async (reservationId) => {
     const response = await apiPost(`/api/staff-tools/reservations/${Number(reservationId)}/confirm`);
@@ -1651,11 +1817,12 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
     return response;
   };
 
-  // [STAFF-TOOLS] Đổi trạng thái kho
-  // [AUTO-ASSIGN] Báo cáo tình trạng / sự cố kho
   /**
    * Gửi báo cáo tình trạng / sự cố kho rồi tải lại ngầm.
-   * API: POST /api/staff-tools/unit-reports
+   * API: POST /api/staff-tools/unit-reports  body { unitId, result, notes, evidenceImages }
+   * Được gọi bởi: UnitReportModal (qua onReportUnit của Portal).
+   * @param {object} body nội dung báo cáo.
+   * @returns {Promise<object>}
    */
   const reportUnitCondition = async (body) => {
     const response = await apiPost("/api/staff-tools/unit-reports", body);
@@ -1666,6 +1833,10 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
   /**
    * Đổi trạng thái kho rồi tải lại ngầm.
    * API: PUT /api/staff-tools/units/{unitId}/status  body { status }
+   * Được gọi bởi: changeUnitStatus trong Portal (qua onUnitStatus).
+   * @param {number|string} unitId id số của kho.
+   * @param {string} status 'Available' | 'Pending Inspection' | 'Maintenance'.
+   * @returns {Promise<object>}
    */
   const updateUnitStatus = async (unitId, status) => {
     const response = await apiPut(`/api/staff-tools/units/${Number(unitId)}/status`, { status });

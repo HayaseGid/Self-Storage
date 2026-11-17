@@ -1,16 +1,27 @@
 /**
  * ======================================================================
- * FILE: src/pages/payment/PaymentResultPage.jsx  —  TRANG KẾT QUẢ THANH TOÁN VNPAY (/payment-result?vnp_...)
- * VNPay chuyển trình duyệt về đây sau khi thanh toán. Trang gửi nguyên query string cho backend kiểm tra chữ ký
- * và ghi nhận giao dịch (idempotent), rồi xử lý theo loại khoản thu (đọc từ backend hoặc sessionStorage):
- * - 'deposit' (tiền cọc): thành công -> "Đặt cọc thành công" -> mở tab Hợp đồng để ký;
- *   khách bấm Hủy (mã 24) -> hủy đơn giữ kho + trả kho về giỏ; thất bại khác -> cho thanh toán lại.
- * - 'renewal' (gia hạn): hoàn tất gia hạn -> "Gia hạn thành công" -> mở màn hình ký phụ lục.
- * - 'rent' (tiền thuê) / 'fee' (phí trả kho): chỉ ghi nhận rồi về tab Hợp đồng.
- * API: GET  /api/vnpay/return-verify?vnp_...                 (VnPayController)
+ * FILE: src/pages/payment/PaymentResultPage.jsx  —  TRANG KẾT QUẢ THANH TOÁN VNPAY
+ * CHỨC NĂNG: Sau khi khách thanh toán trên cổng VNPay, VNPay chuyển trình duyệt về địa chỉ
+ *   /payment-result?vnp_... Trang này gửi nguyên chuỗi query cho backend kiểm tra chữ ký và ghi nhận
+ *   giao dịch (gọi lại nhiều lần vẫn an toàn - idempotent), rồi hiển thị kết quả và điều hướng tiếp
+ *   tùy loại khoản thu (lấy từ backend `result.kind` hoặc từ sessionStorage qua readPendingVnPay):
+ *   - 'deposit' (tiền cọc): thành công -> hộp thoại "Đặt cọc thành công" -> mở tab Hợp đồng để ký;
+ *     khách bấm Hủy trên VNPay (mã 24) -> hủy đơn giữ kho + trả kho về giỏ; lỗi khác -> cho thanh toán lại.
+ *   - 'renewal' (gia hạn): hoàn tất gia hạn -> "Gia hạn thành công" -> mở màn hình ký phụ lục.
+ *   - 'rent' (tiền thuê) / 'fee' (phí phát sinh khi trả kho): chỉ ghi nhận rồi về tab Hợp đồng.
+ * THÀNH PHẦN CHÍNH:
+ *   - PaymentResultPage (export default): component trang, tự xác minh giao dịch 1 lần khi mở.
+ *   - releaseHeld: hủy đơn giữ kho + trả kho về giỏ khi đặt cọc thất bại / khách hủy.
+ * DÙNG Ở: src/App.jsx (route /payment-result).
+ * PHỤ THUỘC: api/api (apiGet, apiPost), api/vnpay (đọc/xóa giao dịch chờ trong sessionStorage),
+ *   components/common/Dialog (hộp thoại), services/afterDeposit (thông báo + mở tab khách hàng),
+ *   services/storageRules (formatVnd), store/cart (hủy đơn giữ, trả kho về giỏ), PaymentResultPage.css.
+ * API: GET  /api/vnpay/return-verify?vnp_...                 (VnPayController - xác minh chữ ký + ghi nhận)
  *      POST /api/contract-renewals/{reservationId}/finalize  (ContractRenewalsController, khi là gia hạn)
- *      POST /api/reservation-cancellations/{id}               (qua cancelHeldReservations, khi khách hủy)
- * Dùng ở: App.jsx (route /payment-result).
+ *      POST /api/reservation-cancellations/{id}               (gián tiếp qua cancelHeldReservations, khi khách hủy)
+ * LUỒNG: VNPay redirect về trang -> useEffect đọc window.location.search -> GET /api/vnpay/return-verify
+ *   -> xét loại khoản thu (rent / renewal / fee / deposit) -> setState kết quả -> hiện hộp thoại
+ *   -> openCustomerSection(navigate, 'contract') chuyển sang tab Hợp đồng của khách hàng.
  * ======================================================================
  */
 import React, { useEffect, useRef, useState } from 'react'
@@ -22,28 +33,28 @@ import { clearPendingVnPay, readPendingVnPay } from '../../api/vnpay'
 import { cancelHeldReservations, restoreToCart, takeVnPayCartItems } from '../../store/cart'
 import './PaymentResultPage.css'
 
-/*
- * Trang VNPay chuyển về sau khi thanh toán: /payment-result?vnp_...
- * Gửi nguyên query cho backend kiểm tra chữ ký + ghi nhận cọc (idempotent), rồi:
- *  - thành công: "Đặt cọc thành công" -> OK -> tab Hợp đồng để ký;
- *  - thất bại / khách hủy: báo lý do, cho thanh toán lại trong mục Thanh toán.
- *  - thanh toán GIA HẠN (kind = 'renewal'): hoàn tất gia hạn -> "Gia hạn thành công, vui lòng ký phụ lục gia hạn"
- *    -> OK -> mở màn hình ký phụ lục.
- */
 /**
- * Component trang kết quả thanh toán: tự xác minh giao dịch 1 lần khi mở trang và hiển thị kết quả.
- * @param {{navigate: Function}} props navigate = hàm điều hướng của App.
+ * Trang kết quả thanh toán VNPay: khi mở trang sẽ tự xác minh giao dịch đúng 1 lần với backend,
+ * hiển thị trạng thái (đang xác nhận / thành công / đã hủy / chưa thanh toán được) và điều hướng tiếp.
+ * Đọc sessionStorage (qua readPendingVnPay) để biết loại khoản thu và các đơn giữ kho liên quan.
+ * Được gọi bởi: App.jsx khi đường dẫn là /payment-result.
+ * @param {{navigate: Function}} props navigate = hàm điều hướng của App (vd navigate('/cart')).
+ * @returns {JSX.Element} thẻ kết quả thanh toán.
  */
 export default function PaymentResultPage({ navigate }) {
   const dialog = useDialog()
-  const [state, setState] = useState({ loading: true, result: null, error: '' })
-  const started = useRef(false)
-  const pending = readPendingVnPay()
+  const [state, setState] = useState({ loading: true, result: null, error: '' }) // kết quả xác minh từ backend
+  const started = useRef(false) // chặn useEffect chạy 2 lần (React StrictMode) -> không gọi xác minh lặp
+  const pending = readPendingVnPay() // giao dịch đang chờ lưu trong sessionStorage trước khi sang VNPay
   const isDeposit = !pending?.kind || pending.kind === 'deposit'
-  const [released, setReleased] = useState(false)
+  const [released, setReleased] = useState(false) // true khi đã hủy đơn giữ kho + trả kho về giỏ
 
-  /* Đặt cọc thất bại / khách bấm Hủy trên VNPay: hủy đơn giữ kho, trả kho về giỏ. */
-  // Khi đặt cọc thất bại / khách hủy trên VNPay: hủy các đơn đang giữ kho, trả kho về giỏ, xóa thông tin giao dịch chờ.
+  /**
+   * Khi đặt cọc thất bại / khách bấm Hủy trên VNPay: hủy các đơn đang giữ kho
+   * (POST /api/reservation-cancellations/{id} qua cancelHeldReservations), trả kho về giỏ,
+   * xóa giao dịch chờ trong sessionStorage và bật cờ released.
+   * Được gọi khi: mã phản hồi VNPay = 24, hoặc khách bấm nút "Hủy đặt kho".
+   */
   const releaseHeld = async () => {
     await cancelHeldReservations(pending?.reservationIds, 'Khách hủy thanh toán cọc trên VNPay')
     restoreToCart(takeVnPayCartItems())
@@ -51,6 +62,8 @@ export default function PaymentResultPage({ navigate }) {
     setReleased(true)
   }
 
+  // Chạy 1 lần khi mở trang (dependency rỗng): kiểm tra có tham số vnp_ trên URL không,
+  // gọi GET /api/vnpay/return-verify rồi xử lý theo loại khoản thu: tiền thuê -> gia hạn -> phí -> tiền cọc.
   useEffect(() => {
     if (started.current) return
     started.current = true
@@ -93,6 +106,7 @@ export default function PaymentResultPage({ navigate }) {
           openCustomerSection(navigate, 'contract')
           return
         }
+        // Phí phát sinh khi trả kho: chỉ ghi nhận rồi về tab Hợp đồng
         if (result.success && (result.kind === 'fee' || pending?.kind === 'fee')) {
           clearPendingVnPay()
           setState({ loading: false, result: { ...result, fee: true }, error: '' })
@@ -106,6 +120,7 @@ export default function PaymentResultPage({ navigate }) {
           await releaseHeld()
           return
         }
+        // Đặt cọc thành công: báo số đơn + số tiền (failed = có đơn chưa tạo được hợp đồng) rồi mở tab Hợp đồng
         if (result.success) {
           clearPendingVnPay()
           await announceDepositSuccess(dialog, {
@@ -120,6 +135,7 @@ export default function PaymentResultPage({ navigate }) {
   }, [])
 
   const { loading, result, error } = state
+  // failed = đã tải xong nhưng có lỗi gọi API hoặc VNPay báo giao dịch không thành công
   const failed = !loading && (error || (result && !result.success))
 
   return (
@@ -137,6 +153,7 @@ export default function PaymentResultPage({ navigate }) {
             <span className="pr-icon ok" aria-hidden="true">✓</span>
             <h1>{result.rent ? 'Đã đóng tiền thuê' : result.fee ? 'Đã thanh toán phí phát sinh' : result.renewal ? 'Gia hạn thành công' : 'Đặt cọc thành công'}</h1>
             <p>Đã nhận {formatVnd(result.amount)}đ qua VNPay{result.transactionNo ? ` · Mã GD ${result.transactionNo}` : ''}.</p>
+            {/* Nút đi tiếp: nếu có hợp đồng gia hạn thì yêu cầu mở màn hình ký, rồi chuyển sang tab Hợp đồng */}
             <button
               type="button"
               className="dashboard-primary-btn"

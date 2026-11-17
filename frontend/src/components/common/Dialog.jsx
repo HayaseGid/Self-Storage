@@ -1,35 +1,36 @@
 /**
  * ======================================================================
- * FILE: src/components/common/Dialog.jsx  —  HỘP THOẠI (POP-UP) THÔNG BÁO / XÁC NHẬN DÙNG CHUNG TOÀN APP
- * Thay cho window.alert / window.confirm: đẹp hơn, hỗ trợ tiếng Việt, trả về Promise để dùng với await.
- * Cách dùng:
- *   const dialog = useDialog()
- *   await dialog.alert({ title, message, tone: 'danger' })
- *   const ok = await dialog.confirm({ title, message, confirmLabel: 'Xóa', tone: 'danger' })
- *   const choice = await dialog.open({ title, message, actions: [{ label, value, variant }] })
- * tone: 'info' | 'success' | 'warning' | 'danger';  variant nút: 'primary' | 'secondary' | 'danger'.
- * <DialogProvider> được bọc ở gốc App.jsx; các hộp thoại xếp hàng đợi, hiện lần lượt từng cái.
- * Không gọi API.
+ * FILE: src/components/common/Dialog.jsx  —  HỘP THOẠI THÔNG BÁO / XÁC NHẬN DÙNG CHUNG TOÀN APP
+ * CHỨC NĂNG: Thay cho window.alert / window.confirm: đẹp hơn, hỗ trợ tiếng Việt, trả về Promise để dùng
+ *   với await. <DialogProvider> được bọc ở gốc App.jsx; các hộp thoại xếp hàng đợi, hiện lần lượt từng cái.
+ *   Cách dùng:
+ *     const dialog = useDialog()
+ *     await dialog.alert({ title: 'Lỗi', message: 'Không lưu được', tone: 'danger' })
+ *     const ok = await dialog.confirm({ title: 'Xóa cơ sở?', message: '...', tone: 'danger', confirmLabel: 'Xóa' })
+ *     const choice = await dialog.open({ title, message, actions: [{ label, value, variant }] })
+ *   tone: 'info' | 'success' | 'warning' | 'danger';  variant nút: 'primary' | 'secondary' | 'danger'.
+ * THÀNH PHẦN CHÍNH:
+ *   - DialogProvider : bọc app, quản lý hàng đợi, cung cấp { open, alert, confirm } qua context.
+ *   - useDialog      : hook lấy đối tượng dialog (ngoài Provider thì dùng window.alert/confirm).
+ *   - DialogView     : (nội bộ) vẽ 1 hộp thoại, xử lý bàn phím / focus / khóa cuộn.
+ * DÙNG Ở: src/App.jsx (DialogProvider + useDialog) và useDialog ở rất nhiều nơi: src/pages (customer/CartPage,
+ *   customer/CustomerAccount, manager/FacilityManagerAccount, staff/FacilityStaffAccount, admin/AdminAccount,
+ *   business/BusinessOperations, payment/PaymentResultPage), src/features (booking/CancelReservation,
+ *   contract/ContractRenewal, payment/PendingPayments, return/ReturnInspection, return/StaffReturns, return/UnitReturn).
+ *   Đối tượng dialog còn được truyền vào src/services/afterDeposit.js (announce...).
+ * PHỤ THUỘC: react (context, hooks), ./Dialog.css.
+ * API: Không gọi API.
+ * LUỒNG: Component gọi await dialog.confirm({...}) -> open() thêm vào queue -> DialogProvider render DialogView
+ *   cho phần tử đầu -> người dùng bấm nút -> close(value) resolve Promise -> component nhận true/false và xử lý tiếp.
  * ======================================================================
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import './Dialog.css'
 
-/*
- * Pop-up cảnh báo / xác nhận dùng chung cho toàn bộ ứng dụng.
- *
- * Cách dùng trong component:
- *   const dialog = useDialog()
- *   await dialog.alert({ title: 'Lỗi', message: 'Không lưu được', tone: 'danger' })
- *   const ok = await dialog.confirm({ title: 'Xóa cơ sở?', message: '...', tone: 'danger', confirmLabel: 'Xóa' })
- *   const choice = await dialog.open({ title, message, actions: [{ label, value, variant }] })
- *
- * tone: 'info' | 'success' | 'warning' | 'danger'
- * variant của nút: 'primary' | 'secondary' | 'danger'
- */
-
+// Context chứa { open, alert, confirm } do DialogProvider cung cấp.
 const DialogContext = createContext(null)
 
+// Biểu tượng và tiêu đề mặc định theo tone.
 const TONE_ICONS = {
   info: 'i',
   success: '✓',
@@ -57,6 +58,8 @@ function DialogView({ dialog, onClose }) {
     ? dialog.actions
     : [{ label: 'Đã hiểu', value: true, variant: 'primary' }]
 
+  // Chạy khi hộp thoại hiện (dialog đổi): khóa cuộn trang, focus nút chính, gắn xử lý phím;
+  // khi đóng: gỡ xử lý phím, trả lại cuộn trang và focus cũ.
   useEffect(() => {
     const previousFocus = document.activeElement
     const previousOverflow = document.body.style.overflow
@@ -145,9 +148,10 @@ function DialogView({ dialog, onClose }) {
 /**
  * Provider cung cấp dialog cho toàn app (bọc ở App.jsx). Quản lý hàng đợi hộp thoại và chỉ hiện hộp thoại đầu tiên.
  * Cung cấp qua context: { open, alert, confirm }.
+ * @param {{children: React.ReactNode}} props toàn bộ ứng dụng bên trong.
  */
 export function DialogProvider({ children }) {
-  const [queue, setQueue] = useState([])
+  const [queue, setQueue] = useState([]) // hàng đợi hộp thoại; phần tử đầu là hộp thoại đang hiện
 
   // Mở hộp thoại tùy biến; trả Promise sẽ resolve bằng `value` của nút người dùng bấm.
   const open = useCallback(options => new Promise(resolve => {
@@ -227,6 +231,7 @@ const browserFallback = {
 
 /**
  * Hook lấy đối tượng dialog { open, alert, confirm }. Nằm ngoài DialogProvider thì trả bản dự phòng của trình duyệt.
+ * @returns {{open:Function, alert:Function, confirm:Function}} các hàm đều trả Promise.
  */
 export function useDialog() {
   return useContext(DialogContext) || browserFallback

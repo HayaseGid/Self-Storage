@@ -1,10 +1,19 @@
 /**
  * ======================================================================
  * FILE: src/api/contractEmail.js  —  GỬI HỢP ĐỒNG THUÊ KHO QUA EMAIL
- * Dùng ở: ContractDetailModal, CustomerAccount (sau khi khách ký hợp đồng / bấm "Gửi email").
- * Luồng gửi (sendContractEmail):
- *  1. Dựng nội dung hợp đồng dạng HTML (buildContractEmailHtml).
- *  2. Gửi qua backend: POST /api/email/send-contract (EmailController -> EmailService: Brevo HTTP API / SMTP).
+ * CHỨC NĂNG: Dựng bản hợp đồng thuê kho dạng HTML (inline style để Gmail/Outlook hiển thị đúng)
+ *   từ dữ liệu nhóm hợp đồng + chính sách hiện hành, rồi nhờ backend gửi tới email khách.
+ *   Dùng sau khi khách ký hợp đồng hoặc khi bấm "Gửi email" trong chi tiết hợp đồng.
+ * THÀNH PHẦN CHÍNH:
+ *   - buildContractEmailHtml : dựng chuỗi HTML hợp đồng (các bên, thời hạn, giá, điều khoản, phụ lục kho, chữ ký).
+ *   - sendContractEmail      : gọi backend gửi email hợp đồng.
+ *   - esc / money / fmtTime  : hàm phụ escape HTML, định dạng tiền "1.500.000đ", định dạng giờ ngày.
+ * DÙNG Ở: src/features/contract/ContractDetailModal.jsx, src/pages/customer/CustomerAccount.jsx.
+ * PHỤ THUỘC: ./api (apiPost), src/features/contract/ContractDocument (contractUnits: gom danh sách kho),
+ *   src/services/policies (describePolicy: câu tóm tắt điều khoản), src/services/storageRules (formatVnd).
+ * API: POST /api/email/send-contract (EmailController -> EmailService: Brevo HTTP API / SMTP).
+ * LUỒNG: Khách bấm "Gửi email" / ký xong -> sendContractEmail() -> buildContractEmailHtml() dựng HTML
+ *   -> POST /api/email/send-contract -> backend gửi mail -> trả { sentTo } để giao diện báo thành công.
  * ======================================================================
  */
 import { contractUnits } from '../features/contract/ContractDocument'
@@ -12,6 +21,8 @@ import { describePolicy } from '../services/policies'
 import { formatVnd } from '../services/storageRules'
 import { apiPost } from './api'
 
+// Thời gian chờ mong muốn khi gửi mail (35 giây). Lưu ý: apiPost() trong ./api hiện chỉ nhận (path, body)
+// nên tham số { timeout } truyền thêm ở sendContractEmail KHÔNG có tác dụng; thực tế vẫn dùng timeout mặc định 20 giây.
 const CONTRACT_SEND_TIMEOUT_MS = 35000
 
 /**
@@ -30,7 +41,6 @@ const fmtTime = iso => {
   return d && !Number.isNaN(d.getTime()) ? d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
 }
 
-/* Nội dung hợp đồng dạng HTML (inline style để hiển thị đúng trong Gmail/Outlook). Không nhúng ảnh chữ ký vì quá nặng. */
 /**
  * Dựng nội dung email hợp đồng dạng HTML (dùng inline style để Gmail/Outlook hiển thị đúng):
  * các bên, thời hạn thuê, giá thuê + tiền cọc, điều khoản chính (lấy từ chính sách), phụ lục danh sách kho
@@ -39,6 +49,7 @@ const fmtTime = iso => {
  *   group = nhóm hợp đồng { code, rentals[] }, customer = { name, email },
  *   signature = thông tin chữ ký (null nếu chưa ký), policies = chính sách hiện hành.
  * @returns {string} chuỗi HTML.
+ * Được gọi bởi sendContractEmail (cùng file). Không gọi API.
  */
 export function buildContractEmailHtml({ group, customer, facilityAddress, signature, policies }) {
   const rentals = group.rentals
@@ -89,6 +100,8 @@ export function buildContractEmailHtml({ group, customer, facilityAddress, signa
  * API: POST /api/email/send-contract  (EmailController).
  * @param {{group, customer, facilityAddress, signature, policies}} args giống buildContractEmailHtml.
  * @returns {Promise<{sentTo:string}>} email đã gửi tới.
+ * @throws {Error} nếu khách chưa có email; ApiError nếu backend gửi thất bại.
+ * Được gọi bởi ContractDetailModal / CustomerAccount khi khách bấm "Gửi email" hoặc vừa ký hợp đồng.
  */
 export async function sendContractEmail({ group, customer, facilityAddress, signature, policies }) {
   if (!customer?.email) throw new Error('Tài khoản chưa có email.')

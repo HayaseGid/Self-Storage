@@ -1,45 +1,64 @@
 /**
  * ======================================================================
  * FILE: src/features/return/ReturnInspection.jsx  —  KIỂM KHO KHI TRẢ: ẢNH + KHÁCH XÁC NHẬN / KHIẾU NẠI TRƯỚC KHI TRỪ CỌC
- * Backend: ReturnInspectionsController (/api/return-inspections/...); Staff gửi ảnh qua /api/unit-returns/staff/{id}/complete.
- * Dùng chung cho 3 vai trò:
- * - Staff:   PhotoPicker trong form kiểm tra + StaffInspectionStatus ở thẻ "Đã xong" (useStaffInspections).
- * - Khách:   CustomerInspectionBox trong khối "Trả kho": xem ảnh, Đồng ý (accept) / Khiếu nại (dispute).
- * - Manager: ManagerReturnInspectionsTab: duyệt kết quả của Staff (approve) và giải quyết khiếu nại (resolve):
- *            giữ / giảm / miễn từng khoản phí, ghi quyết định gửi khách.
- * Trạng thái (INSPECTION): Pending Manager -> Awaiting Customer -> (Disputed) -> Settled.
- * API dùng trong file:
+ * CHỨC NĂNG: Bộ component + hook cho "kết quả kiểm kho" khi khách trả kho, dùng chung cho 3 vai trò.
+ *   Khi nhân viên kiểm kho có phí phát sinh, kết quả (ảnh + các khoản phí) phải qua Quản lý cơ sở duyệt,
+ *   rồi khách xem ảnh và Đồng ý hoặc Khiếu nại trong N ngày (quá hạn tự xác nhận) TRƯỚC khi trừ vào tiền cọc.
+ *   Khiếu nại do Quản lý cơ sở giải quyết (giữ / giảm / miễn từng khoản).
+ *   - Staff:   PhotoPicker trong form kiểm tra + StaffInspectionStatus ở thẻ "Đã xong" (useStaffInspections).
+ *   - Khách:   CustomerInspectionBox trong khối "Trả kho": xem ảnh, Đồng ý (accept) / Khiếu nại (dispute).
+ *   - Manager: ManagerReturnInspectionsTab: duyệt kết quả của Staff (approve) và giải quyết khiếu nại (resolve).
+ *   Trạng thái (INSPECTION): Pending Manager -> Awaiting Customer -> (Disputed) -> Settled.
+ * THÀNH PHẦN CHÍNH:
+ *   - INSPECTION, MAX_STAFF_PHOTOS, MAX_CUSTOMER_PHOTOS (export): hằng số trạng thái / số ảnh tối đa.
+ *   - parseReturnNotes (export): tách chuỗi ghi chú trả kho thành ghi chú khách / nhân viên / phí.
+ *   - compressImage (export), PhotoPicker (export), PhotoGallery (export): nén, chọn, xem ảnh.
+ *   - useInspectionDetail (export), InspectionPhotos, FeeTable (nội bộ): chi tiết + ảnh + bảng phí.
+ *   - useMyInspections, CustomerInspectionBox (export) + DisputeModal (nội bộ): phía khách.
+ *   - useStaffInspections, StaffInspectionStatus (export): phía nhân viên.
+ *   - ManagerApprovalBadge (nội bộ): khối "Quản lý cơ sở phê duyệt" dùng chung cho khách và nhân viên.
+ *   - ResolveModal (nội bộ) + ManagerReturnInspectionsTab (export): phía quản lý (duyệt / giải quyết khiếu nại).
+ *   - fmtMoneyShort (nội bộ, cuối file): định dạng tiền trong bảng của quản lý.
+ * DÙNG Ở: src/features/return/UnitReturn.jsx, src/features/return/StaffReturns.jsx,
+ *   src/pages/customer/CustomerAccount.jsx (useMyInspections), src/pages/manager/FacilityManagerAccount.jsx
+ *   (ManagerReturnInspectionsTab), src/features/notification/HeaderNotificationBell.jsx (useMyInspections).
+ * PHỤ THUỘC: react-dom (createPortal), components/common/listKit (Code, NewBadge, Pager, UnitCodes, rowClass,
+ *   useClientPaging), api/api (apiGet, apiPost), components/common/Dialog (useDialog), services/storageRules
+ *   (formatVnd), ReturnInspection.css.
+ * API (backend ReturnInspectionsController; ảnh của Staff gửi qua POST /api/unit-returns/staff/{id}/complete):
  *   GET  /api/return-inspections/mine | staff | facilities/{facilityId} | {inspectionId}
  *   POST /api/return-inspections/{id}/accept | dispute | approve | resolve
- * Dùng ở: UnitReturn, StaffReturns, CustomerAccount, FacilityManagerAccount, HeaderNotificationBell.
+ * LUỒNG: Staff hoàn tất kiểm tra có phí (StaffReturns) -> trạng thái "Pending Manager" -> Manager mở tab
+ *   "Kiểm kho" (ManagerReturnInspectionsTab) bấm "Duyệt" (approve) -> "Awaiting Customer" -> khách thấy
+ *   CustomerInspectionBox: "Đồng ý" (accept) -> "Settled" (trừ cọc) hoặc "Khiếu nại" (DisputeModal -> dispute)
+ *   -> "Disputed" -> Manager quyết định từng khoản (resolve) -> "Settled".
  * ======================================================================
  */
 import React, { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Code, NewBadge, Pager, UnitCodes, rowClass, useClientPaging } from '../../components/common/listKit' // [THÊM] chia trang + mã nổi bật
+import { Code, NewBadge, Pager, UnitCodes, rowClass, useClientPaging } from '../../components/common/listKit'
 import { apiGet, apiPost } from '../../api/api'
 import { useDialog } from '../../components/common/Dialog'
 import { formatVnd } from '../../services/storageRules'
 import './ReturnInspection.css'
 
-/*
- * GÓP Ý 14 - KIỂM KHO KHI TRẢ: ẢNH + KHÁCH XÁC NHẬN / KHIẾU NẠI TRƯỚC KHI TRỪ CỌC (file THÊM MỚI).
- * Backend: ReturnInspectionsController (/api/return-inspections/...), Staff gửi ảnh ở /api/unit-returns/staff/{id}/complete.
- *   - Staff:   PhotoPicker trong form "Nhập kết quả kiểm tra" + StaffInspectionStatus ở thẻ "Đã xong".
- *   - Khách:   CustomerInspectionBox trong khối "Trả kho" (trang Hợp đồng): xem ảnh, Đồng ý / Khiếu nại.
- *   - Manager: ManagerReturnInspectionsTab: xem ảnh 2 bên, giữ / giảm / miễn từng khoản, ghi quyết định.
- */
-
+/** Các trạng thái của 1 kết quả kiểm kho (trùng chuỗi backend trả về). */
 export const INSPECTION = { PENDING_MANAGER: 'Pending Manager', AWAITING: 'Awaiting Customer', DISPUTED: 'Disputed', SETTLED: 'Settled' }
+/** Số ảnh tối đa nhân viên được đính kèm khi kiểm kho. */
 export const MAX_STAFF_PHOTOS = 5
+/** Số ảnh bằng chứng tối đa khách được gửi kèm khiếu nại. */
 export const MAX_CUSTOMER_PHOTOS = 3
 
 /**
- * Định dạng tiền làm tròn kèm "đ".
+ * Định dạng số tiền (làm tròn) thành chuỗi VND kèm "đ".
+ * @param {number|string} value số tiền.
+ * @returns {string}
  */
 const money = value => `${formatVnd(Math.round(Number(value || 0)))}đ`
 /**
- * Định dạng thời điểm ISO thành "HH:mm dd/MM/yyyy" (không hợp lệ -> "—").
+ * Định dạng thời điểm ISO thành giờ:phút ngày/tháng/năm theo kiểu Việt Nam (không hợp lệ -> "—").
+ * @param {string} iso thời điểm dạng ISO.
+ * @returns {string}
  */
 const fmtDateTime = iso => {
   if (!iso) return '—'
@@ -48,6 +67,8 @@ const fmtDateTime = iso => {
 }
 /**
  * Mô tả thời gian còn lại tới hạn xác nhận ("còn 2 ngày 3 giờ", "còn 5 giờ", "đã quá hạn").
+ * @param {string} iso hạn chót dạng ISO.
+ * @returns {string}
  */
 const timeLeft = iso => {
   const ms = Date.parse(iso) - Date.now()
@@ -56,21 +77,21 @@ const timeLeft = iso => {
   return hours >= 24 ? `còn ${Math.floor(hours / 24)} ngày ${hours % 24} giờ` : `còn ${hours} giờ`
 }
 /**
- * Câu lỗi khi tải dữ liệu kiểm kho: 404 -> báo backend chưa có ReturnInspectionsController, còn lại lấy message lỗi.
+ * Tạo câu lỗi khi tải dữ liệu kiểm kho: 404 -> báo backend chưa có ReturnInspectionsController, còn lại lấy message lỗi.
+ * @param {Error & {status?:number}} error lỗi từ apiGet.
+ * @returns {string}
  */
 const missingTableMessage = error => (error?.status === 404
   ? 'Backend chưa có ReturnInspectionsController (chép file rồi chạy lại backend).'
   : error?.message || 'Không tải được kết quả kiểm kho.')
 
 /**
- * Tách và làm sạch ghi chú trả kho:
- * - customerNote: ghi chú của khách khi hẹn trả kho
- * - staffNote: ghi chú quan sát hiện trạng của nhân viên khi kiểm kho
- * - feeText: thông tin phí đề xuất
- */
-/**
- * Tách ghi chú trả kho (chuỗi gộp do backend lưu) thành: customerNote (ghi chú của khách khi hẹn),
- * staffNote (nhận xét hiện trạng của nhân viên), feeText (thông tin phí đề xuất).
+ * Tách ghi chú trả kho (backend gộp nhiều phần vào 1 chuỗi `notes`) thành 3 phần bằng biểu thức chính quy:
+ * - customerNote: ghi chú của khách khi hẹn trả kho (sau "Khách ghi chú:"; nếu chuỗi không có nhãn nào thì cả chuỗi);
+ * - staffNote: nhận xét hiện trạng của nhân viên (sau "Kết quả kiểm tra: ...");
+ * - feeText: câu về phí đề xuất ("Phí đề xuất...", "Phí:...", "Không phát sinh phí.").
+ * Được gọi bởi: UnitReturn.jsx (ReturnProgress), StaffReturns.jsx (danh sách + kết quả).
+ * @param {string} notes chuỗi ghi chú gốc.
  * @returns {{customerNote:string, staffNote:string, feeText:string}}
  */
 export function parseReturnNotes(notes) {
@@ -105,11 +126,12 @@ export function parseReturnNotes(notes) {
 
 /* ------------------------------------------------------------------ Ảnh */
 
-/* Nén ảnh trước khi gửi: cạnh dài tối đa 1280px, JPEG 0.7 (giống báo cáo sự cố kho của Staff) */
 /**
- * Nén ảnh trước khi gửi: cạnh dài tối đa 1280px, JPEG chất lượng 0.7, trả về data URL.
+ * Nén ảnh trước khi gửi: đọc file -> vẽ lên canvas thu nhỏ (cạnh dài tối đa 1280px) -> xuất JPEG chất lượng 0.7
+ * dạng data URL (giống cách nén ảnh báo cáo sự cố kho của Staff). Không phải ảnh thì báo lỗi.
+ * Được gọi bởi: PhotoPicker (mỗi file ảnh được chọn).
  * @param {File} file file ảnh người dùng chọn.
- * @returns {Promise<string>}
+ * @returns {Promise<string>} data URL 'data:image/jpeg;base64,...'.
  */
 export const compressImage = file => new Promise((resolve, reject) => {
   if (!file.type?.startsWith('image/')) { reject(new Error(`"${file.name}" không phải file ảnh.`)); return }
@@ -132,13 +154,23 @@ export const compressImage = file => new Promise((resolve, reject) => {
 })
 
 /**
- * Component chọn ảnh (tối đa `max` ảnh): nén ảnh, xem trước, xóa từng ảnh.
- * @param {object} props images (mảng data URL), onChange(images), max, required, label, hint, disabled.
+ * Ô chọn / chụp ảnh (tối đa `max` ảnh): nén từng ảnh bằng compressImage, hiện ảnh thu nhỏ, cho xóa từng ảnh.
+ * Component "có kiểm soát": danh sách ảnh do cha giữ, mỗi thay đổi báo qua onChange.
+ * Được gọi bởi: InspectForm (StaffReturns.jsx) và DisputeModal (ảnh bằng chứng của khách).
+ * @param {object} props
+ * @param {string[]} props.images danh sách ảnh hiện tại (data URL).
+ * @param {Function} props.onChange (images: string[]) => void, nhận danh sách ảnh mới.
+ * @param {number} [props.max=MAX_STAFF_PHOTOS] số ảnh tối đa.
+ * @param {boolean} [props.required=false] true thì hiện "(bắt buộc)" và viền cảnh báo khi chưa có ảnh.
+ * @param {string} [props.label] tiêu đề ô ảnh.
+ * @param {string} [props.hint] dòng gợi ý dưới tiêu đề.
+ * @param {boolean} [props.disabled] khóa thêm / xóa ảnh (khi đang gửi).
+ * @returns {JSX.Element}
  */
 export function PhotoPicker({ images, onChange, max = MAX_STAFF_PHOTOS, required = false, label = 'Ảnh hiện trạng kho', hint, disabled }) {
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  // Thêm các file ảnh vừa chọn (cắt theo số ảnh còn được thêm), nén rồi báo onChange.
+  const [busy, setBusy] = useState(false) // đang nén ảnh
+  // Khi chọn file trong ô "Chụp / chọn ảnh": cắt theo số ảnh còn được thêm, nén rồi báo onChange.
   const add = async fileList => {
     const files = [...fileList].slice(0, Math.max(0, max - images.length))
     if (!files.length) return
@@ -179,11 +211,17 @@ export function PhotoPicker({ images, onChange, max = MAX_STAFF_PHOTOS, required
 }
 
 /**
- * Component lưới ảnh có xem phóng to (lightbox, vẽ bằng portal ra body); phím ←/→ để chuyển ảnh, Esc để đóng.
- * @param {object} props images, emptyText.
+ * Lưới ảnh thu nhỏ; bấm 1 ảnh thì mở xem phóng to (lightbox, vẽ bằng portal ra <body>);
+ * phím ←/→ hoặc nút Trước/Sau để chuyển ảnh, Esc / bấm nền để đóng.
+ * Được gọi bởi: InspectionPhotos (ảnh nhân viên và ảnh khách).
+ * @param {object} props
+ * @param {string[]} [props.images=[]] danh sách ảnh (data URL hoặc URL).
+ * @param {string} [props.emptyText] câu hiện khi không có ảnh.
+ * @returns {JSX.Element}
  */
 export function PhotoGallery({ images = [], emptyText = 'Không có ảnh.' }) {
-  const [open, setOpen] = useState(null)
+  const [open, setOpen] = useState(null) // chỉ số ảnh đang phóng to, null = đang đóng
+  // Chỉ chạy khi đang phóng to 1 ảnh: đăng ký phím tắt; đóng lightbox thì gỡ.
   useEffect(() => {
     if (open === null) return undefined
     // Phím tắt khi đang xem ảnh lớn: Esc đóng, mũi tên trái/phải chuyển ảnh.
@@ -221,11 +259,14 @@ export function PhotoGallery({ images = [], emptyText = 'Không có ảnh.' }) {
   )
 }
 
-/* Chi tiết kèm ảnh (danh sách không trả ảnh cho nhẹ) - chỉ tải khi mở. */
 /**
- * Hook: tải chi tiết 1 kết quả kiểm kho (kèm ảnh — danh sách không trả ảnh cho nhẹ), chỉ tải khi enabled.
- * API: GET /api/return-inspections/{inspectionId}
- * @returns {{loading, error, data, reload}}
+ * Hook: tải chi tiết 1 kết quả kiểm kho kèm ảnh (API danh sách không trả ảnh cho nhẹ), chỉ tải khi enabled = true
+ * (vd khi người dùng bấm "Xem ảnh").
+ * API: GET /api/return-inspections/{inspectionId}  -> { staffImages, customerImages, ... }
+ * Được gọi bởi: InspectionPhotos.
+ * @param {number|string} inspectionId mã kết quả kiểm kho.
+ * @param {boolean} [enabled=true] false thì chưa tải.
+ * @returns {{loading:boolean, error:string, data:object, reload:()=>Promise}}
  */
 export function useInspectionDetail(inspectionId, enabled = true) {
   const [state, setState] = useState({ loading: false, error: '', data: null })
@@ -237,13 +278,19 @@ export function useInspectionDetail(inspectionId, enabled = true) {
       .then(data => setState({ loading: false, error: '', data }))
       .catch(error => setState({ loading: false, error: missingTableMessage(error), data: null }))
   }, [inspectionId, enabled])
+  // Chạy khi inspectionId hoặc enabled đổi: tải chi tiết (nếu được phép).
   useEffect(() => { load() }, [load])
   return { ...state, reload: load }
 }
 
 /**
- * Component nút "Xem ảnh kiểm kho": bấm mới tải chi tiết và hiện ảnh của nhân viên (và của khách nếu có).
- * @param {object} props inspection, showCustomer (có hiện ảnh khách gửi khi khiếu nại không).
+ * Nút "📷 Xem N ảnh kiểm kho": chỉ khi bấm mới tải chi tiết (useInspectionDetail) rồi hiện ảnh nhân viên chụp
+ * và ảnh khách gửi kèm khiếu nại (nếu showCustomer).
+ * Được gọi bởi: CustomerInspectionBox, StaffInspectionStatus, ManagerReturnInspectionsTab.
+ * @param {object} props
+ * @param {object} props.inspection kết quả kiểm kho (inspectionId, staffImageCount, customerImageCount).
+ * @param {boolean} [props.showCustomer=true] có hiện ảnh khách gửi không.
+ * @returns {JSX.Element}
  */
 function InspectionPhotos({ inspection, showCustomer = true }) {
   const hasAny = inspection.staffImageCount > 0 || (showCustomer && inspection.customerImageCount > 0)
@@ -273,7 +320,12 @@ function InspectionPhotos({ inspection, showCustomer = true }) {
 }
 
 /**
- * Component bảng các khoản phí kiểm kho: mô tả, số đề xuất, (tuỳ chọn) số chốt cuối.
+ * Bảng các khoản phí kiểm kho: mô tả, số đề xuất, (tuỳ chọn) cột số chốt cuối; khoản bị giảm thì gạch số đề xuất.
+ * Được gọi bởi: CustomerInspectionBox, StaffInspectionStatus, ManagerReturnInspectionsTab.
+ * @param {object} props
+ * @param {object} props.inspection kết quả kiểm kho (fees[], proposedTotal, finalTotal).
+ * @param {boolean} props.showFinal true thì hiện thêm cột "Chốt" (sau khi đã quyết toán).
+ * @returns {JSX.Element}
  */
 function FeeTable({ inspection, showFinal }) {
   return (
@@ -300,9 +352,12 @@ function FeeTable({ inspection, showFinal }) {
 /* ------------------------------------------------------------------ KHÁCH */
 
 /**
- * Hook (KHÁCH): tải các kết quả kiểm kho của khách; lần tải này backend cũng tự xác nhận các kết quả quá hạn.
+ * Hook (KHÁCH): tải các kết quả kiểm kho của khách đang đăng nhập (tự tải khi mount); lần gọi này backend cũng
+ * tự xác nhận các kết quả đã quá hạn (autoSettled = số kết quả vừa tự xác nhận).
  * API: GET /api/return-inspections/mine  -> { items, confirmDays, autoSettled }
- * @returns {{loading, error, data, items, confirmDays, autoSettled, byReservation, reload}}
+ * Được gọi bởi: ReturnSection (UnitReturn.jsx), CustomerAccount.jsx (thông báo), useHeaderNotices (HeaderNotificationBell.jsx).
+ * @returns {{loading:boolean, error:string, data:object, items:object[], confirmDays:number, autoSettled:number,
+ *   byReservation:(id)=>object|null, reload:()=>Promise}}
  */
 export function useMyInspections() {
   const [state, setState] = useState({ loading: true, error: '', data: null })
@@ -313,6 +368,7 @@ export function useMyInspections() {
       .then(data => { setState({ loading: false, error: '', data }); return data })
       .catch(error => { setState({ loading: false, error: missingTableMessage(error), data: null }); return null })
   }, [])
+  // Chạy 1 lần khi mount: tải lần đầu.
   useEffect(() => { reload() }, [reload])
   const items = Array.isArray(state.data?.items) ? state.data.items : []
   return {
@@ -327,14 +383,22 @@ export function useMyInspections() {
 }
 
 /**
- * Component hộp thoại khiếu nại kết quả kiểm kho (vẽ bằng portal ra body): lý do (>= 10 ký tự) + ảnh bằng chứng.
- * @param {object} props inspection, onClose, onDone(result).
+ * Hộp thoại "Đơn khiếu nại kết quả kiểm kho" (vẽ bằng portal ra <body>): hiện thông tin kho thuê + các khoản phí,
+ * khách nhập lý do (10–1000 ký tự) và tối đa 3 ảnh bằng chứng rồi gửi cho Quản lý cơ sở.
+ * API: POST /api/return-inspections/{inspectionId}/dispute  body { reason, images }
+ * Được gọi bởi: CustomerInspectionBox (khi khách bấm "Khiếu nại").
+ * @param {object} props
+ * @param {object} props.inspection kết quả kiểm kho đang khiếu nại.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} props.onDone (result) => void, gọi sau khi gửi khiếu nại thành công.
+ * @returns {React.ReactPortal}
  */
 function DisputeModal({ inspection, onClose, onDone }) {
   const [reason, setReason] = useState('')
-  const [images, setImages] = useState([])
+  const [images, setImages] = useState([]) // ảnh bằng chứng của khách (data URL)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Đăng ký phím Esc để đóng hộp thoại; đăng ký lại khi busy / onClose đổi.
   useEffect(() => {
     // Nhấn Esc để đóng hộp thoại (khi không đang gửi).
     const onKey = e => { if (e.key === 'Escape' && !busy) onClose() }
@@ -342,7 +406,7 @@ function DisputeModal({ inspection, onClose, onDone }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [busy, onClose])
   /**
-   * Gửi khiếu nại.
+   * Khi bấm "Gửi khiếu nại" (submit form): kiểm tra lý do >= 10 ký tự, gửi khiếu nại rồi gọi onDone(result).
    * API: POST /api/return-inspections/{inspectionId}/dispute  body { reason, images }
    */
   const submit = async e => {
@@ -356,7 +420,7 @@ function DisputeModal({ inspection, onClose, onDone }) {
       setError(err.message); setBusy(false)
     }
   }
-  // [SỬA] Vẽ popup thẳng vào <body> (portal). Trước đây popup nằm TRONG thẻ "Trả kho" (.ur-card.clickable),
+  // Vẽ popup thẳng vào <body> (portal). Lý do: nếu popup nằm TRONG thẻ "Trả kho" (.ur-card.clickable),
   // thẻ đó có transform khi hover -> position: fixed bị tính theo thẻ thay vì màn hình: popup không nổi lên
   // mà nằm đè/đẩy nội dung, và rê chuột ra vào thẻ làm popup nhảy qua lại (nhấp nháy).
   return createPortal(
@@ -434,7 +498,16 @@ function DisputeModal({ inspection, onClose, onDone }) {
 }
 
 /**
- * Component khối "Quản lý đã duyệt": người duyệt, email, SĐT, thời điểm và nội dung quyết định.
+ * Khối "Quản lý cơ sở phê duyệt": tên người duyệt, email, SĐT, thời điểm và nội dung quyết định.
+ * Không có người duyệt và không có ghi chú thì không vẽ gì.
+ * Được gọi bởi: CustomerInspectionBox, StaffInspectionStatus, ResolveModal.
+ * @param {object} props
+ * @param {string} [props.resolvedBy] tên Quản lý đã duyệt / giải quyết.
+ * @param {string} [props.resolvedByEmail] email Quản lý.
+ * @param {string} [props.resolvedByPhone] số điện thoại Quản lý.
+ * @param {string} [props.resolvedAt] thời điểm quyết định (ISO).
+ * @param {string} [props.resolutionNotes] nội dung quyết định.
+ * @returns {JSX.Element|null}
  */
 function ManagerApprovalBadge({ resolvedBy, resolvedByEmail, resolvedByPhone, resolvedAt, resolutionNotes }) {
   if (!resolvedBy && !resolutionNotes) return null
@@ -462,20 +535,24 @@ function ManagerApprovalBadge({ resolvedBy, resolvedByEmail, resolvedByPhone, re
   )
 }
 
-/*
- * Hộp kết quả kiểm kho trong thẻ "Trả kho" của khách.
- *   depositTotal / debtDeducted: lấy từ /api/unit-returns/mine (request.depositTotal, request.deductedFromDeposit).
- * Chặn click lan ra ngoài vì thẻ trả kho bấm vào là mở hợp đồng.
- */
 /**
- * Component hộp kết quả kiểm kho trong thẻ "Trả kho" của KHÁCH: trạng thái, bảng phí, ảnh, số trừ cọc /
- * hoàn cọc / còn nợ, nút Đồng ý hoặc Khiếu nại (chặn click lan ra thẻ cha).
- * @param {object} props inspection, depositTotal, debtDeducted (lấy từ /api/unit-returns/mine), onChanged().
+ * Hộp kết quả kiểm kho trong thẻ "Trả kho" của KHÁCH: trạng thái (chờ Quản lý duyệt / chờ bạn xác nhận /
+ * đang khiếu nại / đã quyết toán), ghi chú nhân viên, ảnh, bảng phí, bảng dự kiến trừ cọc / hoàn cọc / còn nợ,
+ * nút "Đồng ý & quyết toán" hoặc "Khiếu nại" (mở DisputeModal). Chặn click lan ra thẻ cha vì thẻ trả kho
+ * bấm vào là mở hợp đồng.
+ * API: POST /api/return-inspections/{inspectionId}/accept (hàm accept); khiếu nại gọi qua DisputeModal.
+ * Được gọi bởi: ReturnProgress (UnitReturn.jsx).
+ * @param {object} props
+ * @param {object} props.inspection kết quả kiểm kho (null thì không vẽ gì).
+ * @param {number} [props.depositTotal] tiền cọc đã đóng (request.depositTotal từ GET /api/unit-returns/mine).
+ * @param {number} [props.debtDeducted=0] công nợ hợp đồng đã trừ vào cọc (request.deductedFromDeposit).
+ * @param {Function} [props.onChanged] gọi sau khi đồng ý / khiếu nại để cha tải lại dữ liệu.
+ * @returns {JSX.Element|null}
  */
 export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted = 0, onChanged }) {
   const dialog = useDialog()
   const [busy, setBusy] = useState(false)
-  const [disputing, setDisputing] = useState(false)
+  const [disputing, setDisputing] = useState(false) // đang mở hộp thoại khiếu nại
   const i = inspection
   if (!i) return null
   const settled = i.status === INSPECTION.SETTLED
@@ -486,7 +563,8 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
   const isDamaged = i.conditionResult === 'Damaged'
 
   /**
-   * Khách đồng ý kết quả kiểm kho (hỏi xác nhận, sau đó không khiếu nại được nữa) -> quyết toán trừ cọc.
+   * Khi khách bấm "Đồng ý & quyết toán": hỏi xác nhận (nêu số trừ cọc / hoàn / nợ, sau đó không khiếu nại được nữa),
+   * gọi API quyết toán rồi gọi onChanged() (kể cả khi lỗi, để làm mới trạng thái).
    * API: POST /api/return-inspections/{inspectionId}/accept
    */
   const accept = async () => {
@@ -612,9 +690,11 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
 /* ------------------------------------------------------------------ STAFF */
 
 /**
- * Hook (STAFF): tải các kết quả kiểm kho do nhân viên lập.
+ * Hook (STAFF): tải các kết quả kiểm kho của nhân viên đang đăng nhập (tự tải khi mount).
  * API: GET /api/return-inspections/staff  -> { items, confirmDays }
- * @returns {{loading, error, data, items, confirmDays, byReservation, reload}}
+ * Được gọi bởi: StaffReturns.jsx (hiện trạng thái ở thẻ "Đã xong", số ngày khách được xác nhận).
+ * @returns {{loading:boolean, error:string, data:object, items:object[], confirmDays:number,
+ *   byReservation:(id)=>object|null, reload:()=>Promise}}
  */
 export function useStaffInspections() {
   const [state, setState] = useState({ loading: true, error: '', data: null })
@@ -625,6 +705,7 @@ export function useStaffInspections() {
       .then(data => setState({ loading: false, error: '', data }))
       .catch(error => setState({ loading: false, error: missingTableMessage(error), data: null }))
   }, [])
+  // Chạy 1 lần khi mount: tải lần đầu.
   useEffect(() => { reload() }, [reload])
   const items = Array.isArray(state.data?.items) ? state.data.items : []
   return {
@@ -637,10 +718,15 @@ export function useStaffInspections() {
   }
 }
 
-/* Trạng thái xác nhận ở thẻ "Đã xong" của Staff. */
 /**
- * Component trạng thái xác nhận ở thẻ "Đã xong" của Staff (chờ Quản lý duyệt / chờ khách / khiếu nại / đã quyết toán).
- * @param {object} props inspection, fallbackNote (ghi chú hiện trạng khi chưa có bản ghi kiểm kho).
+ * Khối trạng thái kiểm kho ở thẻ "Đã xong" của Staff: nhãn trạng thái (chờ Quản lý duyệt / chờ khách / khiếu nại /
+ * đã quyết toán), tình trạng kho, hạn khách xác nhận, ghi chú, bảng phí, lý do khiếu nại, quyết định của Quản lý, ảnh.
+ * Không có bản ghi kiểm kho (trả kho không phí) thì chỉ hiện ghi chú hiện trạng (fallbackNote) nếu có.
+ * Được gọi bởi: StaffReturns.jsx.
+ * @param {object} props
+ * @param {object} [props.inspection] kết quả kiểm kho của yêu cầu này.
+ * @param {string} [props.fallbackNote] ghi chú hiện trạng tách từ request.notes khi chưa có bản ghi kiểm kho.
+ * @returns {JSX.Element|null}
  */
 export function StaffInspectionStatus({ inspection, fallbackNote }) {
   const i = inspection
@@ -731,26 +817,35 @@ export function StaffInspectionStatus({ inspection, fallbackNote }) {
 /* ------------------------------------------------------------------ FACILITY MANAGER */
 
 /**
- * Component hộp thoại của MANAGER: duyệt kết quả Staff gửi (Pending Manager) hoặc giải quyết khiếu nại (Disputed);
- * cho chỉnh số tiền chốt từng khoản (0..số đề xuất), ghi quyết định, xem ảnh hai bên.
- * @param {object} props inspectionId, onClose, onDone(result).
+ * Hộp thoại của MANAGER: tải chi tiết 1 kết quả kiểm kho (kèm ảnh), rồi duyệt kết quả Staff gửi (Pending Manager)
+ * hoặc giải quyết khiếu nại (Disputed): chỉnh số tiền chốt từng khoản (chỉ từ 0 tới số đề xuất, có nút Giữ / Miễn),
+ * ghi quyết định, xem ảnh hai bên; tự tính khách nợ thêm / được hoàn. Trạng thái khác thì chỉ xem.
+ * API: GET /api/return-inspections/{id} (useInspectionDetail), POST .../approve hoặc .../resolve (submit).
+ * Được gọi bởi: ManagerReturnInspectionsTab (khi bấm nút ở cột "Thao tác").
+ * @param {object} props
+ * @param {number|string} props.inspectionId mã kết quả kiểm kho.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} props.onDone (result) => void, gọi sau khi duyệt / giải quyết thành công.
+ * @returns {JSX.Element}
  */
 function ResolveModal({ inspectionId, onClose, onDone }) {
   const dialog = useDialog()
   const detail = useInspectionDetail(inspectionId)
-  const [finals, setFinals] = useState({})
-  const [notes, setNotes] = useState('')
+  const [finals, setFinals] = useState({}) // số tiền chốt theo feeId (chuỗi trong ô nhập)
+  const [notes, setNotes] = useState('') // nội dung quyết định gửi khách
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const d = detail.data
   const isPendingManager = d?.status === INSPECTION.PENDING_MANAGER
   const isDisputed = d?.status === INSPECTION.DISPUTED
-  const canAct = isPendingManager || isDisputed
+  const canAct = isPendingManager || isDisputed // chỉ 2 trạng thái này mới được thao tác
 
+  // Khi tải xong chi tiết: điền sẵn số chốt = số đã chốt (nếu có) hoặc số đề xuất.
   useEffect(() => {
     if (!d) return
     setFinals(Object.fromEntries(d.fees.map(f => [f.feeId, String(Math.round(Number(f.finalAmount ?? f.proposedAmount)))])))
   }, [d])
+  // Đăng ký phím Esc để đóng hộp thoại (khi không đang gửi).
   useEffect(() => {
     // Nhấn Esc để đóng hộp thoại (khi không đang gửi).
     const onKey = e => { if (e.key === 'Escape' && !busy) onClose() }
@@ -763,6 +858,8 @@ function ResolveModal({ inspectionId, onClose, onDone }) {
     const n = Number(finals[f.feeId])
     return Number.isFinite(n) ? n : NaN
   }
+  // invalid: khoản đầu tiên có số chốt không hợp lệ (ngoài 0..đề xuất); finalTotal: tổng số chốt;
+  // owed / refund: khách phải đóng thêm / được hoàn sau khi lấy cọc còn lại trừ tổng chốt.
   const invalid = d ? d.fees.find(f => !(finalOf(f) >= 0 && finalOf(f) <= Number(f.proposedAmount))) : null
   const finalTotal = d ? d.fees.reduce((s, f) => s + (Number.isFinite(finalOf(f)) ? finalOf(f) : 0), 0) : 0
   const remaining = Number(d?.depositRemaining || 0)
@@ -770,7 +867,8 @@ function ResolveModal({ inspectionId, onClose, onDone }) {
   const refund = Math.max(0, remaining - finalTotal)
 
   /**
-   * Gửi quyết định của Manager (kiểm tra số chốt hợp lệ, hỏi xác nhận):
+   * Khi Manager bấm "Phê duyệt & chuyển về khách" / "Chốt quyết định" (submit form): kiểm tra số chốt hợp lệ,
+   * hỏi xác nhận, gọi API rồi gọi onDone(result):
    * - Đang chờ duyệt: POST /api/return-inspections/{id}/approve  body { notes, fees:[{feeId, finalAmount}] }
    * - Đang khiếu nại: POST /api/return-inspections/{id}/resolve  body { notes (>= 10 ký tự), fees }
    */
@@ -924,18 +1022,24 @@ function ResolveModal({ inspectionId, onClose, onDone }) {
 }
 
 /**
- * Component tab "Xác nhận & khiếu nại kết quả kiểm kho" của Facility Manager: số liệu tóm tắt, lọc theo trạng thái,
- * danh sách phân trang, mở ResolveModal để xử lý.
- * @param {object} props facilityId, showToast(message).
+ * Tab "Xác nhận & khiếu nại kết quả kiểm kho" của Quản lý cơ sở: 4 thẻ số liệu tóm tắt, nút lọc theo trạng thái,
+ * bảng danh sách phân trang; bấm "Duyệt kết quả" / "Giải quyết khiếu nại" / "Xem chi tiết" để mở ResolveModal.
+ * API: GET /api/return-inspections/facilities/{facilityId} (hàm load).
+ * Được gọi bởi: FacilityManagerAccount.jsx (tab kiểm kho của trang Quản lý cơ sở).
+ * @param {object} props
+ * @param {number|string} props.facilityId mã cơ sở đang quản lý (null thì chưa tải).
+ * @param {Function} [props.showToast] (message) => void, hiện thông báo nhỏ sau khi xử lý xong.
+ * @returns {JSX.Element}
  */
 export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }) {
-  const [data, setData] = useState(null)
+  const [data, setData] = useState(null) // { items, summary } từ API, null = đang tải lần đầu
   const [error, setError] = useState('')
-  const [filter, setFilter] = useState(null)
-  const [openId, setOpenId] = useState(null)
+  const [filter, setFilter] = useState(null) // trạng thái đang lọc hoặc 'all'; null = chưa chọn (tự chọn khi tải)
+  const [openId, setOpenId] = useState(null) // inspectionId đang mở ResolveModal
 
   /**
    * Tải danh sách kết quả kiểm kho của cơ sở; lần đầu tự chọn bộ lọc ưu tiên (chờ duyệt -> khiếu nại -> tất cả).
+   * Chạy khi mount / đổi cơ sở, khi bấm "Tải lại" và sau khi xử lý xong 1 kết quả.
    * API: GET /api/return-inspections/facilities/{facilityId}  -> { items, summary }
    */
   const load = useCallback(async () => {
@@ -950,6 +1054,7 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
       setError(missingTableMessage(err))
     }
   }, [facilityId])
+  // Chạy khi mount và khi facilityId đổi: tải danh sách.
   useEffect(() => { load() }, [load])
 
   const items = data?.items || []
@@ -1077,6 +1182,9 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
 }
 
 /**
- * Định dạng tiền làm tròn kèm "đ" (bản rút gọn dùng trong bảng).
+ * Định dạng tiền làm tròn kèm "đ" theo kiểu vi-VN, dùng trong bảng và thẻ số liệu của ManagerReturnInspectionsTab.
+ * (Khai báo bằng const ở cuối file nhưng vẫn dùng được vì chỉ được gọi khi component chạy, lúc đó file đã nạp xong.)
+ * @param {number|string} n số tiền.
+ * @returns {string}
  */
 const fmtMoneyShort = n => `${new Intl.NumberFormat('vi-VN').format(Math.round(Number(n || 0)))}đ`

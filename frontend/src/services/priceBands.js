@@ -1,20 +1,29 @@
 /**
  * ======================================================================
  * FILE: src/services/priceBands.js  —  KHUNG GIÁ THEO NHÓM KÍCH THƯỚC (S / M / L / V ...)
- * Nghiệp vụ: Business Operations đặt khoảng diện tích + khoảng giá cho từng nhóm (API /api/price-bands);
- * Facility Manager đặt giá cụ thể cho từng cỡ (S1, S2, M1...) và giá đó PHẢI nằm trong khung của nhóm.
- * Dùng ở: BusinessPriceBands, ManagerPriceTable, utils/unitGeometry.
+ * CHỨC NĂNG: Business Operations đặt khoảng diện tích + khoảng giá cho từng nhóm kích thước;
+ *   Facility Manager đặt giá cụ thể cho từng cỡ (S1, S2, M1...) và giá đó PHẢI nằm trong khung của nhóm.
+ *   File chứa các hàm thuần để lấy mã nhóm, tính diện tích, tìm khung giá, kiểm tra giá trong khung và định dạng hiển thị.
+ * THÀNH PHẦN CHÍNH:
+ *   - getBandCode      : "M2: 2x3m" -> "M".
+ *   - getArea          : tính diện tích m² từ volume hoặc chuỗi kích thước.
+ *   - findBand         : tìm khung giá của nhóm theo chuỗi kích thước.
+ *   - checkPriceInBand : kiểm tra giá có nằm trong khung không.
+ *   - formatArea / formatBandPrice : định dạng "6 m²" / "a đ – b đ".
+ * DÙNG Ở: src/pages/business/BusinessPriceBands.jsx, src/pages/manager/ManagerPriceTable.jsx,
+ *   src/utils/unitGeometry.js (getBandCode).
+ * PHỤ THUỘC: ./storageRules (formatVnd).
+ * API: Không gọi API (danh sách khung giá do trang tải rồi truyền vào).
+ * LUỒNG: Manager nhập giá cho size ở ManagerPriceTable -> checkPriceInBand(bands, dimensions, price)
+ *   -> ngoài khung thì hiện câu lỗi, trong khung mới cho lưu.
  * ======================================================================
- */
-/*
- * Khung giá theo nhóm kích thước (S / M / L / V ...).
- * Business Operations đặt khoảng diện tích + khoảng giá cho từng nhóm;
- * Facility Manager đặt giá cụ thể cho từng size (S1, S2...) trong khoảng đó.
  */
 import { formatVnd } from './storageRules'
 
 /**
  * Lấy mã nhóm kích thước từ chuỗi kích thước, ví dụ "M2: 2x3m" -> "M" (không khớp -> null).
+ * @param {string} dimensions chuỗi kích thước.
+ * @returns {string|null} mã nhóm viết hoa.
  */
 export function getBandCode(dimensions) {
   const match = /^\s*([A-Za-z]+)\s*\d*\s*:/.exec(String(dimensions || ''))
@@ -43,6 +52,8 @@ export function getArea(dimensions, volume = null) {
 
 /**
  * Tìm khung giá của nhóm tương ứng với chuỗi kích thước.
+ * @param {object[]} bands danh sách khung giá.
+ * @param {string} dimensions chuỗi kích thước, ví dụ "M2: 2x3m".
  * @returns {object|null} khung giá { code, name, minPrice, maxPrice, ... }.
  */
 export function findBand(bands = [], dimensions) {
@@ -59,9 +70,12 @@ export const formatArea = value => (value == null ? '—' : `${Number(value).toL
  */
 export const formatBandPrice = band => `${formatVnd(band.minPrice)}đ – ${formatVnd(band.maxPrice)}đ`
 
-/* { ok, error } — giá phải nằm trong khung của nhóm (nhóm chưa có khung thì không chặn). */
 /**
  * Kiểm tra giá quản lý nhập có nằm trong khung giá của nhóm không (nhóm chưa có khung thì không chặn).
+ * Được gọi bởi ManagerPriceTable khi Manager nhập / lưu giá cho 1 size.
+ * @param {object[]} bands danh sách khung giá.
+ * @param {string} dimensions chuỗi kích thước của size.
+ * @param {number|string} price giá/tháng đang nhập.
  * @returns {{ok:boolean, band:object|null, error?:string}}
  */
 export function checkPriceInBand(bands, dimensions, price) {

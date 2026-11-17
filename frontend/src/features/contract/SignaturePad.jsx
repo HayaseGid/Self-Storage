@@ -1,20 +1,32 @@
 /**
  * ======================================================================
- * FILE: src/features/contract/SignaturePad.jsx  —  KHUNG KÝ TAY (vẽ chữ ký bằng chuột / ngón tay trên canvas)
- * Kết quả trả ra dạng ảnh PNG base64 (data URL) qua onChange; nút "Xoá chữ ký" trả null. Không gọi API.
- * Dùng ở: ContractSignFlow, ContractModal.
+ * FILE: src/features/contract/SignaturePad.jsx  —  KHUNG KÝ TAY
+ * CHỨC NĂNG: Khung <canvas> để khách vẽ chữ ký bằng chuột / bút / ngón tay (dùng Pointer Events nên chạy cả trên
+ *   điện thoại). Mỗi khi ký xong một nét, chữ ký được xuất thành ảnh PNG base64 (data URL) và gửi lên qua onChange;
+ *   nút "Xoá chữ ký" xóa canvas và gửi null.
+ * THÀNH PHẦN CHÍNH:
+ *   - SignaturePad (default export): component khung ký.
+ *   - getPos / start / move / end / clear: các hàm xử lý vẽ bên trong component.
+ * DÙNG Ở: src/features/contract/ContractSignFlow.jsx, src/features/contract/ContractModal.jsx.
+ * PHỤ THUỘC: chỉ React (style viết trực tiếp, không có file CSS riêng).
+ * API: Không gọi API. Ảnh chữ ký được component cha gửi lên backend.
+ * LUỒNG: nhấn xuống (start) -> kéo (move: vẽ đoạn thẳng) -> nhả / rời khung (end) -> canvas.toDataURL('image/png')
+ *   -> onChange(dataUrl) -> cha lưu vào state chữ ký.
  * ======================================================================
  */
 import React from 'react'
 
 /**
- * Component khung ký tay.
- * @param {{onChange: Function}} props onChange(dataUrl|null) được gọi khi ký xong một nét hoặc khi xóa.
+ * Khung ký tay trên canvas 640×200 (hiển thị co giãn theo chiều rộng).
+ * @param {object} props
+ * @param {Function} props.onChange onChange(dataUrl|null): gọi khi kết thúc một nét ký (ảnh PNG base64) hoặc khi xóa (null).
+ * @returns {JSX.Element}
+ * Được gọi bởi: ContractSignFlow (bước 3 "Ký hợp đồng"), ContractModal (mục "Chữ ký của bên thuê").
  */
 export default function SignaturePad({ onChange }) {
-  const canvasRef = React.useRef(null)
-  const drawingRef = React.useRef(false)
-  const lastRef = React.useRef({ x: 0, y: 0 })
+  const canvasRef = React.useRef(null) // phần tử <canvas>
+  const drawingRef = React.useRef(false) // đang giữ chuột / ngón tay để vẽ hay không (dùng ref để không render lại)
+  const lastRef = React.useRef({ x: 0, y: 0 }) // điểm vẽ trước đó, làm đầu đoạn thẳng tiếp theo
 
   // Đổi tọa độ con trỏ trên màn hình thành tọa độ trong canvas (tính theo tỉ lệ kích thước thật/hiển thị).
   const getPos = (e) => {
@@ -26,7 +38,7 @@ export default function SignaturePad({ onChange }) {
     }
   }
 
-  // Bắt đầu nét ký: giữ con trỏ, ghi điểm đầu và chấm một điểm nhỏ.
+  // Chạy khi nhấn xuống canvas (onPointerDown): bắt đầu nét ký, giữ con trỏ, ghi điểm đầu và chấm một điểm nhỏ.
   const start = (e) => {
     e.preventDefault()
     canvasRef.current.setPointerCapture?.(e.pointerId)
@@ -39,7 +51,7 @@ export default function SignaturePad({ onChange }) {
     ctx.fill()
   }
 
-  // Đang ký: vẽ đoạn thẳng từ điểm trước tới vị trí hiện tại.
+  // Chạy khi di chuyển con trỏ (onPointerMove): nếu đang ký thì vẽ đoạn thẳng từ điểm trước tới vị trí hiện tại.
   const move = (e) => {
     if (!drawingRef.current) return
     e.preventDefault()
@@ -56,14 +68,15 @@ export default function SignaturePad({ onChange }) {
     lastRef.current = pos
   }
 
-  // Kết thúc nét ký: xuất ảnh chữ ký PNG (data URL) qua onChange.
+  // Chạy khi nhả / rời khung / hủy chạm (onPointerUp, onPointerLeave, onPointerCancel):
+  // kết thúc nét ký và xuất toàn bộ chữ ký thành ảnh PNG (data URL) qua onChange.
   const end = () => {
     if (!drawingRef.current) return
     drawingRef.current = false
     onChange(canvasRef.current.toDataURL('image/png'))
   }
 
-  // Xóa toàn bộ chữ ký trên canvas và báo onChange(null).
+  // Chạy khi bấm nút "Xoá chữ ký": xóa toàn bộ canvas và báo onChange(null) để cha biết chưa có chữ ký.
   const clear = () => {
     const canvas = canvasRef.current
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)

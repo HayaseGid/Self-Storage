@@ -1,21 +1,35 @@
 /**
  * ======================================================================
- * FILE: src/pages/admin/AdminAccount.jsx  —  TRANG QUẢN TRỊ HỆ THỐNG (System Admin, route /admin)
- * Menu: Tổng quan · Tài khoản chờ duyệt · Quản lý tài khoản (+ chi tiết) · Phân quyền (vai trò) · Nhật ký hoạt động.
- * Luồng API (AdminController):
- *   GET /api/admin/users                    -> danh sách tài khoản (hỗ trợ ?page=&pageSize=&q=&status=&role= qua useServerList)
- *   GET /api/admin/activity                 -> nhật ký hoạt động (hỗ trợ phân trang qua useServerList)
- *   PUT /api/admin/users/{userId}           -> { roleName, status } duyệt / từ chối / khóa / mở khóa / đổi vai trò
- *   PUT /api/admin/users/{userId}/password  -> { newPassword } đặt lại mật khẩu
- * Dùng ở: App.jsx (role SYSTEM_ADMIN).
+ * FILE: src/pages/admin/AdminAccount.jsx  —  TRANG QUẢN TRỊ HỆ THỐNG (SYSTEM ADMIN)
+ * CHỨC NĂNG: Màn hình dành cho tài khoản System Administrator. Có thanh menu bên trái gồm 5 mục:
+ *   Tổng quan · Duyệt tài khoản (nhân sự đăng ký chờ duyệt) · Tất cả tài khoản (tìm/lọc/phân trang + chi tiết)
+ *   · Vai trò & quyền (mô tả từng vai trò) · Nhật ký hoạt động. Admin có thể duyệt / từ chối, khóa / mở khóa,
+ *   đổi vai trò và đặt lại mật khẩu cho tài khoản.
+ * THÀNH PHẦN CHÍNH:
+ *   - roleOptions: danh sách vai trò có thể gán cho tài khoản.
+ *   - Admin (export default): component trang quản trị.
+ *     + loadAdminData / updateUser / resetPassword: các hàm gọi API.
+ *     + approveUser / rejectUser / toggleLock / changeRole: thao tác trên 1 tài khoản (gọi updateUser).
+ *     + renderDashboard / renderPending / renderUsers / renderUserDetail / renderRoles / renderLogs: vẽ từng màn hình.
+ * DÙNG Ở: src/App.jsx (hiển thị khi người dùng đăng nhập có vai trò SYSTEM_ADMIN).
+ * PHỤ THUỘC: api/api (apiGet, apiPut), components/common/Dialog (hộp thoại xác nhận),
+ *   components/common/listKit (useServerList phân trang, Pager, NewBadge, rowClass, timeAgo...), AdminAccount.css.
+ * API (AdminController):
+ *   GET /api/admin/users                    -> danh sách tài khoản (có thể kèm ?page=&pageSize=&q=&status=&role= qua useServerList)
+ *   GET /api/admin/activity                 -> nhật ký hoạt động (có thể phân trang qua useServerList)
+ *   PUT /api/admin/users/{userId}           -> body { roleName, status }: duyệt / từ chối / khóa / mở khóa / đổi vai trò
+ *   PUT /api/admin/users/{userId}/password  -> body { password }: đặt lại mật khẩu
+ * LUỒNG: mở trang -> loadAdminData tải users + logs -> admin chọn menu (activeMenu) -> bấm nút thao tác
+ *   (vd "Khóa tài khoản") -> hỏi xác nhận bằng dialog -> updateUser gọi PUT -> tải lại dữ liệu -> hiện toast.
  * ======================================================================
  */
 import React, { useEffect, useMemo, useState } from "react";
-import { NewBadge, Pager, newestFirst, parseTime, rowClass, timeAgo, useServerList } from "../../components/common/listKit"; // [THÊM] phân trang ở backend + tô sáng bản ghi mới
+import { NewBadge, Pager, newestFirst, parseTime, rowClass, timeAgo, useServerList } from "../../components/common/listKit"; // phân trang ở backend + tô sáng bản ghi mới
 import "./AdminAccount.css";
 import { apiGet, apiPut } from "../../api/api";
 import { useDialog } from "../../components/common/Dialog";
 
+/** Các vai trò admin có thể gán cho tài khoản (dùng cho ô lọc và ô "Thay đổi role"). */
 const roleOptions = [
   "Storage Customer",
   "Facility Staff",
@@ -24,17 +38,21 @@ const roleOptions = [
 ];
 
 /**
- * Component trang quản trị: tải tài khoản + nhật ký, các thao tác quản lý tài khoản, các màn hình con theo menu.
+ * Trang quản trị hệ thống: tải danh sách tài khoản + nhật ký từ backend, cung cấp các thao tác
+ * quản lý tài khoản và vẽ màn hình con tương ứng với mục menu đang chọn (activeMenu).
+ * Đăng xuất sẽ xóa phiên đăng nhập trong localStorage.
+ * Được gọi bởi: App.jsx khi người dùng hiện tại là System Admin.
+ * @returns {JSX.Element} bố cục trang gồm sidebar menu + nội dung chính + toast.
  */
 function Admin() {
   const dialog = useDialog();
-  const [activeMenu, setActiveMenu] = useState("dashboard");
+  const [activeMenu, setActiveMenu] = useState("dashboard"); // 'dashboard' | 'pending' | 'users' | 'roles' | 'logs'
   const [users, setUsers] = useState([]);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
+  const [saving, setSaving] = useState(false); // đang gửi thao tác cập nhật -> hiện "Đang lưu thay đổi..."
+  const [selectedUser, setSelectedUser] = useState(null); // tài khoản đang xem chi tiết
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [search, setSearch] = useState("");
@@ -44,8 +62,10 @@ function Admin() {
   const [toast, setToast] = useState("");
 
   /**
-   * Tải song song danh sách tài khoản và nhật ký hoạt động, chuẩn hóa thời gian hiển thị của nhật ký.
+   * Tải song song danh sách tài khoản và nhật ký hoạt động, đổi thời gian nhật ký sang dạng hiển thị vi-VN
+   * rồi lưu vào state users / logs. Báo lỗi nếu backend không trả về mảng.
    * API: GET /api/admin/users + GET /api/admin/activity
+   * Được gọi khi: mở trang (useEffect) và sau mỗi lần cập nhật tài khoản / đặt lại mật khẩu.
    */
   const loadAdminData = async () => {
     setLoading(true);
@@ -75,9 +95,10 @@ function Admin() {
     }
   };
 
+  // Chạy 1 lần khi mở trang: tải dữ liệu quản trị.
   useEffect(() => { loadAdminData(); }, []);
 
-  // Hiện thông báo nhỏ (toast) trong 2,5 giây.
+  // Hiện thông báo nhỏ (toast) góc màn hình trong 2,5 giây; hẹn giờ lưu ở window để hủy hẹn giờ cũ khi có toast mới.
   const showToast = (message) => {
     setToast(message);
     window.clearTimeout(window.__adminToastTimer);
@@ -85,9 +106,14 @@ function Admin() {
   };
 
   /**
-   * Cập nhật vai trò + trạng thái 1 tài khoản rồi tải lại dữ liệu và báo thành công.
+   * Cập nhật vai trò + trạng thái 1 tài khoản, tải lại dữ liệu, đồng bộ khung chi tiết đang mở và hiện toast.
+   * Lỗi thì hiện hộp thoại báo lỗi.
    * API: PUT /api/admin/users/{id}  body { roleName, status }
-   * @param {number} id mã tài khoản; role vai trò; status trạng thái; successMessage câu báo thành công.
+   * Được gọi bởi: approveUser, rejectUser, toggleLock, changeRole.
+   * @param {number} id mã tài khoản.
+   * @param {string} role vai trò mới (giữ nguyên nếu chỉ đổi trạng thái).
+   * @param {string} status trạng thái mới: 'Active' | 'Rejected' | 'Locked' ...
+   * @param {string} successMessage câu hiện trong toast khi thành công.
    */
   const updateUser = async (id, role, status, successMessage) => {
     const user = users.find((item) => item.id === id);
@@ -107,13 +133,13 @@ function Admin() {
     }
   };
 
-  // Duyệt tài khoản đang chờ (status -> Active).
+  // Duyệt tài khoản đang chờ (status -> Active). Chạy khi bấm "Duyệt tài khoản".
   const approveUser = (id) => {
     const user = users.find((item) => item.id === id);
     if (user) void updateUser(id, user.role, "Active", `Đã duyệt tài khoản ${user.username}`);
   };
 
-  // Từ chối tài khoản đang chờ (hỏi xác nhận, status -> Rejected).
+  // Từ chối tài khoản đang chờ (hỏi xác nhận, status -> Rejected). Chạy khi bấm "Từ chối".
   const rejectUser = async (id) => {
     const user = users.find((item) => item.id === id);
     if (!user) return;
@@ -126,7 +152,7 @@ function Admin() {
     if (confirmed) void updateUser(id, user.role, "Rejected", `Đã từ chối tài khoản ${user.username}`);
   };
 
-  // Khóa / mở khóa tài khoản (hỏi xác nhận, status Active <-> Locked).
+  // Khóa / mở khóa tài khoản (status Active <-> Locked; chỉ hỏi xác nhận khi khóa). Chạy khi bấm nút khóa/mở khóa ở khung chi tiết.
   const toggleLock = async (id) => {
     const user = users.find((item) => item.id === id);
     if (!user) return;
@@ -143,7 +169,7 @@ function Admin() {
     void updateUser(id, user.role, nextStatus, `${nextStatus === "Locked" ? "Đã khóa" : "Đã mở khóa"} ${user.username}`);
   };
 
-  // Đổi vai trò của tài khoản (hỏi xác nhận).
+  // Đổi vai trò của tài khoản (hỏi xác nhận, giữ nguyên trạng thái). Chạy khi chọn ô "Thay đổi role".
   const changeRole = async (id, newRole) => {
     const user = users.find((item) => item.id === id);
     if (!user || user.role === newRole) return;
@@ -157,8 +183,11 @@ function Admin() {
   };
 
   /**
-   * Đặt lại mật khẩu cho tài khoản: kiểm tra độ dài + khớp ô xác nhận, hỏi xác nhận rồi gửi.
-   * API: PUT /api/admin/users/{userId}/password
+   * Đặt lại mật khẩu cho tài khoản: kiểm tra mật khẩu mới >= 6 ký tự và khớp ô xác nhận, hỏi xác nhận rồi gửi;
+   * thành công thì xóa 2 ô mật khẩu, tải lại dữ liệu và hiện toast.
+   * API: PUT /api/admin/users/{userId}/password  body { password }
+   * Được gọi khi: submit form "Đặt lại mật khẩu" trong khung chi tiết tài khoản.
+   * @param {object} user tài khoản cần đặt lại mật khẩu (cần id, username).
    */
   const resetPassword = async (user) => {
     if (newPassword.length < 6) {
@@ -199,7 +228,8 @@ function Admin() {
     [users]
   );
 
-  // Lọc tài khoản theo ô tìm kiếm, vai trò và trạng thái (dùng cho Tổng quan / Phân quyền).
+  // Lọc tài khoản theo ô tìm kiếm, vai trò và trạng thái (tính trên toàn bộ users đã tải).
+  // Lưu ý: hiện không màn hình nào dùng biến này (màn hình Tài khoản dùng userList bên dưới).
   const filteredUsers = useMemo(() => users.filter((user) => {
     const q = search.trim().toLowerCase();
     const matchesSearch = !q || [user.name, user.username, user.email, user.facility].some((value) => value.toLowerCase().includes(q));
@@ -208,14 +238,15 @@ function Admin() {
     return matchesSearch && matchesRole && matchesStatus;
   }), [users, search, roleFilter, statusFilter]);
 
-  // Lọc nhật ký hoạt động theo ô tìm kiếm.
+  // Lọc nhật ký hoạt động theo ô tìm kiếm (hiện cũng không được dùng; màn hình Nhật ký dùng logList).
   const filteredLogs = useMemo(() => logs.filter((log) => {
     const q = logSearch.trim().toLowerCase();
     return !q || [log.actor, log.action, log.target].some((value) => value.toLowerCase().includes(q));
   }), [logs, logSearch]);
 
-  // [PHÂN TRANG] Quản lý tài khoản: backend lọc + chia trang (GET /api/admin/users?page=...), mới tạo lên đầu.
-  // Backend cũ (trả cả mảng) -> tự chia trang từ danh sách đã tải.
+  // [PHÂN TRANG] Màn hình "Tất cả tài khoản": nhờ backend lọc + chia trang (GET /api/admin/users?page=&q=&status=&role=),
+  // tài khoản mới tạo lên đầu. Chỉ chạy khi đang mở menu 'users'; tải lại khi users đổi (reloadKey).
+  // Nếu backend trả cả mảng (không phân trang) -> dùng `fallback` để tự lọc/sắp xếp/chia trang ở frontend.
   const userList = useServerList({
     path: "/api/admin/users",
     q: search,
@@ -233,7 +264,7 @@ function Admin() {
       compare: (a, b) => (parseTime(b.createdAt) || 0) - (parseTime(a.createdAt) || 0) || b.id - a.id,
     },
   });
-  // [PHÂN TRANG] Nhật ký hoạt động (GET /api/admin/activity?page=...), mới nhất lên đầu
+  // [PHÂN TRANG] Màn hình "Nhật ký hoạt động" (GET /api/admin/activity?page=&q=), mới nhất lên đầu; chỉ chạy khi mở menu 'logs'.
   const logList = useServerList({
     path: "/api/admin/activity",
     q: logSearch,
@@ -241,11 +272,12 @@ function Admin() {
     enabled: activeMenu === "logs",
     fallback: { rows: logs, match: (l, { q }) => !q || [l.actor, l.action, l.target].some((v) => String(v || "").toLowerCase().includes(q)), compare: () => 0 },
   });
+  // Dòng nhật ký để vẽ bảng: dữ liệu từ server cần đổi thời gian sang dạng vi-VN; dữ liệu fallback đã đổi sẵn trong loadAdminData.
   const logRows = logList.mode === "server"
     ? logList.items.map((l) => ({ ...l, at: l.time, time: new Date(l.time).toLocaleString("vi-VN") }))
     : logList.items;
 
-  // Chọn 1 tài khoản để xem chi tiết: xóa ô mật khẩu và cuộn tới khung chi tiết.
+  // Chọn 1 tài khoản để xem chi tiết (bấm vào dòng / nút "Xem"): xóa 2 ô mật khẩu và cuộn mượt tới khung chi tiết.
   const selectUser = (user) => {
     setSelectedUser(user);
     setNewPassword("");
@@ -253,7 +285,7 @@ function Admin() {
     setTimeout(() => document.getElementById("admin-user-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
-  // Đăng xuất: xóa phiên đăng nhập khỏi localStorage và về trang chủ.
+  // Đăng xuất (nút "Đăng xuất" ở sidebar): xóa khóa storespace_current_user + userLoggedIn trong localStorage rồi tải lại trang chủ.
   const logout = () => {
     localStorage.removeItem("storespace_current_user");
     localStorage.removeItem("userLoggedIn");
@@ -385,6 +417,7 @@ function Admin() {
     </>;
   };
 
+  // Chọn màn hình nội dung theo mục menu đang mở (mặc định là Tổng quan).
   let content = renderDashboard();
   if (activeMenu === "pending") content = renderPending();
   if (activeMenu === "users") content = renderUsers();

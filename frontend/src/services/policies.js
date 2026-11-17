@@ -1,21 +1,38 @@
 /**
  * ======================================================================
  * FILE: src/services/policies.js  —  CHÍNH SÁCH KINH DOANH (CỌC, PHÍ QUÁ HẠN, ĐẶT CHỖ/HỦY, GIA HẠN/TRẢ KHO)
- * Backend: PoliciesController (GET /api/policies).
- * Công dụng:
- * - DEFAULT_POLICIES: giá trị mặc định khi backend chưa có / không tải được chính sách.
- * - depositFor / describeDepositShort: tính và mô tả tiền cọc theo chính sách.
- * - describePolicy: đổi cấu hình chính sách (JSON) thành câu tóm tắt + bảng thiết lập để hiển thị.
- * - buildContractTerms: dựng các nhóm điều khoản khách phải xác nhận trước khi ký hợp đồng.
- * - loadPolicies / usePolicies: tải chính sách hiện hành 1 lần, CÓ CACHE dùng chung cho cả app,
- *   tự báo cho mọi component đang dùng khi dữ liệu mới về.
- * Dùng ở: hợp đồng, đặt cọc, thông báo khách hàng, trình sửa chính sách (BusinessPolicyEditor)...
+ * CHỨC NĂNG: Nơi duy nhất ở frontend hiểu 4 nhóm chính sách do Business Owner cấu hình: tiền cọc,
+ *   phí quá hạn & phụ phí, đặt chỗ & hủy, gia hạn & trả kho. File cung cấp giá trị mặc định, hàm tính
+ *   tiền cọc, hàm đổi cấu hình JSON thành câu tóm tắt + bảng thiết lập để hiển thị, dựng điều khoản
+ *   hợp đồng, và tải chính sách hiện hành 1 lần (CÓ CACHE dùng chung, tự báo mọi component khi dữ liệu mới về).
+ * THÀNH PHẦN CHÍNH:
+ *   - DEFAULT_POLICIES, POLICY_KEYS, POLICY_TITLES, PERIOD_LABELS, DEPOSIT_METHOD_LABELS : hằng số.
+ *   - fmtDay              : 'YYYY-MM-DD' -> 'DD/MM/YYYY'.
+ *   - depositFor          : tính tiền cọc 1 kho theo chính sách.
+ *   - describeDepositShort: câu ngắn mô tả mức cọc.
+ *   - describePolicy      : cấu hình 1 nhóm -> { summary, settings }.
+ *   - buildContractTerms  : các nhóm điều khoản khách xác nhận trước khi ký.
+ *   - loadPolicies / usePolicies : tải chính sách hiện hành (có cache) / hook React dùng cache đó.
+ *   - DISCOUNTS           : mảng rỗng (không có chương trình giảm giá).
+ * DÙNG Ở: src/features/contract (ContractDocument, ContractSignFlow, ContractDetailModal),
+ *   src/features/payment/DepositConfirm.jsx, src/features/return (StaffReturns, UnitReturn),
+ *   src/features/notification/HeaderNotificationBell.jsx, src/pages/customer/CustomerAccount.jsx,
+ *   src/pages/business/BusinessPolicyEditor.jsx, src/services/customerNoticeData.js, src/api/contractEmail.js.
+ * PHỤ THUỘC: react, src/api/api (apiGet), ./storageRules (RENTAL_TERMS, formatVnd).
+ * API: GET /api/policies (PoliciesController).
+ * LUỒNG: Component gọi usePolicies() -> lần đầu loadPolicies() -> GET /api/policies -> chuẩn hóa thành
+ *   { values, meta, scheduled, loaded } -> lưu cache + báo mọi listener -> component dùng values để
+ *   describePolicy()/buildContractTerms() hiển thị điều khoản. BusinessPolicyEditor lưu xong gọi loadPolicies(true) để tải lại.
  * ======================================================================
  */
 import { useEffect, useState } from 'react'
 import { apiGet } from '../api/api'
 import { RENTAL_TERMS, formatVnd } from './storageRules'
 
+/**
+ * Bộ chính sách mặc định, dùng khi backend chưa có / không tải được chính sách, hoặc khi thiếu 1 nhóm.
+ * Cấu trúc mỗi nhóm giống JSON backend lưu (trường value của từng nhóm trong GET /api/policies).
+ */
 export const DEFAULT_POLICIES = {
   deposit: { method: 'months', value: 2, scope: 'all', facilityIds: [] },
   overdue: {
@@ -46,6 +63,7 @@ export const DEFAULT_POLICIES = {
   }
 }
 
+// Danh sách 4 nhóm chính sách, tên tiếng Việt của từng nhóm, nhãn kỳ tính phí và nhãn phương thức tính cọc.
 export const POLICY_KEYS = ['deposit', 'overdue', 'reservation', 'renewal_return']
 export const POLICY_TITLES = {
   deposit: 'Tiền đặt cọc',
@@ -77,8 +95,9 @@ export const fmtDay = iso => (iso ? String(iso).slice(0, 10).split('-').reverse(
  * - method 'fixed'   -> số tiền cố định / kho.
  * - method 'months'  -> giá thuê × số tháng cọc.
  * @param {object} policy chính sách cọc ({ method, value, scope, facilityIds }).
- * @param {{facilityId:number, monthlyPrice:number, months:number}} args
+ * @param {{facilityId:number, monthlyPrice:number, months:number}} args cơ sở, giá thuê/tháng, số tháng thuê.
  * @returns {number} tiền cọc (làm tròn).
+ * Được gọi bởi BusinessPolicyEditor (ví dụ minh họa mức cọc). Không gọi API.
  */
 export function depositFor(policy, { facilityId, monthlyPrice, months }) {
   const p = policy || DEFAULT_POLICIES.deposit
@@ -94,6 +113,9 @@ export function depositFor(policy, { facilityId, monthlyPrice, months }) {
 
 /**
  * Mô tả ngắn mức cọc để hiển thị, ví dụ "2 tháng tiền thuê / kho", "10% tổng tiền thuê", "500.000đ / kho".
+ * @param {object} policy chính sách cọc (null -> mặc định).
+ * @param {number} [facilityId] cơ sở đang xét; ngoài phạm vi áp dụng -> "2 tháng tiền thuê / kho".
+ * @returns {string} câu mô tả. Được gọi bởi describePolicy('deposit').
  */
 export function describeDepositShort(policy, facilityId) {
   const p = policy || DEFAULT_POLICIES.deposit
@@ -111,6 +133,7 @@ export function describeDepositShort(policy, facilityId) {
  * @param {object} value cấu hình (null -> dùng mặc định).
  * @param {{facilities?:object[]}} options danh sách cơ sở (để hiện tên cơ sở trong phạm vi áp dụng cọc).
  * @returns {{summary:string, settings:Array<[string,string]>}} câu tóm tắt + các dòng [tên thiết lập, giá trị].
+ * Được gọi bởi buildContractTerms, customerNoticeData, contractEmail, DepositConfirm, BusinessPolicyEditor.
  */
 export function describePolicy(key, value, { facilities = [] } = {}) {
   const v = value || DEFAULT_POLICIES[key]
@@ -178,12 +201,12 @@ export function describePolicy(key, value, { facilities = [] } = {}) {
   return { summary: '', settings: [] }
 }
 
-/* Các nhóm điều khoản khách xác nhận trước khi ký hợp đồng. */
 /**
  * Dựng danh sách nhóm điều khoản hợp đồng khách phải đọc/xác nhận trước khi ký
  * (Thời hạn & thanh toán, Tiền cọc, Hủy & không đến nhận kho, Gia hạn & trả kho, Phí quá hạn).
+ * Được gọi bởi ContractDocument (in điều khoản) và ContractSignFlow (bước xác nhận trước khi ký).
  * @param {object} policies giá trị chính sách hiện hành (thiếu nhóm nào dùng mặc định).
- * @returns {Array<{key, title, summary, settings}>}
+ * @returns {Array<{key, title, summary, settings}>} các nhóm điều khoản theo thứ tự hiển thị.
  */
 export function buildContractTerms(policies) {
   const p = { ...DEFAULT_POLICIES, ...(policies || {}) }
@@ -207,6 +230,8 @@ export function buildContractTerms(policies) {
 }
 
 /* ---------- Tải chính sách hiện hành (dùng chung, có cache) ---------- */
+// cache: kết quả đã tải; inflight: Promise đang tải (tránh gọi API trùng);
+// listeners: hàm setState của các component đang dùng usePolicies, được gọi khi có dữ liệu mới.
 let cache = null
 let inflight = null
 const listeners = new Set()
@@ -216,7 +241,9 @@ const listeners = new Set()
  * API: GET /api/policies  -> { current: { deposit:{value,version,effectiveFrom,isDefault}, ... }, scheduled: [...] }
  * Lỗi mạng -> trả cache cũ hoặc bộ mặc định (loaded = false).
  * @param {boolean} force true để bỏ qua cache và tải lại.
- * @returns {Promise<{values, meta, scheduled, loaded}>}
+ * @returns {Promise<{values, meta, scheduled, loaded}>} values = cấu hình 4 nhóm, meta = phiên bản/ngày hiệu lực,
+ *   scheduled = các phiên bản sắp áp dụng, loaded = true nếu tải thành công.
+ * Được gọi bởi usePolicies (lần đầu) và BusinessPolicyEditor (force = true sau khi lưu).
  */
 export function loadPolicies(force = false) {
   if (cache && !force) return Promise.resolve(cache)
@@ -244,10 +271,12 @@ export function loadPolicies(force = false) {
 
 /**
  * Hook React: lấy chính sách hiện hành (dùng cache của loadPolicies), tự cập nhật khi có dữ liệu mới.
- * @returns {{values, meta, scheduled, loaded}}
+ * Được dùng bởi các màn hợp đồng, đặt cọc, trả kho, thông báo và trang tài khoản khách.
+ * @returns {{values, meta, scheduled, loaded}} giống kết quả loadPolicies (ban đầu là bộ mặc định).
  */
 export function usePolicies() {
   const [state, setState] = useState(cache || { values: { ...DEFAULT_POLICIES }, meta: {}, scheduled: [], loaded: false })
+  // Chạy 1 lần khi mount: đăng ký nhận dữ liệu mới, tải chính sách (dùng cache nếu có); hủy đăng ký khi unmount.
   useEffect(() => {
     listeners.add(setState)
     loadPolicies().then(setState)

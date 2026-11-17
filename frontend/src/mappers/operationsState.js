@@ -1,12 +1,20 @@
 /**
  * ======================================================================
- * FILE: src/mappers/operationsState.js  —  CHUYỂN ĐỔI DỮ LIỆU VẬN HÀNH TỪ BACKEND SANG DẠNG FRONTEND DÙNG
- * Tương đương: DTOs ở backend (định nghĩa hình dạng dữ liệu) — ở đây là bước "map" JSON -> object chuẩn.
- * Nguồn dữ liệu: GET /api/operations/state (OperationsController) và các API danh sách có phân trang
- * GET /api/operations/reservations | units | contracts.
- * Công dụng: điền giá trị mặc định, ép kiểu số, cắt ngày về 'YYYY-MM-DD', gom các tên trường khác nhau
- * để mọi màn hình (Staff, Manager, Business) dùng chung một dạng dữ liệu.
- * Dùng ở: hooks/opsLists.js, BusinessOperations, FacilityManagerAccount, FacilityStaffAccount.
+ * FILE: src/mappers/operationsState.js  —  CHUYỂN JSON VẬN HÀNH TỪ BACKEND SANG OBJECT FRONTEND
+ * CHỨC NĂNG: Tương đương DTO ở backend — đây là bước "map" JSON -> object chuẩn. Điền giá trị mặc định,
+ *   ép kiểu số, cắt ngày về 'YYYY-MM-DD', gom các tên trường khác nhau để mọi màn hình vận hành
+ *   (Staff, Manager, Business) dùng chung một dạng dữ liệu.
+ * THÀNH PHẦN CHÍNH:
+ *   - mapOperationsState : map toàn bộ dữ liệu /state (cơ sở, kho, đơn, hợp đồng, thanh toán, nhân viên, giá...).
+ *   - mapUnit / mapReservation / mapContract : map 1 dòng kho / đơn / hợp đồng (dùng chung cho /state và API phân trang).
+ *   - cleanDate (nội bộ): cắt ngày về 'YYYY-MM-DD'.
+ * DÙNG Ở: src/hooks/opsLists.js (mapUnit, mapReservation, mapContract), src/pages/manager/FacilityManagerAccount.jsx,
+ *   src/pages/staff/FacilityStaffAccount.jsx, src/pages/business/BusinessOperations.jsx (mapOperationsState).
+ * PHỤ THUỘC: src/services/storageRules (DEPOSIT_MONTHS).
+ * API: Không gọi API. Dữ liệu đầu vào do trang tải từ GET /api/operations/state và
+ *   GET /api/operations/reservations | units | contracts (OperationsController).
+ * LUỒNG: Trang Manager gọi GET /api/operations/state -> mapOperationsState(raw) -> lưu state -> các tab
+ *   (kho, đơn, hợp đồng, giá) hiển thị từ object đã chuẩn hóa.
  * ======================================================================
  */
 import { DEPOSIT_MONTHS } from '../services/storageRules'
@@ -23,6 +31,7 @@ const cleanDate = value => (value ? String(value).slice(0, 10) : '')
  * policies, activity (nhật ký).
  * @param {object} raw JSON backend trả về.
  * @returns {object} dữ liệu đã chuẩn hóa.
+ * Được gọi bởi FacilityManagerAccount / FacilityStaffAccount / BusinessOperations sau khi tải /state.
  */
 export function mapOperationsState(raw = {}) {
   return {
@@ -120,6 +129,7 @@ export function mapOperationsState(raw = {}) {
 /**
  * Chuẩn hóa 1 dòng KHO (storage unit): mã kho, cơ sở, loại, kích thước, diện tích, giá/tháng,
  * tầng/khu/vị trí, trạng thái (mặc định 'AVAILABLE').
+ * @param {object} u dòng kho thô từ backend. @returns {object} kho đã chuẩn hóa.
  */
 export const mapUnit = u => ({
     id: u.id,
@@ -145,6 +155,7 @@ export const mapUnit = u => ({
  * Chuẩn hóa 1 dòng ĐƠN ĐẶT KHO (reservation): khách hàng, cơ sở, kho được gán, ngày bắt đầu/kết thúc,
  * số tháng, lịch hẹn bàn giao + hình thức bàn giao, tiền cọc/tiền thuê, thông tin trả tiền thuê lúc nhận kho
  * (paymentPlan, startRent*, rentOverdue), trạng thái thanh toán, trạng thái đơn, hợp đồng & chữ ký.
+ * @param {object} r dòng đơn thô từ backend. @returns {object} đơn đã chuẩn hóa.
  */
 export const mapReservation = r => ({
     id: r.id,
@@ -190,6 +201,7 @@ export const mapReservation = r => ({
 /**
  * Chuẩn hóa 1 dòng HỢP ĐỒNG (contract): số hợp đồng (mặc định "HD-{id}"), đơn liên quan, khách, kho,
  * ngày hiệu lực, tiền cọc/tổng phí, trạng thái, chữ ký, thông tin truy cập kho (accessType/accessValue).
+ * @param {object} c dòng hợp đồng thô từ backend. @returns {object} hợp đồng đã chuẩn hóa.
  */
 export const mapContract = c => ({
     id: c.id,
