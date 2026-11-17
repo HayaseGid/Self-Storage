@@ -3,7 +3,7 @@
  * FILE: src/components/common/listKit.jsx  —  BỘ CÔNG CỤ DANH SÁCH DÙNG CHUNG CHO MỌI VAI TRÒ
  * Gồm:
  * - Đánh dấu bản ghi "Mới" (tạo trong NEW_HOURS = 48 giờ), lưu id đã xem ở localStorage 'storespace_seen_items_v1'.
- * - <Pager>: thanh phân trang ("Hiển thị 1–20 / 345", số trang, chọn số dòng/trang).
+ * - <Pager>: thanh phân trang ("Hiển thị 1–5 trong 345", nút Trước/Sau, số trang). Mọi danh sách 5 mục/trang.
  * - useClientPaging(): chia trang cho danh sách nhỏ có sẵn ở frontend.
  * - useServerList(): danh sách phân trang ở BACKEND (?page=&pageSize=&q=&status=&sort=...) -> { items, total, statusCounts };
  *   backend chưa hỗ trợ (404/405 hoặc trả mảng) thì tự lọc/sắp xếp/chia trang ở frontend từ dữ liệu dự phòng.
@@ -19,7 +19,7 @@ import './listKit.css'
 
 /*
  * BỘ CÔNG CỤ DANH SÁCH DÙNG CHUNG (file THÊM MỚI) - mọi actor dùng chung để giao diện thống nhất:
- *   <Pager>            thanh phân trang: số trang, "Hiển thị 1–20 / 345", chọn số dòng mỗi trang.
+ *   <Pager>            thanh phân trang: số trang, "Hiển thị 1–5 trong 345", nút Trước / Sau.
  *   useServerList()    danh sách phân trang ở BACKEND (?page=&pageSize=&q=&status=&sort=) -> { items, total, statusCounts }.
  *                      Backend chưa có API mới (404) thì tự chia trang ở frontend từ dữ liệu sẵn có (fallback) để trang không vỡ.
  *   useClientPaging()  chia trang cho danh sách nhỏ đã có sẵn ở frontend (việc được giao, nhật ký, thông báo...).
@@ -28,7 +28,8 @@ import './listKit.css'
  */
 
 export const NEW_HOURS = 48
-export const PAGE_SIZES = [10, 20, 50, 100]
+/* Số mục mỗi trang dùng chung cho mọi danh sách (không cho chọn số dòng để giao diện gọn, thống nhất). */
+export const DEFAULT_PAGE_SIZE = 5
 
 /* ---------- Mới / nổi bật ---------- */
 
@@ -259,36 +260,33 @@ function pageWindow(page, pageCount) {
 }
 
 /**
- * Component thanh phân trang: thông tin "Hiển thị từ–đến / tổng", nút trang trước/sau, số trang, ô chọn số dòng/trang.
- * @param {object} props page, pageCount, total, pageSize, onPage, onPageSize, pageSizes, unit, loading, compact.
+ * Component thanh phân trang: thông tin "Hiển thị từ–đến trong tổng", nút Trước / Sau và các số trang.
+ * @param {object} props page, pageCount, total, pageSize, onPage, unit, loading, compact.
  */
-export function Pager({ page, pageCount, total, pageSize, onPage, onPageSize, pageSizes = PAGE_SIZES, unit = 'dòng', loading = false, compact = false }) {
+export function Pager({ page, pageCount, total, pageSize, onPage, unit = 'dòng', loading = false, compact = false }) {
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1
   const to = Math.min(total, page * pageSize)
   if (!total && !loading) return null
   return (
     <nav className={`ss-pager${compact ? ' compact' : ''}`} aria-label="Phân trang">
       <span className="ss-pager-info">
-        {loading ? 'Đang tải…' : <>Hiển thị <b>{from}–{to}</b> / <b>{total}</b> {unit}</>}
+        {loading ? 'Đang tải…' : <>Hiển thị <b>{from}–{to}</b> trong <b>{total}</b> {unit}</>}
       </span>
       {pageCount > 1 && (
         <span className="ss-pager-pages">
-          <button type="button" onClick={() => onPage(page - 1)} disabled={page <= 1 || loading} aria-label="Trang trước">‹</button>
+          <button type="button" className="ss-pager-nav" onClick={() => onPage(page - 1)} disabled={page <= 1 || loading} aria-label="Trang trước">
+            <span aria-hidden="true">‹</span><span className="ss-pager-nav-text">Trước</span>
+          </button>
           {pageWindow(page, pageCount).map(p => typeof p === 'number'
             ? (
-              <button key={p} type="button" className={p === page ? 'active' : ''} aria-current={p === page ? 'page' : undefined}
-                onClick={() => onPage(p)} disabled={loading}>{p}</button>
+              <button key={p} type="button" className={`ss-pager-num${p === page ? ' active' : ''}`} aria-current={p === page ? 'page' : undefined}
+                aria-label={`Trang ${p}`} onClick={() => onPage(p)} disabled={loading}>{p}</button>
             )
-            : <span key={p} className="ss-pager-gap">…</span>)}
-          <button type="button" onClick={() => onPage(page + 1)} disabled={page >= pageCount || loading} aria-label="Trang sau">›</button>
+            : <span key={p} className="ss-pager-gap" aria-hidden="true">…</span>)}
+          <button type="button" className="ss-pager-nav" onClick={() => onPage(page + 1)} disabled={page >= pageCount || loading} aria-label="Trang sau">
+            <span className="ss-pager-nav-text">Sau</span><span aria-hidden="true">›</span>
+          </button>
         </span>
-      )}
-      {onPageSize && !compact && (
-        <label className="ss-pager-size">
-          <select value={pageSize} onChange={e => onPageSize(Number(e.target.value))} aria-label="Số dòng mỗi trang">
-            {[...new Set([pageSize, ...pageSizes])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n} / trang</option>)}
-          </select>
-        </label>
       )}
     </nav>
   )
@@ -302,9 +300,8 @@ export function Pager({ page, pageCount, total, pageSize, onPage, onPageSize, pa
  * @param {{pageSize?:number, resetKey?:string}} options resetKey đổi thì quay về trang 1.
  * @returns {{pageRows, page, setPage, pageCount, total, pageSize, pagerProps}} pagerProps truyền thẳng vào <Pager>.
  */
-export function useClientPaging(rows, { pageSize: initialSize = 10, resetKey = '' } = {}) {
+export function useClientPaging(rows, { pageSize = DEFAULT_PAGE_SIZE, resetKey = '' } = {}) {
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(initialSize)
   const list = Array.isArray(rows) ? rows : []
   const total = list.length
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
@@ -325,8 +322,7 @@ export function useClientPaging(rows, { pageSize: initialSize = 10, resetKey = '
       total,
       pageSize,
       // Chuyển trang (giới hạn trong khoảng 1..pageCount).
-      onPage: p => setPage(Math.max(1, Math.min(pageCount, p))),
-      onPageSize: setPageSize
+      onPage: p => setPage(Math.max(1, Math.min(pageCount, p)))
     }
   }
 }
@@ -371,7 +367,7 @@ const toQuery = params => Object.entries(params)
  *   fallback { rows, match(row,{q,status}), compare(a,b,sort), statusOf(row) }.
  * @returns {{items,total,page,pageCount,pageSize,statusCounts,loading,error,mode,setPage,setPageSize,reload,pagerProps}}
  */
-export function useServerList({ path, q = '', status = '', sort = 'newest', extra = {}, pageSize: initialSize = 20, reloadKey = 0, enabled = true, fallback = null }) {
+export function useServerList({ path, q = '', status = '', sort = 'newest', extra = {}, pageSize: initialSize = DEFAULT_PAGE_SIZE, reloadKey = 0, enabled = true, fallback = null }) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(initialSize)
   const [state, setState] = useState({ items: [], total: 0, pageCount: 1, statusCounts: null, loading: true, error: '', mode: 'server' })
@@ -456,9 +452,7 @@ export function useServerList({ path, q = '', status = '', sort = 'newest', extr
       pageSize,
       loading: view.loading && !view.items.length,
       // Chuyển trang (giới hạn trong khoảng hợp lệ).
-      onPage: p => setPage(Math.max(1, Math.min(view.pageCount, p))),
-      // Đổi số dòng mỗi trang.
-      onPageSize: size => setPageSize(size)
+      onPage: p => setPage(Math.max(1, Math.min(view.pageCount, p)))
     }
   }
 }

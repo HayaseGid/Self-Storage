@@ -253,7 +253,7 @@ export default function StaffReturns({ staff }) {
     done: atFacility.filter(i => i.requestStatus === 'Completed')
   }
   const shown = groups[filter]
-  const paging = useClientPaging(shown, { pageSize: 8, resetKey: filter })
+  const paging = useClientPaging(shown, { resetKey: filter })
 
   const catalog = [
     ...(policies.values?.renewal_return?.returnFees || []).map((f, i) => ({ key: `p${i}`, name: f.name, amount: f.amount ?? '', label: `${f.name}${f.amount ? ` · ${money(f.amount)}` : ' · theo thực tế'}` })),

@@ -10,7 +10,7 @@
  */
 import React, { useMemo, useState } from 'react'
 import './DataGrid.css'
-import { Pager, newestFirst, rowClass } from './listKit'
+import { DEFAULT_PAGE_SIZE, Pager, newestFirst, rowClass } from './listKit'
 
 /*
  * Bảng dữ liệu dùng chung: sắp xếp theo cột, tìm kiếm, lọc, phân trang.
@@ -31,7 +31,7 @@ export default function DataGrid({
   searchText,
   searchPlaceholder = 'Tìm kiếm...',
   filters = [],
-  pageSize = 10,
+  pageSize = DEFAULT_PAGE_SIZE,
   initialSort,
   onRowClick,
   emptyText = 'Không có dữ liệu.',
@@ -43,7 +43,7 @@ export default function DataGrid({
   const [filterValues, setFilterValues] = useState(() => Object.fromEntries(filters.map(f => [f.key, 'all'])))
   const [sort, setSort] = useState(initialSort || null) // { key, dir: 'asc' | 'desc' }
   const [page, setPage] = useState(1)
-  const [size, setSize] = useState(pageSize)
+  const size = pageSize
 
   // Lọc dòng theo ô tìm kiếm và các bộ lọc đang chọn.
   const filtered = useMemo(() => {
@@ -182,7 +182,6 @@ export default function DataGrid({
         total={sorted.length}
         pageSize={size}
         onPage={p => setPage(Math.max(1, Math.min(pageCount, p)))}
-        onPageSize={n => { setSize(n); setPage(1) }}
       />
     </div>
   )

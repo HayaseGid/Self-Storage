@@ -1620,7 +1620,7 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
   // Hợp đồng còn nợ (có kỳ thuê quá hạn, phí trễ chưa đóng hoặc phí khác chưa đóng).
   const isOpen = it => it.overdueRent?.length > 0 || Number(it.lateFeeUnpaid) > 0 || Number(it.otherUnpaid) > 0
   const visible = items.filter(it => filter === 'all' || isOpen(it))
-  const paging = useClientPaging(visible, { pageSize: 15, resetKey: filter })
+  const paging = useClientPaging(visible, { resetKey: filter })
   const s = data?.summary
 
   /**
@@ -1818,7 +1818,7 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
   const needsAction = (r) => r.result === 'Damaged' && latestByUnit.get(r.unitId) === r.taskId && (r.unitStatus === 'Maintenance' || r.unitStatus === 'Pending Inspection')
 
   const visible = (reports || []).filter(r => filter === 'all' || (filter === 'damaged' ? r.result === 'Damaged' : needsAction(r)))
-  const paging = useClientPaging(visible, { pageSize: 15, resetKey: filter })
+  const paging = useClientPaging(visible, { resetKey: filter })
   const counts = {
     damaged: (reports || []).filter(r => r.result === 'Damaged').length,
     open: (reports || []).filter(needsAction).length,
@@ -1968,7 +1968,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
   // Các việc "Nhận kho" (chưa hủy) của 1 đơn.
   const moveInTasksOf = (r) => tasks.filter(t => t.taskType === 'Move In' && Number(t.reservationId) === Number(r.id) && t.status !== 'Cancelled')
   const visibleTasks = tasks.filter(t => taskFilter === 'all' || (taskFilter === 'open' ? isOpenTask(t) : !isOpenTask(t)))
-  const taskPaging = useClientPaging(visibleTasks, { pageSize: 15, resetKey: taskFilter })
+  const taskPaging = useClientPaging(visibleTasks, { resetKey: taskFilter })
 
   // [AUTO-ASSIGN] Giao / đổi người phụ trách đơn: PUT /api/manager-tools/reservations/{id}/owner
   /**
@@ -2045,7 +2045,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
   // Việc chờ bàn giao, sắp theo ngày hẹn gần nhất
   const today = todayStr()
   const upcoming = [...awaitingHandoverList].sort((a, b) => appointmentKey(a).localeCompare(appointmentKey(b)))
-  const upcomingPaging = useClientPaging(upcoming, { pageSize: 10 })
+  const upcomingPaging = useClientPaging(upcoming)
 
   /**
    * Thêm nhân viên vào cơ sở (403 -> báo không có quyền) rồi tải lại.
@@ -2446,7 +2446,7 @@ function FacilityContractsTab({ facility, facilityName, contracts = [], reservat
   const [viewing, setViewing] = useState(null)
 
   const list = useOpsList('contracts', {
-    q: query, status: filter, sort, facilityId: facility?.facilityId, pageSize: 15,
+    q: query, status: filter, sort, facilityId: facility?.facilityId,
     reloadKey, fallbackRows: contracts, statusOf: c => PHASE_CODE[contractPhase(c)],
     enabled: facility?.facilityId != null
   })
@@ -2572,7 +2572,7 @@ function FacilityReservationsTab({ facility, facilityName, reservations = [], co
   const [open, setOpen] = useState(null)
 
   const list = useOpsList('reservations', {
-    q: query, status: filter, sort, facilityId: facility?.facilityId, pageSize: 15,
+    q: query, status: filter, sort, facilityId: facility?.facilityId,
     reloadKey, fallbackRows: reservations, enabled: facility?.facilityId != null
   })
   // Tìm hợp đồng ứng với 1 đơn.
@@ -2761,7 +2761,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
   const [unitStatusFilter, setUnitStatusFilter] = useState('')
   const [unitListSort, setUnitListSort] = useState('newest')
   const unitList = useOpsList('units', {
-    q: unitQuery, status: unitStatusFilter, sort: unitListSort, facilityId: managedFacility?.facilityId, pageSize: 20,
+    q: unitQuery, status: unitStatusFilter, sort: unitListSort, facilityId: managedFacility?.facilityId,
     reloadKey: db, fallbackRows: facilityUnits, enabled: activeTab === 'units' && managedFacility?.facilityId != null
   })
 

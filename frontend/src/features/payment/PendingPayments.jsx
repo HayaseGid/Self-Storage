@@ -280,7 +280,7 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
   const history = all
     .filter(r => r.paymentStatus === 'Completed' || Number(r.refundAmount) > 0)
     .sort((a, b) => (parseUtc(b.paymentDate) || 0) - (parseUtc(a.paymentDate) || 0))
-  const historyPaging = useClientPaging(history, { pageSize: 10 })
+  const historyPaging = useClientPaging(history)
   const paidTotal = all.filter(r => r.paymentStatus === 'Completed').reduce((s, r) => s + Number(r.paymentAmount || 0), 0)
   const refunding = all.filter(r => Number(r.refundAmount) > 0 && r.refundStatus !== 'Completed')
   const refundTotal = all.filter(r => Number(r.refundAmount) > 0).reduce((s, r) => s + Number(r.refundAmount || 0), 0)

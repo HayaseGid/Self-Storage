@@ -182,7 +182,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
       : []
   const activeRentals = rentals.filter(rental => rental.status === 'Handed Over')
   // [THÊM] Kiểu thẻ: mới nhất lên đầu, chia trang 5 thẻ / trang
-  const cardPaging = useClientPaging(newestFirst(rentals, { id: r => r.reservationId }), { pageSize: 5 })
+  const cardPaging = useClientPaging(newestFirst(rentals, { id: r => r.reservationId }))
 
   // Tính tổng phí trễ hạn chưa đóng (không đang chờ VNPay) của 1 đơn.
   const lateUnpaidOf = rental => (lateFees.byReservation(rental.reservationId)?.lateFees || [])
@@ -1211,7 +1211,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     const q = contractQuery.trim().toLowerCase()
     return !q || [r.contractNumber, r.reservationCode, r.facility, ...(r.unitNumbers || [r.unitId])].some(v => String(v ?? '').toLowerCase().includes(q))
   }), { id: r => r.reservationId })
-  const contractPaging = useClientPaging(listedContracts, { pageSize: 5, resetKey: `${contractTab}|${contractQuery}` })
+  const contractPaging = useClientPaging(listedContracts, { resetKey: `${contractTab}|${contractQuery}` })
 
   return (
     <div className="customer-content-page">

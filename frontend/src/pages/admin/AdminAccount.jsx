@@ -221,7 +221,6 @@ function Admin() {
     q: search,
     status: statusFilter === "All" ? "" : statusFilter.toUpperCase(),
     extra: { role: roleFilter === "All" ? undefined : roleFilter },
-    pageSize: 20,
     reloadKey: users,
     enabled: activeMenu === "users",
     fallback: {
@@ -238,7 +237,6 @@ function Admin() {
   const logList = useServerList({
     path: "/api/admin/activity",
     q: logSearch,
-    pageSize: 25,
     reloadKey: logs,
     enabled: activeMenu === "logs",
     fallback: { rows: logs, match: (l, { q }) => !q || [l.actor, l.action, l.target].some((v) => String(v || "").toLowerCase().includes(q)), compare: () => 0 },

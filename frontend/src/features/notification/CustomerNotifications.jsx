@@ -65,7 +65,7 @@ export default function CustomerNotificationsPage({ center, onAction }) {
 
   const counts = center.notifications.reduce((acc, n) => ({ ...acc, [n.section]: (acc[n.section] || 0) + 1 }), {})
   const shown = center.notifications.filter(n => filter === 'all' || n.section === filter)
-  const paging = useClientPaging(shown, { pageSize: 10, resetKey: filter })
+  const paging = useClientPaging(shown, { resetKey: filter })
 
   return (
     <div className="customer-content-page">

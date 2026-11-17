@@ -955,7 +955,7 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
   const items = data?.items || []
   const s = data?.summary
   const shown = !filter || filter === 'all' ? items : items.filter(i => i.status === filter)
-  const paging = useClientPaging(shown, { pageSize: 15, resetKey: filter })
+  const paging = useClientPaging(shown, { resetKey: filter })
   // Chọn class màu cho nhãn trạng thái của 1 kết quả kiểm kho.
   const pill = i => {
     if (i.status === INSPECTION.PENDING_MANAGER) return 'fm-badge fm-warn'

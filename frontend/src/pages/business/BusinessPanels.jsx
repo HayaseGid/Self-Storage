@@ -93,7 +93,7 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
   // [SỬA] Mặc định hiện TẤT CẢ cơ sở (mới thêm lên đầu, tô sáng), chọn khu vực để thu hẹp; chia trang 12 cơ sở / trang
   const showAll = district === '__all'
   const shown = newestFirst(searchResults || (showAll ? withStats : activeGroup?.facilities) || [], { id: f => f.facilityId })
-  const paging = useClientPaging(shown, { pageSize: 12, resetKey: `${district}|${keyword}` })
+  const paging = useClientPaging(shown, { resetKey: `${district}|${keyword}` })
 
   return (
     <section className="business-panel bp-root">

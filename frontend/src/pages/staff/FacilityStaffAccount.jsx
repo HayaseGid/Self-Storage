@@ -1083,16 +1083,16 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
 
   // [PHÂN TRANG] Đơn đặt chỗ: backend lọc + chia trang (GET /api/operations/reservations)
   const allList = useOpsList("reservations", {
-    q: query, status: allStatus, sort: allSort, facilityId: facility?.facilityId, pageSize: 10,
+    q: query, status: allStatus, sort: allSort, facilityId: facility?.facilityId,
     reloadKey: db, fallbackRows: mine, enabled: section === "all" && facility?.facilityId != null,
   });
   // [PHÂN TRANG] Kho tại cơ sở (GET /api/operations/units)
   const unitList = useOpsList("units", {
-    q: unitQuery, status: unitStatus, sort: unitSort, facilityId: facility?.facilityId, pageSize: 20,
+    q: unitQuery, status: unitStatus, sort: unitSort, facilityId: facility?.facilityId,
     reloadKey: db, fallbackRows: units, enabled: section === "units" && facility?.facilityId != null,
   });
   // Bàn giao kho: danh sách nhỏ (đơn giao cho mình) -> chia trang ở frontend
-  const handoverPaging = useClientPaging(handoverVisible, { pageSize: 10, resetKey: `${dayFilter}|${query}` });
+  const handoverPaging = useClientPaging(handoverVisible, { resetKey: `${dayFilter}|${query}` });
   const pendingTasks = (db.staffTasks || []).filter((t) =>
     (t.facilityName === staff.facilityId || (facility?.facilityId != null && Number(t.facilityId) === Number(facility.facilityId))) &&
     t.status !== "Completed" && t.status !== "Cancelled"
@@ -1169,8 +1169,8 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
     });
   }, [rawTasks, taskQuery, taskStatusFilter, taskTypeFilter, taskSort]);
 
-  const taskPaging = useClientPaging(filteredTasks, { pageSize: 15, resetKey: `${taskQuery}|${taskStatusFilter}|${taskTypeFilter}|${taskSort}` });
-  const logPaging = useClientPaging(facilityActivity, { pageSize: 20 });
+  const taskPaging = useClientPaging(filteredTasks, { resetKey: `${taskQuery}|${taskStatusFilter}|${taskTypeFilter}|${taskSort}` });
+  const logPaging = useClientPaging(facilityActivity);
 
   // [STAFF-TOOLS] Đổi trạng thái kho (PUT /api/staff-tools/units/{unitId}/status)
   /**
