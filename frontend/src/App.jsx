@@ -278,6 +278,43 @@ async function handleAddToCart(dialog, facility, unit) {
 }
 
 /**
+ * Thêm nhiều kho cùng cơ sở vào giỏ cùng lúc (lựa chọn "thuê thêm 1 kho" trong cửa sổ 3D), hiện 1 hộp thoại tóm tắt.
+ */
+async function handleAddManyToCart(dialog, facility, unitsToAdd) {
+  const user = getCurrentUser()
+  if (user && user.role !== 'customer') {
+    await alertNotCustomer(dialog)
+    return
+  }
+  const list = unitsToAdd.filter(unit => unit?.available)
+  const added = []
+  const existed = []
+  for (const unit of list) {
+    const result = addToCart(facility, unit)
+    if (result.ok) added.push(unit.id)
+    else if (result.reason === 'exists') existed.push(unit.id)
+    else if (result.reason === 'full') {
+      await dialog.alert({ tone: 'warning', title: 'Giỏ hàng đã đầy', message: `Giỏ hàng chứa tối đa ${CART_LIMIT} kho. Hãy đặt hoặc bỏ bớt kho trong giỏ.` })
+      if (!added.length) return
+      break
+    }
+  }
+  if (!added.length && !existed.length) return
+  const total = list.reduce((n, unit) => n + Number(unit.price || 0), 0)
+  const choice = await dialog.open({
+    tone: added.length ? 'success' : 'info',
+    title: added.length ? `Đã thêm ${added.join(' và ')} vào giỏ hàng` : `${existed.join(' và ')} đã có trong giỏ hàng`,
+    message: `${added.length && existed.length ? `${existed.join(', ')} đã có sẵn trong giỏ. ` : ''}Tổng ${formatMoney(total)}/tháng tại ${facility.name}.\nMỗi kho một hợp đồng riêng, đặt cùng lúc từ giỏ hàng.`,
+    dismissValue: null,
+    actions: [
+      { label: 'Tiếp tục xem kho', value: null, variant: 'secondary' },
+      { label: 'Xem giỏ hàng', value: 'cart', variant: 'primary' }
+    ]
+  })
+  if (choice === 'cart') navigate('/cart')
+}
+
+/**
  * Hỏi khách đăng nhập / đăng ký để đặt kho từ giỏ hàng (giỏ được giữ nguyên), quay lại /cart sau khi đăng nhập.
  */
 async function promptLoginForCart(dialog) {
@@ -851,6 +888,7 @@ function UnitCard({ facility, unit }) {
  * trạng thái, giá), danh sách thẻ kho (kho trống lên trước).
  */
 function FacilityDetailPage({ facility }) {
+  const dialog = useDialog()
   const units = getStorageUnits(facility.name)
   const { locations: facilityLocations } = useFacilityLocations()
   const [facilityPoint] = toMapPoints([facility], facilityLocations)
@@ -913,6 +951,7 @@ function FacilityDetailPage({ facility }) {
             onBook={unit => navigate(getBookingPath(facility, unit))}
             otherUnits={facilities.filter(f => f.facilityId !== facility.facilityId).flatMap(f => getStorageUnits(f.name).map(u => ({ facility: f, unit: u })))}
             onOpenOther={(f, picked) => navigate(getUnitPath(f, picked))}
+            onAddToCart={list => handleAddManyToCart(dialog, facility, list)}
           />
           <div className="cart-note" role="note" style={{ margin: '18px 0', padding: '14px 16px', borderRadius: 12, background: '#eef5ff', border: '1px solid #c9dcf7' }}>
             <strong>Cần kho lớn hơn các kho đang có, hoặc kích thước đặc biệt?</strong>{' '}
@@ -1033,6 +1072,7 @@ function UnitDetailPage({ facility, unit }) {
               units={getStorageUnits(facility.name)}
               otherUnits={facilities.filter(f => f.facilityId !== facility.facilityId).flatMap(f => getStorageUnits(f.name).map(u => ({ facility: f, unit: u })))}
               onOpenOther={(f, picked) => { setShow3D(false); navigate(getUnitPath(f, picked)) }}
+              onAddToCart={list => { setShow3D(false); handleAddManyToCart(dialog, facility, list) }}
               onClose={() => setShow3D(false)}
               onOpenDetail={picked => { setShow3D(false); if (picked.id !== unit.id) navigate(getUnitPath(facility, picked)) }}
               onBook={picked => { setShow3D(false); if (picked.id === unit.id) handleBookClick(); else navigate(getBookingPath(facility, picked)) }}
@@ -2024,7 +2064,7 @@ function SearchPage() {
   // Đếm số kho khớp các bộ lọc còn lại và điều kiện predicate (hiện số trên từng chip lọc).
   const countWith = (ignore, predicate) => facilities.reduce((n, facility) =>
     n + getStorageUnits(facility.name).filter(unit => unitMatches(facility, unit, ignore) && predicate(facility, unit)).length, 0)
-  const hasFilter = filters.q || filters.type || activeDistrict || filters.size || filters.price || boxTotal
+  const hasFilter = Boolean(filters.q || filters.type || activeDistrict || filters.size || filters.price || boxTotal)
   // Áp dụng bộ lọc số thùng (và nhớ lại cho cửa sổ xem kho 3D).
   const applyBoxes = e => {
     e.preventDefault()

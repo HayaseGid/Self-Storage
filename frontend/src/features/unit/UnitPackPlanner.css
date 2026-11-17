@@ -52,6 +52,8 @@
 
 /* Tab chế độ trong khung xem kho */
 .u3d-tabs { display: flex; gap: 6px; padding: 0 24px 10px; border-bottom: 1px solid #eef3f7; overflow-x: auto; }
+/* Tiêu đề + hàng tab không bị co khi thân cửa sổ dài (cửa sổ là flex dọc có max-height). */
+.u3d-head, .u3d-tabs { flex-shrink: 0; }
 .u3d-tabs button { flex: none; height: 34px; padding: 0 14px; border: 1.5px solid #e1edf7; border-radius: 999px; background: #fff; color: #4f6880; font-weight: 800; font-size: 13px; cursor: pointer; }
 .u3d-tabs button.active { border-color: #075a9f; background: #075a9f; color: #fff; }
 .u3d-modal { width: min(1080px, 100%); }
@@ -117,6 +119,8 @@
   .u3d-modal.is-pack { height: auto; }
   .u3d-modal.is-pack .u3d-body { grid-template-columns: 1fr; overflow: auto; }
   .upp-stage .t3d-wrap { flex: none; height: 320px !important; }
+  /* Xếp dọc: khung 3D cao theo nội dung, không bị bóp về 0 (min-height: 0 chỉ dành cho bố cục 2 cột). */
+  .u3d-body.mode-pack .u3d-three, .u3d-body.mode-pack .upp, .upp-stage { min-height: auto; overflow: visible; }
   .u3d-body.mode-pack .u3d-info { min-height: auto; overflow: visible; }
 }
 .u3d-fit .u3d-fit-pending { color: #8197ab; font-size: 12px; font-style: italic; }
@@ -136,3 +140,20 @@
 .ici-custom { display: grid; grid-template-columns: minmax(96px, 1fr) 2fr; gap: 8px; align-items: end; margin-bottom: 8px; }
 .ici-size { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .ici-big { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+
+/* Bảng 2 lựa chọn khi kho đang xem thiếu chỗ */
+.u3d-body.mode-pack .u3d-alt { order: -1; }
+.u3d-alt { display: grid; gap: 8px; padding: 12px; border-radius: 12px; border: 1.5px solid #ffd98a; background: #fffaf0; }
+.u3d-alt h3 { margin: 0; color: #8a5a00; font-size: 14px; font-weight: 800; }
+.u3d-alt > p { margin: 0; color: #6d5a33; font-size: 12.5px; line-height: 1.5; }
+.u3d-alt-grid { display: grid; gap: 8px; }
+.u3d-alt-card { position: relative; display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid #e1edf7; background: #fff; }
+.u3d-alt-card.best { border-color: #22a35a; box-shadow: 0 0 0 3px rgba(34, 163, 90, .12); }
+.u3d-alt-badge { position: absolute; top: -9px; right: 10px; padding: 2px 8px; border-radius: 999px; background: #22a35a; color: #fff; font-size: 11px; font-weight: 800; }
+.u3d-alt-card h4 { margin: 0; color: #073d70; font-size: 13.5px; font-weight: 800; }
+.u3d-alt-units { margin: 0; color: #4f6880; font-size: 12.5px; }
+.u3d-alt-card > strong { color: #075a9f; font-size: 16px; font-weight: 800; }
+.u3d-alt-card ul { margin: 0; padding-left: 16px; color: #5b6b7c; font-size: 12px; line-height: 1.5; }
+.u3d-alt-card button { min-height: 36px; margin-top: 4px; }
+.u3d-alt .u3d-alt-diff { color: #2b8b55; font-weight: 700; }
+.u3d-alt .u3d-alt-trim { color: #8197ab; font-size: 12px; }

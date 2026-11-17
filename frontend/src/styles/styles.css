@@ -36,6 +36,10 @@ button { cursor: pointer; }
 img { display: block; width: 100%; }
 
 .container { width: min(1280px, calc(100% - 64px)); margin: 0 auto; }
+/* Màn hình lớn (từ 1600px): nới khung nội dung để không thừa 2 dải trống lớn hai bên; lưới thẻ kho tự thêm cột. */
+@media (min-width: 1600px) {
+  .container { width: min(1760px, calc(100% - 160px)); }
+}
 
 .site-header {
   height: 88px;
@@ -49,6 +53,9 @@ img { display: block; width: 100%; }
   top: 0;
   z-index: 30;
   backdrop-filter: blur(16px);
+}
+@media (min-width: 1600px) {
+  .site-header { padding: 0 max(80px, calc((100vw - 1760px) / 2)); }
 }
 
 .brand { display: flex; align-items: center; gap: 13px; }

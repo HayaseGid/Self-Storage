@@ -27,9 +27,9 @@ import './FacilityFloorPlan.css'
  * Component sơ đồ kho của cơ sở.
  * @param {object} props facility, units (danh sách kho), point (tọa độ cơ sở), highlightIds (Set mã kho khớp bộ lọc,
  *   kho khác bị làm mờ), onOpenDetail(unit), onBook(unit), otherUnits + onOpenOther (truyền cho cửa sổ 3D để
- *   gợi ý kho ở cơ sở khác).
+ *   gợi ý kho ở cơ sở khác), onAddToCart(units) (thêm nhiều kho vào giỏ từ cửa sổ 3D).
  */
-export default function FacilityFloorPlan({ facility, units, point = null, highlightIds = null, onOpenDetail, onBook, otherUnits = [], onOpenOther }) {
+export default function FacilityFloorPlan({ facility, units, point = null, highlightIds = null, onOpenDetail, onBook, otherUnits = [], onOpenOther, onAddToCart }) {
   const [selected, setSelected] = useState(null)
   const [hover, setHover] = useState(null)
 
@@ -132,6 +132,7 @@ export default function FacilityFloorPlan({ facility, units, point = null, highl
           units={units}
           otherUnits={otherUnits}
           onOpenOther={onOpenOther}
+          onAddToCart={onAddToCart ? list => { setSelected(null); onAddToCart(list) } : undefined}
           onClose={() => setSelected(null)}
           onOpenDetail={onOpenDetail}
           onBook={onBook}

@@ -15,7 +15,7 @@ import './Unit3DViewer.css'
 import { PackPlanner, SampleRoom } from './UnitPackPlanner'
 import { gridCapacity, itemType } from '../../utils/packing'
 import { loadBoxCounts, saveBoxCounts } from './boxCounts'
-import { useBoxFit } from './useBoxFit'
+import { geoKey, useBoxFit, useSplitPack } from './useBoxFit'
 import './UnitPackPlanner.css'
 
 /*
@@ -36,9 +36,10 @@ const DEFAULT_VIEW = { ry: -38, rx: -24, zoom: 1 }
  * @param {object} props unit (kho mở ban đầu), facilityName, onClose, onOpenDetail(unit) (mở chi tiết kho),
  *   onBook(unit) (đặt kho — chỉ hiện khi kho còn trống), units (các kho cùng cơ sở, để gợi ý kho vừa đồ của khách),
  *   otherUnits ([{ facility, unit }] kho ở cơ sở khác, gợi ý khi cơ sở này không có kho vừa),
- *   onOpenOther(facility, unit) (mở trang kho ở cơ sở khác).
+ *   onOpenOther(facility, unit) (mở trang kho ở cơ sở khác),
+ *   onAddToCart(units) (thêm nhiều kho vào giỏ — dùng cho lựa chọn "thuê thêm 1 kho").
  */
-export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose, onOpenDetail, onBook, units = [], otherUnits = [], onOpenOther }) {
+export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose, onOpenDetail, onBook, units = [], otherUnits = [], onOpenOther, onAddToCart }) {
   // Kho đang xem: ban đầu là kho được mở, đổi khi khách bấm một kho được gợi ý ở sidebar.
   const [unit, setUnit] = useState(initialUnit)
   const [counts, setCounts] = useState(loadBoxCounts) // nhớ số thùng khách đã nhập (trong tab đang mở)
@@ -69,6 +70,34 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
   const geo = unitGeometry(unit)
   const status = unitPlanStatus(unit)
   const typeStyle = getUnitTypeStyle(unit.type)
+  // Kho đang xem thiếu chỗ -> 2 lựa chọn: A. thuê thêm 1 kho trống cùng cơ sở cho phần dư, B. đổi sang kho lớn hơn.
+  const otherFreeHere = freeUnits.filter(u => u.id !== unit.id)
+  const split = useSplitPack(unit, otherFreeHere, counts, aisleOn, packActive && status === 'free')
+  const alt = (() => {
+    const r = split.result
+    if (!r || !r.leftoverCount) return null
+    const byPrice = (a, b) => a.price - b.price || unitGeometry(a).volume - unitGeometry(b).volume
+    // A: chỉ gợi ý khi phần dư không quá nửa số đồ (thiếu nhiều thì đổi kho lớn hợp lý hơn).
+    const extra = r.leftoverVolume <= 0.5 * fit.volume
+      ? otherFreeHere.filter(u => r.fits.has(geoKey(unitGeometry(u)))).sort(byPrice)[0] || null
+      : null
+    const bigger = fitResults.find(x => x.unit.id !== unit.id) || null
+    const priceA = extra ? Number(unit.price) + Number(extra.price) : null
+    const priceB = bigger ? Number(bigger.unit.price) : null
+    // Nhãn: A rẻ hơn rõ (>10%) thì "Tiết kiệm hơn" cho A; ngang giá thì ưu tiên B (1 hợp đồng, gọn một chỗ).
+    let best = null
+    if (extra && bigger) best = priceA < priceB * 0.9 ? 'A' : 'B'
+    return {
+      ...r,
+      extra,
+      extraGeo: extra ? unitGeometry(extra) : null,
+      bigger,
+      priceA,
+      priceB,
+      best,
+      bestLabel: best === 'B' && priceB >= priceA ? 'Gọn 1 chỗ' : 'Tiết kiệm hơn'
+    }
+  })()
   const [view, setView] = useState(DEFAULT_VIEW)
   const drag = useRef(null)
   const sceneRef = useRef(null)
@@ -247,6 +276,54 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
               <div><dt>Giá thuê</dt><dd>{formatVnd(unit.price)}đ/tháng</dd></div>
             </dl>
             <p className="u3d-hint">{hintFor(geo)}</p>
+            {packActive && status === 'free' && fit.total > 0 && split.pending && (
+              <section className="u3d-alt"><p className="u3d-fit-pending">Đang kiểm tra kho này có chứa hết đồ không…</p></section>
+            )}
+            {packActive && alt && (
+              <section className="u3d-alt" aria-live="polite">
+                <h3>Kho này thiếu chỗ cho {alt.leftoverCount.toLocaleString('vi-VN')} món</h3>
+                <p>Kho {unit.id} chứa được {alt.placedCount.toLocaleString('vi-VN')}/{fit.total.toLocaleString('vi-VN')} món{aisleOn ? ' (đã chừa lối đi)' : ''}.{(alt.extra || alt.bigger) ? ' Bạn có thể:' : ''}</p>
+                {(alt.extra || alt.bigger) && (
+                  <div className="u3d-alt-grid">
+                    {alt.extra && (
+                      <article className={`u3d-alt-card${alt.best === 'A' ? ' best' : ''}`}>
+                        {alt.best === 'A' && <span className="u3d-alt-badge">{alt.bestLabel}</span>}
+                        <h4>A. Thuê thêm 1 kho</h4>
+                        <p className="u3d-alt-units">Kho {unit.id} + Kho {alt.extra.id} ({formatMeters(alt.extraGeo.width)} × {formatMeters(alt.extraGeo.length)})</p>
+                        <strong>{formatVnd(alt.priceA)}đ/tháng</strong>
+                        <ul>
+                          <li>Kho này dùng ~{Math.round((alt.placedVolume / alt.roomVolume) * 100)}%, kho thêm chứa {alt.leftoverCount.toLocaleString('vi-VN')} món còn lại</li>
+                          <li>2 hợp đồng, 2 khoản cọc, đồ chia 2 vị trí</li>
+                        </ul>
+                        <button type="button" className={alt.best === 'B' ? 'dashboard-secondary-btn' : 'dashboard-primary-btn'} disabled={!onAddToCart} onClick={() => onAddToCart?.([unit, alt.extra])}>Thêm cả 2 kho vào giỏ</button>
+                      </article>
+                    )}
+                    {alt.bigger && (
+                      <article className={`u3d-alt-card${alt.best === 'B' ? ' best' : ''}`}>
+                        {alt.best === 'B' && <span className="u3d-alt-badge">{alt.bestLabel}</span>}
+                        <h4>B. Đổi sang kho lớn hơn</h4>
+                        <p className="u3d-alt-units">Kho {alt.bigger.unit.id} ({formatMeters(alt.bigger.geo.width)} × {formatMeters(alt.bigger.geo.length)})</p>
+                        <strong>{formatVnd(alt.priceB)}đ/tháng</strong>
+                        <ul>
+                          <li>Chứa hết, dùng ~{alt.bigger.usedPct}%{fit.estimated ? ' (ước tính)' : ''}, còn dư chỗ</li>
+                          <li>1 hợp đồng, đồ gọn một chỗ</li>
+                        </ul>
+                        <button type="button" className={alt.best === 'A' ? 'dashboard-secondary-btn' : 'dashboard-primary-btn'} onClick={() => { setUnit(alt.bigger.unit); setAutoRun(true) }}>Xem kho này</button>
+                      </article>
+                    )}
+                  </div>
+                )}
+                {alt.extra && alt.bigger && (
+                  <p className="u3d-alt-diff">
+                    {alt.priceA === alt.priceB
+                      ? 'Hai cách bằng giá nhau.'
+                      : `Cách ${alt.priceA < alt.priceB ? 'A' : 'B'} rẻ hơn ${formatVnd(Math.abs(alt.priceA - alt.priceB))}đ/tháng.`}
+                  </p>
+                )}
+                {!alt.extra && !alt.bigger && <p>Cơ sở này chưa có kho trống phù hợp để thuê thêm hoặc đổi sang.</p>}
+                <p className="u3d-alt-trim">Hoặc bớt {alt.leftoverCount.toLocaleString('vi-VN')} món thì kho này vừa.</p>
+              </section>
+            )}
             {mode === 'pack' && units.length > 0 && (
               <section className="u3d-fit" aria-live="polite">
                 <h3>Kho vừa với đồ của bạn</h3>

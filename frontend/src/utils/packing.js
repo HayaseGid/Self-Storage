@@ -319,16 +319,33 @@ export function sortClusteredAreaHeight(list, room, delta = CLUSTER_DELTA) {
  */
 export function autoPack(room, requests, startItems = [], { prefer = 'fit', maxTop = room.h } = {}) {
   // prefer = 'best': giống C-EPBFD trong bài báo – chạy vài biến thể rồi giữ lời giải xếp được nhiều nhất.
+  // Hòa (cùng thể tích, cùng số món) thì giữ cách xếp GỌN nhất (khối bao ngoài nhỏ nhất): biến thể 'fit' hay trộn
+  // 2 hướng xoay thùng nên để lại khe hẹp giữa các hàng, không nên được chọn chỉ vì chạy trước.
   if (prefer === 'best') {
     let best = null
     for (const variant of ['fit', 'floor', 'back']) {
       const result = packOnce(room, requests, startItems, variant, maxTop)
       const vol = volumeOf(result.placed)
-      if (!best || vol > best.vol + EPS || (Math.abs(vol - best.vol) <= EPS && result.placed.length > best.result.placed.length)) best = { result, vol }
+      const spread = envelopeOf(result.placed)
+      const better = !best
+        || vol > best.vol + EPS
+        || (Math.abs(vol - best.vol) <= EPS && (result.placed.length > best.result.placed.length
+          || (result.placed.length === best.result.placed.length && spread < best.spread - EPS)))
+      if (better) best = { result, vol, spread }
     }
     return best.result
   }
   return packOnce(room, requests, startItems, prefer, maxTop)
+}
+
+/**
+ * Thể tích khối bao ngoài của các món tính từ góc trong-trái-sàn (0,0,0): càng nhỏ thì đồ xếp càng gọn, ít khe hở.
+ */
+function envelopeOf(items) {
+  if (!items.length) return 0
+  let mx = 0, my = 0, mz = 0
+  items.forEach(it => { mx = Math.max(mx, it.x + it.w); my = Math.max(my, it.y + it.h); mz = Math.max(mz, it.z + it.d) })
+  return mx * my * mz
 }
 
 /**

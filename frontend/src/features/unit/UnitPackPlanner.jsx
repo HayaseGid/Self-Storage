@@ -196,7 +196,7 @@ export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAis
     setPacking(true)
     // Thuật toán Extreme Point Best-Fit (Crainic, Perboli & Tadei 2007) chạy trong worker: thử vài biến thể, giữ cách
     // xếp được nhiều nhất; số thùng lớn thì chỉ chạy 1 biến thể cho nhanh.
-    packChannel.run('autoPack', { room, requests, startItems: zones, options: { prefer: total > EXACT_PACK_LIMIT ? 'fit' : 'best' } })
+    packChannel.run('autoPack', { room, requests, startItems: zones, options: { prefer: total > EXACT_PACK_LIMIT ? 'back' : 'best' } })
       .then(result => {
         if (result === CANCELLED) return
         const { placed, failed } = result

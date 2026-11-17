@@ -229,6 +229,10 @@
   width: 100%;
   background: var(--cp-bg);
 }
+/* Màn hình lớn: nới vùng nội dung (tránh thừa khoảng trống lớn bên phải). */
+@media (min-width: 1600px) {
+  .customer-main { max-width: 1560px; }
+}
 
 /* ---- COMPACT TOP HEADER ---- */
 .cportal-header-bar {
