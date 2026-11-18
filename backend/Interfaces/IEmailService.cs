@@ -7,6 +7,7 @@ public interface IEmailService
     Task SendOtpEmailAsync(string toEmail, string? toName, string otp, CancellationToken ct = default);
     Task SendContractEmailAsync(SendContractEmailRequest request, CancellationToken ct = default);
     Task SendRawEmailAsync(string toEmail, string subject, string bodyHtml, CancellationToken ct = default);
+    Task SendSupportMessageAsync(string fromEmail, string? fromName, string subject, string message, CancellationToken ct = default);
     Task TestConnectionAsync(string toEmail, CancellationToken ct = default);
 }
 

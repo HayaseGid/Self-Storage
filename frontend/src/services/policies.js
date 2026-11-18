@@ -187,7 +187,8 @@ export function describePolicy(key, value, { facilities = [] } = {}) {
       summary: `Gia hạn: gửi yêu cầu trước ${v.renewalNoticeDays} ngày. Trả kho: báo trước ${v.returnNoticeDays} ngày, hoàn cọc trong ${v.depositRefundWorkingDays} ngày làm việc.`,
       settings: [
         ['Yêu cầu gia hạn', `Trước ít nhất ${v.renewalNoticeDays} ngày so với ngày hết hạn`],
-        ['Kỳ gia hạn', `Từ ${v.minRenewalMonths} đến ${v.maxRenewalMonths} tháng`],
+        // Backend chỉ cho gia hạn gói 6 hoặc 12 tháng (RENTAL_TERMS), lọc thêm theo min/max của chính sách.
+        ['Kỳ gia hạn', (() => { const terms = RENTAL_TERMS.filter(m => m >= Number(v.minRenewalMonths) && m <= Number(v.maxRenewalMonths)); return terms.length ? `Gói ${terms.join(' hoặc ')} tháng` : 'Chưa có gói phù hợp' })()],
         ['Điều kiện gia hạn', v.requireNoOverdue ? 'Hợp đồng còn hiệu lực, không còn khoản quá hạn' : 'Hợp đồng còn hiệu lực'],
         ['Hạn chót thanh toán gia hạn', v.renewalPaymentDeadlineDays != null && v.renewalPaymentDeadlineDays !== '' ? `Trước ngày hết hạn ${v.renewalPaymentDeadlineDays} ngày` : 'Chưa quy định'],
         ['Giá gia hạn', v.renewalPricing || '—'],

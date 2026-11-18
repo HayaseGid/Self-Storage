@@ -273,7 +273,8 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
     }
     if (policyKey === 'renewal_return') {
       if ([v.renewalNoticeDays, v.minRenewalMonths, v.maxRenewalMonths, v.returnNoticeDays, v.depositRefundWorkingDays].some(bad)) return 'Vui lòng điền đủ các ô số.'
-      if (v.minRenewalMonths < 1 || v.minRenewalMonths > v.maxRenewalMonths || v.maxRenewalMonths > 36) return 'Kỳ gia hạn không hợp lệ.'
+      // Backend chỉ cho gia hạn gói 6 hoặc 12 tháng: khoảng min–max phải chứa ít nhất 1 gói.
+      if (![6, 12].some(m => m >= v.minRenewalMonths && m <= v.maxRenewalMonths)) return 'Chọn ít nhất 1 gói gia hạn (6 hoặc 12 tháng).'
       if (v.returnFees.some(f => !f.name.trim())) return 'Mỗi phí trả kho cần có tên.'
     }
     if (!effectiveFrom || effectiveFrom < today()) return 'Ngày bắt đầu áp dụng không được ở trong quá khứ.'
@@ -572,13 +573,29 @@ function RenewalReturnFields({ value, set }) {
   const fees = value.returnFees
   // Sửa 1 phí trả kho trong danh sách theo vị trí.
   const updateFee = (index, patch) => set('returnFees', fees.map((f, i) => (i === index ? { ...f, ...patch } : f)))
+  // Gói gia hạn 6 / 12 tháng vẫn lưu thành min/max (6–6, 12–12, 6–12; không chọn gói nào = 0–0) để backend giữ nguyên dữ liệu.
+  const allowed = [6, 12].filter(m => m >= value.minRenewalMonths && m <= value.maxRenewalMonths)
+  const toggleTerm = m => {
+    const next = allowed.includes(m) ? allowed.filter(x => x !== m) : [...allowed, m]
+    set('minRenewalMonths', next.length ? Math.min(...next) : 0)
+    set('maxRenewalMonths', next.length ? Math.max(...next) : 0)
+  }
   return (
     <>
       <h4 className="pe-sub">Gia hạn</h4>
       <div className="pe-grid">
         <NumField label="Gửi yêu cầu gia hạn trước" value={value.renewalNoticeDays} onChange={n => set('renewalNoticeDays', n)} suffix="ngày so với ngày hết hạn" width={300} />
-        <NumField label="Kỳ gia hạn tối thiểu" value={value.minRenewalMonths} onChange={n => set('minRenewalMonths', n)} suffix="tháng" width={160} />
-        <NumField label="Kỳ gia hạn tối đa" value={value.maxRenewalMonths} onChange={n => set('maxRenewalMonths', n)} suffix="tháng" width={160} />
+        <div className="pe-field">
+          <span>Gói gia hạn cho phép</span>
+          <div className="pe-checks">
+            {[6, 12].map(m => (
+              <label key={m} className={allowed.includes(m) ? 'on' : ''}>
+                <input type="checkbox" checked={allowed.includes(m)} onChange={() => toggleTerm(m)} /> {m} tháng
+              </label>
+            ))}
+          </div>
+          <small>Khách chỉ được gia hạn theo các gói được chọn (phải chọn ít nhất 1 gói).</small>
+        </div>
         <NumField label="Hạn chót thanh toán khi gia hạn (để trống = chưa quy định)" value={value.renewalPaymentDeadlineDays} onChange={n => set('renewalPaymentDeadlineDays', n)} allowEmpty suffix="ngày trước ngày hết hạn" width={300} />
         <label className="pe-check"><input type="checkbox" checked={value.requireNoOverdue} onChange={e => set('requireNoOverdue', e.target.checked)} /> Chỉ cho gia hạn khi không còn khoản quá hạn</label>
         <label className="pe-field pe-wide"><span>Cách tính giá gia hạn</span><input value={value.renewalPricing || ''} onChange={e => set('renewalPricing', e.target.value)} /></label>

@@ -1135,6 +1135,10 @@
 .fm-owner-option input { margin-top: 3px; }
 .fm-owner-option.selected { border-color: #1684db; box-shadow: 0 0 0 3px rgba(22, 132, 219, .12); }
 .fm-owner-option.conflict { background: #fffaf2; }
+/* Nhân viên đang bận vào giờ hẹn: khóa, không chọn được */
+.fm-owner-option.locked { opacity: .6; cursor: not-allowed; }
+.fm-owner-option.locked input { cursor: not-allowed; }
+.fm-owner-allbusy { margin: 0; padding: 10px 12px; border-radius: 10px; background: #fff3f3; color: #b13b3b; font-size: 13px; font-weight: 600; }
 .fm-owner-main { display: grid; gap: 3px; min-width: 0; }
 .fm-owner-main strong { color: #073d70; font-size: 14px; }
 .fm-owner-main small { color: #60798d; font-size: 12px; }

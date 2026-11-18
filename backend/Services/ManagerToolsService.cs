@@ -642,6 +642,39 @@ public class ManagerToolsService : IManagerToolsService
 
         var staffName = (await _repo.GetFacilityStaffAsync(reservation.FacilityID, request.StaffUserId, cancellationToken))?.User.FullName ?? "nhân viên mới";
 
+        // KHÓA NHÂN VIÊN ĐANG BẬN: nếu nhân viên mới đã có việc của đơn KHÁC cách giờ hẹn dưới 60 phút trong cùng ngày
+        // thì không cho giao (cùng luật StaffAssignmentPolicy.HasConflict mà tự phân công đang dùng).
+        var defaultMoveInDate = (reservation.AppointmentDate ?? reservation.StartDate).Date;
+        var targets = openTasks
+            .Select(t => (Date: (request.ScheduledDate ?? t.ScheduledDate ?? defaultMoveInDate).Date, Time: newTime ?? t.ScheduledTime))
+            .Concat(missingUnits.Select(_ => (Date: (request.ScheduledDate?.Date ?? (defaultMoveInDate < today ? today : defaultMoveInDate)), Time: newTime ?? reservation.AppointmentTime)))
+            .Where(x => x.Time.HasValue)
+            .Distinct()
+            .ToList();
+        if (targets.Count > 0)
+        {
+            var ignoreKey = $"R{reservation.ReservationID}";
+            var staffTasks = await _repo.GetStaffTasksInRangeAsync(
+                new[] { request.StaffUserId }, targets.Min(x => x.Date), targets.Max(x => x.Date), cancellationToken);
+            var slots = StaffAssignmentPolicy.ToSlots(staffTasks);
+            foreach (var target in targets)
+            {
+                if (!StaffAssignmentPolicy.HasConflict(slots, request.StaffUserId, target.Date, target.Time, ignoreKey))
+                    continue;
+                var busy = staffTasks.FirstOrDefault(t =>
+                    StaffAssignmentPolicy.CountsAsLoad(t) &&
+                    t.ScheduledDate!.Value.Date == target.Date &&
+                    StaffAssignmentPolicy.SlotKey(t) != ignoreKey &&
+                    t.ScheduledTime.HasValue &&
+                    (t.ScheduledTime.Value - target.Time!.Value).Duration() < StaffAssignmentPolicy.ConflictWindow);
+                var what = busy is null
+                    ? "một việc khác"
+                    : $"{(busy.TaskType == MoveIn ? "bàn giao" : busy.TaskType == MoveOut ? "thu hồi" : "xử lý")} kho {busy.Unit?.UnitNumber}{(busy.Reservation is null ? "" : $" · đơn {busy.Reservation.ReservationCode}")}";
+                var when = StaffAssignmentPolicy.SlotLabel(busy?.ScheduledTime ?? target.Time);
+                return Fail(409, $"{staffName} đang bận lúc {when} ngày {target.Date:dd/MM/yyyy} ({what}). Vui lòng chọn nhân viên khác hoặc đổi ngày hẹn.");
+            }
+        }
+
         try
         {
             return await _repo.ExecuteInTransactionAsync(async () =>

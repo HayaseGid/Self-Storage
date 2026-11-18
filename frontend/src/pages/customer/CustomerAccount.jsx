@@ -70,11 +70,12 @@ import { payLateFeesDemo, useLateFees } from '../../api/lateFees'
 import { CustomerPaymentCenter, PendingDepositBar, pendingDepositsOf } from '../../features/payment/PendingPayments' // [THÊM] trang Thanh toán mới + nhắc đơn chưa đặt cọc
 import { useMyInspections } from '../../features/return/ReturnInspection' // [THÊM 14] thông báo kết quả kiểm kho chờ xác nhận
 import { Code, FilterChips, Pager, UnitCodes, newestFirst, useClientPaging } from '../../components/common/listKit' // [THÊM] phân trang + mã nổi bật + mới nhất lên đầu
+import ContactSupport, { SUPPORT_EMAIL } from '../../features/support/ContactSupport' // trang Liên hệ: gửi tin nhắn hỗ trợ qua email (Brevo)
 import './CustomerAccount.css'
 
 /**
  * Vẽ icon SVG 18x18 cho một mục menu bên trái của trang khách. Được CustomerDashboard gọi khi vẽ menu.
- * @param {{name: string}} props name: 'overview' | 'storage' | 'contract' | 'payment' | 'notifications' | 'profile' | 'search'.
+ * @param {{name: string}} props name: 'overview' | 'storage' | 'contract' | 'payment' | 'notifications' | 'profile' | 'contact' | 'search'.
  * @returns {JSX.Element|null} thẻ <svg>, hoặc null nếu tên không khớp.
  */
 function NavIcon({ name }) {
@@ -123,6 +124,13 @@ function NavIcon({ name }) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
           <circle cx="12" cy="7" r="4" />
+        </svg>
+      )
+    case 'contact':
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="2" y="4" width="20" height="16" rx="2" />
+          <path d="M22 6l-10 7L2 6" />
         </svg>
       )
     case 'search':
@@ -1168,7 +1176,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     setSignGroup(null)
     const first = done[0]?.result
     const signature = first ? { image: first.signatureImage, signerName: first.signerName, signedAt: first.signedAt } : null
-    // Ký xong thì gửi bản hợp đồng qua email (EmailJS). Gửi lỗi không ảnh hưởng việc ký.
+    // Ký xong thì gửi bản hợp đồng qua email (POST /api/email/send-contract, backend gửi bằng Brevo). Gửi lỗi không ảnh hưởng việc ký.
     let mail
     try {
       const sent = await sendContractEmail({ group: signedGroup, customer, facilityAddress: facilityAddressOf(signedGroup), signature, policies: policies.values })
@@ -1682,7 +1690,7 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
             <button type="button" onClick={onOpenStorage}><strong>{activeCount}</strong><span>Kho đang thuê</span></button>
             <button type="button" onClick={onOpenStorage}><strong>{pendingCount}</strong><span>Chờ thanh toán cọc</span></button>
           </div>
-          <p className="profile-note">Muốn đổi họ tên, email hoặc mật khẩu, vui lòng liên hệ <a href="mailto:support@storespace.vn">support@storespace.vn</a>. Chức năng tự chỉnh sửa sẽ có khi hệ thống hỗ trợ.</p>
+          <p className="profile-note">Muốn đổi họ tên, email hoặc mật khẩu, vui lòng gửi tin ở mục <strong>Liên hệ</strong> hoặc email <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>. Chức năng tự chỉnh sửa sẽ có khi hệ thống hỗ trợ.</p>
           <div className="profile-actions">
             <button type="button" className="dashboard-secondary-btn" onClick={onLogout}>Đăng xuất</button>
           </div>
@@ -2002,6 +2010,20 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
           >
             <span className="cportal-nav-icon"><NavIcon name="profile" /></span>
             <span className="cportal-nav-label">Hồ sơ</span>
+          </button>
+        </div>
+
+        {/* Nhóm "Hỗ trợ": mục Liên hệ mở trang gửi tin nhắn cho bộ phận hỗ trợ (features/support/ContactSupport). */}
+        <div className="cportal-nav-group">
+          <span className="cportal-nav-group-label">Hỗ trợ</span>
+
+          <button
+            type="button"
+            className={`cportal-nav-btn ${activeSection === 'contact' ? 'active' : ''}`}
+            onClick={() => setActiveSection('contact')}
+          >
+            <span className="cportal-nav-icon"><NavIcon name="contact" /></span>
+            <span className="cportal-nav-label">Liên hệ</span>
           </button>
         </div>
 
@@ -2532,6 +2554,8 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
         {activeSection === 'profile' && (
           <ProfilePage user={user} rentals={rentals} onLogout={logout} onOpenStorage={() => setActiveSection('storage')} />
         )}
+
+        {activeSection === 'contact' && <ContactSupport user={user} />}
 
       </main>
 

@@ -15,7 +15,7 @@ Folder `src/features/contract` chứa các phần giao diện **hợp đồng th
 | [ContractRenewal.css](./ContractRenewal.css) | Giao diện cho khối / hộp thoại gia hạn (class `rn-*`) | `ContractRenewal.jsx` | — |
 | [ContractSignFlow.jsx](./ContractSignFlow.jsx) | Hộp thoại ký hợp đồng / phụ lục 3 bước: xem → xác nhận điều khoản → ký tay + gõ họ tên | `src/pages/customer/CustomerAccount.jsx` | Không gọi API (cha gửi `POST /api/contracts/{id}/signature`); đọc `GET /api/policies` qua usePolicies |
 | [ContractSignFlow.css](./ContractSignFlow.css) | Khung hộp thoại dùng chung (class `csf-*`, `cdm-*`, `sign-badge`) | `ContractSignFlow.jsx`, `ContractDetailModal.jsx`, `ContractDocument.jsx`, `ContractRenewal.jsx`, `src/features/booking/CancelReservation.jsx` | — |
-| [SignaturePad.jsx](./SignaturePad.jsx) | Khung canvas để vẽ chữ ký, trả ảnh PNG base64 | `ContractSignFlow.jsx`, `ContractModal.jsx` | Không gọi API |
+| [SignaturePad.jsx](./SignaturePad.jsx) | Khung ký: vẽ chữ ký tay trên canvas **hoặc tải ảnh chữ ký** (PNG / JPG / WEBP, tự bỏ nền giấy, nén PNG ≤ 200 KB), trả ảnh PNG base64 | `ContractSignFlow.jsx`, `ContractModal.jsx` | Không gọi API |
 
 ## Các hàm / component chính
 
@@ -49,7 +49,8 @@ Folder `src/features/contract` chứa các phần giao diện **hợp đồng th
 - `CONTRACT_TERMS_VERSION`: mã phiên bản điều khoản gửi kèm chữ ký.
 
 **SignaturePad.jsx**
-- `SignaturePad` (default): canvas ký tay; hàm con `getPos`, `start`, `move`, `end`, `clear`.
+- `SignaturePad` (default): canvas ký tay; hàm con `getPos`, `start`, `move`, `end`, `clear`; tải ảnh `pickFile`, `handleFile`.
+- `cleanSignatureImage(img)`: bỏ nền giấy (trong suốt), giữ nét mực, co vừa khung 640×200.
 
 ## Kết nối với các phần khác
 
@@ -71,7 +72,7 @@ Folder `src/features/contract` chứa các phần giao diện **hợp đồng th
 **1. Ký hợp đồng sau khi đặt cọc**
 1. Khách đặt cọc xong → backend tạo hợp đồng → tab "Hợp đồng" hiện `ContractCard` với nút "Ký hợp đồng".
 2. Bấm ký → `CustomerAccount` mở `ContractSignFlow` (hoặc `ContractModal` khi bấm từ thẻ đơn lẻ).
-3. Bước 1 xem `ContractDocument` → bước 2 tick đủ điều khoản → bước 3 vẽ chữ ký trên `SignaturePad` + gõ đúng họ tên.
+3. Bước 1 xem `ContractDocument` → bước 2 tick đủ điều khoản → bước 3 vẽ chữ ký **hoặc tải ảnh chữ ký** trên `SignaturePad` + gõ đúng họ tên.
 4. `submit()` → `onSign({ image, acceptedPolicies, termsVersion })` → `CustomerAccount` gọi `POST /api/contracts/{contractId}/signature` rồi gửi email hợp đồng (`POST /api/email/send-contract`).
 
 **2. Xem chi tiết và gửi email hợp đồng**

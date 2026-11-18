@@ -44,7 +44,8 @@ public sealed class ContractRenewalsController(
     IFacilityManagementService facilityManagementService,
     ILogger<ContractRenewalsController> logger) : ControllerBase
 {
-    private static readonly int[] AllowedMonths = [1, 3, 6, 12];
+    // Kỳ gia hạn cho phép: chỉ gói 6 hoặc 12 tháng (giống gói thuê mới), sau đó lọc thêm theo min/max của chính sách.
+    private static readonly int[] AllowedMonths = [6, 12];
     // Tạm bỏ giảm giá theo gói (yêu cầu 29/10/2026). Làm lại giảm giá thì đổi thành true.
     private const bool ApplyContractDiscount = false;
     private static readonly string[] RenewableContractStatuses = ["Active", "Expiring Soon"];
@@ -220,7 +221,7 @@ public sealed class ContractRenewalsController(
             return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
 
         if (!AllowedMonths.Contains(request.Months))
-            return BadRequest(new { message = "Kỳ gia hạn chỉ được chọn 1, 3, 6 hoặc 12 tháng." });
+            return BadRequest(new { message = "Kỳ gia hạn chỉ được chọn 6 hoặc 12 tháng." });
 
         // Không gửi = giữ hình thức trả của hợp đồng hiện tại; gửi sai = báo lỗi
         var requestedPlan = request.PaymentPlan is null ? null : PaymentPlan.Normalize(request.PaymentPlan);

@@ -36,6 +36,19 @@ public class SendContractEmailRequest
     public string ContractHtml { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// Body của POST /api/support/contact: tin nhắn khách gửi tới bộ phận hỗ trợ.
+/// </summary>
+public class SupportContactRequest
+{
+    [MaxLength(150)]
+    public string? Subject { get; set; }
+
+    [Required]
+    [StringLength(4000, MinimumLength = 5)]
+    public string Message { get; set; } = string.Empty;
+}
+
 public class TestEmailRequest
 {
     [Required]

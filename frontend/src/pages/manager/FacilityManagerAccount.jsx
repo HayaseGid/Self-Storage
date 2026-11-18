@@ -1628,17 +1628,23 @@ function OwnerModal({ facilityId, reservation, currentOwnerId, onClose, onSave }
   const ranked = (workload || []).map(st => ({ ...st, load: loadOf(st), conflicts: conflictsOf(st) }))
     .sort((a, b) => (a.conflicts.length > 0) - (b.conflicts.length > 0) || a.load - b.load || a.weekCount - b.weekCount || a.fullName.localeCompare(b.fullName, 'vi'))
 
-  // Chạy khi tải xong workload: chọn sẵn người đứng đầu bảng xếp hạng (ưu tiên người khác người phụ trách hiện tại)
+  // Có ít nhất 1 nhân viên rảnh vào giờ hẹn không (tất cả đều bận -> phải đổi ngày hẹn).
+  const anyFree = ranked.some(st => st.conflicts.length === 0)
+
+  // Chạy khi tải xong workload: chọn sẵn người RẢNH đứng đầu bảng xếp hạng (ưu tiên người khác người phụ trách hiện tại).
+  // Không bao giờ chọn sẵn người đang bận: người bận bị khóa, không giao được.
   useEffect(() => {
     if (!workload) return
-    const best = ranked.find(st => st.userId !== currentOwnerId && st.conflicts.length === 0) || ranked.find(st => st.userId !== currentOwnerId) || ranked[0]
+    const best = ranked.find(st => st.userId !== currentOwnerId && st.conflicts.length === 0) || ranked.find(st => st.conflicts.length === 0)
     setStaffUserId(best ? String(best.userId) : '')
   }, [workload])
 
   // Bấm "Giao việc" / "Đổi người": bắt buộc chọn nhân viên, gọi onSave (chỉ gửi ngày mới nếu người dùng đổi ngày).
   const submit = async (e) => {
     e.preventDefault()
-    if (!staffUserId) return setError('Vui lòng chọn nhân viên.')
+    if (!staffUserId) return setError(anyFree ? 'Vui lòng chọn nhân viên.' : 'Tất cả nhân viên đều bận vào giờ hẹn này. Hãy đổi ngày hẹn.')
+    // Chặn lần cuối ở giao diện (backend cũng chặn): không giao cho người đang trùng giờ.
+    if (ranked.some(st => String(st.userId) === staffUserId && st.conflicts.length > 0)) return setError('Nhân viên này đang bận vào giờ hẹn, không giao được. Hãy chọn người khác hoặc đổi ngày hẹn.')
     setError('')
     setSaving(true)
     try {
@@ -1674,9 +1680,13 @@ function OwnerModal({ facilityId, reservation, currentOwnerId, onClose, onSave }
             <div className="empty-state">Cơ sở chưa có nhân viên Active. Hãy thêm nhân viên trước.</div>
           ) : (
             <div className="fm-owner-list" role="radiogroup" aria-label="Chọn nhân viên">
+              {!anyFree && (
+                <p className="fm-owner-allbusy" role="alert">Tất cả nhân viên đều bận vào giờ hẹn ngày {fmtDate(date)}. Hãy đổi <strong>Ngày hẹn</strong> ở trên hoặc thêm nhân viên cho cơ sở.</p>
+              )}
               {ranked.map(st => (
-                <label key={st.userId} className={`fm-owner-option${String(st.userId) === staffUserId ? ' selected' : ''}${st.conflicts.length ? ' conflict' : ''}`}>
-                  <input type="radio" name="owner" value={st.userId} checked={String(st.userId) === staffUserId} onChange={() => setStaffUserId(String(st.userId))} />
+                // Nhân viên trùng giờ (±60 phút) bị KHÓA: không chọn được, hiện rõ đang bận việc gì.
+                <label key={st.userId} className={`fm-owner-option${String(st.userId) === staffUserId ? ' selected' : ''}${st.conflicts.length ? ' conflict locked' : ''}`} title={st.conflicts.length ? 'Nhân viên đang bận vào giờ hẹn, không giao được' : undefined}>
+                  <input type="radio" name="owner" value={st.userId} checked={String(st.userId) === staffUserId} disabled={st.conflicts.length > 0} onChange={() => setStaffUserId(String(st.userId))} />
                   <span className="fm-owner-main">
                     <strong>{st.fullName}{st.userId === currentOwnerId && ' (đang phụ trách)'}</strong>
                     <small>{st.load} lần hẹn ngày {fmtDate(date)} · {st.weekCount} trong tuần</small>
@@ -1687,7 +1697,7 @@ function OwnerModal({ facilityId, reservation, currentOwnerId, onClose, onSave }
                     )}
                   </span>
                   {st.conflicts.length > 0
-                    ? <span className="fm-badge fm-warn">Trùng giờ {st.conflicts[0].scheduledTime}</span>
+                    ? <span className="fm-badge fm-warn">Đang bận {st.conflicts[0].scheduledTime} · không giao được</span>
                     : <span className="fm-badge fm-ok">Rảnh giờ hẹn</span>}
                 </label>
               ))}

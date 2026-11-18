@@ -14,6 +14,8 @@ namespace SelfStorageAPI.Services;
 public class EmailService : IEmailService
 {
     private const string BrevoApiUrl = "https://api.brevo.com/v3/smtp/email";
+    // Hộp thư mặc định nhận tin nhắn "Liên hệ" khi chưa cấu hình BrevoSettings:SupportInboxEmail.
+    private const string DefaultSupportInbox = "storespacevn101@gmail.com";
 
     private readonly SmtpSettings _smtp;
     private readonly BrevoSettings _brevo;
@@ -50,6 +52,38 @@ public class EmailService : IEmailService
         await SendRawEmailAsync(request.ToEmail, finalSubject, bodyHtml, ct);
     }
 
+    /// <summary>
+    /// Gửi tin nhắn "Liên hệ" của khách tới hộp thư hỗ trợ (BrevoSettings:SupportInboxEmail, mặc định storespacevn101@gmail.com).
+    /// Email có Reply-To là email của khách, nên bên hỗ trợ bấm "Trả lời" là trả lời thẳng cho khách.
+    /// Được gọi bởi SupportController (POST /api/support/contact).
+    /// </summary>
+    public async Task SendSupportMessageAsync(string fromEmail, string? fromName, string subject, string message, CancellationToken ct = default)
+    {
+        var inbox = !string.IsNullOrWhiteSpace(_brevo.SupportInboxEmail) ? _brevo.SupportInboxEmail.Trim() : DefaultSupportInbox;
+        var name = string.IsNullOrWhiteSpace(fromName) ? fromEmail : fromName.Trim();
+        var finalSubject = $"[StoreSpace Liên hệ] {subject} — {name}";
+        var bodyHtml = BuildSupportEmailHtml(fromEmail, name, subject, message);
+        await SendCoreAsync(inbox, finalSubject, bodyHtml, fromEmail, name, ct);
+    }
+
+    /* Nội dung HTML của email liên hệ (mọi chữ của khách đều được mã hóa HTML để tránh chèn mã). */
+    private static string BuildSupportEmailHtml(string fromEmail, string fromName, string subject, string message)
+    {
+        var safeMessage = WebUtility.HtmlEncode(message).Replace("\r\n", "\n").Replace("\n", "<br/>");
+        return $@"
+<div style=""font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;"">
+  <h2 style=""color: #073d70; margin: 0 0 4px;"">Tin nhắn liên hệ từ khách hàng</h2>
+  <p style=""color: #64748b; margin: 0 0 16px; font-size: 13px;"">Gửi từ mục ""Liên hệ"" trên trang tài khoản StoreSpace · {DateTime.Now:dd/MM/yyyy HH:mm}</p>
+  <table style=""width: 100%; font-size: 14px; color: #1e293b; border-collapse: collapse;"">
+    <tr><td style=""padding: 6px 0; color: #64748b; width: 110px;"">Khách hàng</td><td style=""padding: 6px 0;""><strong>{WebUtility.HtmlEncode(fromName)}</strong></td></tr>
+    <tr><td style=""padding: 6px 0; color: #64748b;"">Email</td><td style=""padding: 6px 0;""><a href=""mailto:{WebUtility.HtmlEncode(fromEmail)}"">{WebUtility.HtmlEncode(fromEmail)}</a></td></tr>
+    <tr><td style=""padding: 6px 0; color: #64748b;"">Chủ đề</td><td style=""padding: 6px 0;"">{WebUtility.HtmlEncode(subject)}</td></tr>
+  </table>
+  <div style=""margin-top: 14px; padding: 14px 16px; border-radius: 10px; background: #f5faff; border: 1px solid #dbeafe; color: #1e293b; line-height: 1.6; font-size: 14px;"">{safeMessage}</div>
+  <p style=""margin-top: 16px; font-size: 12px; color: #94a3b8;"">Bấm ""Trả lời"" để trả lời trực tiếp cho khách (Reply-To: {WebUtility.HtmlEncode(fromEmail)}).</p>
+</div>";
+    }
+
     public async Task TestConnectionAsync(string toEmail, CancellationToken ct = default)
     {
         var subject = "[StoreSpace Support] Thử nghiệm kết nối Gmail SMTP thành công!";
@@ -77,12 +111,19 @@ public class EmailService : IEmailService
         await SendRawEmailAsync(toEmail, subject, bodyHtml, ct);
     }
 
-    public async Task SendRawEmailAsync(string toEmail, string subject, string bodyHtml, CancellationToken ct = default)
+    public Task SendRawEmailAsync(string toEmail, string subject, string bodyHtml, CancellationToken ct = default)
+        => SendCoreAsync(toEmail, subject, bodyHtml, null, null, ct);
+
+    /// <summary>
+    /// Gửi 1 email: ưu tiên Brevo HTTP API (nếu có BrevoSettings:ApiKey), không có thì dùng Gmail SMTP.
+    /// replyToEmail (tùy chọn): địa chỉ nhận khi người đọc bấm "Trả lời" (dùng cho email liên hệ của khách).
+    /// </summary>
+    private async Task SendCoreAsync(string toEmail, string subject, string bodyHtml, string? replyToEmail, string? replyToName, CancellationToken ct)
     {
         // Ưu tiên gửi qua Brevo HTTP API (cổng 443) nếu đã cấu hình ApiKey — không bị chặn trên Render Free
         if (!string.IsNullOrWhiteSpace(_brevo.ApiKey))
         {
-            await SendViaBrevoAsync(toEmail, subject, bodyHtml, ct);
+            await SendViaBrevoAsync(toEmail, subject, bodyHtml, replyToEmail, replyToName, ct);
             return;
         }
 
@@ -94,6 +135,8 @@ public class EmailService : IEmailService
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(_smtp.SenderName, _smtp.SenderEmail));
         message.To.Add(MailboxAddress.Parse(toEmail));
+        if (!string.IsNullOrWhiteSpace(replyToEmail))
+            message.ReplyTo.Add(new MailboxAddress(replyToName ?? replyToEmail, replyToEmail.Trim()));
         message.Subject = subject;
 
         message.Body = new TextPart(TextFormat.Html)
@@ -141,7 +184,7 @@ public class EmailService : IEmailService
         }
     }
 
-    private async Task SendViaBrevoAsync(string toEmail, string subject, string bodyHtml, CancellationToken ct)
+    private async Task SendViaBrevoAsync(string toEmail, string subject, string bodyHtml, string? replyToEmail, string? replyToName, CancellationToken ct)
     {
         var senderEmail = !string.IsNullOrWhiteSpace(_brevo.SenderEmail)
             ? _brevo.SenderEmail.Trim()
@@ -158,13 +201,16 @@ public class EmailService : IEmailService
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
 
-        var payload = new
+        var payload = new Dictionary<string, object>
         {
-            sender = new { name = senderName, email = senderEmail },
-            to = new[] { new { email = toEmail.Trim() } },
-            subject,
-            htmlContent = bodyHtml
+            ["sender"] = new { name = senderName, email = senderEmail },
+            ["to"] = new[] { new { email = toEmail.Trim() } },
+            ["subject"] = subject,
+            ["htmlContent"] = bodyHtml
         };
+        // Reply-To (Brevo: replyTo) — email liên hệ của khách: bấm "Trả lời" sẽ gửi thẳng cho khách.
+        if (!string.IsNullOrWhiteSpace(replyToEmail))
+            payload["replyTo"] = new { email = replyToEmail.Trim(), name = string.IsNullOrWhiteSpace(replyToName) ? replyToEmail.Trim() : replyToName };
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try

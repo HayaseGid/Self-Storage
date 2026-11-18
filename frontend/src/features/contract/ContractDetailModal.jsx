@@ -13,7 +13,7 @@
  * PHỤ THUỘC: api/api (apiGet), services/storageRules (formatVnd), ./ContractDocument, api/contractEmail
  *   (sendContractEmail), services/policies (usePolicies), ContractSignFlow.css.
  * API: GET /api/contracts/{contractId}/signature (ContractsController) — lấy ảnh chữ ký nếu đã ký;
- *      POST /api/email/send-contract (qua sendContractEmail, có dự phòng EmailJS) — gửi hợp đồng qua email.
+ *      POST /api/email/send-contract (qua sendContractEmail; backend gửi bằng Brevo) — gửi hợp đồng qua email.
  * LUỒNG: khách bấm "Xem chi tiết hợp đồng" trên ContractCard -> CustomerAccount mở hộp thoại với group
  *   -> useEffect gọi GET .../signature cho từng contractId tới khi thấy chữ ký -> hiện văn bản + chữ ký
  *   -> bấm "Gửi qua email" -> sendMail() -> POST /api/email/send-contract -> hiện thông báo kết quả;
@@ -133,7 +133,7 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
   /**
    * Gửi hợp đồng qua email cho khách và hiện kết quả trong khung thông báo (state mail).
    * Chạy khi bấm nút "✉ Gửi qua email" (nút bị khóa khi nhóm chưa có đủ contractId).
-   * API: POST /api/email/send-contract (qua sendContractEmail; dự phòng EmailJS).
+   * API: POST /api/email/send-contract (qua sendContractEmail; backend gửi bằng Brevo).
    */
   const sendMail = async () => {
     setSending(true)
