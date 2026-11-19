@@ -6,11 +6,11 @@
  *   bấm ghim -> popup tên, địa chỉ, số kho trống, giờ mở cửa, SĐT, nút "Xem kho" và link "Chỉ đường" (Google Maps).
  *   Tọa độ lấy từ API (cột Latitude/Longitude của bảng Facility, FacilityLocationsController ở backend).
  * THÀNH PHẦN CHÍNH:
- *   - loadLeaflet(): nạp Leaflet (CSS + JS) 1 lần, dùng chung với FacilityUnitsMap.
+ *   - loadLeaflet(): nạp Leaflet (CSS + JS) 1 lần.
  *   - loadFacilityLocations(force), useFacilityLocations(): tải tọa độ cơ sở (cache 1 lần) / hook kèm loading, error.
  *   - directionsUrl(point): link chỉ đường Google Maps.
  *   - FacilityMap (default export): component bản đồ.
- * DÙNG Ở: src/App.jsx (trang chủ / danh sách cơ sở, trang chi tiết cơ sở), features/facility/FacilityUnitsMap.jsx (loadLeaflet).
+ * DÙNG Ở: src/App.jsx (trang chủ / danh sách cơ sở, trang chi tiết cơ sở).
  * PHỤ THUỘC: react, api/api (apiGet), FacilityMap.css, Leaflet 1.9.4 từ https://unpkg.com (window.L), tile OpenStreetMap.
  * API: GET /api/facility-locations -> [{ id, name, address, latitude, longitude, ... }].
  * LUỒNG: App gọi useFacilityLocations -> GET /api/facility-locations -> ghép với danh sách cơ sở thành points
@@ -32,7 +32,7 @@ let leafletPromise = null
 /**
  * Nạp thư viện bản đồ Leaflet (CSS + JS) từ CDN một lần duy nhất, trả về window.L.
  * Chèn <link> CSS (nếu chưa có) và <script> vào <head>; lỗi thì xóa Promise để lần sau thử lại.
- * Được gọi bởi FacilityMap và FacilityUnitsMap khi tạo bản đồ.
+ * Được gọi bởi FacilityMap khi tạo bản đồ.
  * @returns {Promise<object>}
  */
 export function loadLeaflet() {

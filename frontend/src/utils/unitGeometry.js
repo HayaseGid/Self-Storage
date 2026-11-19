@@ -10,7 +10,7 @@
  *   - unitGeometry(unit): kích thước hình học của 1 kho.
  *   - formatMeters(value): định dạng số mét kiểu Việt Nam.
  *   - unitPlanStatus(unit): trạng thái để tô màu trên sơ đồ (free / off / rented).
- * DÙNG Ở: features/facility/FacilityFloorPlan.jsx, FacilityUnitsMap.jsx, features/unit/Unit3DViewer.jsx, useBoxFit.js.
+ * DÙNG Ở: features/facility/FacilityFloorPlan.jsx, features/unit/Unit3DViewer.jsx, useBoxFit.js.
  * PHỤ THUỘC: services/priceBands (getBandCode: lấy chữ nhóm S/M/L/V từ chuỗi size).
  * API: Không gọi API.
  * LUỒNG: component có object unit từ backend -> unitGeometry(unit) -> {width, length, height...}
@@ -81,7 +81,7 @@ export const formatMeters = value => `${Number(value).toLocaleString('vi-VN', { 
 /**
  * Trạng thái kho để tô màu trên sơ đồ: 'free' (unit.available = true, còn trống), 'off' (status maintenance /
  * inactive: bảo trì, ngừng dùng), 'rented' (các trường hợp còn lại: đã thuê / đang giữ chỗ).
- * Được gọi bởi FacilityUnitsMap khi tô màu từng ô kho.
+ * Được gọi bởi FacilityFloorPlan khi tô màu từng ô kho.
  * @param {object} unit kho ({ available, status }).
  * @returns {'free'|'off'|'rented'}
  */

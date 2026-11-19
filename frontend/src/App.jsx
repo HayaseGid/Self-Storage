@@ -603,7 +603,6 @@ function SiteHeader() {
         </button>
         <nav className="desktop-nav">
           <button type="button" onClick={() => go('/search')}>Tìm kho</button>
-          <button type="button" onClick={() => go('/about')}>Về StoreSpace</button>
           <button className="nav-dropdown" type="button" onClick={() => setStorageOpen(v => !v)}>Loại kho <ChevronIcon /></button>
           {storageOpen && (
             <div className="type-menu">
@@ -1020,7 +1019,6 @@ function FacilityDetailPage({ facility }) {
   const units = getStorageUnits(facility.name)
   const { locations: facilityLocations } = useFacilityLocations()
   const [facilityPoint] = toMapPoints([facility], facilityLocations)
-  const hasUnitsMap = Boolean(units.length && facilityPoint && facilityPoint.latitude != null && facilityPoint.longitude != null)
   const typeKeys = getCatalogTypeKeys(units)
 
   const [query, setQuery] = useState('')
@@ -1070,11 +1068,10 @@ function FacilityDetailPage({ facility }) {
               <p>Hiện có <strong>{facility.available}</strong> kho đang sẵn sàng cho thuê.</p>
             </div>
           </div>
-          <FacilityLocationCard facility={facility} hideMap={hasUnitsMap} />
+          <FacilityLocationCard facility={facility} />
           <FacilityFloorPlan
             facility={facility}
             units={units}
-            point={facilityPoint}
             highlightIds={filteredUnits.length === units.length ? null : new Set(filteredUnits.map(unit => unit.id))}
             onOpenDetail={unit => navigate(getUnitPath(facility, unit))}
             onBook={unit => navigate(getBookingPath(facility, unit))}
