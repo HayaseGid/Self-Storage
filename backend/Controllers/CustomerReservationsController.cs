@@ -77,7 +77,13 @@ public sealed class CustomerReservationsController(
                            && c.Status == "Unpaid"
                            && c.DueDate.Date.AddDays(30) < today, ct);
 
-        var targetAccessStatus = hasOverdue30Days ? "Locked" : "Active";
+        // 3. Không còn kho nào đang thuê (không có đơn Handed Over: đã trả hết kho hoặc chưa nhận kho) => Hết hiệu lực (Inactive).
+        //    Giữ nguyên số mã; lần bàn giao kho tiếp theo HandoverService đặt lại 'Active'.
+        var hasHandedOver = await context.Reservations
+            .AnyAsync(r => r.CustomerID == customerId && r.Status == ReservationStatus.HandedOver, ct);
+
+        var targetAccessStatus = !hasHandedOver ? "Inactive"          // không còn kho đang thuê -> hết hiệu lực
+                                : hasOverdue30Days ? "Locked" : "Active";
         bool customerUpdated = false;
 
         if (customer.AccessCodeStatus != targetAccessStatus)
@@ -287,6 +293,14 @@ public sealed class CustomerReservationsController(
                 startRentPaid = RentPaymentRules.IsStartRentPaid(rentState),
                 rentPayableNow = rentPayable.Sum(c => c.Amount),
                 rentOverdue = RentPaymentRules.Overdue(rentState, today).Sum(c => c.Amount),
+                // Kỳ tiền thuê kế tiếp chưa đóng (hạn từ hôm nay trở đi) của kho đang thuê -> thông báo "sắp đến hạn" trên web
+                nextRentDueDate = r.Status == ReservationStatus.HandedOver
+                    ? r.RentRows.Where(x => x.Status == "Unpaid" && x.DueDate.Date >= today).Select(x => (DateTime?)x.DueDate.Date).Min()
+                    : null,
+                nextRentDueAmount = r.Status == ReservationStatus.HandedOver
+                    ? r.RentRows.Where(x => x.Status == "Unpaid" && x.DueDate.Date >= today)
+                        .GroupBy(x => x.DueDate.Date).OrderBy(g => g.Key).Select(g => g.Sum(x => x.Amount)).FirstOrDefault()
+                    : 0m,
                 rentNote = RentPaymentRules.WhyNotPayable(rentState, today),
                 cancelledAt = r.CancelledAt,
                 cancelReason = r.CancelReason,

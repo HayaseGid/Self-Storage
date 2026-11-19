@@ -686,6 +686,53 @@ public static class DatabaseSeeder
         }
     }
 
+    /// <summary>
+    /// Tạo bảng RentReminderLog (email nhắc hạn đóng tiền thuê đã gửi) nếu chưa có, cho cả SQL Server và Postgres.
+    /// SQL Server: cũng có trong database/Migrations/20261119_NhacHanTienThue.sql.
+    /// </summary>
+    public static void EnsureRentReminderTable(SelfStorageDbContext context)
+    {
+        bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+        try
+        {
+            if (isNpgsql)
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""RentReminderLog"" (
+                        ""RentReminderLogID"" SERIAL PRIMARY KEY,
+                        ""CustomerID"" INT NOT NULL,
+                        ""DueDate"" TIMESTAMP NOT NULL,
+                        ""Kind"" VARCHAR(10) NOT NULL,
+                        ""SentAt"" TIMESTAMP NOT NULL,
+                        UNIQUE (""CustomerID"", ""DueDate"", ""Kind"")
+                    );
+                ");
+            }
+            else
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    IF OBJECT_ID(N'dbo.RentReminderLog', N'U') IS NULL
+                    BEGIN
+                        CREATE TABLE dbo.RentReminderLog (
+                            RentReminderLogID INT IDENTITY(1,1) NOT NULL,
+                            CustomerID INT NOT NULL,
+                            DueDate DATETIME2 NOT NULL,
+                            Kind NVARCHAR(10) NOT NULL,               -- D3 = nhắc trước 3 ngày | D0 = đúng ngày đến hạn
+                            SentAt DATETIME2 NOT NULL,
+                    
+                            CONSTRAINT PK_RentReminderLog PRIMARY KEY (RentReminderLogID),
+                            CONSTRAINT UX_RentReminderLog UNIQUE (CustomerID, DueDate, Kind)
+                        );
+                    END;
+                ");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[EnsureRentReminderTable] Error: {ex.Message}");
+        }
+    }
+
     public static void EnsureReturnInspectionTables(SelfStorageDbContext context)
     {
         bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;

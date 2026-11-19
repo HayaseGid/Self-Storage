@@ -30,7 +30,7 @@ public class EmailController : ControllerBase
     // OTP đăng ký giờ do backend tạo và gửi: POST /api/auth/register/start (RegistrationOtpService).
 
     /// <summary>
-    /// Gửi bản hợp đồng thuê kho qua Gmail SMTP.
+    /// Gửi bản hợp đồng thuê kho qua email (Brevo).
     /// </summary>
     [HttpPost("send-contract")]
     public async Task<IActionResult> SendContract([FromBody] SendContractEmailRequest request, CancellationToken ct)
@@ -61,12 +61,12 @@ public class EmailController : ControllerBase
     }
 
     /// <summary>
-    /// Gửi thử một email kiểm tra kết nối Gmail SMTP.
+    /// Gửi thử một email kiểm tra cấu hình gửi email (Brevo).
     /// </summary>
     [HttpPost("test")]
     public async Task<IActionResult> TestEmail([FromBody] TestEmailRequest request, CancellationToken ct)
     {
-        // Chỉ dùng khi chạy Development để kiểm tra cấu hình SMTP.
+        // Chỉ dùng khi chạy Development để kiểm tra cấu hình gửi email.
         if (!_environment.IsDevelopment())
             return NotFound();
 
@@ -82,7 +82,7 @@ public class EmailController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lỗi kiểm tra kết nối Gmail SMTP đến {Email}", request.ToEmail);
+            _logger.LogError(ex, "Lỗi gửi email kiểm tra đến {Email}", request.ToEmail);
             return StatusCode(500, new { success = false, message = ex.Message });
         }
     }

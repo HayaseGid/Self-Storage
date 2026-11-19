@@ -66,7 +66,8 @@ import {
 } from './features/unit/unitTypes'
 import './features/unit/unitTypes.css'
 import { getFacilityDistrict, groupFacilitiesByDistrict } from './utils/districts'
-import { RENTAL_TERMS, MAX_ADVANCE_BOOKING_DAYS, maxBookingStartDate } from './services/storageRules'
+import { RENTAL_TERMS, maxBookingStartDate } from './services/storageRules'
+import { useMaxAdvanceBookingDays } from './services/policies' // số ngày được đặt trước (BOM chỉnh)
 import { effectiveMonthly, holdMinutesFor, quote, setCatalogPricing } from './services/pricing'
 import FacilityMap, { directionsUrl, useFacilityLocations } from './features/facility/FacilityMap'
 import CartPage from './pages/customer/CartPage'
@@ -1334,8 +1335,9 @@ function BookingPage({ facility, unit }) {
   const holdMinutes = holdMinutesFor(facility.facilityId)
   const deposit = booking?.deposit ?? priceQuote.deposit
 
-  // Ngày bắt đầu thuê muộn nhất: hôm nay + 30 ngày (dùng làm ngày tối đa của RentalCalendar).
-  const maxStartDate = maxBookingStartDate()
+  // Ngày bắt đầu thuê muộn nhất: hôm nay + số ngày được đặt trước theo chính sách (dùng làm ngày tối đa của RentalCalendar).
+  const maxAdvanceDays = useMaxAdvanceBookingDays()
+  const maxStartDate = maxBookingStartDate(maxAdvanceDays)
 
 
   // Định dạng tiền kiểu Việt Nam kèm "đ" (giống formatMoney ở đầu file).
@@ -1485,7 +1487,7 @@ function BookingPage({ facility, unit }) {
     }
 
     if (!isValidStartDate) {
-      await showBookingError(`Ngày bắt đầu thuê phải từ hôm nay đến tối đa ${MAX_ADVANCE_BOOKING_DAYS} ngày tới.`, 'Ngày bắt đầu không hợp lệ', 'warning')
+      await showBookingError(`Ngày bắt đầu thuê phải từ hôm nay đến tối đa ${maxAdvanceDays} ngày tới.`, 'Ngày bắt đầu không hợp lệ', 'warning')
       return
     }
 

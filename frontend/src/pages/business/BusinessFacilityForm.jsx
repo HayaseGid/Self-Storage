@@ -9,7 +9,7 @@
  *   - BusinessFacilityForm (export default): component form sửa cơ sở.
  *     + submit: kiểm tra, hỏi xác nhận, gọi onSave.
  * DÙNG Ở: src/pages/business/BusinessOperations.jsx (khi bấm "Sửa thông tin" một cơ sở).
- * PHỤ THUỘC: utils/districts (extractDistrict), BusinessCatalog.css (dùng chung kiểu modal / ô nhập .bc-*).
+ * PHỤ THUỘC: utils/districts (extractDistrict), BusinessCatalog.css (kiểu modal / ô nhập .bc-*).
  * API: Không gọi API trực tiếp. Dữ liệu được trả qua onSave(); BusinessOperations gọi
  *   PUT /api/operations/facilities/{id} (OperationsController).
  * LUỒNG: mở form với dữ liệu gốc -> người dùng sửa ô -> bấm "Lưu thay đổi" -> submit kiểm tra lỗi

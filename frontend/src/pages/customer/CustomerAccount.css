@@ -724,6 +724,9 @@
 }
 .access-card.is-locked { --ac-main: #e11d48; --ac-dark: #9f1239; --ac-soft: #ffe4e6; --ac-line: #fecdd3; background: linear-gradient(180deg, #fff1f2 0%, #fff 55%); }
 .access-card.is-unissued { --ac-main: #64748b; --ac-dark: #334155; --ac-soft: #f1f5f9; --ac-line: #e2e8f0; background: #fff; }
+/* Mã hết hiệu lực: khách không còn kho nào đang thuê */
+.access-card.is-inactive { --ac-main: #64748b; --ac-dark: #334155; --ac-soft: #f1f5f9; --ac-line: #e2e8f0; background: #fff; }
+.access-card.is-inactive .access-code-value { color: #94a3b8; text-decoration: line-through; }
 .access-card-head { display: flex; align-items: center; gap: 12px; }
 .access-card-icon { width: 42px; height: 42px; flex: none; display: grid; place-items: center; border-radius: 12px; background: var(--ac-soft); color: var(--ac-main); }
 .access-card-title { flex: 1; min-width: 0; }

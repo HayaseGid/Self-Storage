@@ -43,7 +43,8 @@ import { useDialog } from '../../components/common/Dialog'
 import RentalCalendar from '../../components/common/RentalCalendar'
 import { UnitTypeArt, UnitTypeChip } from '../../features/unit/unitTypes'
 import { CHECKOUT_LIMIT, cancelHeldReservations, newOrderCode, rememberVnPayCartItems, removeFromCart, removeManyFromCart, restoreToCart, saveCartOrder, useCart } from '../../store/cart'
-import { RENTAL_TERMS, MAX_ADVANCE_BOOKING_DAYS, formatVnd, maxBookingStartDate } from '../../services/storageRules'
+import { RENTAL_TERMS, formatVnd, maxBookingStartDate } from '../../services/storageRules'
+import { useMaxAdvanceBookingDays } from '../../services/policies' // số ngày được đặt trước (BOM chỉnh)
 import { effectiveMonthly, holdMinutesFor, quote } from '../../services/pricing'
 import { announceDepositSuccess, confirmAfterDeposit, openCustomerSection } from '../../services/afterDeposit'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from '../../api/vnpay'
@@ -123,6 +124,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
   const [excluded, setExcluded] = useState(() => new Set()) // các kho (key) khách đã bỏ tick
   const [startDate, setStartDate] = useState(null)
   const [months, setMonths] = useState(RENTAL_TERMS[0])
+  const maxAdvanceDays = useMaxAdvanceBookingDays()
   const [paymentPlan, setPaymentPlan] = useState('Monthly') // 'Monthly' | 'Upfront'
   const [handoverMethod, setHandoverMethod] = useState(HANDOVER_METHODS.InPerson) // 'InPerson' | 'Online'
   const [appointmentSlot, setAppointmentSlot] = useState('') // '08:00' | '10:00' | '12:00' | '14:00'
@@ -255,8 +257,8 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
       await dialog.alert({ tone: 'warning', title: 'Chưa chọn ngày bắt đầu', message: 'Hãy chọn ngày bắt đầu thuê trên lịch.' })
       return
     }
-    if (startDate > maxBookingStartDate()) {
-      await dialog.alert({ tone: 'warning', title: 'Ngày bắt đầu quá xa', message: `Chỉ được chọn ngày bắt đầu thuê trong vòng ${MAX_ADVANCE_BOOKING_DAYS} ngày tới.` })
+    if (startDate > maxBookingStartDate(maxAdvanceDays)) {
+      await dialog.alert({ tone: 'warning', title: 'Ngày bắt đầu quá xa', message: `Chỉ được chọn ngày bắt đầu thuê trong vòng ${maxAdvanceDays} ngày tới.` })
       return
     }
     const handoverError = handoverChoiceError(handoverMethod, appointmentSlot, startDate)
@@ -652,7 +654,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                   value={startDate}
                   endDate={endDate}
                   durationMonths={months}
-                  maxDate={maxBookingStartDate()}
+                  maxDate={maxBookingStartDate(maxAdvanceDays)}
                   onChange={date => setStartDate(date)}
                 />
               </div>

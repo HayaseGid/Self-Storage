@@ -285,10 +285,9 @@ function Admin() {
     setTimeout(() => document.getElementById("admin-user-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
-  // Đăng xuất (nút "Đăng xuất" ở sidebar): xóa khóa storespace_current_user + userLoggedIn trong localStorage rồi tải lại trang chủ.
+  // Đăng xuất (nút "Đăng xuất" ở sidebar): xóa khóa storespace_current_user trong localStorage rồi tải lại trang chủ.
   const logout = () => {
     localStorage.removeItem("storespace_current_user");
-    localStorage.removeItem("userLoggedIn");
     window.location.href = "/";
   };
 

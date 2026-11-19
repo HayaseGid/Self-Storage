@@ -27,7 +27,7 @@
  */
 import { useEffect, useState } from 'react'
 import { apiGet } from '../api/api'
-import { RENTAL_TERMS, formatVnd } from './storageRules'
+import { MAX_ADVANCE_BOOKING_DAYS, RENTAL_TERMS, formatVnd } from './storageRules'
 
 /**
  * Bộ chính sách mặc định, dùng khi backend chưa có / không tải được chính sách, hoặc khi thiếu 1 nhóm.
@@ -46,7 +46,7 @@ export const DEFAULT_POLICIES = {
     ]
   },
   reservation: {
-    holdMinutes: 10,
+    holdMinutes: 10, maxAdvanceBookingDays: MAX_ADVANCE_BOOKING_DAYS,
     cancellationConditions: 'Chỉ hủy được khi đặt chỗ chưa bàn giao. Hủy do lỗi doanh nghiệp được hoàn toàn bộ số tiền đã thanh toán.',
     refundTiers: [{ minDaysBefore: 7, refundPercent: 100 }, { minDaysBefore: 3, refundPercent: 50 }, { minDaysBefore: 0, refundPercent: 0 }],
     noShowAfterDays: 0, noShowRefundPercent: 0, releaseUnitOnNoShow: true
@@ -170,6 +170,7 @@ export function describePolicy(key, value, { facilities = [] } = {}) {
       summary: `Giữ chỗ ${v.holdMinutes} phút chờ đặt cọc. Hoàn cọc ${tiers.map(t => `${t.refundPercent}%`).join(' / ')} tùy thời điểm hủy.`,
       settings: [
         ['Thời hạn giữ chỗ', `${v.holdMinutes} phút để thanh toán tiền cọc`],
+        ['Đặt trước tối đa', `Ngày bắt đầu thuê trong vòng ${v.maxAdvanceBookingDays ?? MAX_ADVANCE_BOOKING_DAYS} ngày kể từ hôm nay`],
         ...tiers.map((t, i) => {
           const upper = i > 0 ? tiers[i - 1].minDaysBefore - 1 : null
           const label = t.minDaysBefore === 0
@@ -190,7 +191,8 @@ export function describePolicy(key, value, { facilities = [] } = {}) {
         // Backend chỉ cho gia hạn gói 6 hoặc 12 tháng (RENTAL_TERMS), lọc thêm theo min/max của chính sách.
         ['Kỳ gia hạn', (() => { const terms = RENTAL_TERMS.filter(m => m >= Number(v.minRenewalMonths) && m <= Number(v.maxRenewalMonths)); return terms.length ? `Gói ${terms.join(' hoặc ')} tháng` : 'Chưa có gói phù hợp' })()],
         ['Điều kiện gia hạn', v.requireNoOverdue ? 'Hợp đồng còn hiệu lực, không còn khoản quá hạn' : 'Hợp đồng còn hiệu lực'],
-        ['Hạn chót thanh toán gia hạn', v.renewalPaymentDeadlineDays != null && v.renewalPaymentDeadlineDays !== '' ? `Trước ngày hết hạn ${v.renewalPaymentDeadlineDays} ngày` : 'Chưa quy định'],
+        // Gia hạn thanh toán ngay khi gửi yêu cầu (backend giữ yêu cầu 15 phút), nên không có "hạn chót thanh toán" riêng.
+        ['Thanh toán gia hạn', 'Thanh toán ngay khi gửi yêu cầu gia hạn (yêu cầu được giữ 15 phút)'],
         ['Giá gia hạn', v.renewalPricing || '—'],
         ['Báo trả kho', `Trước ít nhất ${v.returnNoticeDays} ngày`],
         ['Khi trả kho', v.returnRequirements || '—'],
@@ -285,6 +287,17 @@ export function usePolicies() {
     return () => listeners.delete(setState)
   }, [])
   return state
+}
+
+/**
+ * Hook: số ngày được đặt trước tối đa (chính sách "Đặt chỗ & hủy" -> maxAdvanceBookingDays, mặc định 30).
+ * Dùng ở trang đặt 1 kho (App.jsx) và giỏ hàng (CartPage) để khóa lịch và báo lỗi.
+ * @returns {number}
+ */
+export function useMaxAdvanceBookingDays() {
+  const { values } = usePolicies()
+  const n = Number(values.reservation?.maxAdvanceBookingDays)
+  return Number.isFinite(n) && n >= 1 ? Math.min(365, Math.round(n)) : MAX_ADVANCE_BOOKING_DAYS
 }
 
 /* Không áp dụng chương trình giảm giá. */

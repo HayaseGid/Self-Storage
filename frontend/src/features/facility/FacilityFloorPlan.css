@@ -18,7 +18,7 @@
 
 /* Sơ đồ SVG nhìn từ trên xuống (tỉ lệ 1 m = 10 px) */
 .fp-canvas { overflow-x: auto; border-radius: 20px; }
-.fp-stage { position: relative; }
+.fp-stage { position: relative; margin: 0 auto; }
 .fp-svg { display: block; width: 100%; height: auto; font-family: 'Be Vietnam Pro', sans-serif; }
 .fp-lawn { fill: #dfeacf; }
 .fp-tree circle { fill: #a9cf8f; stroke: #93bd78; stroke-width: 1.5; }

@@ -30,7 +30,7 @@
 import React, { useEffect, useState } from 'react'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../api/api'
 import PriceInput from '../../components/common/PriceInput'
-import { formatVnd } from '../../services/storageRules'
+import { formatMoney as money, formatVnd } from '../../services/storageRules'
 import { formatArea, formatBandPrice } from '../../services/priceBands'
 import { bandHints, validateBand } from '../../services/priceBandRules'
 import './BusinessPriceBands.css'
@@ -40,7 +40,6 @@ import './BusinessPriceBands.css'
  * @param {number} value số tiền.
  * @returns {string}
  */
-const money = value => `${formatVnd(value || 0)}đ`
 /** Giá trị rỗng của form khi bấm "+ Thêm nhóm". */
 const EMPTY = { code: '', name: '', minArea: '', maxArea: '', minPrice: '', maxPrice: '', isActive: true }
 /** Danh mục kích thước chuẩn theo quy định: [mã nhóm, tên]; hiện thành nút chọn nhanh khi tạo nhóm. */
@@ -153,7 +152,7 @@ export default function BusinessPriceBands({ dialog }) {
     return (
       <section className="business-panel">
         <div className="auth-message error" role="alert">{error}</div>
-        <button type="button" className="dashboard-primary-btn" onClick={load}>Thử lại</button>
+        <button type="button" className="dashboard-primary-btn" onClick={() => load()}>Thử lại</button>
       </section>
     )
   }

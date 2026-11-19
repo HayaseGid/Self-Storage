@@ -10,7 +10,7 @@
  *   - ApiError    : lớp lỗi có message tiếng Việt + status + code + data.
  *   - apiRequest  : hàm lõi gửi request (mọi hàm bên dưới đều gọi hàm này).
  *   - apiGet / apiPost / apiPut / apiDelete : 4 hàm tắt theo phương thức HTTP.
- * DÙNG Ở: gần như toàn bộ frontend — src/App.jsx, các file trong src/api (catalogApi, vnpay,
+ * DÙNG Ở: gần như toàn bộ frontend — src/App.jsx, các file trong src/api (vnpay,
  *   otpService, lateFees, contractEmail), src/services (afterDeposit, policies), src/store/cart.js,
  *   src/components/common/listKit.jsx, các trang src/pages/* và các feature src/features/*.
  * PHỤ THUỘC: src/demoClock/demoClock.js (SIMULATED_DATE_HEADER, getSimulatedDateISO);

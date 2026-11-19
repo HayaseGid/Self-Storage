@@ -34,6 +34,11 @@ public class EmailService : IEmailService
         _logger = logger;
     }
 
+    /* Đang gửi bằng gì (hiện trong email thử), địa chỉ người gửi, hộp thư hỗ trợ ghi ở cuối các email. */
+    private string Provider => string.IsNullOrWhiteSpace(_brevo.ApiKey) ? "Gmail SMTP (dự phòng)" : "Brevo";
+    private string SenderAddress => !string.IsNullOrWhiteSpace(_brevo.SenderEmail) ? _brevo.SenderEmail.Trim() : _smtp.SenderEmail;
+    private string SupportInbox => !string.IsNullOrWhiteSpace(_brevo.SupportInboxEmail) ? _brevo.SupportInboxEmail.Trim() : DefaultSupportInbox;
+
     public async Task SendOtpEmailAsync(string toEmail, string? toName, string otp, CancellationToken ct = default)
     {
         var subject = $"[StoreSpace] Mã xác thực OTP của bạn: {otp}";
@@ -86,7 +91,7 @@ public class EmailService : IEmailService
 
     public async Task TestConnectionAsync(string toEmail, CancellationToken ct = default)
     {
-        var subject = "[StoreSpace Support] Thử nghiệm kết nối Gmail SMTP thành công!";
+        var subject = "[StoreSpace Support] Thử nghiệm gửi email thành công!";
         var bodyHtml = $@"
 <div style=""font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;"">
   <div style=""text-align: center; padding-bottom: 16px; border-bottom: 2px solid #0877cf;"">
@@ -95,12 +100,12 @@ public class EmailService : IEmailService
   </div>
   <div style=""padding: 20px 0; color: #1e293b; line-height: 1.6;"">
     <p>Xin chào,</p>
-    <p>Đây là email kiểm tra hệ thống Gmail SMTP được gửi từ ứng dụng <strong>StoreSpace</strong>.</p>
+    <p>Đây là email kiểm tra hệ thống gửi email ({Provider}) của ứng dụng <strong>StoreSpace</strong>.</p>
     <div style=""background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 14px 18px; color: #065f46;"">
-      ✓ <strong>Kết nối Gmail SMTP thành công!</strong> Cấu hình gửi email tự động đã sẵn sàng hoạt động.
+      ✓ <strong>Gửi email qua {Provider} thành công!</strong> Cấu hình gửi email tự động đã sẵn sàng hoạt động.
     </div>
     <p style=""margin-top: 16px; font-size: 13px; color: #64748b;"">
-      Tài khoản gửi: <strong>{_smtp.SenderEmail}</strong><br/>
+      Tài khoản gửi: <strong>{WebUtility.HtmlEncode(SenderAddress)}</strong><br/>
       Thời gian gửi: <strong>{DateTime.Now:dd/MM/yyyy HH:mm:ss}</strong>
     </p>
   </div>
@@ -115,7 +120,9 @@ public class EmailService : IEmailService
         => SendCoreAsync(toEmail, subject, bodyHtml, null, null, ct);
 
     /// <summary>
-    /// Gửi 1 email: ưu tiên Brevo HTTP API (nếu có BrevoSettings:ApiKey), không có thì dùng Gmail SMTP.
+    /// Gửi 1 email qua Brevo HTTP API (BrevoSettings:ApiKey). Chỉ khi máy chưa cấu hình ApiKey mới dùng Gmail SMTP dự phòng.
+    /// Khóa Brevo KHÔNG ghi trong appsettings (file này được commit): máy dev đặt bằng dotnet user-secrets, máy chủ đặt biến
+    /// môi trường BrevoSettings__ApiKey và BrevoSettings__SenderEmail (địa chỉ đã xác minh trong Brevo).
     /// replyToEmail (tùy chọn): địa chỉ nhận khi người đọc bấm "Trả lời" (dùng cho email liên hệ của khách).
     /// </summary>
     private async Task SendCoreAsync(string toEmail, string subject, string bodyHtml, string? replyToEmail, string? replyToName, CancellationToken ct)
@@ -238,7 +245,7 @@ public class EmailService : IEmailService
         }
     }
 
-    private static string BuildOtpEmailHtml(string? toName, string otp)
+    private string BuildOtpEmailHtml(string? toName, string otp)
     {
         var displayName = !string.IsNullOrWhiteSpace(toName) ? WebUtility.HtmlEncode(toName) : "Quý khách";
         return $@"
@@ -279,7 +286,7 @@ public class EmailService : IEmailService
     </div>
 
     <div style=""background:#f8fafc;padding:18px 24px;text-align:center;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;line-height:1.5;"">
-      <strong>StoreSpace Support</strong> · Hỗ trợ khách hàng: stardewvalleypvp@gmail.com<br/>
+      <strong>StoreSpace Support</strong> · Hỗ trợ khách hàng: {WebUtility.HtmlEncode(SupportInbox)}<br/>
       Email được gửi tự động từ hệ thống StoreSpace. Vui lòng không trả lời thư này.
     </div>
   </div>
@@ -296,11 +303,7 @@ public class EmailService : IEmailService
         var period = !string.IsNullOrWhiteSpace(req.StartDate) || !string.IsNullOrWhiteSpace(req.EndDate)
             ? $"{E(req.StartDate ?? "—")} → {E(req.EndDate ?? "—")}"
             : null;
-        var supportEmail = !string.IsNullOrWhiteSpace(_brevo.SenderEmail)
-            ? E(_brevo.SenderEmail.Trim())
-            : !string.IsNullOrWhiteSpace(_smtp.SenderEmail)
-                ? E(_smtp.SenderEmail.Trim())
-                : "stardewvalleypvp@gmail.com";
+        var supportEmail = E(SupportInbox); // hộp thư hỗ trợ (khách gửi thắc mắc tới đây)
 
         var metaHtml = (contractNumber is not null || facilityName is not null || period is not null)
             ? $@"

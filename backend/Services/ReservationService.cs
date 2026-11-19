@@ -7,14 +7,36 @@ namespace SelfStorageAPI.Services;
 
 public class ReservationService : IReservationService
 {
-    // Số ngày tối đa được đặt trước (từ hôm nay tới ngày bắt đầu thuê / nhận kho).
-    private const int MaxAdvanceBookingDays = 30;
+    // Số ngày tối đa được đặt trước (từ hôm nay tới ngày bắt đầu thuê / nhận kho) khi chính sách chưa đặt.
+    // BOM chỉnh ở chính sách "Đặt chỗ & hủy" -> maxAdvanceBookingDays.
+    private const int DefaultMaxAdvanceBookingDays = 30;
 
     private readonly IReservationRepository _reservationRepository;
+    private readonly IFacilityManagementService _policies;
 
-    public ReservationService(IReservationRepository reservationRepository)
+    public ReservationService(IReservationRepository reservationRepository, IFacilityManagementService policies)
     {
         _reservationRepository = reservationRepository;
+        _policies = policies;
+    }
+
+    /* Đọc "Đặt trước tối đa (ngày)" từ chính sách Đặt chỗ & hủy; lỗi / chưa đặt thì 30 ngày. */
+    private async Task<int> ReadMaxAdvanceBookingDaysAsync(CancellationToken ct)
+    {
+        try
+        {
+            var result = await _policies.GetPolicyGroupsAsync(ct);
+            if (!result.IsSuccess || result.Data is null) return DefaultMaxAdvanceBookingDays;
+            using var doc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Data));
+            if (doc.RootElement.TryGetProperty("current", out var current) &&
+                current.TryGetProperty("reservation", out var policy) &&
+                policy.TryGetProperty("value", out var value) &&
+                value.TryGetProperty("maxAdvanceBookingDays", out var days) &&
+                days.ValueKind == System.Text.Json.JsonValueKind.Number && days.TryGetInt32(out var n))
+                return Math.Clamp(n, 1, 365);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException) { }
+        return DefaultMaxAdvanceBookingDays;
     }
 
     public async Task<ReservationServiceResponse> CreateReservationAsync(CreateReservationDTO request, string? userEmail, CancellationToken cancellationToken)
@@ -37,8 +59,9 @@ public class ReservationService : IReservationService
         if (startDate < BusinessClock.Today)
             return new ReservationServiceResponse(false, "Ngày bắt đầu thuê không được ở trong quá khứ.", 400, null);
         // Chỉ cho đặt trước tối đa 30 ngày: ngày nhận kho phải trong vòng 30 ngày kể từ hôm nay (FE cũng chặn trên lịch).
-        if (startDate > BusinessClock.Today.AddDays(MaxAdvanceBookingDays))
-            return new ReservationServiceResponse(false, $"Ngày bắt đầu thuê chỉ được chọn trong vòng {MaxAdvanceBookingDays} ngày kể từ hôm nay.", 400, null);
+        var maxAdvanceDays = await ReadMaxAdvanceBookingDaysAsync(cancellationToken);
+        if (startDate > BusinessClock.Today.AddDays(maxAdvanceDays))
+            return new ReservationServiceResponse(false, $"Ngày bắt đầu thuê chỉ được chọn trong vòng {maxAdvanceDays} ngày kể từ hôm nay.", 400, null);
 
         // Cách nhận kho + khung giờ (4.1): nhận trực tiếp phải chọn 1 trong 4 khung 2 tiếng; online không hẹn giờ.
         var handoverMethod = HandoverMethod.Normalize(request.HandoverMethod);

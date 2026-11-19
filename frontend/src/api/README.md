@@ -7,7 +7,6 @@ Tầng **gọi HTTP** của frontend (tầng nền, dùng chung). Đây là nơi
 | File | Chức năng | Được dùng bởi | API gọi |
 |---|---|---|---|
 | [api.js](./api.js) | HTTP client lõi: `apiRequest`, `apiGet/apiPost/apiPut/apiDelete`, lớp `ApiError`; gắn `Authorization: Bearer` / `X-User-Email`, `X-Simulated-Date`, timeout 20s; 401 `TOKEN_INVALID` -> xóa phiên, về `/login` | `src/App.jsx`, các file khác trong `src/api`, `src/services/afterDeposit.js`, `src/services/policies.js`, `src/store/cart.js`, `src/components/common/listKit.jsx`, hầu hết `src/pages/*` và `src/features/*` | Bất kỳ đường dẫn nào được truyền vào |
-| [catalogApi.js](./catalogApi.js) | CRUD loại kho / kích thước kho, xóa mức giá, tách/ghép chuỗi kích thước (**code chưa dùng**: chỉ trang `BusinessCatalog.jsx` import, mà trang này không được gắn vào app) | `src/pages/business/BusinessCatalog.jsx` | `GET/POST /api/unit-types`, `PUT/DELETE /api/unit-types/{id}`, `GET/POST /api/unit-sizes`, `PUT/DELETE /api/unit-sizes/{id}`, `DELETE /api/operations/facilities/{f}/rates/{t}/{s}` |
 | [contractEmail.js](./contractEmail.js) | Dựng HTML hợp đồng và nhờ backend gửi email cho khách | `src/features/contract/ContractDetailModal.jsx`, `src/pages/customer/CustomerAccount.jsx` | `POST /api/email/send-contract` |
 | [lateFees.js](./lateFees.js) | Hook tải phí trễ hạn của khách, đóng phí mô phỏng, câu mô tả chính sách phí trễ | `src/pages/customer/CustomerAccount.jsx`, `src/features/payment/PendingPayments.jsx`, `src/features/contract/ContractCard.jsx` | `GET /api/late-fees/mine`, `POST /api/late-fees/{id}/pay-demo` |
 | [otpService.js](./otpService.js) | Đăng ký tài khoản bằng OTP email (bắt đầu, gửi lại, xác nhận) | `src/App.jsx` | `POST /api/auth/register/start`, `/resend`, `/verify` |
@@ -20,14 +19,6 @@ Tầng **gọi HTTP** của frontend (tầng nền, dùng chung). Đây là nơi
 - `apiGet(path)`, `apiPost(path, body)`, `apiPut(path, body)`, `apiDelete(path)` — 4 hàm tắt.
 - `ApiError` — lỗi có `message` tiếng Việt, `status`, `code` (`NETWORK`, `TIMEOUT`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `VALIDATION`, `SERVER`, `HTTP`), `data`.
 - Nội bộ: `getCurrentUser`, `getErrorMessage`, `translateValidationMessage`, `codeForStatus`.
-
-**catalogApi.js**
-- `listUnitTypes`, `createUnitType`, `updateUnitType`, `deleteUnitType` — CRUD loại kho.
-- `listUnitSizes`, `createUnitSize`, `updateUnitSize`, `deleteUnitSize` — CRUD kích thước.
-- `deleteRentalRate` — xóa 1 mức giá.
-- `parseDimensions`, `composeDimensions` — "M2: 2x3m" <-> `{ code, length, width, ... }`.
-- `isMissingEndpoint` — nhận biết lỗi backend chưa có endpoint.
-- `catalogApi` — object gom các hàm CRUD.
 
 **contractEmail.js**
 - `buildContractEmailHtml({ group, customer, facilityAddress, signature, policies })` — trả chuỗi HTML hợp đồng.

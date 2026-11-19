@@ -32,7 +32,7 @@ import "./BusinessOperations.css";
 import { apiDelete, apiGet, apiPost, apiPut } from "../../api/api";
 import { mapOperationsState } from "../../mappers/operationsState";
 import { useDialog } from "../../components/common/Dialog";
-import { generateUnitCodePrefix } from "../../services/storageRules";
+import { formatMoney as money, generateUnitCodePrefix } from "../../services/storageRules";
 import "../../features/unit/unitTypes.css";
 import { BusinessFacilitiesByArea, BusinessPerformance, BusinessReportsCenter } from "./BusinessPanels";
 import { BusinessPolicyEditor } from "./BusinessPolicyEditor";
@@ -49,6 +49,9 @@ import BusinessPriceBands from "./BusinessPriceBands";
  * @param {string} [props.currentUserKey] khóa localStorage lưu phiên đăng nhập (mặc định "storespace_current_user").
  * @returns {JSX.Element} bố cục trang Business Operations.
  */
+/* Dữ liệu trống của form "Thêm cơ sở mới" (dùng khi mở lần đầu, sau khi tạo xong và khi đóng form). */
+const EMPTY_FACILITY = { name: "", unitCodePrefix: "", area: "", address: "", manager: "", status: "active" };
+
 function BusinessOperations({ currentUser, navigate, currentUserKey = "storespace_current_user" }) {
     const dialog = useDialog();
     const [activeMenu, setActiveMenu] = useState("dashboard"); // 'dashboard' | 'facilities' | 'prices' | 'policies' | 'revenue' | 'reports'
@@ -110,14 +113,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
     useEffect(() => { loadBusinessData(); }, [currentUser?.email]);
 
     // Dữ liệu đang nhập trong modal "Thêm cơ sở mới".
-    const [newFacility, setNewFacility] = useState({
-        name: "",
-        unitCodePrefix: "",
-        area: "",
-        address: "",
-        manager: "",
-        status: "active"
-    });
+    const [newFacility, setNewFacility] = useState(EMPTY_FACILITY);
 
 
     // Hiện lỗi thao tác bằng pop-up (không chỉ một dòng nhỏ ở đầu trang) và lưu vào apiError.
@@ -232,7 +228,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             status: newFacility.status
         }).then(async () => {
             await loadBusinessData();
-            setNewFacility({ name: "", unitCodePrefix: "", area: "", address: "", manager: "", status: "active" });
+            setNewFacility(EMPTY_FACILITY);
             setShowAddFacility(false);
         }).catch(error => showOperationError(error, "Không tạo được cơ sở"));
     };
@@ -240,15 +236,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
     // Đóng modal thêm cơ sở và xóa dữ liệu đang nhập. Chạy khi bấm "Hủy" hoặc nút ✕.
     const handleCloseAddFacility = () => {
         setShowAddFacility(false);
-
-        setNewFacility({
-            name: "",
-            unitCodePrefix: "",
-            area: "",
-            address: "",
-            manager: "",
-            status: "active"
-        });
+        setNewFacility(EMPTY_FACILITY);
     };
 
     // Đăng xuất (nút ở cuối sidebar): xóa khóa currentUserKey khỏi localStorage và về trang chủ.
@@ -262,7 +250,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
     if (apiError && !operationState) {
         return <main className="customer-main" style={{ padding: 32 }}>
             <div className="auth-message error" role="alert">{apiError}</div>
-            <button className="dashboard-primary-btn" type="button" onClick={loadBusinessData}>Thử lại</button>
+            <button className="dashboard-primary-btn" type="button" onClick={() => loadBusinessData()}>Thử lại</button>
         </main>;
     }
 
@@ -456,11 +444,6 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             {showAddFacility && (
                 <div
                     className="facility-modal-overlay"
-                    // onClick={(e) => {
-                    //     if (e.target === e.currentTarget) {
-                    //         handleCloseAddFacility();
-                    //     }
-                    // }}
                 >
                     <div className="facility-modal">
 
@@ -612,8 +595,6 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
  * @param {object|null} props.reports số liệu từ GET /api/operations/reports (totalUnits, handedOverUnits, occupancyRate, totalRevenue, monthlyRevenue).
  */
 function BusinessLiveDashboard({ facilities, reports }) {
-    // Định dạng tiền kiểu Việt Nam kèm "đ".
-    const money = value => `${new Intl.NumberFormat("vi-VN").format(value || 0)}đ`;
     return <div className="business-dashboard">
         <div className="business-kpi-grid">
             <div className="business-kpi-card"><span className="business-kpi-label">Tổng cơ sở</span><div className="business-kpi-value">{facilities.length}</div></div>

@@ -42,6 +42,7 @@ public class SelfStorageDbContext : DbContext
     public DbSet<StatusChangeLog> StatusChangeLogs { get; set; } = null!;
     public DbSet<PolicyVersion> PolicyVersions { get; set; } = null!;
     public DbSet<EarlyReturnRequest> EarlyReturnRequests { get; set; } = null!;
+    public DbSet<RentReminderLog> RentReminderLogs { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -249,6 +250,15 @@ public class SelfStorageDbContext : DbContext
             entity.Property(e => e.Status).HasMaxLength(20);
             entity.Property(e => e.ManagerNote).HasMaxLength(500);
             entity.Property(e => e.RefundAmount).HasColumnType("decimal(12,2)");
+        });
+
+        // 9d. RentReminderLog: email nhắc hạn đóng tiền thuê đã gửi (chống gửi trùng)
+        modelBuilder.Entity<RentReminderLog>(entity =>
+        {
+            entity.ToTable("RentReminderLog");
+            entity.HasKey(e => e.RentReminderLogID);
+            entity.HasIndex(e => new { e.CustomerID, e.DueDate, e.Kind }).IsUnique();
+            entity.Property(e => e.Kind).HasMaxLength(10);
         });
 
         // 10. CancellationRule

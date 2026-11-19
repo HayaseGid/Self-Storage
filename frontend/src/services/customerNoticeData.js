@@ -150,6 +150,29 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
     })
   })
 
+  // 3b) Tiền thuê: quá hạn (đỏ) hoặc sắp đến hạn trong 7 ngày tới (vàng; hôm nay = đến hạn). Email nhắc do backend gửi (RentReminderJob).
+  rentals.filter(r => r.status === 'Handed Over').forEach(r => {
+    if (Number(r.rentOverdue) > 0) {
+      push({
+        id: `rent-overdue:${r.reservationId}`,
+        section: 'payment', tone: 'danger', priority: 4,
+        title: 'Tiền thuê đã quá hạn',
+        message: `Kho ${unitsText(r)} tại ${r.facility} đang nợ ${money(r.rentOverdue)} tiền thuê quá hạn. Vui lòng đóng sớm để tránh phí trễ hạn.`,
+        action: { label: 'Đóng tiền thuê', section: 'payment' }
+      })
+      return
+    }
+    const days = r.nextRentDueDate ? daysUntil(r.nextRentDueDate) : null
+    if (days == null || days < 0 || days > 7) return
+    push({
+      id: `rent-due:${r.reservationId}:${String(r.nextRentDueDate).slice(0, 10)}`,
+      section: 'payment', tone: 'warn', priority: days === 0 ? 6 : 15,
+      title: days === 0 ? 'Hôm nay là hạn đóng tiền thuê' : `Sắp đến hạn đóng tiền thuê (còn ${days} ngày)`,
+      message: `Kho ${unitsText(r)} tại ${r.facility}: cần đóng ${money(r.nextRentDueAmount)} trước hạn ${fmtDay(r.nextRentDueDate)}.`,
+      action: { label: 'Đóng tiền thuê', section: 'payment' }
+    })
+  })
+
   // 4) Kho sắp hết hạn / đã quá hạn (ưu tiên dữ liệu gia hạn từ backend)
   const handled = new Set()
   renewalItems.forEach(item => {

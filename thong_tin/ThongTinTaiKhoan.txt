@@ -19,6 +19,7 @@ Tất cả các tài khoản mặc định dùng chung mật khẩu: 123456
   + Username: fac_manager4 (Tên: Phạm Quản Lý Quận 2, Email: fm4@test.com
 - Cơ sở 5 - Quận 3 (Q3):
   + Username: fac_manager5 (Tên: Hoàng Quản Lý Quận 3, Email: fm5@test.com
+  + Email: fm6@test.com (Tên: Võ Quản Lý Quận 7) — quản lý Cơ sở Lưu trữ Quận 7 (Q7); chỉ có trên Neon production, tạo ngày 20/11/2026
 
 3. Nhân Viên Làm Việc Tại Cơ Sở (Staff - 3 nhân viên / cơ sở, tổng 15 nhân viên)
 - Cơ sở 1 - Quận 1 (Q1):

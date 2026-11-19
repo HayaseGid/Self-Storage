@@ -1106,6 +1106,22 @@ BEGIN
 END;
 GO
 
+-- Email nhac han dong tien thue da gui (RentReminderLog), chong gui trung
+IF OBJECT_ID(N'dbo.RentReminderLog', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.RentReminderLog (
+        RentReminderLogID INT IDENTITY(1,1) NOT NULL,
+        CustomerID INT NOT NULL,
+        DueDate DATETIME2 NOT NULL,
+        Kind NVARCHAR(10) NOT NULL,               -- D3 = nhắc trước 3 ngày | D0 = đúng ngày đến hạn
+        SentAt DATETIME2 NOT NULL,
+
+        CONSTRAINT PK_RentReminderLog PRIMARY KEY (RentReminderLogID),
+        CONSTRAINT UX_RentReminderLog UNIQUE (CustomerID, DueDate, Kind)
+    );
+END;
+GO
+
 CREATE TRIGGER dbo.TR_PendingRegistration_Validate
 ON dbo.PendingRegistration
 AFTER INSERT, UPDATE

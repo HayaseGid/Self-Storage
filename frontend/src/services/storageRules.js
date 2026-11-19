@@ -30,17 +30,19 @@ import { getTodayISO } from '../demoClock/demoClock'
 export const DEPOSIT_HOLD_MINUTES = 15
 export const RENTAL_TERMS = [6, 12]
 export const DEPOSIT_MONTHS = 2
-// Ngày bắt đầu thuê (ngày nhận kho) chỉ được chọn trong vòng tối đa 30 ngày tính từ hôm nay (backend cũng chặn).
+// Ngày bắt đầu thuê (ngày nhận kho) chỉ được chọn trong vòng tối đa N ngày tính từ hôm nay (backend cũng chặn).
+// Mặc định 30 ngày; BOM chỉnh ở chính sách "Đặt chỗ & hủy" -> maxAdvanceBookingDays (đọc bằng useMaxAdvanceBookingDays).
 export const MAX_ADVANCE_BOOKING_DAYS = 30
 
 /**
- * Ngày bắt đầu thuê muộn nhất được chọn: hôm nay (theo Demo Clock) + MAX_ADVANCE_BOOKING_DAYS, lúc 0 giờ.
+ * Ngày bắt đầu thuê muộn nhất được chọn: hôm nay (theo Demo Clock) + số ngày được đặt trước, lúc 0 giờ.
  * Dùng làm maxDate của RentalCalendar và để kiểm tra trước khi đặt kho.
+ * @param {number} [days] số ngày được đặt trước (theo chính sách BOM); mặc định MAX_ADVANCE_BOOKING_DAYS.
  * @returns {Date}
  */
-export function maxBookingStartDate() {
+export function maxBookingStartDate(days = MAX_ADVANCE_BOOKING_DAYS) {
   const date = new Date(`${getTodayISO()}T00:00:00`)
-  date.setDate(date.getDate() + MAX_ADVANCE_BOOKING_DAYS)
+  date.setDate(date.getDate() + days)
   return date
 }
 
@@ -310,6 +312,12 @@ export const PRICE_RULES = {
  * @param {number|string} value số tiền.
  * @returns {string} chuỗi đã định dạng ('' nếu không phải số).
  */
+/**
+ * Định dạng số tiền kiểu Việt Nam kèm "đ" (rỗng -> 0đ), vd 1500000 -> "1.500.000đ".
+ * Dùng ở các trang Business (BusinessOperations, BusinessPanels, BusinessPriceBands).
+ */
+export const formatMoney = value => `${formatVnd(value || 0)}đ`
+
 export function formatVnd(value) {
   const number = Number(value)
   if (!Number.isFinite(number)) return ''

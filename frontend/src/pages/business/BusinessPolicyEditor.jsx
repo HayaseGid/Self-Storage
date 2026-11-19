@@ -169,7 +169,7 @@ export function BusinessPolicyEditor({ facilities = [], dialog }) {
     return (
       <section className="business-panel">
         <div className="auth-message error" role="alert">{error}</div>
-        <button type="button" className="dashboard-primary-btn" onClick={load}>Thử lại</button>
+        <button type="button" className="dashboard-primary-btn" onClick={() => load()}>Thử lại</button>
       </section>
     )
   }
@@ -264,6 +264,7 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
     }
     if (policyKey === 'reservation') {
       if (bad(v.holdMinutes) || v.holdMinutes < 5 || v.holdMinutes > 1440) return 'Thời hạn giữ chỗ từ 5 phút đến 1440 phút (24 giờ).'
+      if (bad(v.maxAdvanceBookingDays) || v.maxAdvanceBookingDays < 1 || v.maxAdvanceBookingDays > 365) return 'Số ngày được đặt trước từ 1 đến 365 ngày.'
       if (!v.refundTiers.length) return 'Cần ít nhất một mức hoàn tiền.'
       if (v.refundTiers.some(t => bad(t.minDaysBefore) || bad(t.refundPercent) || t.refundPercent > 100)) return 'Mức hoàn tiền không hợp lệ.'
       const days = v.refundTiers.map(t => t.minDaysBefore)
@@ -526,6 +527,7 @@ function ReservationFields({ value, set }) {
     <>
       <div className="pe-grid">
         <NumField label="Thời hạn giữ chỗ" value={value.holdMinutes} onChange={n => set('holdMinutes', n)} suffix="phút chờ khách trả cọc" width={280} hint="Hết thời gian mà chưa cọc, kho được mở lại cho khách khác." />
+        <NumField label="Đặt trước tối đa" value={value.maxAdvanceBookingDays ?? 30} onChange={n => set('maxAdvanceBookingDays', n)} suffix="ngày kể từ hôm nay" width={260} hint="Khách chỉ chọn được ngày bắt đầu thuê (ngày nhận kho) trong khoảng này." />
         <label className="pe-field pe-wide">
           <span>Điều kiện hủy đặt chỗ</span>
           <textarea rows={2} value={value.cancellationConditions || ''} onChange={e => set('cancellationConditions', e.target.value)} />
@@ -596,7 +598,6 @@ function RenewalReturnFields({ value, set }) {
           </div>
           <small>Khách chỉ được gia hạn theo các gói được chọn (phải chọn ít nhất 1 gói).</small>
         </div>
-        <NumField label="Hạn chót thanh toán khi gia hạn (để trống = chưa quy định)" value={value.renewalPaymentDeadlineDays} onChange={n => set('renewalPaymentDeadlineDays', n)} allowEmpty suffix="ngày trước ngày hết hạn" width={300} />
         <label className="pe-check"><input type="checkbox" checked={value.requireNoOverdue} onChange={e => set('requireNoOverdue', e.target.checked)} /> Chỉ cho gia hạn khi không còn khoản quá hạn</label>
         <label className="pe-field pe-wide"><span>Cách tính giá gia hạn</span><input value={value.renewalPricing || ''} onChange={e => set('renewalPricing', e.target.value)} /></label>
       </div>

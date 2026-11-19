@@ -1670,8 +1670,11 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
     ['Mã khách hàng', user?.userId ? `KH-${user.userId}` : '—']
   ]
   // Trạng thái hiển thị của mã ra vào: chưa cấp / tạm khóa / đang hoạt động.
-  const accessState = !accessCode ? 'unissued' : accessStatus === 'Locked' ? 'locked' : 'active'
-  const accessBadge = { unissued: 'Chưa cấp', locked: 'Tạm khóa do nợ quá hạn', active: 'Đang hoạt động' }[accessState]
+  const accessState = !accessCode ? 'unissued'
+    : accessStatus === 'Locked' ? 'locked'
+    : accessStatus === 'Inactive' ? 'inactive' // không còn kho đang thuê
+    : 'active'
+  const accessBadge = { unissued: 'Chưa cấp', locked: 'Tạm khóa do nợ quá hạn', inactive: 'Hết hiệu lực (không còn kho đang thuê)', active: 'Đang hoạt động' }[accessState]
   return (
     <div className="customer-content-page">
       <div className="customer-page-heading">
@@ -1738,7 +1741,8 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
                 {accessCode || 'Chưa cấp, cấp khi nhận bàn giao kho'}
               </strong>
             </div>
-            {accessCode && (
+            {/* Mã hết hiệu lực (không còn kho đang thuê) thì không cho sao chép */}
+            {accessCode && accessState !== 'inactive' && (
               <button type="button" className="access-copy-btn" onClick={handleCopyCode}>
                 {copied ? '✓ Đã sao chép' : 'Sao chép mã'}
               </button>

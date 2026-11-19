@@ -13,10 +13,9 @@ cơ sở theo khu vực, khung giá theo nhóm kích thước, chính sách thu�
 | [BusinessFacilityForm.jsx](./BusinessFacilityForm.jsx) | Modal sửa thông tin cơ sở (tên, địa chỉ, quản lý, trạng thái), có kiểm tra dữ liệu và tóm tắt thay đổi | `src/pages/business/BusinessOperations.jsx` | Không gọi API (trả dữ liệu qua `onSave`, cha gọi `PUT /api/operations/facilities/{id}`) |
 | [BusinessPolicyEditor.jsx](./BusinessPolicyEditor.jsx) | Thiết lập chính sách chung (cọc, phí quá hạn & phụ phí, đặt chỗ & hủy, gia hạn & trả kho) theo phiên bản có ngày áp dụng | `src/pages/business/BusinessOperations.jsx` | `GET /api/policies`, `PUT /api/policies/{key}`, `GET /api/policies/{key}/history` |
 | [BusinessPriceBands.jsx](./BusinessPriceBands.jsx) | Khung giá theo nhóm kích thước (S/M/L/V): khoảng diện tích và khoảng giá, quy tắc khóa | `src/pages/business/BusinessOperations.jsx` | `GET /api/price-bands`, `GET/POST /api/price-band-rules`, `PUT/DELETE /api/price-band-rules/{code}` |
-| [BusinessCatalog.jsx](./BusinessCatalog.jsx) | CRUD danh mục Loại kho và Kích thước kho. **Hiện chưa được file nào import (code chưa dùng)** | (chưa có) | `GET/POST /api/unit-types`, `PUT/DELETE /api/unit-types/{id}`, `GET/POST /api/unit-sizes`, `PUT/DELETE /api/unit-sizes/{id}` (qua `api/catalogApi`) |
 | [BusinessOperations.css](./BusinessOperations.css) | Giao diện khung trang, KPI, modal thêm cơ sở | `BusinessOperations.jsx` | — |
 | [BusinessPanels.css](./BusinessPanels.css) | Giao diện các màn hình trong BusinessPanels.jsx (thẻ khu vực, thanh tỷ lệ, biểu đồ cột) | `BusinessPanels.jsx` | — |
-| [BusinessCatalog.css](./BusinessCatalog.css) | Kiểu modal / ô nhập `.bc-*` dùng chung | `BusinessCatalog.jsx`, `BusinessFacilityForm.jsx` | — |
+| [BusinessCatalog.css](./BusinessCatalog.css) | Kiểu modal / ô nhập `.bc-*` dùng chung | `BusinessFacilityForm.jsx` | — |
 | [BusinessPolicyEditor.css](./BusinessPolicyEditor.css) | Giao diện form chính sách (`.pe-*`) | `BusinessPolicyEditor.jsx` | — |
 | [BusinessPriceBands.css](./BusinessPriceBands.css) | Giao diện thẻ khung giá (`.pb-*`) | `BusinessPriceBands.jsx`, `src/pages/manager/ManagerPriceTable.jsx` | — |
 
@@ -50,13 +49,10 @@ cơ sở theo khu vực, khung giá theo nhóm kích thước, chính sách thu�
 - `BusinessPriceBands` (export default): `load`, `remove`, `toggleActive`. `canEdit` chỉ bật khi tải được điều kiện khóa.
 - `PriceBandForm`: modal thêm / sửa nhóm, dùng `validateBand` và `bandHints` để kiểm tra ngay khi nhập.
 
-**BusinessCatalog.jsx** (chưa dùng)
-- `BusinessCatalog` (export default), `UnitTypeForm`, `UnitSizeForm`, `CatalogModal`, `Field`, `suggestedSizeLetter`.
-
 ## Kết nối với các phần khác
 
 - **Import từ:**
-  - `src/api/api` (apiGet / apiPost / apiPut / apiDelete), `src/api/catalogApi` (chỉ BusinessCatalog dùng)
+  - `src/api/api` (apiGet / apiPost / apiPut / apiDelete)
   - `src/mappers/operationsState` (`mapOperationsState`)
   - `src/components/common/`: `Dialog`, `PriceInput`, `listKit`, `DataGrid`
   - `src/services/`: `storageRules`, `policies`, `priceBands`, `priceBandRules`

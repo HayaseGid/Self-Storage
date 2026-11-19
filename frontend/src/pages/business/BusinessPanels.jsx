@@ -24,7 +24,7 @@
 import React, { useMemo, useState } from 'react'
 import { getFacilityDistrict, groupFacilitiesByDistrict } from '../../utils/districts'
 import { UNIT_TYPE_ORDER, UNIT_TYPE_STYLES, UnitTypeChip, getUnitTypeKey, getUnitTypeStyle } from '../../features/unit/unitTypes'
-import { RESERVATION_STATUS_LABELS, formatVnd } from '../../services/storageRules'
+import { RESERVATION_STATUS_LABELS, formatMoney as money, formatVnd } from '../../services/storageRules'
 import './BusinessPanels.css'
 import { Code, NewBadge, Pager, newestFirst, rowClass, useClientPaging } from '../../components/common/listKit'
 import { getTodayISO } from '../../demoClock/demoClock'
@@ -34,7 +34,6 @@ import { getTodayISO } from '../../demoClock/demoClock'
  * @param {number} value số tiền.
  * @returns {string} vd "1.200.000đ".
  */
-const money = value => `${formatVnd(value || 0)}đ`
 /**
  * Tính phần trăm part/total, làm tròn 1 chữ số thập phân; total = 0 thì trả 0 (tránh chia cho 0).
  * @param {number} part phần.

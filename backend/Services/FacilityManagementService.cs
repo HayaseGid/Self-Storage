@@ -701,6 +701,7 @@ public class FacilityManagementService : IFacilityManagementService
                     Config = new Dictionary<string, object?>
                     {
                         ["holdMinutes"] = globalPolicy?.HoldMinutes ?? 15,
+                        ["maxAdvanceBookingDays"] = 30,
                         ["cancellationConditions"] = "Chỉ hủy được khi đặt chỗ chưa bàn giao. Hủy do lỗi doanh nghiệp được hoàn toàn bộ số tiền đã thanh toán.",
                         ["refundTiers"] = refundTiers,
                         ["noShowAfterDays"] = 0,
@@ -937,9 +938,15 @@ public class FacilityManagementService : IFacilityManagementService
         {
             var depValue = GetIntConfig(parsedConfig, "value", GetIntConfig(parsedConfig, "depositMonths", 2));
             byte depMonths = depValue <= 1 ? (byte)1 : (byte)2;
+            // Phạm vi áp dụng: "selected" -> chỉ các cơ sở được chọn dùng mức BOM đặt, cơ sở khác (và mặc định cho
+            // cơ sở mới) dùng 2 tháng — khớp với chú thích trên trang Chính sách và số tiền cọc khách thấy khi đặt kho.
+            var selectedOnly = string.Equals(parsedConfig.TryGetValue("scope", out var scopeObj) ? scopeObj?.ToString() : null, "selected", StringComparison.OrdinalIgnoreCase);
+            var selectedIds = parsedConfig.TryGetValue("facilityIds", out var idsObj) && idsObj is List<object?> idList
+                ? idList.Select(x => int.TryParse(x?.ToString(), out var id) ? id : 0).Where(id => id > 0).ToHashSet()
+                : new HashSet<int>();
             foreach (var p in allPolicies)
             {
-                p.DepositMonths = depMonths;
+                p.DepositMonths = !selectedOnly || (p.FacilityID is int fid && selectedIds.Contains(fid)) ? depMonths : (byte)2;
                 p.UpdatedAt = now;
                 p.UpdatedByUserID = userId;
             }

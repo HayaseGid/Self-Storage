@@ -199,7 +199,8 @@ export default function FacilityFloorPlan({ facility, units, highlightIds = null
       </div>
 
       <div className="fp-canvas">
-        <div className="fp-stage" style={{ minWidth: Math.min(W, 680) }} onMouseLeave={() => setHover(null)}>
+        {/* Chiều cao sơ đồ tối đa ~72% màn hình (bề ngang co theo tỉ lệ) để nhìn trọn sơ đồ không phải cuộn lên xuống */}
+        <div className="fp-stage" style={{ width: `min(100%, calc(72vh * ${(W / H).toFixed(4)}))`, minWidth: Math.min(W, 620) }} onMouseLeave={() => setHover(null)}>
           <svg className="fp-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Sơ đồ mặt bằng ${facility.name}`}>
             <defs>
               <pattern id="fp-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">

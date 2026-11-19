@@ -8,7 +8,7 @@
  *     filters: [{ key, label, options: [{ value, label }], match(row, value) }]
  * THÀNH PHẦN CHÍNH:
  *   - DataGrid (default) : component bảng.
- * DÙNG Ở: src/pages/customer/CustomerAccount.jsx, src/pages/business/BusinessCatalog.jsx (trang chưa được dùng).
+ * DÙNG Ở: src/pages/customer/CustomerAccount.jsx.
  * PHỤ THUỘC: react, ./listKit (DEFAULT_PAGE_SIZE, Pager, newestFirst, rowClass), ./DataGrid.css.
  * API: Không gọi API (dữ liệu truyền vào qua props rows).
  * LUỒNG: Trang truyền rows + columns -> người dùng gõ tìm kiếm / chọn lọc -> filtered -> bấm cột -> sorted

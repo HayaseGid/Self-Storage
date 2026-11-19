@@ -145,6 +145,7 @@ builder.Services.Configure<BrevoSettings>(builder.Configuration.GetSection("Brev
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<RegistrationOtpService>(); // OTP đăng ký: tạo + kiểm tra mã ở backend
+builder.Services.AddHostedService<RentReminderJob>();      // job hằng ngày 08:00: email nhắc hạn đóng tiền thuê (trước 3 ngày + đúng ngày)
 builder.Services.AddHostedService<RenewalSettleJob>();     // job hằng ngày: chốt kỳ thuê cũ sau gia hạn (4.2)
 
 
@@ -215,6 +216,8 @@ using (var scope = app.Services.CreateScope())
     DatabaseSeeder.EnsurePolicyVersionTable(dbContext);
     // Bảng đơn trả kho sớm (chấm dứt hợp đồng trước hạn, Manager duyệt).
     DatabaseSeeder.EnsureEarlyReturnTable(dbContext);
+    // Bảng chống gửi trùng email nhắc hạn đóng tiền thuê.
+    DatabaseSeeder.EnsureRentReminderTable(dbContext);
 }
 
 app.Run();

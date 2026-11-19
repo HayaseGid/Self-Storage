@@ -11,7 +11,7 @@ namespace SelfStorageAPI.Controllers;
 /// <summary>
 /// Liên hệ hỗ trợ: khách đang đăng nhập gửi tin nhắn từ mục "Liên hệ" trên trang tài khoản.
 ///   POST /api/support/contact  body { subject?, message }
-/// Tin nhắn được gửi qua email (Brevo HTTP API, dự phòng Gmail SMTP) tới hộp thư hỗ trợ
+/// Tin nhắn được gửi qua email (Brevo HTTP API) tới hộp thư hỗ trợ
 /// BrevoSettings:SupportInboxEmail (mặc định storespacevn101@gmail.com), Reply-To = email của khách.
 /// Chống gửi dồn: mỗi tài khoản gửi tối đa 1 tin / 30 giây.
 /// </summary>

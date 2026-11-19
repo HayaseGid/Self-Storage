@@ -50,7 +50,7 @@ src/
 ├── components/   README
 │   └── common/             DataGrid, listKit (Pager 5 mục/trang...), Dialog, PriceInput, RentalCalendar
 │   └── support/            liên hệ hỗ trợ: gửi tin nhắn qua email (Brevo)
-├── api/          README    gọi HTTP: api.js (lõi), vnpay, otpService, contractEmail, lateFees, catalogApi
+├── api/          README    gọi HTTP: api.js (lõi), vnpay, otpService, contractEmail, lateFees
 ├── services/     README    quy tắc nghiệp vụ thuần: storageRules, policies, pricing, priceBands, priceBandRules,
 │                           afterDeposit, customerNoticeData, contractSignatures
 ├── mappers/      README    operationsState.js: JSON /api/operations/state → object frontend
@@ -224,8 +224,7 @@ Trạng thái "đã xem" lưu localStorage theo email.
 
 Các agent ghi lại trong lúc đọc code — hữu ích khi học, và là gợi ý nếu sau này muốn dọn code:
 
-- **Code chưa dùng:** `pages/business/BusinessCatalog.jsx` và `api/catalogApi.js` (không file nào import trang này);
-  nhiều export không ai dùng trong `services/` và `store/cart.js` (`getCartOrders`, `clearCart`...); một số import thừa
+- **Code chưa dùng:** nhiều export không ai dùng trong `services/` và `store/cart.js` (`getCartOrders`, `clearCart`...); một số import thừa
   trong `CustomerAccount.jsx`, `PendingPayments.jsx`; `filteredUsers/filteredLogs` trong `AdminAccount.jsx`.
 - **Code lặp:** hàm định dạng tiền / ngày (`money`, `fmtIso`, `fmtDay`, `parseUtc`) viết lại ở rất nhiều file; `compressImage`
   có 2 bản; 4 hook trả kho / kiểm kho gần giống nhau; luật đếm "Cần xử lý" / "Đang nợ" lặp giữa `ManagerNav` và các tab.
@@ -273,7 +272,6 @@ Cột "Luồng" ghi số mục ở **phần 5** (vd `5.7` = Ký hợp đồng). 
 | `pages/business/BusinessFacilityForm.jsx` | Hộp thoại sửa thông tin cơ sở | 5.12 |
 | `pages/business/BusinessPolicyEditor.jsx` | Sửa chính sách theo phiên bản: cọc, phí quá hạn, đặt chỗ & hủy, gia hạn & trả kho | 5.12 (ảnh hưởng 5.6, 5.7, 5.9, 5.10) |
 | `pages/business/BusinessPriceBands.jsx` | Khung giá theo nhóm size S / M / L / V và quy tắc khóa giá | 5.12 |
-| `pages/business/BusinessCatalog.jsx` | CRUD loại kho / kích thước — **chưa được dùng** (không file nào import) | — |
 | `pages/admin/AdminAccount.jsx` | Trang quản trị: duyệt / từ chối tài khoản, khóa, đổi vai trò, đặt lại mật khẩu, nhật ký hoạt động | 5.12 |
 
 ### features/ — khối nghiệp vụ
@@ -326,7 +324,6 @@ Cột "Luồng" ghi số mục ở **phần 5** (vd `5.7` = Ký hợp đồng). 
 | `api/otpService.js` | Gửi / gửi lại / xác thực mã OTP khi đăng ký | 5.3 |
 | `api/contractEmail.js` | Dựng nội dung hợp đồng và nhờ backend gửi email (backend gửi bằng Brevo) | 5.7 |
 | `api/lateFees.js` | Lấy tiền thuê đến hạn và phí trễ của khách, đóng phí (demo) | 5.9 |
-| `api/catalogApi.js` | CRUD loại kho / size — **chưa được dùng** | — |
 
 ### services/ — quy tắc nghiệp vụ
 | File | Làm gì | Luồng |

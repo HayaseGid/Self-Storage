@@ -13,7 +13,7 @@
  *   - getUnitTypeKey, getUnitTypeStyle: tên loại (DB) -> khóa / style.
  *   - parseUnitSize: chuỗi size -> mã, nhãn, diện tích, hạng kích thước.
  *   - UnitTypeIcon, UnitTypeChip, SizeMeter, UnitTypeArt: các component hiển thị icon, nhãn, thanh hạng, ảnh kho.
- * DÙNG Ở: src/App.jsx, features/unit/Unit3DViewer.jsx, pages/business/BusinessCatalog.jsx, BusinessPanels.jsx,
+ * DÙNG Ở: src/App.jsx, features/unit/Unit3DViewer.jsx, pages/business/BusinessPanels.jsx,
  *   pages/customer/CartPage.jsx, CustomerAccount.jsx, pages/manager/FacilityManagerAccount.jsx.
  * PHỤ THUỘC: react (useId). CSS ở unitTypes.css (được import ở nơi khác).
  * API: Không gọi API.

@@ -186,6 +186,7 @@ export default function PolicyGuide() {
   const renewal = describePolicy('renewal_return', rr)
   const updated = Object.values(meta || {}).map(m => m?.effectiveFrom).filter(Boolean).sort().pop()
   const notice = Number(rr.returnNoticeDays ?? 7)
+  const advanceDays = res.maxAdvanceBookingDays ?? MAX_ADVANCE_BOOKING_DAYS // số ngày được đặt trước (BOM chỉnh)
   const go = id => document.getElementById(`pg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   // 4 con số chính ở phần đầu trang
@@ -240,10 +241,10 @@ export default function PolicyGuide() {
         </aside>
 
         <div className="pg-content">
-          <Section index={1} id="booking" title="Đặt kho & giữ chỗ" tone="blue" lead={`Chọn kho, chọn gói ${RENTAL_TERMS.join(' hoặc ')} tháng và ngày nhận kho trong vòng ${MAX_ADVANCE_BOOKING_DAYS} ngày tới.`}>
+          <Section index={1} id="booking" title="Đặt kho & giữ chỗ" tone="blue" lead={`Chọn kho, chọn gói ${RENTAL_TERMS.join(' hoặc ')} tháng và ngày nhận kho trong vòng ${advanceDays} ngày tới.`}>
             <Checks items={[
               <>Thuê mới theo gói <strong>{RENTAL_TERMS.join(' hoặc ')} tháng</strong>. Một tháng thuê tính từ ngày bắt đầu đến ngày liền trước cùng ngày của tháng sau.</>,
-              <>Ngày bắt đầu thuê (ngày nhận kho) chọn trong vòng <strong>{MAX_ADVANCE_BOOKING_DAYS} ngày</strong> kể từ hôm nay.</>,
+              <>Ngày bắt đầu thuê (ngày nhận kho) chọn trong vòng <strong>{advanceDays} ngày</strong> kể từ hôm nay.</>,
               <>Sau khi đặt, kho được <strong>giữ chỗ {res.holdMinutes ?? 15} phút</strong> để bạn đóng tiền cọc; quá thời gian, đơn tự hết hạn và kho mở lại cho người khác.</>,
               <>Một lần đặt có thể chọn nhiều kho; mỗi kho có hợp đồng và khoản cọc riêng.</>
             ]} />
