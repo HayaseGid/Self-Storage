@@ -1,0 +1,13 @@
+/* Trả kho sớm (EarlyReturn.jsx): khung giới thiệu, cảnh báo gửi muộn, bảng tiền dự kiến, thẻ đơn của khách. */
+.er-intro { margin: 0 0 14px; padding: 12px 14px; border-radius: 12px; background: #f2f8ff; color: #23486b; font-size: 13.5px; line-height: 1.55; }
+.er-note { margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: #f5f8fb; color: #3d5a74; font-size: 13px; line-height: 1.5; }
+.er-warn { display: grid; gap: 4px; margin: 10px 0; padding: 12px 14px; border-radius: 12px; border: 1.5px solid #f2c27a; background: #fff7e8; color: #7a4b00; font-size: 13px; line-height: 1.5; }
+.er-warn strong { color: #8a4b00; font-size: 14px; }
+.er-sub { margin: 16px 0 8px; color: #073d70; font-size: 14.5px; }
+.er-quote small { color: #6d8394; font-weight: 500; }
+.er-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.er-card.pending { border-color: #f2d48f; background: #fffcf3; }
+.er-card.rejected { border-color: #f0b8b8; background: #fffafa; }
+@media (max-width: 560px) {
+  .er-row { grid-template-columns: 1fr; }
+}

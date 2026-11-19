@@ -310,6 +310,27 @@ CREATE TABLE CancellationRule (
 );
 GO
 
+-- Phien ban chinh sach do Business Operations Manager chinh (noi dung JSON). Backend tu them v1 mac dinh lan dau doc.
+IF OBJECT_ID(N'dbo.PolicyVersion', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.PolicyVersion (
+        PolicyVersionID INT IDENTITY(1,1) NOT NULL,
+        PolicyKey NVARCHAR(40) NOT NULL,          -- deposit | overdue | reservation | renewal_return
+        Version INT NOT NULL,
+        Status NVARCHAR(20) NOT NULL,             -- Active | Scheduled | Superseded
+        EffectiveFrom NVARCHAR(10) NOT NULL,      -- yyyy-MM-dd
+        CreatedAt DATETIME2 NOT NULL,
+        CreatedBy NVARCHAR(150) NOT NULL,
+        Note NVARCHAR(500) NULL,
+        ConfigJson NVARCHAR(MAX) NOT NULL,        -- toàn bộ nội dung chính sách (JSON)
+
+        CONSTRAINT PK_PolicyVersion PRIMARY KEY (PolicyVersionID),
+        CONSTRAINT UX_PolicyVersion_Key_Version UNIQUE (PolicyKey, Version),
+        CONSTRAINT CK_PolicyVersion_Status CHECK (Status IN (N'Active', N'Scheduled', N'Superseded'))
+    );
+END;
+GO
+
 CREATE TABLE FacilityStaff (
     AssignmentID INT IDENTITY(1,1) NOT NULL,
     FacilityID INT NOT NULL,
@@ -1056,6 +1077,34 @@ GO
 -- ==============================================================
 
 -- ---------- Users / dang ky ----------
+
+-- Don tra kho som (EarlyReturnRequest)
+IF OBJECT_ID(N'dbo.EarlyReturnRequest', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.EarlyReturnRequest (
+        EarlyReturnRequestID INT IDENTITY(1,1) NOT NULL,
+        ReservationID INT NOT NULL,
+        CustomerID INT NOT NULL,
+        ReturnDate DATETIME2 NOT NULL,
+        ReturnTime NVARCHAR(5) NOT NULL,          -- HH:mm
+        Reason NVARCHAR(30) NOT NULL,             -- moving | no_need | other_unit | price | service | other
+        Note NVARCHAR(500) NULL,
+        Status NVARCHAR(20) NOT NULL,             -- Pending | Approved | Rejected | Cancelled
+        RefundAmount DECIMAL(12,2) NOT NULL,      -- tiền thuê được hoàn (kỳ đã đóng sau ngày trả kho)
+        CancelledPeriods INT NOT NULL,
+        LateNotice BIT NOT NULL,                  -- trả theo tháng, gửi muộn -> phải đóng kỳ tới
+        CreatedAt DATETIME2 NOT NULL,
+        DecidedByUserID INT NULL,
+        DecidedAt DATETIME2 NULL,
+        ManagerNote NVARCHAR(500) NULL,
+
+        CONSTRAINT PK_EarlyReturnRequest PRIMARY KEY (EarlyReturnRequestID),
+        CONSTRAINT FK_EarlyReturnRequest_Reservation FOREIGN KEY (ReservationID) REFERENCES Reservation(ReservationID),
+        CONSTRAINT CK_EarlyReturnRequest_Status CHECK (Status IN (N'Pending', N'Approved', N'Rejected', N'Cancelled'))
+    );
+    CREATE INDEX IX_EarlyReturnRequest_Reservation_Status ON dbo.EarlyReturnRequest (ReservationID, Status);
+END;
+GO
 
 CREATE TRIGGER dbo.TR_PendingRegistration_Validate
 ON dbo.PendingRegistration

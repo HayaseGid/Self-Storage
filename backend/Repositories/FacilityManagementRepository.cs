@@ -115,6 +115,17 @@ public class FacilityManagementRepository : IFacilityManagementRepository
     }
 
     public void AddRentalPolicy(RentalPolicy policy) => _context.RentalPolicies.Add(policy);
+
+    // Các phiên bản chính sách BOM (bảng PolicyVersion), sắp theo nhóm rồi số phiên bản.
+    public async Task<List<PolicyVersion>> GetPolicyVersionsAsync(CancellationToken cancellationToken)
+    {
+        return await _context.PolicyVersions
+            .OrderBy(v => v.PolicyKey)
+            .ThenBy(v => v.Version)
+            .ToListAsync(cancellationToken);
+    }
+
+    public void AddPolicyVersion(PolicyVersion version) => _context.PolicyVersions.Add(version);
     public void RemoveRentalPolicy(RentalPolicy policy) => _context.RentalPolicies.Remove(policy);
 
     public async Task<List<ContractType>> GetContractTypesAsync(CancellationToken cancellationToken)

@@ -293,7 +293,7 @@ export default function ContractCard({
           )}
           <button type="button" className={isSigned ? 'dashboard-primary-btn' : 'dashboard-secondary-btn'} onClick={onDetail}>Xem chi tiết hợp đồng</button>
           {onRenew && <button type="button" className="dashboard-secondary-btn" onClick={onRenew}>↻ Gia hạn</button>}
-          {onReturn && <button type="button" className="dashboard-secondary-btn" onClick={onReturn}>⇦ Trả kho</button>}
+          {onReturn && <button type="button" className="dashboard-secondary-btn" onClick={onReturn}>{returnInfo?.earlyRequest?.status === 'Pending' ? '⏳ Chờ duyệt trả sớm' : returnInfo?.mode === 'early' ? '⇦ Trả kho sớm' : '⇦ Trả kho'}</button>}
         </div>
       </footer>
     </article>

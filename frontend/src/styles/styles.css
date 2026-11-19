@@ -176,6 +176,9 @@ img { display: block; width: 100%; }
 .about { background: #f6faff; }
 .about-grid { display: grid; grid-template-columns: .8fr 1.2fr; gap: 110px; }
 .about-copy > p { color: #7a8ea0; line-height: 1.8; margin: 0 0 28px; font-size: 15px; }
+/* Link tới trang /about (chính sách thuê kho) dưới khối About trang chủ */
+.about-policy-link { margin-top: 22px; padding: 0; border: 0; background: none; color: #075a9f; font-weight: 800; font-size: 15px; cursor: pointer; }
+.about-policy-link:hover { text-decoration: underline; }
 .process-list > div { display: grid; grid-template-columns: 55px 1fr; gap: 12px; padding: 18px 0; border-top: 1px solid #dfeaf2; }
 .process-list b { color: #f0b900; font: 800 12px 'Be Vietnam Pro'; }
 .process-list span { color: #617b92; font-size: 13px; }

@@ -195,6 +195,7 @@ export function describePolicy(key, value, { facilities = [] } = {}) {
         ['Báo trả kho', `Trước ít nhất ${v.returnNoticeDays} ngày`],
         ['Khi trả kho', v.returnRequirements || '—'],
         ['Hoàn cọc', `Trong ${v.depositRefundWorkingDays} ngày làm việc sau khi kiểm tra kho`],
+        ['Trả kho sớm', `Hợp đồng còn hơn 30 ngày: gửi đơn để Quản lý duyệt, không phí chấm dứt sớm, tháng đang dở tính tròn tháng. Trả 1 lần: hoàn các tháng sau tháng trả kho. Trả theo tháng: báo trước kỳ đóng tiền tới ít nhất ${v.returnNoticeDays} ngày, muộn hơn phải đóng cả kỳ đó`],
         ...(v.returnFees || []).map(f => [`Phí trả kho: ${f.name}`, money(f.amount)])
       ]
     }

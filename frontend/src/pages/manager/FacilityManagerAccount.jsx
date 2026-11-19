@@ -65,6 +65,7 @@ import { UnitTypeChip } from '../../features/unit/unitTypes'
 import { getTodayISO } from '../../demoClock/demoClock'
 import '../../features/unit/unitTypes.css'
 import { ManagerReturnInspectionsTab } from '../../features/return/ReturnInspection' // [THÊM 14] xác nhận & khiếu nại kết quả kiểm kho
+import { ManagerEarlyReturnsTab } from '../../features/return/EarlyReturn' // duyệt đơn trả kho sớm (chấm dứt hợp đồng trước hạn)
 import ManagerNav from './ManagerNav' // [THÊM] menu trái gom nhóm + số việc chờ
 import { Code, FilterChips, NewBadge, Pager, SortSelect, UnitCodes, markAllItemsSeen, markItemSeen, newestFirst, rowClass, timeAgo, useClientPaging } from '../../components/common/listKit' // [THÊM] phân trang + làm nổi mã
 import { CONTRACT_SORTS, RESERVATION_SORTS, UNIT_SORTS, useOpsList } from '../../hooks/opsLists' // [THÊM] danh sách phân trang ở backend
@@ -3465,6 +3466,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
               {activeTab === 'contracts' && 'Hợp đồng thuê tại cơ sở'}
               {activeTab === 'lateFees' && 'Công nợ & phí trễ hạn'}
               {activeTab === 'returnInspections' && 'Xác nhận & khiếu nại kiểm kho'}
+              {activeTab === 'earlyReturns' && 'Đơn trả kho sớm'}
               {activeTab === 'staff' && 'Phân công nhân viên cơ sở'}
             </h1>
             <p>Quản lý vận hành kho, theo dõi đơn thuê và doanh thu cơ sở {facilityName}.</p>
@@ -3856,6 +3858,9 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
         {activeTab === 'returnInspections' && (
           <ManagerReturnInspectionsTab facilityId={managedFacility?.facilityId} showToast={showToast} />
         )}
+
+        {/* TAB DUYỆT ĐƠN TRẢ KHO SỚM */}
+        {activeTab === 'earlyReturns' && <ManagerEarlyReturnsTab showToast={showToast} />}
 
         {/* [7a] TAB CÔNG NỢ & PHÍ TRỄ HẠN */}
         {activeTab === 'lateFees' && (

@@ -30,6 +30,8 @@ public interface IFacilityManagementRepository
     void AddFeePolicy(FeePolicy feePolicy);
     void RemoveFeePolicy(FeePolicy feePolicy);
     void ReplaceCancellationRules(RentalPolicy policy, IEnumerable<CancellationRule> rules);
+    Task<List<PolicyVersion>> GetPolicyVersionsAsync(CancellationToken cancellationToken);
+    void AddPolicyVersion(PolicyVersion version);
 
     Task<List<SizeCategory>> GetSizeCategoriesWithDetailsAsync(CancellationToken cancellationToken);
     Task<SizeCategory?> GetSizeCategoryByCodeAsync(string code, CancellationToken cancellationToken);

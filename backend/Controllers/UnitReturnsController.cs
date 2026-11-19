@@ -88,13 +88,24 @@ public sealed class UnitReturnsController(
             .Select(c => c.RenewedFromContractID!.Value)
             .ToListAsync(ct);
 
+        var reservationIds = reservations.Select(r => r.ReservationID).ToList();
+        var earlyRequests = (await context.EarlyReturnRequests.AsNoTracking()
+                .Where(e => reservationIds.Contains(e.ReservationID))
+                .ToListAsync(ct))
+            .GroupBy(e => e.ReservationID)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.CreatedAt).First());
+
         var items = reservations.Select(r =>
         {
             var tasks = r.HandoverTasks.Where(t => t.TaskType == MoveOut && t.Status != "Cancelled").ToList();
             var (eligible, reason) = tasks.Count > 0
                 ? (false, "Đã có yêu cầu trả kho.")
                 : CheckEligibility(r, renewedIds.Contains(r.Contract!.ContractID));
-            var (minDate, maxDate) = DateWindow(r, rules, today);
+            // Còn hơn 30 ngày -> nút "Trả kho sớm" (gửi đơn cho Manager duyệt) thay cho "Báo trả kho".
+            var earlyMode = r.Status == ReservationStatus.HandedOver && tasks.Count == 0 && IsEarlyMode(r, today);
+            earlyRequests.TryGetValue(r.ReservationID, out var early);
+            if (eligible && earlyMode && early?.Status == "Pending") (eligible, reason) = (false, "Đơn trả kho sớm đang chờ Quản lý duyệt.");
+            var (minDate, maxDate) = earlyMode ? EarlyWindow(r, rules, today) : DateWindow(r, rules, today);
             return new
             {
                 reservationId = r.ReservationID,
@@ -109,6 +120,9 @@ public sealed class UnitReturnsController(
                 reason,
                 minReturnDate = minDate,
                 maxReturnDate = maxDate,
+                mode = earlyMode ? "early" : "normal",
+                paymentPlan = r.PaymentPlan,
+                earlyRequest = early is null ? null : EarlyDto(early),
                 request = tasks.Count == 0 ? null : BuildRequestDto(r, tasks, rules)
             };
         }).ToList();
@@ -143,6 +157,8 @@ public sealed class UnitReturnsController(
                                                             c.Reservation.Status != ReservationStatus.Cancelled, ct);
         var (eligible, reason) = CheckEligibility(r, renewed);
         if (!eligible) return Conflict(new { message = reason });
+        if (IsEarlyMode(r, Today()))
+            return Conflict(new { message = $"Hợp đồng còn hơn {EarlyReturnThresholdDays} ngày mới hết hạn: vui lòng gửi đơn \"Trả kho sớm\" để Quản lý duyệt." });
 
         var rules = await ReadRulesAsync(ct);
         var (minDate, maxDate) = DateWindow(r, rules, Today());
@@ -155,61 +171,11 @@ public sealed class UnitReturnsController(
         if (date == Today() && time <= NowVn().TimeOfDay)
             return BadRequest(new { message = "Khung giờ này đã qua. Vui lòng chọn giờ khác." });
 
-        var activeUnits = r.ReservationUnits.Where(ru => ru.Status == "Active").ToList();
         var note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
         if (note?.Length > 500) note = note[..500];
 
-        string? staffName;
-        try
-        {
-            // Serializable: đọc lịch nhân viên + ghi việc trong cùng transaction, 2 khách đặt cùng giờ không bị giao chồng
-            await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-
-            var (staff, slots) = await LoadScheduleAsync(r.FacilityID, date, ct);
-            if (staff.Count == 0)
-                return Conflict(new { message = "Cơ sở chưa có nhân viên đang làm việc để nhận lại kho. Vui lòng liên hệ cơ sở." });
-
-            var preferred = await FindHandoverStaffAsync(r, activeUnits.Select(u => u.UnitID).ToList(), ct);
-            var pick = StaffAssignmentPolicy.Pick(staff, slots, date, time, preferred);
-            if (pick is null)
-            {
-                var free = FreeSlots(staff, slots, date);
-                return Conflict(new
-                {
-                    message = free.Count == 0
-                        ? $"Ngày {date:dd/MM/yyyy} đã kín lịch nhân viên. Vui lòng chọn ngày khác."
-                        : $"Khung {time:hh\\:mm} ngày {date:dd/MM/yyyy} đã kín lịch. Các khung còn trống: {SlotList(free)}.",
-                    freeSlots = free.Select(t => t.ToString(@"hh\:mm"))
-                });
-            }
-            staffName = pick.FullName;
-
-            foreach (var ru in activeUnits)
-            {
-                context.HandoverTasks.Add(new HandoverTask
-                {
-                    TaskType = MoveOut,
-                    FacilityID = r.FacilityID,
-                    UnitID = ru.UnitID,
-                    ReservationUnitID = ru.ReservationUnitID,
-                    ReservationID = r.ReservationID,
-                    AssignedStaffID = pick.UserId,
-                    ScheduledDate = date,
-                    ScheduledTime = time,
-                    UnitConditionNotes = note is null ? null : $"Khách ghi chú: {note}",
-                    Status = "Scheduled",
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
-            await context.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
-        }
-        catch (DbUpdateException exception)
-        {
-            context.ChangeTracker.Clear();
-            logger.LogWarning(exception, "Tạo yêu cầu trả kho thất bại ({ReservationId})", r.ReservationID);
-            return Conflict(new { message = CleanDbMessage(exception, "Chưa tạo được yêu cầu trả kho, vui lòng thử lại.") });
-        }
+        var (scheduleError, staffName) = await ScheduleMoveOutAsync(r, date, time, note, null, ct);
+        if (scheduleError is not null) return scheduleError;
 
         return Ok(new
         {
@@ -253,6 +219,8 @@ public sealed class UnitReturnsController(
         if (tasks.Count == 0) return NotFound(new { message = "Không có yêu cầu trả kho để hủy." });
         if (tasks.Any(t => t.Status != "Scheduled"))
             return Conflict(new { message = "Nhân viên đã bắt đầu nhận lại kho nên không thể hủy yêu cầu." });
+        if (await context.EarlyReturnRequests.AnyAsync(e => e.ReservationID == reservationId && e.Status == "Approved", ct))
+            return Conflict(new { message = "Hợp đồng đã được duyệt chấm dứt sớm nên không hủy được lịch trả kho. Muốn đổi ngày giờ, vui lòng liên hệ cơ sở." });
         // Hợp đồng đã hết hạn: khách bắt buộc phải trả kho, hủy lịch nghĩa là tiếp tục dùng kho khi không còn hợp đồng
         var endDate = await context.Reservations.Where(x => x.ReservationID == reservationId).Select(x => x.EndDate).FirstAsync(ct);
         if (endDate.Date < Today())
@@ -313,6 +281,379 @@ public sealed class UnitReturnsController(
             logger.LogWarning(exception, "Đóng phí trả kho thất bại ({ReservationId})", reservationId);
             return Conflict(new { message = CleanDbMessage(exception, "Chưa thanh toán được, vui lòng thử lại.") });
         }
+    }
+
+    // ================================================================== TRẢ KHO SỚM (chấm dứt hợp đồng trước hạn)
+    /*
+     * Hợp đồng còn HƠN 30 ngày -> khách không "Báo trả kho" thường được mà gửi ĐƠN TRẢ KHO SỚM (bảng EarlyReturnRequest).
+     *   Khách:   GET  early/{reservationId}/quote?date=   số tiền dự kiến theo ngày trả (không phí chấm dứt sớm)
+     *            POST early                              gửi đơn { reservationId, returnDate, returnTime, reason, note, agree }
+     *            POST early/{id}/cancel                  rút đơn khi Manager chưa duyệt
+     *   Manager: GET  early/manager                      đơn tại các cơ sở mình quản lý (BOM: mọi cơ sở)
+     *            GET  early/{id}/slots?date=             khung giờ còn nhân viên rảnh (khi cần đổi giờ hẹn)
+     *            POST early/{id}/approve                 duyệt + chấm dứt sớm { returnDate?, returnTime?, note? }
+     *            POST early/{id}/reject                  từ chối { note } (bắt buộc lý do)
+     * Luật tiền (tháng đang dở tính tròn tháng):
+     *   - Giữ lại mọi kỳ thuê có ngày bắt đầu <= ngày trả kho; các kỳ SAU ngày trả kho:
+     *       chưa đóng (trả theo tháng) -> hủy;  đã đóng (trả 1 lần / đóng trước) -> hoàn lại đủ, cùng hạn với hoàn cọc.
+     *   - Trả theo tháng: muốn KHÔNG phải đóng kỳ tới thì phải gửi đơn trước ngày đóng tiền kỳ tới ít nhất N ngày
+     *     (N = "Báo trả kho trước" trong chính sách, mặc định 7). Vì ngày trả sớm nhất = hôm nay + N, gửi muộn thì
+     *     ngày trả rơi vào kỳ tới -> kỳ đó được giữ lại và khách phải đóng (LateNotice = true, báo rõ trên form).
+     * Duyệt: tạo lịch trả kho (HandoverTask Move Out, chọn nhân viên bằng StaffAssignmentPolicy) rồi đi tiếp quy trình
+     * trả kho bình thường (bước 2: Staff nhận lại kho). Sau khi duyệt khách không hủy lịch trả kho được nữa.
+     */
+    private const int EarlyReturnThresholdDays = 30;
+    private static readonly string[] EarlyReasons = ["moving", "no_need", "other_unit", "price", "service", "other"];
+
+    public sealed record EarlyReturnBody(int ReservationId, DateTime ReturnDate, string? ReturnTime, string? Reason, string? Note, bool Agree);
+    public sealed record EarlyDecisionBody(DateTime? ReturnDate, string? ReturnTime, string? Note);
+
+    private sealed record EarlyQuote(
+        DateTime ReturnDate, DateTime? NextDueDate, bool LateNotice, int CancelledPeriods, decimal RefundAmount,
+        decimal KeptUnpaidAmount, decimal DepositTotal, DateTime CoveredUntil, List<Charge> CancelUnpaid, List<Charge> RefundPaid);
+
+    /* Hợp đồng còn hơn 30 ngày mới tới hạn -> dùng luồng trả kho sớm. */
+    private static bool IsEarlyMode(Reservation r, DateTime today) => (r.EndDate.Date - today).TotalDays > EarlyReturnThresholdDays;
+
+    /* Khoảng ngày trả kho sớm: từ hôm nay + N ngày báo trước tới trước ngày hết hạn 1 ngày. */
+    private static (DateTime Min, DateTime Max) EarlyWindow(Reservation r, ReturnRules rules, DateTime today) =>
+        (today.AddDays(rules.NoticeDays), r.EndDate.Date.AddDays(-1));
+
+    private static EarlyQuote BuildEarlyQuote(Reservation r, DateTime returnDate, DateTime today, int noticeDays)
+    {
+        var rents = r.Charges.Where(c => c.ChargeType == "Rent" && c.Status != "Cancelled").ToList();
+        var future = rents.Where(c => c.PeriodStart?.Date > returnDate).ToList();
+        var kept = rents.Except(future).ToList();
+        DateTime? nextDue = r.PaymentPlan == PaymentPlan.Monthly
+            ? rents.Where(c => c.PeriodStart?.Date > today).Select(c => (DateTime?)c.PeriodStart!.Value.Date).Min()
+            : null;
+        var late = nextDue is DateTime due && (due - today).TotalDays < noticeDays && returnDate >= due;
+        var refundPaid = future.Where(c => c.Status == "Paid" && c.RefundedAmount == 0).ToList();
+        return new EarlyQuote(
+            returnDate,
+            nextDue,
+            late,
+            future.Select(c => c.PeriodStart!.Value.Date).Distinct().Count(),
+            refundPaid.Sum(c => c.Amount),
+            kept.Where(c => c.Status == "Unpaid").Sum(c => c.Amount),
+            r.Charges.Where(c => c.ChargeType == "Deposit" && c.Status == "Paid").Sum(c => c.Amount - c.RefundedAmount),
+            kept.Select(c => c.PeriodEnd?.Date).Max() ?? returnDate,
+            future.Where(c => c.Status == "Unpaid").ToList(),
+            refundPaid);
+    }
+
+    private static object QuoteDto(EarlyQuote q, Reservation r) => new
+    {
+        returnDate = q.ReturnDate,
+        paymentPlan = r.PaymentPlan,
+        nextDueDate = q.NextDueDate,
+        lateNotice = q.LateNotice,
+        cancelledPeriods = q.CancelledPeriods,
+        refundAmount = q.RefundAmount,
+        keptUnpaidAmount = q.KeptUnpaidAmount,
+        depositTotal = q.DepositTotal,
+        coveredUntil = q.CoveredUntil
+    };
+
+    private static object EarlyDto(EarlyReturnRequest e) => new
+    {
+        id = e.EarlyReturnRequestID,
+        status = e.Status,
+        returnDate = e.ReturnDate,
+        returnTime = e.ReturnTime,
+        reason = e.Reason,
+        note = e.Note,
+        refundAmount = e.RefundAmount,
+        cancelledPeriods = e.CancelledPeriods,
+        lateNotice = e.LateNotice,
+        createdAt = e.CreatedAt,
+        decidedAt = e.DecidedAt,
+        managerNote = e.ManagerNote
+    };
+
+    private async Task<Reservation?> LoadEarlyReservationAsync(int reservationId, CancellationToken ct) =>
+        await context.Reservations
+            .Include(x => x.Contract)
+            .Include(x => x.Customer)
+            .Include(x => x.Facility)
+            .Include(x => x.ReservationUnits).ThenInclude(ru => ru.Unit)
+            .Include(x => x.Charges)
+            .Include(x => x.HandoverTasks)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(x => x.ReservationID == reservationId, ct);
+
+    /* Kiểm tra hợp đồng còn gửi được đơn trả kho sớm không (null = được). */
+    private async Task<string?> EarlyBlockReasonAsync(Reservation r, CancellationToken ct)
+    {
+        if (r.Contract is null) return "Không tìm thấy hợp đồng.";
+        var renewed = await context.Contracts.AnyAsync(c => c.RenewedFromContractID == r.Contract.ContractID &&
+                                                            c.Reservation.Status != ReservationStatus.Cancelled, ct);
+        var (eligible, reason) = CheckEligibility(r, renewed);
+        if (!eligible) return reason;
+        if (r.HandoverTasks.Any(t => t.TaskType == MoveOut && t.Status != "Cancelled")) return "Hợp đồng này đã có lịch trả kho.";
+        if (!IsEarlyMode(r, Today())) return $"Hợp đồng còn không quá {EarlyReturnThresholdDays} ngày: dùng \"Báo trả kho\" như bình thường.";
+        if (await context.EarlyReturnRequests.AnyAsync(e => e.ReservationID == r.ReservationID && e.Status == "Pending", ct))
+            return "Đã có đơn trả kho sớm đang chờ Quản lý duyệt.";
+        return null;
+    }
+
+    [HttpGet("early/{reservationId:int}/quote")]
+    public async Task<IActionResult> EarlyQuoteFor(int reservationId, [FromQuery] DateTime date, CancellationToken ct)
+    {
+        var customerId = await GetUserIdAsync(1, ct);
+        if (customerId is null) return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
+        var r = await LoadEarlyReservationAsync(reservationId, ct);
+        if (r is null || r.CustomerID != customerId.Value) return NotFound(new { message = "Không tìm thấy hợp đồng thuộc tài khoản này." });
+
+        var rules = await ReadRulesAsync(ct);
+        var today = Today();
+        var (min, max) = EarlyWindow(r, rules, today);
+        var day = date == default ? min : date.Date;
+        if (day < min) day = min;
+        if (day > max) day = max;
+        return Ok(new { minDate = min, maxDate = max, noticeDays = rules.NoticeDays, refundDays = rules.RefundDays, quote = QuoteDto(BuildEarlyQuote(r, day, today, rules.NoticeDays), r) });
+    }
+
+    [HttpPost("early")]
+    public async Task<IActionResult> CreateEarlyRequest([FromBody] EarlyReturnBody body, CancellationToken ct)
+    {
+        var customerId = await GetUserIdAsync(1, ct);
+        if (customerId is null) return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
+        var r = await LoadEarlyReservationAsync(body.ReservationId, ct);
+        if (r is null || r.CustomerID != customerId.Value) return NotFound(new { message = "Không tìm thấy hợp đồng thuộc tài khoản này." });
+
+        var blocked = await EarlyBlockReasonAsync(r, ct);
+        if (blocked is not null) return Conflict(new { message = blocked });
+        if (!body.Agree) return BadRequest(new { message = "Vui lòng xác nhận đồng ý chấm dứt hợp đồng trước hạn." });
+
+        var reason = (body.Reason ?? string.Empty).Trim().ToLowerInvariant();
+        if (!EarlyReasons.Contains(reason)) return BadRequest(new { message = "Vui lòng chọn lý do trả kho sớm." });
+        var note = string.IsNullOrWhiteSpace(body.Note) ? null : body.Note.Trim();
+        if (note?.Length > 500) note = note[..500];
+        if (reason == "other" && note is null) return BadRequest(new { message = "Vui lòng ghi rõ lý do trả kho sớm." });
+
+        var rules = await ReadRulesAsync(ct);
+        var today = Today();
+        var (min, max) = EarlyWindow(r, rules, today);
+        var date = body.ReturnDate.Date;
+        if (date < min || date > max)
+            return BadRequest(new { message = $"Ngày trả kho phải từ {min:dd/MM/yyyy} đến {max:dd/MM/yyyy} (báo trước ít nhất {rules.NoticeDays} ngày)." });
+        if (!TryParseReturnTime(body.ReturnTime, out var time))
+            return BadRequest(new { message = $"Vui lòng chọn giờ trả kho trong các khung: {SlotList(StaffAssignmentPolicy.ReturnSlots)}." });
+
+        // Giờ hẹn phải còn nhân viên rảnh lúc gửi đơn (lịch thật được giữ khi Manager duyệt).
+        var (staff, slots) = await LoadScheduleAsync(r.FacilityID, date, ct);
+        var free = FreeSlots(staff, slots, date);
+        if (!free.Contains(time))
+            return Conflict(new { message = free.Count == 0 ? $"Ngày {date:dd/MM/yyyy} đã kín lịch nhân viên. Vui lòng chọn ngày khác." : $"Khung {time:hh\\:mm} đã kín lịch. Các khung còn trống: {SlotList(free)}." });
+
+        var quote = BuildEarlyQuote(r, date, today, rules.NoticeDays);
+        var request = new EarlyReturnRequest
+        {
+            ReservationID = r.ReservationID,
+            CustomerID = customerId.Value,
+            ReturnDate = date,
+            ReturnTime = time.ToString(@"hh\:mm"),
+            Reason = reason,
+            Note = note,
+            Status = "Pending",
+            RefundAmount = quote.RefundAmount,
+            CancelledPeriods = quote.CancelledPeriods,
+            LateNotice = quote.LateNotice,
+            CreatedAt = DateTime.UtcNow
+        };
+        context.EarlyReturnRequests.Add(request);
+        await context.SaveChangesAsync(ct);
+        return Ok(new
+        {
+            message = "Đã gửi đơn trả kho sớm. Quản lý cơ sở sẽ xem xét; khi được duyệt, lịch trả kho được gửi cho nhân viên và bạn đến trả kho như bình thường.",
+            request = EarlyDto(request)
+        });
+    }
+
+    [HttpPost("early/{id:int}/cancel")]
+    public async Task<IActionResult> CancelEarlyRequest(int id, CancellationToken ct)
+    {
+        var customerId = await GetUserIdAsync(1, ct);
+        if (customerId is null) return Unauthorized(new { message = "Vui lòng đăng nhập bằng tài khoản khách hàng." });
+        var request = await context.EarlyReturnRequests.FirstOrDefaultAsync(e => e.EarlyReturnRequestID == id && e.CustomerID == customerId.Value, ct);
+        if (request is null) return NotFound(new { message = "Không tìm thấy đơn trả kho sớm." });
+        if (request.Status != "Pending") return Conflict(new { message = "Đơn đã được Quản lý xử lý nên không rút được." });
+        request.Status = "Cancelled";
+        request.DecidedAt = DateTime.UtcNow;
+        await context.SaveChangesAsync(ct);
+        return Ok(new { message = "Đã rút đơn trả kho sớm. Bạn tiếp tục thuê kho như bình thường." });
+    }
+
+    /* Manager (role 3) quản lý cơ sở của đơn, hoặc BOM (role 4). Trả về UserID hoặc null. */
+    private async Task<(int? UserId, bool IsBom)> GetDeciderAsync(CancellationToken ct)
+    {
+        var manager = await GetUserIdAsync(3, ct);
+        if (manager is not null) return (manager, false);
+        var bom = await GetUserIdAsync(4, ct);
+        return (bom, bom is not null);
+    }
+
+    [HttpGet("early/manager")]
+    public async Task<IActionResult> EarlyForManager(CancellationToken ct)
+    {
+        var (userId, isBom) = await GetDeciderAsync(ct);
+        if (userId is null) return Unauthorized(new { message = "Chỉ Quản lý cơ sở mới xem được đơn trả kho sớm." });
+
+        var since = DateTime.UtcNow.AddDays(-60);
+        var rows = await context.EarlyReturnRequests.AsNoTracking()
+            .Where(e => e.Status == "Pending" || e.CreatedAt >= since)
+            .OrderByDescending(e => e.Status == "Pending").ThenByDescending(e => e.CreatedAt)
+            .ToListAsync(ct);
+        var ids = rows.Select(e => e.ReservationID).Distinct().ToList();
+        var reservations = await context.Reservations.AsNoTracking()
+            .Include(x => x.Contract)
+            .Include(x => x.Customer)
+            .Include(x => x.Facility)
+            .Include(x => x.ReservationUnits).ThenInclude(ru => ru.Unit)
+            .Include(x => x.Charges)
+            .AsSplitQuery()
+            .Where(x => ids.Contains(x.ReservationID) && (isBom || x.Facility.ManagerID == userId.Value))
+            .ToDictionaryAsync(x => x.ReservationID, ct);
+
+        var rules = await ReadRulesAsync(ct);
+        var today = Today();
+        var items = rows.Where(e => reservations.ContainsKey(e.ReservationID)).Select(e =>
+        {
+            var r = reservations[e.ReservationID];
+            // Đơn đang chờ: tính lại số tiền theo dữ liệu hiện tại (khách có thể đã đóng thêm kỳ).
+            var quote = e.Status == "Pending" ? BuildEarlyQuote(r, e.ReturnDate.Date, today, rules.NoticeDays) : null;
+            return new
+            {
+                request = EarlyDto(e),
+                reservationId = r.ReservationID,
+                reservationCode = r.ReservationCode,
+                contractNumber = r.Contract?.ContractNumber,
+                facilityId = r.FacilityID,
+                facility = r.Facility.FacilityName,
+                customerName = r.Customer?.FullName,
+                customerPhone = r.Customer?.PhoneNumber,
+                customerEmail = r.Customer?.Email,
+                units = r.ReservationUnits.Where(ru => ru.Status is "Active" or "Returned").Select(ru => ru.Unit.UnitNumber).ToList(),
+                paymentPlan = r.PaymentPlan,
+                startDate = r.StartDate.Date,
+                endDate = r.EndDate.Date,
+                quote = quote is null ? null : QuoteDto(quote, r)
+            };
+        }).ToList();
+        return Ok(new { noticeDays = rules.NoticeDays, refundDays = rules.RefundDays, items });
+    }
+
+    private async Task<(EarlyReturnRequest? Request, Reservation? Reservation, IActionResult? Error)> LoadEarlyForDecisionAsync(int id, CancellationToken ct)
+    {
+        var (userId, isBom) = await GetDeciderAsync(ct);
+        if (userId is null) return (null, null, Unauthorized(new { message = "Chỉ Quản lý cơ sở mới duyệt được đơn trả kho sớm." }));
+        var request = await context.EarlyReturnRequests.FirstOrDefaultAsync(e => e.EarlyReturnRequestID == id, ct);
+        if (request is null) return (null, null, NotFound(new { message = "Không tìm thấy đơn trả kho sớm." }));
+        var r = await LoadEarlyReservationAsync(request.ReservationID, ct);
+        if (r is null || (!isBom && r.Facility.ManagerID != userId.Value))
+            return (null, null, StatusCode(403, new { message = "Đơn này không thuộc cơ sở bạn quản lý." }));
+        if (request.Status != "Pending") return (null, null, Conflict(new { message = "Đơn này đã được xử lý." }));
+        request.DecidedByUserID = userId.Value;
+        return (request, r, null);
+    }
+
+    [HttpGet("early/{id:int}/slots")]
+    public async Task<IActionResult> EarlySlots(int id, [FromQuery] DateTime date, CancellationToken ct)
+    {
+        var (request, r, error) = await LoadEarlyForDecisionAsync(id, ct);
+        if (error is not null) return error;
+        var day = date.Date;
+        if (day < Today()) return Ok(new { date = day.ToString("yyyy-MM-dd"), slots = Array.Empty<string>() });
+        var (staff, slots) = await LoadScheduleAsync(r!.FacilityID, day, ct);
+        return Ok(new { date = day.ToString("yyyy-MM-dd"), slots = FreeSlots(staff, slots, day).Select(t => t.ToString(@"hh\:mm")) });
+    }
+
+    [HttpPost("early/{id:int}/reject")]
+    public async Task<IActionResult> RejectEarly(int id, [FromBody] EarlyDecisionBody body, CancellationToken ct)
+    {
+        var (request, _, error) = await LoadEarlyForDecisionAsync(id, ct);
+        if (error is not null) return error;
+        var note = body.Note?.Trim();
+        if (string.IsNullOrWhiteSpace(note)) return BadRequest(new { message = "Vui lòng ghi lý do từ chối để khách biết." });
+        request!.Status = "Rejected";
+        request.ManagerNote = note.Length > 500 ? note[..500] : note;
+        request.DecidedAt = DateTime.UtcNow;
+        await context.SaveChangesAsync(ct);
+        return Ok(new { message = "Đã từ chối đơn trả kho sớm. Khách tiếp tục thuê như hợp đồng." });
+    }
+
+    [HttpPost("early/{id:int}/approve")]
+    public async Task<IActionResult> ApproveEarly(int id, [FromBody] EarlyDecisionBody body, CancellationToken ct)
+    {
+        var (request, r, error) = await LoadEarlyForDecisionAsync(id, ct);
+        if (error is not null) return error;
+
+        var renewed = await context.Contracts.AnyAsync(c => c.RenewedFromContractID == r!.Contract!.ContractID &&
+                                                            c.Reservation.Status != ReservationStatus.Cancelled, ct);
+        var (eligible, reason) = CheckEligibility(r!, renewed);
+        if (!eligible) return Conflict(new { message = reason });
+        if (r!.HandoverTasks.Any(t => t.TaskType == MoveOut && t.Status != "Cancelled"))
+            return Conflict(new { message = "Hợp đồng này đã có lịch trả kho." });
+
+        var today = Today();
+        var date = (body.ReturnDate ?? request!.ReturnDate).Date;
+        if (date < today || date >= r.EndDate.Date)
+            return BadRequest(new { message = date < today
+                ? $"Ngày trả kho {date:dd/MM/yyyy} đã qua. Hãy chọn ngày mới (đã liên hệ khách)."
+                : $"Ngày trả kho phải trước ngày hết hạn {r.EndDate:dd/MM/yyyy}." });
+        if (!TryParseReturnTime(body.ReturnTime ?? request!.ReturnTime, out var time))
+            return BadRequest(new { message = $"Giờ trả kho phải thuộc các khung: {SlotList(StaffAssignmentPolicy.ReturnSlots)}." });
+        if (date == today && time <= NowVn().TimeOfDay)
+            return BadRequest(new { message = "Khung giờ này đã qua. Vui lòng chọn giờ khác." });
+
+        var rules = await ReadRulesAsync(ct);
+        var quote = BuildEarlyQuote(r, date, today, rules.NoticeDays);
+        var now = DateTime.UtcNow;
+        var note = body.Note?.Trim();
+
+        var (scheduleError, staffName) = await ScheduleMoveOutAsync(r, date, time, request!.Note, () =>
+        {
+            // Chấm dứt sớm: hủy các kỳ chưa đóng sau ngày trả kho; hoàn đủ các kỳ đã đóng sau ngày trả kho.
+            foreach (var c in quote.CancelUnpaid) c.Status = "Cancelled";
+            if (quote.RefundAmount > 0)
+            {
+                var refund = new Payment
+                {
+                    ReservationID = r.ReservationID,
+                    OrderCode = $"ERT-{Guid.NewGuid().ToString("N")[..12].ToUpperInvariant()}",
+                    IdempotencyKey = $"EARLY-RETURN-REFUND-{r.ReservationID}-{Guid.NewGuid():N}",
+                    Provider = ManualProvider,
+                    Direction = "Refund",
+                    RefundReason = "Cancellation",
+                    Amount = quote.RefundAmount,
+                    PaymentMethod = "Chuyển khoản hoàn tiền thuê (trả kho sớm)",
+                    Status = "Pending",
+                    CreatedAt = now,
+                    ExpiresAt = date.AddDays(rules.RefundDays),
+                    CreatedByUserID = request.DecidedByUserID
+                };
+                context.Payments.Add(refund);
+                foreach (var c in quote.RefundPaid) { c.RefundedAmount = c.Amount; c.RefundPayment = refund; }
+            }
+            request.Status = "Approved";
+            request.ReturnDate = date;
+            request.ReturnTime = time.ToString(@"hh\:mm");
+            request.RefundAmount = quote.RefundAmount;
+            request.CancelledPeriods = quote.CancelledPeriods;
+            request.LateNotice = quote.LateNotice;
+            request.DecidedAt = now;
+            request.ManagerNote = string.IsNullOrWhiteSpace(note) ? null : note.Length > 500 ? note[..500] : note;
+        }, ct);
+        if (scheduleError is not null) return scheduleError;
+
+        return Ok(new
+        {
+            message = $"Đã duyệt trả kho sớm. Lịch trả kho {time:hh\\:mm} ngày {date:dd/MM/yyyy} đã giao cho nhân viên {staffName}." +
+                      (quote.RefundAmount > 0 ? $" Khách được hoàn {Vnd(quote.RefundAmount)}đ tiền thuê, dự kiến {date.AddDays(rules.RefundDays):dd/MM/yyyy}." : "") +
+                      (quote.CancelledPeriods > 0 ? $" Đã hủy {quote.CancelledPeriods} kỳ tiền thuê sau ngày trả kho." : ""),
+            staffName
+        });
     }
 
     // ================================================================== STAFF
@@ -677,6 +1018,68 @@ public sealed class UnitReturnsController(
 
     // ================================================================== Helpers
 
+    /*
+     * Tạo lịch trả kho (mỗi kho đang thuê 1 việc Move Out) và chọn nhân viên bằng StaffAssignmentPolicy, trong 1 transaction
+     * Serializable (2 yêu cầu cùng giờ không bị giao chồng). beforeSave: thay đổi thêm lưu CÙNG transaction (vd duyệt trả kho sớm).
+     * Dùng chung cho khách "Báo trả kho" và Manager duyệt đơn trả kho sớm. Trả về (lỗi, tên nhân viên).
+     */
+    private async Task<(IActionResult? Error, string? StaffName)> ScheduleMoveOutAsync(
+        Reservation r, DateTime date, TimeSpan time, string? note, Action? beforeSave, CancellationToken ct)
+    {
+        var activeUnits = r.ReservationUnits.Where(ru => ru.Status == "Active").ToList();
+        try
+        {
+            await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+
+            var (staff, slots) = await LoadScheduleAsync(r.FacilityID, date, ct);
+            if (staff.Count == 0)
+                return (Conflict(new { message = "Cơ sở chưa có nhân viên đang làm việc để nhận lại kho. Vui lòng liên hệ cơ sở." }), null);
+
+            var preferred = await FindHandoverStaffAsync(r, activeUnits.Select(u => u.UnitID).ToList(), ct);
+            var pick = StaffAssignmentPolicy.Pick(staff, slots, date, time, preferred);
+            if (pick is null)
+            {
+                var free = FreeSlots(staff, slots, date);
+                return (Conflict(new
+                {
+                    message = free.Count == 0
+                        ? $"Ngày {date:dd/MM/yyyy} đã kín lịch nhân viên. Vui lòng chọn ngày khác."
+                        : $"Khung {time:hh\\:mm} ngày {date:dd/MM/yyyy} đã kín lịch. Các khung còn trống: {SlotList(free)}.",
+                    freeSlots = free.Select(t => t.ToString(@"hh\:mm"))
+                }), null);
+            }
+
+            foreach (var ru in activeUnits)
+            {
+                context.HandoverTasks.Add(new HandoverTask
+                {
+                    TaskType = MoveOut,
+                    FacilityID = r.FacilityID,
+                    UnitID = ru.UnitID,
+                    ReservationUnitID = ru.ReservationUnitID,
+                    ReservationID = r.ReservationID,
+                    AssignedStaffID = pick.UserId,
+                    ScheduledDate = date,
+                    ScheduledTime = time,
+                    UnitConditionNotes = note is null ? null : $"Khách ghi chú: {note}",
+                    Status = "Scheduled",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            beforeSave?.Invoke();
+            await context.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return (null, pick.FullName);
+        }
+        catch (DbUpdateException exception)
+        {
+            context.ChangeTracker.Clear();
+            logger.LogWarning(exception, "Tạo lịch trả kho thất bại ({ReservationId})", r.ReservationID);
+            return (Conflict(new { message = CleanDbMessage(exception, "Chưa tạo được lịch trả kho, vui lòng thử lại.") }), null);
+        }
+    }
+
+
     private object BuildRequestDto(Reservation r, List<HandoverTask> tasks, ReturnRules rules)
     {
         var status = tasks.All(t => t.Status == "Completed") ? "Completed" : tasks.Any(t => t.Status != "Scheduled") ? "In Progress" : "Scheduled";
@@ -840,7 +1243,8 @@ public sealed class UnitReturnsController(
             var now = DateTime.UtcNow;
             var ids = await context.Reservations.Where(scope).Select(r => r.ReservationID).ToListAsync(ct);
             var due = await context.Payments
-                .Where(p => ids.Contains(p.ReservationID) && p.Direction == "Refund" && p.RefundReason == "DepositReturn" &&
+                .Where(p => ids.Contains(p.ReservationID) && p.Direction == "Refund" &&
+                            (p.RefundReason == "DepositReturn" || (p.RefundReason == "Cancellation" && p.OrderCode.StartsWith("ERT-"))) &&
                             p.Provider == ManualProvider && p.Status == "Pending" && p.ExpiresAt != null && p.ExpiresAt.Value.Date <= today)
                 .ToListAsync(ct);
             foreach (var p in due)

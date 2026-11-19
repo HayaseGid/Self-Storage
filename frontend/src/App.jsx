@@ -66,7 +66,7 @@ import {
 } from './features/unit/unitTypes'
 import './features/unit/unitTypes.css'
 import { getFacilityDistrict, groupFacilitiesByDistrict } from './utils/districts'
-import { RENTAL_TERMS } from './services/storageRules'
+import { RENTAL_TERMS, MAX_ADVANCE_BOOKING_DAYS, maxBookingStartDate } from './services/storageRules'
 import { effectiveMonthly, holdMinutesFor, quote, setCatalogPricing } from './services/pricing'
 import FacilityMap, { directionsUrl, useFacilityLocations } from './features/facility/FacilityMap'
 import CartPage from './pages/customer/CartPage'
@@ -105,6 +105,7 @@ import FacilityManagerDashboard from './pages/manager/FacilityManagerAccount'
 // Quản trị hệ thống (/admin) và Vận hành kinh doanh (/business)
 import Admin from './pages/admin/AdminAccount'
 import BusinessOperations from './pages/business/BusinessOperations'
+import PolicyGuide from './features/policy/PolicyGuide' // trang "Về StoreSpace": chính sách chung, đọc từ chính sách BOM
 
 /**
  * Trả về đường dẫn trang làm việc theo vai trò (SYSTEM_ADMIN -> /admin, BUSINESS_OPERATIONS -> /business,
@@ -602,6 +603,7 @@ function SiteHeader() {
         </button>
         <nav className="desktop-nav">
           <button type="button" onClick={() => go('/search')}>Tìm kho</button>
+          <button type="button" onClick={() => go('/about')}>Về StoreSpace</button>
           <button className="nav-dropdown" type="button" onClick={() => setStorageOpen(v => !v)}>Loại kho <ChevronIcon /></button>
           {storageOpen && (
             <div className="type-menu">
@@ -669,7 +671,7 @@ function SiteHeader() {
                 )}
                 <button className="mobile-menu-item" type="button" onClick={() => go('/facilities')}>⌖ <span>Cơ sở lưu trữ</span></button>
                 {showCart && <button className="mobile-menu-item" type="button" onClick={() => go('/cart')}>🛒 <span>Giỏ hàng{cartItems.length ? ` (${cartItems.length})` : ''}</span></button>}
-                <button className="mobile-menu-item" type="button" onClick={() => { setMenuOpen(false); document.getElementById('about')?.scrollIntoView({ behavior: 'smooth' }) }}>◇ <span>Về StoreSpace</span></button>
+                <button className="mobile-menu-item" type="button" onClick={() => go('/about')}>◇ <span>Về StoreSpace</span></button>
               </div>
               <div className="mobile-menu-section">
                 <div className="mobile-menu-title">HỖ TRỢ</div>
@@ -893,6 +895,22 @@ function FacilityLocationCard({ facility, hideMap = false }) {
  * rồi các nhóm thẻ cơ sở theo từng khu vực. Dữ liệu lấy từ biến facilities (không gọi API riêng, trừ bản đồ).
  * Được Router hiển thị khi URL là /facilities.
  */
+/**
+ * Trang "Về StoreSpace" (/about): giới thiệu + toàn bộ chính sách chung cho khách (features/policy/PolicyGuide).
+ * Số liệu chính sách đọc từ GET /api/policies nên Business Operations Manager đổi chính sách thì trang tự cập nhật.
+ */
+function AboutPage() {
+  return (
+    <div className="app">
+      <SiteHeader />
+      <main className="listing-page">
+        <div className="container"><PolicyGuide /></div>
+      </main>
+      <SiteFooter />
+    </div>
+  )
+}
+
 function FacilitiesPage() {
   const district = new URLSearchParams(window.location.search).get('district') || ''
   const groups = getDistrictGroups()
@@ -1319,11 +1337,8 @@ function BookingPage({ facility, unit }) {
   const holdMinutes = holdMinutesFor(facility.facilityId)
   const deposit = booking?.deposit ?? priceQuote.deposit
 
-  // Năm được chọn trên lịch: từ năm nay tới 5 năm sau (dùng làm ngày tối đa của RentalCalendar).
-  const years = Array.from(
-    { length: 6 },
-    (_, index) => new Date().getFullYear() + index
-  )
+  // Ngày bắt đầu thuê muộn nhất: hôm nay + 30 ngày (dùng làm ngày tối đa của RentalCalendar).
+  const maxStartDate = maxBookingStartDate()
 
 
   // Định dạng tiền kiểu Việt Nam kèm "đ" (giống formatMoney ở đầu file).
@@ -1407,9 +1422,9 @@ function BookingPage({ facility, unit }) {
   const today = getTodayDate()
   today.setHours(0, 0, 0, 0)
 
-  // Ngày bắt đầu hợp lệ = đã chọn đủ và không ở quá khứ.
+  // Ngày bắt đầu hợp lệ = đã chọn đủ, không ở quá khứ và không xa quá 30 ngày kể từ hôm nay.
   const isValidStartDate =
-    !!startDate && startDate.getTime() >= today.getTime()
+    !!startDate && startDate.getTime() >= today.getTime() && startDate.getTime() <= maxStartDate.getTime()
 
   const canConfirm =
     !!startDate &&
@@ -1473,7 +1488,7 @@ function BookingPage({ facility, unit }) {
     }
 
     if (!isValidStartDate) {
-      await showBookingError('Ngày bắt đầu thuê không được ở trong quá khứ.', 'Ngày bắt đầu không hợp lệ', 'warning')
+      await showBookingError(`Ngày bắt đầu thuê phải từ hôm nay đến tối đa ${MAX_ADVANCE_BOOKING_DAYS} ngày tới.`, 'Ngày bắt đầu không hợp lệ', 'warning')
       return
     }
 
@@ -1788,7 +1803,7 @@ function BookingPage({ facility, unit }) {
                     value={startDate}
                     endDate={endDate}
                     durationMonths={totalMonths}
-                    maxDate={new Date(years[years.length - 1], 11, 31)}
+                    maxDate={maxStartDate}
                     onChange={date => {
                       setStartDay(String(date.getDate()))
                       setStartMonth(String(date.getMonth() + 1))
@@ -2841,7 +2856,7 @@ function HomePage() {
         </section>
         <section className="facilities section" id="facilities"><div className="container"><div className="section-heading"><div><div className="eyebrow green">OUR FACILITIES</div><h2>Cơ sở lưu trữ</h2><p>Mỗi cơ sở có nhiều loại kho và kích thước để bạn lựa chọn.</p></div><button className="text-link" type="button" onClick={() => navigate('/facilities')}>Xem tất cả <ArrowIcon /></button></div>{submittedQuery && <div className="search-result-note">Đang hiển thị kết quả cho <strong>“{submittedQuery}”</strong></div>}<div className="facility-grid">{visible.map((f, i) => <FacilityCard key={f.name} facility={f} index={i} />)}</div>{visible.length === 0 && <div className="empty-state">Không tìm thấy cơ sở phù hợp. Hãy thử từ khóa khác.</div>}{facilities.length > 0 && <FacilitiesMapSection list={visible.length ? visible : facilities} />}</div></section>
         <section className="types section" id="types"><div className="container types-layout"><div className="types-image-wrap"><img src="https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?auto=format&fit=crop&w=1300&q=90" alt="Các kho lưu trữ với nhiều kích thước" /><div className="image-caption"><span>SPACE THAT FITS</span><strong>Chọn đúng không gian<br />cho đúng nhu cầu.</strong></div></div><div className="types-content"><div className="eyebrow green">STORAGE TYPES</div><h2>Từ vài chiếc hộp<br />đến cả một căn phòng.</h2><p>Không cần thuê quá nhiều. Chọn loại kho và diện tích vừa đủ với đồ đạc, thời gian và ngân sách của bạn.</p><div className="type-list"><div className="type-item"><span>01</span><div><strong>Kho tiêu chuẩn</strong><small>Phù hợp đồ gia dụng, hồ sơ và vật dụng cá nhân.</small></div><ArrowIcon /></div><div className="type-item"><span>02</span><div><strong>Kho mát / Cool</strong><small>Kiểm soát nhiệt độ cho nhóm hàng cần môi trường ổn định.</small></div><ArrowIcon /></div><div className="type-item"><span>03</span><div><strong>Kho lạnh / Frozen</strong><small>Dành cho nhu cầu lưu trữ đặc thù với điều kiện nhiệt độ phù hợp.</small></div><ArrowIcon /></div></div></div></div></section>
-        <section className="about section" id="about"><div className="container about-grid"><div><div className="eyebrow green">ABOUT STORESPACE</div><h2>Lưu trữ đơn giản,<br />quản lý rõ ràng.</h2></div><div className="about-copy"><p>StoreSpace kết nối khách hàng với các cơ sở lưu trữ và hỗ trợ toàn bộ vòng đời thuê kho — từ tìm kiếm, đặt kho, thanh toán đến bàn giao và theo dõi hợp đồng.</p><div className="process-list"><div><b>01</b><span>Chọn cơ sở, loại kho, kích thước và thời gian thuê.</span></div><div><b>02</b><span>Giá, tiền cọc, thanh toán và hợp đồng được theo dõi rõ ràng.</span></div><div><b>03</b><span>Quy trình kiểm tra, bàn giao và quản lý quyền truy cập.</span></div></div></div></div></section>
+        <section className="about section" id="about"><div className="container about-grid"><div><div className="eyebrow green">ABOUT STORESPACE</div><h2>Lưu trữ đơn giản,<br />quản lý rõ ràng.</h2></div><div className="about-copy"><p>StoreSpace kết nối khách hàng với các cơ sở lưu trữ và hỗ trợ toàn bộ vòng đời thuê kho — từ tìm kiếm, đặt kho, thanh toán đến bàn giao và theo dõi hợp đồng.</p><div className="process-list"><div><b>01</b><span>Chọn cơ sở, loại kho, kích thước và thời gian thuê.</span></div><div><b>02</b><span>Giá, tiền cọc, thanh toán và hợp đồng được theo dõi rõ ràng.</span></div><div><b>03</b><span>Quy trình kiểm tra, bàn giao và quản lý quyền truy cập.</span></div></div><button type="button" className="about-policy-link" onClick={() => navigate('/about')}>Xem toàn bộ chính sách thuê kho →</button></div></div></section>
         <section className="support" id="support"><div className="container"><div className="support-card"><div><div className="eyebrow">NEED HELP?</div><h2>Bạn cần hỗ trợ về kho?</h2><p>Đội ngũ StoreSpace sẵn sàng hỗ trợ thông tin về cơ sở, loại kho, đặt kho và quy trình thuê.</p></div><a className="primary-dark-button" href="mailto:storespacevn101@gmail.com">Bắt đầu ngay <ArrowIcon /></a></div></div></section>
       </main>
       <SiteFooter />
@@ -2866,6 +2881,7 @@ function getRoute() {
   if (path === '/verify-otp') return { type: 'verify-otp' }
   if (path === '/search') return { type: 'search' }
   if (path === '/facilities') return { type: 'facilities' }
+  if (path === '/about') return { type: 'about' }
   if (path === '/customer') return { type: 'customer' }
   if (path === '/cart') return { type: 'cart' }
   if (path === '/payment-result') return { type: 'payment-result' }
@@ -3212,6 +3228,7 @@ function Router() {
   if (route.type === 'verify-otp') return <VerifyOtpPage />
   if (route.type === 'search') return <SearchPage />
   if (route.type === 'facilities') return <FacilitiesPage />
+  if (route.type === 'about') return <AboutPage />
   if (route.type === 'cart') {
     const user = getCurrentUser()
     if (user && user.role !== 'customer') return <RedirectTo path={roleHome(user.role)} />

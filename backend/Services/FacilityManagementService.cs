@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text.Json;
 using SelfStorageAPI.Constants;
 using SelfStorageAPI.DTOs;
@@ -23,8 +24,10 @@ public class FacilityManagementService : IFacilityManagementService
         public Dictionary<string, object?> Config { get; init; } = new();
     }
 
-    private static readonly ConcurrentDictionary<string, List<PolicyVersionEntry>> _policyHistory = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly object _policyLock = new();
+    // 4 nhóm chính sách BOM chỉnh. Các phiên bản lưu ở bảng PolicyVersion (trước đây chỉ giữ trong RAM nên mất khi khởi động lại).
+    private static readonly string[] PolicyKeys = ["deposit", "overdue", "reservation", "renewal_return"];
+    // Chỉ 1 luồng đọc-kích hoạt / ghi phiên bản chính sách tại một thời điểm (tránh 2 request cùng tạo v1 hoặc trùng số Version).
+    private static readonly SemaphoreSlim _policyGate = new(1, 1);
 
     public FacilityManagementService(IFacilityManagementRepository repo)
     {
@@ -602,10 +605,10 @@ public class FacilityManagementService : IFacilityManagementService
 
     // ===================== POLICY GROUPS (/api/policies) =====================
 
-    private async Task EnsurePolicyHistoryInitializedAsync(CancellationToken cancellationToken)
+    /// <summary>Phiên bản v1 mặc định của 4 nhóm chính sách, dựng từ RentalPolicy / FeePolicy hiện có (dùng khi bảng PolicyVersion còn trống).</summary>
+    private async Task<ConcurrentDictionary<string, List<PolicyVersionEntry>>> BuildDefaultPolicyHistoryAsync(CancellationToken cancellationToken)
     {
-        if (_policyHistory.Count >= 4)
-            return;
+        var seeds = new ConcurrentDictionary<string, List<PolicyVersionEntry>>(StringComparer.OrdinalIgnoreCase);
 
         var globalPolicy = await _repo.GetGlobalRentalPolicyAsync(cancellationToken);
         var feePolicies = await _repo.GetFeePoliciesAsync(cancellationToken);
@@ -632,9 +635,8 @@ public class FacilityManagementService : IFacilityManagementService
                 new Dictionary<string, object?> { ["minDaysBefore"] = 0, ["refundPercent"] = 0 }
             };
 
-        lock (_policyLock)
         {
-            _policyHistory.GetOrAdd("deposit", _ =>
+            seeds.GetOrAdd("deposit", _ =>
             [
                 new PolicyVersionEntry
                 {
@@ -655,7 +657,7 @@ public class FacilityManagementService : IFacilityManagementService
                 }
             ]);
 
-            _policyHistory.GetOrAdd("overdue", _ =>
+            seeds.GetOrAdd("overdue", _ =>
             [
                 new PolicyVersionEntry
                 {
@@ -685,7 +687,7 @@ public class FacilityManagementService : IFacilityManagementService
                 }
             ]);
 
-            _policyHistory.GetOrAdd("reservation", _ =>
+            seeds.GetOrAdd("reservation", _ =>
             [
                 new PolicyVersionEntry
                 {
@@ -708,7 +710,7 @@ public class FacilityManagementService : IFacilityManagementService
                 }
             ]);
 
-            _policyHistory.GetOrAdd("renewal_return", _ =>
+            seeds.GetOrAdd("renewal_return", _ =>
             [
                 new PolicyVersionEntry
                 {
@@ -739,16 +741,17 @@ public class FacilityManagementService : IFacilityManagementService
                 }
             ]);
         }
+        return seeds;
     }
 
     public async Task<OperationsServiceResponse> GetPolicyGroupsAsync(CancellationToken cancellationToken)
     {
-        await EnsurePolicyHistoryInitializedAsync(cancellationToken);
+        var history = await LoadPolicyHistoryAsync(cancellationToken);
 
         var current = new Dictionary<string, object>();
         var scheduled = new List<object>();
 
-        foreach (var kvp in _policyHistory)
+        foreach (var kvp in history)
         {
             var versions = kvp.Value;
             var activeVersion = versions.LastOrDefault(v => v.Status == "Active") ?? versions.Last();
@@ -769,9 +772,9 @@ public class FacilityManagementService : IFacilityManagementService
 
     public async Task<OperationsServiceResponse> GetPolicyGroupHistoryAsync(string policyKey, CancellationToken cancellationToken)
     {
-        await EnsurePolicyHistoryInitializedAsync(cancellationToken);
+        var history = await LoadPolicyHistoryAsync(cancellationToken);
 
-        if (!_policyHistory.TryGetValue(policyKey, out var list))
+        if (!history.TryGetValue(policyKey, out var list))
             return new OperationsServiceResponse(false, "Không tìm thấy nhóm chính sách.", 404, null);
 
         var versions = list
@@ -791,10 +794,20 @@ public class FacilityManagementService : IFacilityManagementService
         if (!await IsBusinessOperationsManagerAsync(userEmail, cancellationToken))
             return new OperationsServiceResponse(false, "Chỉ Business Operations Manager mới được cập nhật chính sách.", 403, null);
 
-        await EnsurePolicyHistoryInitializedAsync(cancellationToken);
-
-        if (!_policyHistory.TryGetValue(policyKey, out var historyList))
+        var key = (policyKey ?? string.Empty).Trim().ToLowerInvariant();
+        if (!PolicyKeys.Contains(key))
             return new OperationsServiceResponse(false, "Nhóm chính sách không hợp lệ.", 400, null);
+
+        // [THỜI GIAN THỰC]: var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+        // [DEMO CLOCK]: Đồng bộ ngày theo BusinessClock
+        var todayStr = BusinessClock.Today.ToString("yyyy-MM-dd");
+        var effectiveFrom = string.IsNullOrWhiteSpace(request.EffectiveFrom) ? todayStr : request.EffectiveFrom.Trim();
+        if (!DateTime.TryParseExact(effectiveFrom, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+            return new OperationsServiceResponse(false, "Ngày bắt đầu áp dụng không hợp lệ.", 400, null);
+        var isScheduled = string.CompareOrdinal(effectiveFrom, todayStr) > 0;
+
+        // Tạo v1 nếu bảng còn trống + kích hoạt các bản hẹn ngày đã tới hạn trước khi thêm bản mới.
+        await LoadPolicyHistoryAsync(cancellationToken);
 
         var user = await _repo.GetActiveUserByEmailAsync(userEmail!, cancellationToken);
         var now = DateTime.UtcNow;
@@ -809,7 +822,115 @@ public class FacilityManagementService : IFacilityManagementService
             }
         }
 
-        // Đồng bộ xuống các bảng thật trong SQL Server (RentalPolicy, CancellationRule, FeePolicy)
+        var note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+        if (note is { Length: > 500 }) note = note[..500];
+
+        PolicyVersion row;
+        await _policyGate.WaitAsync(cancellationToken);
+        try
+        {
+            var versions = (await _repo.GetPolicyVersionsAsync(cancellationToken)).Where(v => v.PolicyKey == key).ToList();
+            var nextVersion = versions.Count > 0 ? versions.Max(v => v.Version) + 1 : 1;
+            if (!isScheduled)
+            {
+                foreach (var old in versions.Where(v => v.Status == "Active"))
+                    old.Status = "Superseded";
+                // Áp dụng ngay -> đồng bộ các thông số chính xuống bảng thật. Bản hẹn ngày thì CHƯA đồng bộ:
+                // LoadPolicyHistoryAsync sẽ đồng bộ đúng vào ngày áp dụng.
+                await ApplyPolicyToRentalTablesAsync(key, parsedConfig, user?.UserID, now, cancellationToken);
+            }
+
+            row = new PolicyVersion
+            {
+                PolicyKey = key,
+                Version = nextVersion,
+                Status = isScheduled ? "Scheduled" : "Active",
+                EffectiveFrom = effectiveFrom,
+                CreatedAt = now,
+                CreatedBy = user?.Email ?? userEmail ?? "ops@test.com",
+                Note = note ?? $"Cập nhật phiên bản v{nextVersion}",
+                ConfigJson = JsonSerializer.Serialize(parsedConfig)
+            };
+            _repo.AddPolicyVersion(row);
+            await _repo.SaveChangesAsync(cancellationToken); // lưu phiên bản mới + bảng thật trong cùng 1 lần
+        }
+        finally
+        {
+            _policyGate.Release();
+        }
+
+        return new OperationsServiceResponse(true, null, 200, ToPolicyDto(ToEntry(row)));
+    }
+
+    /// <summary>
+    /// Đọc toàn bộ phiên bản chính sách từ bảng PolicyVersion (lưu bền, không mất khi khởi động lại backend).
+    /// - Nhóm nào chưa có dòng nào (lần chạy đầu) -> tạo v1 mặc định từ RentalPolicy / FeePolicy hiện có.
+    /// - Bản "Scheduled" đã tới ngày áp dụng -> chuyển "Active" (bản Active cũ -> "Superseded")
+    ///   và đồng bộ các thông số chính xuống RentalPolicy / CancellationRule vào đúng lúc này.
+    /// Trả về: key nhóm -> danh sách phiên bản (tăng dần theo Version).
+    /// </summary>
+    private async Task<Dictionary<string, List<PolicyVersionEntry>>> LoadPolicyHistoryAsync(CancellationToken cancellationToken)
+    {
+        await _policyGate.WaitAsync(cancellationToken);
+        try
+        {
+            var rows = await _repo.GetPolicyVersionsAsync(cancellationToken);
+            var missing = PolicyKeys.Where(k => !rows.Any(r => r.PolicyKey == k)).ToList();
+            if (missing.Count > 0)
+            {
+                var seeds = await BuildDefaultPolicyHistoryAsync(cancellationToken);
+                foreach (var key in missing)
+                    foreach (var entry in seeds[key])
+                        _repo.AddPolicyVersion(ToRow(entry));
+                await _repo.SaveChangesAsync(cancellationToken);
+                rows = await _repo.GetPolicyVersionsAsync(cancellationToken);
+            }
+
+            var todayStr = BusinessClock.Today.ToString("yyyy-MM-dd");
+            var changed = false;
+            foreach (var group in rows.GroupBy(r => r.PolicyKey))
+            {
+                var due = group
+                    .Where(r => r.Status == "Scheduled" && string.CompareOrdinal(r.EffectiveFrom, todayStr) <= 0)
+                    .OrderBy(r => r.EffectiveFrom).ThenBy(r => r.Version)
+                    .ToList();
+                if (due.Count == 0) continue;
+
+                foreach (var row in due)
+                {
+                    foreach (var old in group.Where(r => r.Status == "Active"))
+                        old.Status = "Superseded";
+                    row.Status = "Active";
+                }
+                var latest = due[^1];
+                var activator = await _repo.GetActiveUserByEmailAsync(latest.CreatedBy, cancellationToken);
+                await ApplyPolicyToRentalTablesAsync(group.Key, ParseConfig(latest.ConfigJson), activator?.UserID, DateTime.UtcNow, cancellationToken);
+                changed = true;
+            }
+            if (changed) await _repo.SaveChangesAsync(cancellationToken);
+
+            return rows
+                .GroupBy(r => r.PolicyKey, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.OrderBy(r => r.Version).Select(ToEntry).ToList(), StringComparer.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            _policyGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Đồng bộ các thông số chính của 1 nhóm chính sách xuống bảng thật (RentalPolicy, CancellationRule) cho mọi cơ sở.
+    /// Không tự SaveChanges: người gọi lưu cùng lúc với phiên bản chính sách.
+    /// </summary>
+    private async Task ApplyPolicyToRentalTablesAsync(
+        string policyKey,
+        Dictionary<string, object?> parsedConfig,
+        int? userId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        // Đồng bộ xuống các bảng thật (RentalPolicy, CancellationRule)
         var allPolicies = await _repo.GetAllRentalPoliciesAsync(cancellationToken);
 
         if (string.Equals(policyKey, "deposit", StringComparison.OrdinalIgnoreCase))
@@ -820,7 +941,7 @@ public class FacilityManagementService : IFacilityManagementService
             {
                 p.DepositMonths = depMonths;
                 p.UpdatedAt = now;
-                p.UpdatedByUserID = user?.UserID;
+                p.UpdatedByUserID = userId;
             }
         }
         else if (string.Equals(policyKey, "overdue", StringComparison.OrdinalIgnoreCase))
@@ -830,7 +951,7 @@ public class FacilityManagementService : IFacilityManagementService
             {
                 p.GracePeriodDays = graceDays;
                 p.UpdatedAt = now;
-                p.UpdatedByUserID = user?.UserID;
+                p.UpdatedByUserID = userId;
             }
         }
         else if (string.Equals(policyKey, "reservation", StringComparison.OrdinalIgnoreCase))
@@ -840,7 +961,7 @@ public class FacilityManagementService : IFacilityManagementService
             {
                 p.HoldMinutes = holdMinutes;
                 p.UpdatedAt = now;
-                p.UpdatedByUserID = user?.UserID;
+                p.UpdatedByUserID = userId;
 
                 if (parsedConfig.TryGetValue("refundTiers", out var tiersObj) && tiersObj is List<object?> tiersList && tiersList.Count > 0)
                 {
@@ -870,46 +991,41 @@ public class FacilityManagementService : IFacilityManagementService
             {
                 p.RenewalNoticeDays = remindDays;
                 p.UpdatedAt = now;
-                p.UpdatedByUserID = user?.UserID;
+                p.UpdatedByUserID = userId;
             }
         }
-
-        await _repo.SaveChangesAsync(cancellationToken);
-
-        // [THỜI GIAN THỰC]: var todayStr = DateTime.Today.ToString("yyyy-MM-dd");
-        // [DEMO CLOCK]: Đồng bộ ngày theo BusinessClock
-        var todayStr = BusinessClock.Today.ToString("yyyy-MM-dd");
-        var effectiveFrom = string.IsNullOrWhiteSpace(request.EffectiveFrom) ? todayStr : request.EffectiveFrom.Trim();
-        var isScheduled = string.CompareOrdinal(effectiveFrom, todayStr) > 0;
-
-        PolicyVersionEntry newEntry;
-        lock (_policyLock)
-        {
-            var nextVersion = historyList.Count > 0 ? historyList.Max(v => v.Version) + 1 : 1;
-            if (!isScheduled)
-            {
-                foreach (var old in historyList.Where(v => v.Status == "Active"))
-                {
-                    old.Status = "Superseded";
-                }
-            }
-
-            newEntry = new PolicyVersionEntry
-            {
-                Key = policyKey.ToLowerInvariant(),
-                Version = nextVersion,
-                Status = isScheduled ? "Scheduled" : "Active",
-                EffectiveFrom = effectiveFrom,
-                CreatedAt = now,
-                CreatedBy = user?.Email ?? userEmail ?? "ops@test.com",
-                Note = string.IsNullOrWhiteSpace(request.Note) ? $"Cập nhật phiên bản v{nextVersion}" : request.Note.Trim(),
-                Config = parsedConfig
-            };
-            historyList.Add(newEntry);
-        }
-
-        return new OperationsServiceResponse(true, null, 200, ToPolicyDto(newEntry));
     }
+
+    private static Dictionary<string, object?> ParseConfig(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new Dictionary<string, object?>();
+        using var doc = JsonDocument.Parse(json);
+        return ConvertJsonElement(doc.RootElement) as Dictionary<string, object?> ?? new Dictionary<string, object?>();
+    }
+
+    private static PolicyVersionEntry ToEntry(PolicyVersion row) => new()
+    {
+        Key = row.PolicyKey,
+        Version = row.Version,
+        Status = row.Status,
+        EffectiveFrom = row.EffectiveFrom,
+        CreatedAt = row.CreatedAt,
+        CreatedBy = row.CreatedBy,
+        Note = row.Note ?? string.Empty,
+        Config = ParseConfig(row.ConfigJson)
+    };
+
+    private static PolicyVersion ToRow(PolicyVersionEntry entry) => new()
+    {
+        PolicyKey = entry.Key,
+        Version = entry.Version,
+        Status = entry.Status,
+        EffectiveFrom = entry.EffectiveFrom,
+        CreatedAt = entry.CreatedAt,
+        CreatedBy = entry.CreatedBy,
+        Note = entry.Note,
+        ConfigJson = JsonSerializer.Serialize(entry.Config)
+    };
 
     private static object ToPolicyDto(PolicyVersionEntry entry) => new
     {

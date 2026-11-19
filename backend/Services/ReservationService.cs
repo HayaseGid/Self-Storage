@@ -7,6 +7,9 @@ namespace SelfStorageAPI.Services;
 
 public class ReservationService : IReservationService
 {
+    // Số ngày tối đa được đặt trước (từ hôm nay tới ngày bắt đầu thuê / nhận kho).
+    private const int MaxAdvanceBookingDays = 30;
+
     private readonly IReservationRepository _reservationRepository;
 
     public ReservationService(IReservationRepository reservationRepository)
@@ -33,6 +36,9 @@ public class ReservationService : IReservationService
         var startDate = request.StartDate.Date;
         if (startDate < BusinessClock.Today)
             return new ReservationServiceResponse(false, "Ngày bắt đầu thuê không được ở trong quá khứ.", 400, null);
+        // Chỉ cho đặt trước tối đa 30 ngày: ngày nhận kho phải trong vòng 30 ngày kể từ hôm nay (FE cũng chặn trên lịch).
+        if (startDate > BusinessClock.Today.AddDays(MaxAdvanceBookingDays))
+            return new ReservationServiceResponse(false, $"Ngày bắt đầu thuê chỉ được chọn trong vòng {MaxAdvanceBookingDays} ngày kể từ hôm nay.", 400, null);
 
         // Cách nhận kho + khung giờ (4.1): nhận trực tiếp phải chọn 1 trong 4 khung 2 tiếng; online không hẹn giờ.
         var handoverMethod = HandoverMethod.Normalize(request.HandoverMethod);

@@ -211,6 +211,10 @@ using (var scope = app.Services.CreateScope())
         DatabaseSeeder.SeedIfEmpty(dbContext);
         DatabaseSeeder.EnsureReturnInspectionTables(dbContext);
     }
+    // Bảng phiên bản chính sách BOM: tạo nếu chưa có (cả SQL Server và Postgres).
+    DatabaseSeeder.EnsurePolicyVersionTable(dbContext);
+    // Bảng đơn trả kho sớm (chấm dứt hợp đồng trước hạn, Manager duyệt).
+    DatabaseSeeder.EnsureEarlyReturnTable(dbContext);
 }
 
 app.Run();

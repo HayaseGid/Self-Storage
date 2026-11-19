@@ -41,6 +41,7 @@ import { focusContract } from '../../services/afterDeposit'
 import '../contract/ContractSignFlow.css'
 import './UnitReturn.css'
 import { CustomerInspectionBox, INSPECTION, useMyInspections, parseReturnNotes } from './ReturnInspection'
+import { EarlyRequestCard } from './EarlyReturn' // thẻ đơn trả kho sớm (chờ duyệt / bị từ chối)
 
 /**
  * Định dạng số tiền (làm tròn) thành chuỗi VND kèm "đ", vd 150000 -> "150.000đ".
@@ -225,6 +226,9 @@ function ReturnProgress({ item, inspection, onChanged }) {
 
       {/* Phí kiểm kho đang chờ duyệt / xác nhận / khiếu nại: hiện hộp xác nhận thay cho bảng quyết toán (chưa có số hoàn).
           Đã quyết toán xong: hiện bảng tiền cọc - các khoản phí - số cần đóng thêm / được hoàn. */}
+      {item.earlyRequest?.status === 'Approved' && (
+        <p className="ur-help">Trả kho sớm đã được Quản lý duyệt{Number(item.earlyRequest.refundAmount) > 0 ? <> · hoàn <strong>{money(item.earlyRequest.refundAmount)}</strong> tiền thuê các tháng chưa dùng</> : ''}{item.earlyRequest.cancelledPeriods > 0 && Number(item.earlyRequest.refundAmount) === 0 ? ` · đã hủy ${item.earlyRequest.cancelledPeriods} kỳ tiền thuê sau ngày trả kho` : ''}.{item.earlyRequest.managerNote ? ` Ghi chú: ${item.earlyRequest.managerNote}` : ''}</p>
+      )}
       {held && <CustomerInspectionBox inspection={inspection} depositTotal={req.depositTotal} debtDeducted={req.deductedFromDeposit} onChanged={onChanged} />}
       {req.inspectedAt && !held && (
         <div className={`ur-result ${req.conditionResult === 'Damaged' ? 'bad' : 'ok'}`}>
@@ -290,10 +294,14 @@ export function ReturnSection({ returns, onChanged }) {
   if (returns.loading && !returns.data) return null
   if (returns.error) return <div className="rn-error" role="alert">Không tải được thông tin trả kho: {returns.error} <button type="button" onClick={returns.reload}>Thử lại</button></div>
   const active = returns.items.filter(i => i.request && (returnStage(i.request, inspections.byReservation(i.reservationId)) !== 'done' || (i.request.inspectedAt && Date.now() - Date.parse(i.request.inspectedAt) < 30 * 86400000)))
-  if (!active.length) return null
+  // Đơn trả kho sớm chưa thành lịch trả kho: đang chờ duyệt, hoặc bị từ chối trong 14 ngày gần đây
+  const earlyCards = returns.items.filter(i => !i.request && i.earlyRequest && (i.earlyRequest.status === 'Pending' ||
+    (i.earlyRequest.status === 'Rejected' && Date.now() - Date.parse(i.earlyRequest.decidedAt || i.earlyRequest.createdAt) < 14 * 86400000)))
+  if (!active.length && !earlyCards.length) return null
   return (
     <section className="ur-section" aria-label="Trả kho">
       <h2>Trả kho</h2>
+      {earlyCards.map(item => <EarlyRequestCard key={`early-${item.reservationId}`} item={item} onChanged={() => { returns.reload(); onChanged?.() }} />)}
       {active.map(item => (
         <ReturnProgress key={item.reservationId} item={item} inspection={inspections.byReservation(item.reservationId)}
           onChanged={() => { returns.reload(); inspections.reload(); onChanged?.() }} />

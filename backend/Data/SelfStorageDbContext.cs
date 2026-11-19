@@ -40,6 +40,8 @@ public class SelfStorageDbContext : DbContext
     public DbSet<HandoverTask> HandoverTasks { get; set; } = null!;
     public DbSet<UnitAccess> UnitAccesses { get; set; } = null!;
     public DbSet<StatusChangeLog> StatusChangeLogs { get; set; } = null!;
+    public DbSet<PolicyVersion> PolicyVersions { get; set; } = null!;
+    public DbSet<EarlyReturnRequest> EarlyReturnRequests { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -219,6 +221,34 @@ public class SelfStorageDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(p => p.UpdatedByUserID)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // 9b. PolicyVersion: các phiên bản chính sách BOM (nội dung JSON)
+        modelBuilder.Entity<PolicyVersion>(entity =>
+        {
+            entity.ToTable("PolicyVersion");
+            entity.HasKey(v => v.PolicyVersionID);
+            entity.HasIndex(v => new { v.PolicyKey, v.Version }).IsUnique();
+            entity.Property(v => v.PolicyKey).HasMaxLength(40);
+            entity.Property(v => v.Status).HasMaxLength(20);
+            entity.Property(v => v.EffectiveFrom).HasMaxLength(10);
+            entity.Property(v => v.CreatedBy).HasMaxLength(150);
+            entity.Property(v => v.Note).HasMaxLength(500);
+            entity.Property(v => v.ConfigJson).HasColumnType(isNpgsql ? "text" : "nvarchar(max)");
+        });
+
+        // 9c. EarlyReturnRequest: đơn trả kho sớm chờ Facility Manager duyệt
+        modelBuilder.Entity<EarlyReturnRequest>(entity =>
+        {
+            entity.ToTable("EarlyReturnRequest");
+            entity.HasKey(e => e.EarlyReturnRequestID);
+            entity.HasIndex(e => new { e.ReservationID, e.Status });
+            entity.Property(e => e.ReturnTime).HasMaxLength(5);
+            entity.Property(e => e.Reason).HasMaxLength(30);
+            entity.Property(e => e.Note).HasMaxLength(500);
+            entity.Property(e => e.Status).HasMaxLength(20);
+            entity.Property(e => e.ManagerNote).HasMaxLength(500);
+            entity.Property(e => e.RefundAmount).HasColumnType("decimal(12,2)");
         });
 
         // 10. CancellationRule

@@ -194,6 +194,12 @@ CustomerAccount `ContractPage` → `features/contract/ContractSignFlow` (xem `Co
 3. Quản lý: `ReturnInspection › ManagerReturnInspectionsTab` → **`POST /api/return-inspections/{id}/approve`** (hoặc `/resolve` khi khiếu nại).
 4. Khách: `CustomerInspectionBox` → **`/accept`** hoặc **`/dispute`**; còn nợ → `payReturnFees` (VNPay kind `fee` / demo).
 
+### 5.10b Trả kho sớm (hợp đồng còn hơn 30 ngày)
+1. Khách: nút "Trả kho sớm" (khi `/api/unit-returns/mine` trả `mode = 'early'`) → `features/return/EarlyReturn › EarlyReturnModal`
+   → tiền dự kiến **`GET /api/unit-returns/early/{id}/quote?date=`** → **`POST /api/unit-returns/early`** → thẻ "Chờ Quản lý duyệt" (`EarlyRequestCard`, rút đơn **`/early/{id}/cancel`**).
+2. Manager: mục "Trả kho sớm" (`ManagerEarlyReturnsTab`) → **`POST /api/unit-returns/early/{id}/approve`** (hủy / hoàn kỳ sau ngày trả + tạo lịch trả kho) hoặc **`/reject`** (bắt buộc lý do).
+3. Đã duyệt → đi tiếp luồng 5.10 từ bước 2 (nhân viên nhận lại kho). Không phí chấm dứt sớm; trả theo tháng gửi muộn hơn N ngày trước kỳ đóng tiền thì phải đóng cả kỳ đó.
+
 ### 5.11 Thông báo khách hàng (không có API riêng)
 `services/customerNoticeData › useCustomerNotifications` tính thông báo từ dữ liệu đơn, gia hạn, chính sách, trả kho, kiểm kho.
 `features/notification/HeaderNotificationBell` (chuông, bộ đệm 15 giây) → bấm → `openNoticeTarget` → `/customer` đúng tab.
@@ -299,6 +305,8 @@ Cột "Luồng" ghi số mục ở **phần 5** (vd `5.7` = Ký hợp đồng). 
 | `features/return/ReturnInspection.jsx` | Kết quả kiểm kho dùng chung: khách đồng ý / khiếu nại, quản lý duyệt / giải quyết, ảnh minh chứng | 5.10 |
 | `features/notification/CustomerNotifications.jsx` | Trang "Thông báo" của khách và khung xem nhanh 3 thông báo ở Tổng quan | 5.11 |
 | `features/notification/HeaderNotificationBell.jsx` | Chuông thông báo trên header + thanh nhắc đơn chưa cọc; bấm thông báo → mở đúng tab | 5.11, 5.4 |
+| `features/return/EarlyReturn.jsx` | **Trả kho sớm**: form gửi đơn của khách (tiền dự kiến, cảnh báo gửi muộn), thẻ đơn chờ duyệt, mục duyệt của Manager | 5.10b |
+| `features/policy/PolicyGuide.jsx` | Trang **"Về StoreSpace"** (/about): toàn bộ chính sách chung cho khách, số liệu lấy từ chính sách BOM | 4, 5.12 |
 | `features/support/ContactSupport.jsx` | Trang **"Liên hệ"**: chọn chủ đề, nhập tin nhắn, gửi tới bộ phận hỗ trợ qua email (Brevo) | 5.13 |
 
 ### components/common/ — giao diện dùng chung

@@ -560,6 +560,132 @@ public static class DatabaseSeeder
         }
     }
 
+    /// <summary>
+    /// Tạo bảng PolicyVersion (phiên bản chính sách BOM) nếu chưa có, cho cả SQL Server lẫn Postgres (Neon),
+    /// để DB đã tạo từ trước không phải chạy tay file SQL. Lần đầu đọc chính sách, backend tự thêm v1 mặc định.
+    /// SQL Server: cũng có trong database/Migrations/20261119_LuuChinhSachBOM.sql.
+    /// </summary>
+    public static void EnsurePolicyVersionTable(SelfStorageDbContext context)
+    {
+        bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+        try
+        {
+            if (isNpgsql)
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""PolicyVersion"" (
+                        ""PolicyVersionID"" SERIAL PRIMARY KEY,
+                        ""PolicyKey"" VARCHAR(40) NOT NULL,
+                        ""Version"" INT NOT NULL,
+                        ""Status"" VARCHAR(20) NOT NULL,
+                        ""EffectiveFrom"" VARCHAR(10) NOT NULL,
+                        ""CreatedAt"" TIMESTAMP NOT NULL,
+                        ""CreatedBy"" VARCHAR(150) NOT NULL,
+                        ""Note"" VARCHAR(500) NULL,
+                        ""ConfigJson"" TEXT NOT NULL,
+                        UNIQUE (""PolicyKey"", ""Version"")
+                    );
+                ");
+            }
+            else
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    IF OBJECT_ID(N'dbo.PolicyVersion', N'U') IS NULL
+                    BEGIN
+                        CREATE TABLE dbo.PolicyVersion (
+                            PolicyVersionID INT IDENTITY(1,1) NOT NULL,
+                            PolicyKey NVARCHAR(40) NOT NULL,          -- deposit | overdue | reservation | renewal_return
+                            Version INT NOT NULL,
+                            Status NVARCHAR(20) NOT NULL,             -- Active | Scheduled | Superseded
+                            EffectiveFrom NVARCHAR(10) NOT NULL,      -- yyyy-MM-dd
+                            CreatedAt DATETIME2 NOT NULL,
+                            CreatedBy NVARCHAR(150) NOT NULL,
+                            Note NVARCHAR(500) NULL,
+                            ConfigJson NVARCHAR(MAX) NOT NULL,        -- toàn bộ nội dung chính sách (JSON)
+                    
+                            CONSTRAINT PK_PolicyVersion PRIMARY KEY (PolicyVersionID),
+                            CONSTRAINT UX_PolicyVersion_Key_Version UNIQUE (PolicyKey, Version),
+                            CONSTRAINT CK_PolicyVersion_Status CHECK (Status IN (N'Active', N'Scheduled', N'Superseded'))
+                        );
+                    END;
+                ");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[EnsurePolicyVersionTable] Error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Tạo bảng EarlyReturnRequest (đơn trả kho sớm) nếu chưa có, cho cả SQL Server và Postgres (Neon).
+    /// SQL Server: cũng có trong database/Migrations/20261119_TraKhoSom.sql.
+    /// </summary>
+    public static void EnsureEarlyReturnTable(SelfStorageDbContext context)
+    {
+        bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+        try
+        {
+            if (isNpgsql)
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""EarlyReturnRequest"" (
+                        ""EarlyReturnRequestID"" SERIAL PRIMARY KEY,
+                        ""ReservationID"" INT NOT NULL,
+                        ""CustomerID"" INT NOT NULL,
+                        ""ReturnDate"" TIMESTAMP NOT NULL,
+                        ""ReturnTime"" VARCHAR(5) NOT NULL,
+                        ""Reason"" VARCHAR(30) NOT NULL,
+                        ""Note"" VARCHAR(500) NULL,
+                        ""Status"" VARCHAR(20) NOT NULL,
+                        ""RefundAmount"" NUMERIC(12,2) NOT NULL,
+                        ""CancelledPeriods"" INT NOT NULL,
+                        ""LateNotice"" BOOLEAN NOT NULL,
+                        ""CreatedAt"" TIMESTAMP NOT NULL,
+                        ""DecidedByUserID"" INT NULL,
+                        ""DecidedAt"" TIMESTAMP NULL,
+                        ""ManagerNote"" VARCHAR(500) NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS ""IX_EarlyReturnRequest_ReservationID_Status"" ON ""EarlyReturnRequest"" (""ReservationID"", ""Status"");
+                ");
+            }
+            else
+            {
+                context.Database.ExecuteSqlRaw(@"
+                    IF OBJECT_ID(N'dbo.EarlyReturnRequest', N'U') IS NULL
+                    BEGIN
+                        CREATE TABLE dbo.EarlyReturnRequest (
+                            EarlyReturnRequestID INT IDENTITY(1,1) NOT NULL,
+                            ReservationID INT NOT NULL,
+                            CustomerID INT NOT NULL,
+                            ReturnDate DATETIME2 NOT NULL,
+                            ReturnTime NVARCHAR(5) NOT NULL,          -- HH:mm
+                            Reason NVARCHAR(30) NOT NULL,             -- moving | no_need | other_unit | price | service | other
+                            Note NVARCHAR(500) NULL,
+                            Status NVARCHAR(20) NOT NULL,             -- Pending | Approved | Rejected | Cancelled
+                            RefundAmount DECIMAL(12,2) NOT NULL,      -- tiền thuê được hoàn (kỳ đã đóng sau ngày trả kho)
+                            CancelledPeriods INT NOT NULL,
+                            LateNotice BIT NOT NULL,                  -- trả theo tháng, gửi muộn -> phải đóng kỳ tới
+                            CreatedAt DATETIME2 NOT NULL,
+                            DecidedByUserID INT NULL,
+                            DecidedAt DATETIME2 NULL,
+                            ManagerNote NVARCHAR(500) NULL,
+                    
+                            CONSTRAINT PK_EarlyReturnRequest PRIMARY KEY (EarlyReturnRequestID),
+                            CONSTRAINT FK_EarlyReturnRequest_Reservation FOREIGN KEY (ReservationID) REFERENCES Reservation(ReservationID),
+                            CONSTRAINT CK_EarlyReturnRequest_Status CHECK (Status IN (N'Pending', N'Approved', N'Rejected', N'Cancelled'))
+                        );
+                        CREATE INDEX IX_EarlyReturnRequest_Reservation_Status ON dbo.EarlyReturnRequest (ReservationID, Status);
+                    END;
+                ");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[EnsureEarlyReturnTable] Error: {ex.Message}");
+        }
+    }
+
     public static void EnsureReturnInspectionTables(SelfStorageDbContext context)
     {
         bool isNpgsql = context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;

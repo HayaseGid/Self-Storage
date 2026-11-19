@@ -65,6 +65,7 @@ import CustomerNotificationsPage, { NotificationsPreview } from '../../features/
 import CancelReservationModal, { retryRefund } from '../../features/booking/CancelReservation'
 import ContractCard from '../../features/contract/ContractCard'
 import { ReturnRequestModal, ReturnSection, useUnitReturns } from '../../features/return/UnitReturn'
+import { EarlyReturnModal } from '../../features/return/EarlyReturn' // trả kho sớm: hợp đồng còn > 30 ngày, gửi đơn cho Manager duyệt
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from '../../api/vnpay'
 import { payLateFeesDemo, useLateFees } from '../../api/lateFees'
 import { CustomerPaymentCenter, PendingDepositBar, pendingDepositsOf } from '../../features/payment/PendingPayments' // [THÊM] trang Thanh toán mới + nhắc đơn chưa đặt cọc
@@ -206,6 +207,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
   const dialog = useDialog()
   const [renewItem, setRenewItem] = useState(null) // thông tin gia hạn đang mở RenewalModal
   const [returnItem, setReturnItem] = useState(null) // thông tin trả kho đang mở ReturnRequestModal
+  const [earlyItem, setEarlyItem] = useState(null) // hợp đồng đang mở EarlyReturnModal (trả kho sớm)
   const [copiedId, setCopiedId] = useState(null) // id thẻ vừa bấm "Sao chép mã" (để hiện "Đã sao chép")
   // Kiểu hiển thị: đọc lựa chọn cũ từ localStorage, mặc định là bảng.
   const [view, setView] = useState(() => {
@@ -247,7 +249,9 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
   const openReturnFor = rental => {
     const info = returns.byReservation(rental.reservationId)
     if (info?.eligible) {
-      setReturnItem(info)
+      // Còn hơn 30 ngày -> đơn trả kho sớm (Manager duyệt); còn lại -> báo trả kho thường
+      if (info.mode === 'early') setEarlyItem(info)
+      else setReturnItem(info)
     } else {
       dialog.alert({
         tone: 'warning',
@@ -325,7 +329,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
             </button>
           ) : (
             <button type="button" className="cportal-action-chip" onClick={wrap(() => openReturnFor(rental))}>
-              ⇦ Báo trả kho
+              {returnInfo?.earlyRequest?.status === 'Pending' ? '⏳ Chờ duyệt trả sớm' : returnInfo?.mode === 'early' ? '⇦ Trả kho sớm' : '⇦ Báo trả kho'}
             </button>
           )
         )}
@@ -349,6 +353,13 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
           rules={returns.rules}
           fees={returns.fees}
           onClose={() => setReturnItem(null)}
+          onDone={() => { returns.reload(); onRentalsChanged?.() }}
+        />
+      )}
+      {earlyItem && (
+        <EarlyReturnModal
+          item={earlyItem}
+          onClose={() => setEarlyItem(null)}
           onDone={() => { returns.reload(); onRentalsChanged?.() }}
         />
       )}
@@ -908,6 +919,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
     .filter(f => f.status === 'Unpaid' && !f.pendingPayment)
     .reduce((n, f) => n + Number(f.amount || 0), 0)
   const [returnItem, setReturnItem] = useState(null) // thông tin trả kho đang mở ReturnRequestModal
+  const [earlyItem, setEarlyItem] = useState(null) // hợp đồng đang mở EarlyReturnModal (trả kho sớm)
   const [creatingContracts, setCreatingContracts] = useState(false) // đang gọi API tạo hợp đồng sau cọc
   const policies = usePolicies()
   const dialog = useDialog()
@@ -1343,7 +1355,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         <>
           <p className="cc-tab-hint">Kho bạn đã báo trả: theo dõi từng bước từ hẹn trả kho đến khi nhận lại tiền cọc.</p>
           <ReturnSection returns={returns} onChanged={onRentalsChanged} />
-          {!returns.loading && !returns.items.some(i => i.request) && <div className="empty-state">Bạn không có kho nào đang trả. Muốn trả kho, mở tab "Đang thuê" và bấm "Trả kho" trên hợp đồng.</div>}
+          {!returns.loading && !returns.items.some(i => i.request || i.earlyRequest?.status === 'Pending') && <div className="empty-state">Bạn không có kho nào đang trả. Muốn trả kho, mở tab "Đang thuê" và bấm "Trả kho" trên hợp đồng.</div>}
         </>
       )}
 
@@ -1357,6 +1369,13 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
           rules={returns.rules}
           fees={returns.fees}
           onClose={() => setReturnItem(null)}
+          onDone={() => { returns.reload(); onRentalsChanged?.() }}
+        />
+      )}
+      {earlyItem && (
+        <EarlyReturnModal
+          item={earlyItem}
+          onClose={() => setEarlyItem(null)}
           onDone={() => { returns.reload(); onRentalsChanged?.() }}
         />
       )}
@@ -1513,7 +1532,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
             lateFee={lateFeeOf(rental)}
             onReturn={rental.status === 'Handed Over' ? () => {
               const info = returns.byReservation(rental.reservationId)
-              if (info?.eligible) setReturnItem(info)
+              if (info?.eligible) (info.mode === 'early' ? setEarlyItem : setReturnItem)(info)
               else dialog.alert({
                 tone: 'warning',
                 title: 'Chưa trả kho được',

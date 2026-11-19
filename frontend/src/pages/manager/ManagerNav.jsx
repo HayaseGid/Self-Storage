@@ -42,6 +42,7 @@ const ICONS = {
   contracts: svg(<><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8Z" /><path d="M14 3v5h5" /><path d="M8.5 13h7" /><path d="M8.5 16.5h5" /></>),
   lateFees: svg(<><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></>),
   returnInspections: svg(<><path d="M20 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2Z" /><path d="M12 7v4" /><path d="M12 14h.01" /></>),
+  earlyReturns: svg(<><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></>),
   unitTypes: svg(<><path d="M4 6h10" /><path d="M18 6h2" /><circle cx="16" cy="6" r="2" /><path d="M4 12h3" /><path d="M11 12h9" /><circle cx="9" cy="12" r="2" /><path d="M4 18h10" /><path d="M18 18h2" /><circle cx="16" cy="18" r="2" /></>),
   prices: svg(<><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" /><circle cx="7.5" cy="7.5" r="1.5" /></>)
 }
@@ -77,7 +78,8 @@ const GROUPS = [
       { key: 'reservations', label: 'Đơn đặt chỗ' },
       { key: 'contracts', label: 'Hợp đồng' },
       { key: 'lateFees', label: 'Công nợ & phí trễ' },
-      { key: 'returnInspections', label: 'Khiếu nại kiểm kho' }
+      { key: 'returnInspections', label: 'Khiếu nại kiểm kho' },
+      { key: 'earlyReturns', label: 'Trả kho sớm' }
     ]
   },
   {
@@ -115,7 +117,11 @@ const HINTS = {
   /**
    * Câu gợi ý cho số đỏ mục "Khiếu nại kiểm kho".
    */
-  returnInspections: n => `${n} khiếu nại chờ quyết định`
+  returnInspections: n => `${n} khiếu nại chờ quyết định`,
+  /**
+   * Câu gợi ý cho số đỏ mục "Trả kho sớm".
+   */
+  earlyReturns: n => `${n} đơn trả kho sớm chờ duyệt`
 }
 /** Khóa localStorage nhớ nhóm "Thiết lập" đang mở ('1') hay thu gọn ('0') giữa các lần vào trang. */
 const SETUP_KEY = 'storespace_mnav_setup_open'
@@ -140,10 +146,11 @@ export function useManagerBadges(facilityId, activeTab) {
    */
   const load = useCallback(async () => {
     if (facilityId == null) return
-    const [reports, lateFees, inspections] = await Promise.allSettled([
+    const [reports, lateFees, inspections, early] = await Promise.allSettled([
       apiGet(`/api/manager-tools/facilities/${facilityId}/unit-reports`),
       apiGet(`/api/late-fees/facilities/${facilityId}`),
-      apiGet(`/api/return-inspections/facilities/${facilityId}`)
+      apiGet(`/api/return-inspections/facilities/${facilityId}`),
+      apiGet('/api/unit-returns/early/manager')
     ])
     const next = {}
     if (reports.status === 'fulfilled' && Array.isArray(reports.value)) {
@@ -160,6 +167,9 @@ export function useManagerBadges(facilityId, activeTab) {
     }
     if (inspections.status === 'fulfilled' && inspections.value?.summary) {
       next.returnInspections = Number(inspections.value.summary.pendingManager || 0) + Number(inspections.value.summary.disputed || 0)
+    }
+    if (early.status === 'fulfilled' && Array.isArray(early.value?.items)) {
+      next.earlyReturns = early.value.items.filter(i => i.request?.status === 'Pending').length
     }
     setCounts(next)
   }, [facilityId])

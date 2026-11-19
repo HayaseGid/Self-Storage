@@ -30,6 +30,19 @@ import { getTodayISO } from '../demoClock/demoClock'
 export const DEPOSIT_HOLD_MINUTES = 15
 export const RENTAL_TERMS = [6, 12]
 export const DEPOSIT_MONTHS = 2
+// Ngày bắt đầu thuê (ngày nhận kho) chỉ được chọn trong vòng tối đa 30 ngày tính từ hôm nay (backend cũng chặn).
+export const MAX_ADVANCE_BOOKING_DAYS = 30
+
+/**
+ * Ngày bắt đầu thuê muộn nhất được chọn: hôm nay (theo Demo Clock) + MAX_ADVANCE_BOOKING_DAYS, lúc 0 giờ.
+ * Dùng làm maxDate của RentalCalendar và để kiểm tra trước khi đặt kho.
+ * @returns {Date}
+ */
+export function maxBookingStartDate() {
+  const date = new Date(`${getTodayISO()}T00:00:00`)
+  date.setDate(date.getDate() + MAX_ADVANCE_BOOKING_DAYS)
+  return date
+}
 
 // Mã 3 ký tự cho các loại kho quen thuộc (dùng bởi getUnitTypeCode).
 export const UNIT_TYPE_CODES = {
