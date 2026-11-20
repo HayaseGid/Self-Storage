@@ -48,6 +48,8 @@ export function mapOperationsState(raw = {}) {
       contactPhone: f.contactPhone || '',
       openingHours: f.openingHours || '',
       description: f.description || '',
+      latitude: f.latitude != null ? Number(f.latitude) : null, // vị trí trên bản đồ (null = chưa có, cơ sở không hiện ghim)
+      longitude: f.longitude != null ? Number(f.longitude) : null,
       status: String(f.status || 'Active').toLowerCase(),
       managerEmail: f.managerEmail || '',
       createdAt: f.createdAt || null,

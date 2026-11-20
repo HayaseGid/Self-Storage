@@ -9,11 +9,62 @@ namespace SelfStorageAPI.Services;
 public class AdminService : IAdminService
 {
     private const int SystemAdministratorRoleId = 5;
+    private const int CustomerRoleId = 1;
+    private static readonly string[] OpenInspectionStatuses = ["Pending Manager", "Awaiting Customer", "Disputed"];
     private readonly IAdminRepository _adminRepository;
+    private readonly IReturnInspectionRepository _inspections;
 
-    public AdminService(IAdminRepository adminRepository)
+    public AdminService(IAdminRepository adminRepository, IReturnInspectionRepository inspections)
     {
         _adminRepository = adminRepository;
+        _inspections = inspections;
+    }
+
+    /*
+     * Lý do tài khoản chưa được đổi vai trò (rỗng = tài khoản trống hoàn toàn).
+     * = các lý do theo vai trò hiện tại (AdminRepository.GetRoleChangeBlockersAsync)
+     *   + với khách hàng: kết quả kiểm kho chưa xong (chờ Quản lý duyệt / chờ khách xác nhận / đang khiếu nại).
+     */
+    private async Task<List<string>> RoleChangeBlockersAsync(User user, CancellationToken cancellationToken)
+    {
+        var blockers = await _adminRepository.GetRoleChangeBlockersAsync(user, DateTime.UtcNow, cancellationToken);
+        if (user.RoleID == CustomerRoleId)
+        {
+            try
+            {
+                var rows = await _inspections.ListAsync(user.UserID, null, null, null, false, cancellationToken);
+                var open = rows.Count(r => OpenInspectionStatuses.Contains(r.Status));
+                if (open > 0) blockers.Add($"Có {open} kết quả kiểm kho khi trả kho chưa quyết toán xong.");
+            }
+            catch (Exception) { /* bảng kiểm kho chưa có (DB cũ): bỏ qua mục này */ }
+        }
+        return blockers;
+    }
+
+    /// <summary>
+    /// GET /api/admin/users/{id}/role-eligibility — tài khoản có đang trống để đổi vai trò không, kèm danh sách lý do.
+    /// </summary>
+    public async Task<AdminServiceResponse> GetRoleEligibilityAsync(int userId, string? adminEmail, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(adminEmail)) return new AdminServiceResponse(false, null, 403, null);
+        var administrator = await _adminRepository.GetActiveAdministratorByEmailAsync(adminEmail, cancellationToken);
+        if (administrator == null) return new AdminServiceResponse(false, null, 403, null);
+
+        var user = await _adminRepository.GetUserByIdAsync(userId, cancellationToken);
+        if (user == null) return new AdminServiceResponse(false, "Không tìm thấy tài khoản.", 404, null);
+
+        List<string> blockers;
+        if (user.RoleID == SystemAdministratorRoleId) blockers = ["Không thể thay đổi tài khoản System Administrator."];
+        else if (user.UserID == administrator.UserID) blockers = ["Không thể tự thay đổi quyền của tài khoản đang đăng nhập."];
+        else blockers = await RoleChangeBlockersAsync(user, cancellationToken);
+
+        return new AdminServiceResponse(true, null, 200, new
+        {
+            userId = user.UserID,
+            role = user.Role.RoleName,
+            canChangeRole = blockers.Count == 0,
+            blockers
+        });
     }
 
     public async Task<AdminServiceResponse> GetUsersAsync(string? adminEmail, CancellationToken cancellationToken)
@@ -136,11 +187,18 @@ public class AdminService : IAdminService
         if (role == null || role.RoleID == SystemAdministratorRoleId)
             return new AdminServiceResponse(false, "Role không hợp lệ.", 400, null);
 
-        if (role.RoleID != user.RoleID)
+        // Đổi vai trò chỉ khi tài khoản trống hoàn toàn (không còn nghiệp vụ đang mở). Kiểm tra + ghi trong cùng transaction
+        // để không có đơn / việc mới chen vào giữa lúc kiểm tra và lúc đổi. Khóa / mở khóa (chỉ đổi trạng thái) không bị chặn.
+        var roleChanging = role.RoleID != user.RoleID;
+        await using var transaction = roleChanging ? await _adminRepository.BeginTransactionAsync(cancellationToken) : null;
+        if (roleChanging)
         {
-            var hasOperationalAssignments = await _adminRepository.HasOperationalAssignmentsAsync(userId, cancellationToken);
-            if (hasOperationalAssignments)
-                return new AdminServiceResponse(false, "Không thể đổi role khi tài khoản đang được gán cơ sở hoặc có nhiệm vụ nghiệp vụ.", 409, null);
+            var blockers = await RoleChangeBlockersAsync(user, cancellationToken);
+            if (blockers.Count > 0)
+                return new AdminServiceResponse(false, "Chưa thể đổi vai trò: tài khoản đang còn nghiệp vụ chưa xong. " + string.Join(" ", blockers), 409, blockers);
+            // Khách hàng chuyển sang vai trò khác: mã ra vào cơ sở hết hiệu lực (giữ số mã và lịch sử đơn cũ để đối chiếu).
+            if (user.RoleID == CustomerRoleId && !string.IsNullOrWhiteSpace(user.AccessCode))
+                user.AccessCodeStatus = "Inactive";
         }
 
         var oldRole = user.Role.RoleName;
@@ -165,6 +223,7 @@ public class AdminService : IAdminService
         });
         
         await _adminRepository.SaveChangesAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
 
         return new AdminServiceResponse(true, null, 204, null);
     }

@@ -37,6 +37,7 @@ import "../../features/unit/unitTypes.css";
 import { BusinessFacilitiesByArea, BusinessPerformance, BusinessReportsCenter } from "./BusinessPanels";
 import { BusinessPolicyEditor } from "./BusinessPolicyEditor";
 import BusinessFacilityForm from "./BusinessFacilityForm";
+import LocationPicker from "../../features/facility/LocationPicker"; // chọn vị trí cơ sở trên bản đồ
 import BusinessPriceBands from "./BusinessPriceBands";
 
 /**
@@ -50,7 +51,7 @@ import BusinessPriceBands from "./BusinessPriceBands";
  * @returns {JSX.Element} bố cục trang Business Operations.
  */
 /* Dữ liệu trống của form "Thêm cơ sở mới" (dùng khi mở lần đầu, sau khi tạo xong và khi đóng form). */
-const EMPTY_FACILITY = { name: "", unitCodePrefix: "", area: "", address: "", manager: "", status: "active" };
+const EMPTY_FACILITY = { name: "", unitCodePrefix: "", area: "", address: "", manager: "", status: "active", latitude: null, longitude: null };
 
 function BusinessOperations({ currentUser, navigate, currentUserKey = "storespace_current_user" }) {
     const dialog = useDialog();
@@ -169,7 +170,8 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                 facilityName: values.name ?? facility.name,
                 address: values.address ?? facility.address,
                 managerEmail: values.managerEmail ?? facility.managerEmail ?? facility.manager,
-                status: values.status ?? facility.status
+                status: values.status ?? facility.status,
+                ...(values.latitude != null && values.longitude != null ? { latitude: values.latitude, longitude: values.longitude } : {})
             }),
             "Không cập nhật được cơ sở"
         );
@@ -220,12 +222,20 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             return;
         }
 
+        // Bắt buộc chọn vị trí để cơ sở hiện ghim trên bản đồ của khách.
+        if (newFacility.latitude == null || newFacility.longitude == null) {
+            void dialog.alert({ tone: "warning", title: "Chưa chọn vị trí", message: "Vui lòng chọn vị trí cơ sở trên bản đồ (bấm vào bản đồ hoặc \"Tìm theo địa chỉ\") để cơ sở hiện trên bản đồ của khách." });
+            return;
+        }
+
         apiPost("/api/operations/facilities", {
             facilityName: newFacility.name.trim(),
             unitCodePrefix: autoUnitCodePrefix,
             address: newFacility.address.trim(),
             managerEmail: newFacility.manager,
-            status: newFacility.status
+            status: newFacility.status,
+            latitude: newFacility.latitude,
+            longitude: newFacility.longitude
         }).then(async () => {
             await loadBusinessData();
             setNewFacility(EMPTY_FACILITY);
@@ -511,6 +521,18 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                                     }
                                     placeholder="Ví dụ: 125 Điện Biên Phủ, Bình Thạnh, TP.HCM"
                                 />
+                            </div>
+
+                            <div className="facility-form-group full">
+                                <label>
+                                    Vị trí trên bản đồ
+                                </label>
+                                <LocationPicker
+                                    value={{ latitude: newFacility.latitude, longitude: newFacility.longitude }}
+                                    address={newFacility.address}
+                                    onChange={({ latitude, longitude }) => setNewFacility(current => ({ ...current, latitude, longitude }))}
+                                />
+                                <small>Bắt buộc: khách thấy cơ sở trên bản đồ và nút "Chỉ đường" theo vị trí này.</small>
                             </div>
 
                             <div className="facility-form-group">

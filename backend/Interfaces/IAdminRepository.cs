@@ -13,7 +13,8 @@ public interface IAdminRepository
     Task<(IReadOnlyList<UserActivityLog> Items, int Total)> GetActivityLogsPageAsync(PageQuery query, CancellationToken cancellationToken);
     Task<User?> GetUserByIdAsync(int userId, CancellationToken cancellationToken);
     Task<Role?> GetRoleByNameAsync(string roleName, CancellationToken cancellationToken);
-    Task<bool> HasOperationalAssignmentsAsync(int userId, CancellationToken cancellationToken);
+    Task<List<string>> GetRoleChangeBlockersAsync(User user, DateTime nowUtc, CancellationToken cancellationToken);
+    Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken);
     void AddActivityLog(UserActivityLog log);
     Task SaveChangesAsync(CancellationToken cancellationToken);
 }

@@ -45,6 +45,17 @@ public class AdminController : ControllerBase
         return Ok(result.Data);
     }
 
+    /// <summary>Tài khoản có đang trống để đổi vai trò không (canChangeRole) + các lý do đang chặn (blockers).</summary>
+    [HttpGet("users/{userId:int}/role-eligibility")]
+    public async Task<IActionResult> GetRoleEligibility(int userId, CancellationToken cancellationToken)
+    {
+        var email = Request.Headers["X-User-Email"].ToString();
+        var result = await _adminService.GetRoleEligibilityAsync(userId, email, cancellationToken);
+        if (!result.IsSuccess)
+            return result.StatusCode == 404 ? NotFound(new { message = result.ErrorMessage }) : Forbid();
+        return Ok(result.Data);
+    }
+
     [HttpPut("users/{userId:int}")]
     public async Task<IActionResult> UpdateUser(
         int userId,
@@ -62,7 +73,7 @@ public class AdminController : ControllerBase
             {
                 403 => Forbid(),
                 404 => NotFound(new { message = result.ErrorMessage }),
-                409 => Conflict(new { message = result.ErrorMessage }),
+                409 => Conflict(new { message = result.ErrorMessage, blockers = result.Data }),
                 400 => BadRequest(new { message = result.ErrorMessage }),
                 _ => StatusCode(500, new { message = result.ErrorMessage })
             };

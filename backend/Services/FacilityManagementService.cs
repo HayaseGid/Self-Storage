@@ -1100,6 +1100,10 @@ public class FacilityManagementService : IFacilityManagementService
         var unitCodePrefix = request.UnitCodePrefix.Trim().ToUpperInvariant();
         var address = request.Address.Trim();
 
+        var locationError = ValidateLocation(request.Latitude, request.Longitude);
+        if (locationError is not null)
+            return new OperationsServiceResponse(false, locationError, 400, null);
+
         if (await _repo.UnitCodePrefixExistsAsync(unitCodePrefix, cancellationToken))
             return new OperationsServiceResponse(false, "Mã chi nhánh đã được sử dụng.", 409, null);
 
@@ -1118,6 +1122,8 @@ public class FacilityManagementService : IFacilityManagementService
             ContactPhone = request.ContactPhone?.Trim(),
             OpeningHours = request.OpeningHours?.Trim() ?? "07:00 - 21:00 hằng ngày",
             Description = request.Description?.Trim(),
+            Latitude = request.Latitude.HasValue ? Math.Round(request.Latitude.Value, 6) : null,
+            Longitude = request.Longitude.HasValue ? Math.Round(request.Longitude.Value, 6) : null,
             Status = string.Equals(request.Status, "inactive", StringComparison.OrdinalIgnoreCase)
                 ? "Inactive"
                 : "Active",
@@ -1158,6 +1164,16 @@ public class FacilityManagementService : IFacilityManagementService
             depositPercent = depositMonths == 1 ? 50m : 100m,
             depositMonths = (int)depositMonths
         });
+    }
+
+    /* Tọa độ cơ sở: phải gửi cả vĩ độ và kinh độ (hoặc không gửi), nằm trong khoảng hợp lệ và trong lãnh thổ Việt Nam. */
+    private static string? ValidateLocation(decimal? latitude, decimal? longitude)
+    {
+        if (latitude is null && longitude is null) return null;
+        if (latitude is null || longitude is null) return "Vị trí cơ sở cần đủ cả vĩ độ và kinh độ.";
+        if (latitude < 8m || latitude > 24m || longitude < 102m || longitude > 110m)
+            return "Vị trí cơ sở phải nằm trong lãnh thổ Việt Nam (vĩ độ 8–24, kinh độ 102–110).";
+        return null;
     }
 
     public async Task<OperationsServiceResponse> DeleteFacilityAsync(
@@ -1214,6 +1230,15 @@ public class FacilityManagementService : IFacilityManagementService
             !request.Status.Equals("active", StringComparison.OrdinalIgnoreCase) &&
             !request.Status.Equals("inactive", StringComparison.OrdinalIgnoreCase))
             return new OperationsServiceResponse(false, "Trạng thái cơ sở không hợp lệ.", 400, null);
+
+        var updateLocationError = ValidateLocation(request.Latitude, request.Longitude);
+        if (updateLocationError is not null)
+            return new OperationsServiceResponse(false, updateLocationError, 400, null);
+        if (request.Latitude.HasValue && request.Longitude.HasValue)
+        {
+            facility.Latitude = Math.Round(request.Latitude.Value, 6);
+            facility.Longitude = Math.Round(request.Longitude.Value, 6);
+        }
 
         if (request.ManagerEmail is not null)
         {

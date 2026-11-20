@@ -9,7 +9,7 @@
  *   - BusinessFacilityForm (export default): component form sửa cơ sở.
  *     + submit: kiểm tra, hỏi xác nhận, gọi onSave.
  * DÙNG Ở: src/pages/business/BusinessOperations.jsx (khi bấm "Sửa thông tin" một cơ sở).
- * PHỤ THUỘC: utils/districts (extractDistrict), BusinessCatalog.css (kiểu modal / ô nhập .bc-*).
+ * PHỤ THUỘC: features/facility/LocationPicker (chọn vị trí trên bản đồ), utils/districts (extractDistrict), BusinessCatalog.css (kiểu modal / ô nhập .bc-*).
  * API: Không gọi API trực tiếp. Dữ liệu được trả qua onSave(); BusinessOperations gọi
  *   PUT /api/operations/facilities/{id} (OperationsController).
  * LUỒNG: mở form với dữ liệu gốc -> người dùng sửa ô -> bấm "Lưu thay đổi" -> submit kiểm tra lỗi
@@ -18,6 +18,7 @@
  */
 import React, { useEffect, useState } from 'react'
 import { extractDistrict } from '../../utils/districts'
+import LocationPicker from '../../features/facility/LocationPicker' // chọn vị trí cơ sở trên bản đồ
 import './BusinessCatalog.css'
 
 /**
@@ -38,7 +39,9 @@ export default function BusinessFacilityForm({ facility, facilities = [], manage
     name: facility.name || '',
     address: facility.address || '',
     managerEmail: facility.managerEmail || facility.manager || '',
-    status: facility.status === 'inactive' ? 'inactive' : 'active'
+    status: facility.status === 'inactive' ? 'inactive' : 'active',
+    latitude: facility.latitude ?? null,
+    longitude: facility.longitude ?? null
   }
   const [values, setValues] = useState(original)
   const [touched, setTouched] = useState(false) // đã bấm Lưu ít nhất 1 lần -> bắt đầu hiện lỗi dưới ô nhập
@@ -71,18 +74,23 @@ export default function BusinessFacilityForm({ facility, facilities = [], manage
     address: !address ? 'Vui lòng nhập địa chỉ.'
       : address.length < 8 ? 'Địa chỉ quá ngắn, cần có số nhà, đường và quận.'
         : address.length > 255 ? 'Địa chỉ tối đa 255 ký tự.' : '',
-    managerEmail: !values.managerEmail ? 'Vui lòng chọn Facility Manager.' : ''
+    managerEmail: !values.managerEmail ? 'Vui lòng chọn Facility Manager.' : '',
+    location: values.latitude == null || values.longitude == null ? 'Vui lòng chọn vị trí cơ sở trên bản đồ để cơ sở hiện trên bản đồ của khách.' : ''
   }
   const valid = Object.values(errors).every(v => !v)
   const district = extractDistrict(address, name)
 
   const labels = { name: 'Tên cơ sở', address: 'Địa chỉ', managerEmail: 'Facility Manager', status: 'Trạng thái' }
+  // Vị trí dạng chữ "vĩ độ, kinh độ" để so sánh và hiện trong hộp thoại xác nhận.
+  const locText = (lat, lng) => (lat == null || lng == null ? 'Chưa có' : `${lat}, ${lng}`)
   // Đổi mã trạng thái thành nhãn tiếng Việt ("Đang hoạt động" / "Ngừng hoạt động").
   const statusLabel = s => (s === 'inactive' ? 'Ngừng hoạt động' : 'Đang hoạt động')
   // Danh sách thay đổi so với giá trị gốc, mỗi phần tử là [nhãn, giá trị cũ, giá trị mới] để hiện trong hộp thoại xác nhận.
   const changes = Object.keys(labels)
     .filter(key => String(key === 'name' ? name : key === 'address' ? address : values[key]) !== String(original[key]))
     .map(key => [labels[key], key === 'status' ? statusLabel(original[key]) : original[key] || '—', key === 'status' ? statusLabel(values[key]) : key === 'name' ? name : key === 'address' ? address : values[key]])
+  if (locText(values.latitude, values.longitude) !== locText(original.latitude, original.longitude))
+    changes.push(['Vị trí trên bản đồ', locText(original.latitude, original.longitude), locText(values.latitude, values.longitude)])
 
   /**
    * Lưu form (submit khi bấm "Lưu thay đổi"): kiểm tra hợp lệ, báo nếu không có thay đổi, hỏi xác nhận kèm
@@ -113,7 +121,7 @@ export default function BusinessFacilityForm({ facility, facilities = [], manage
     if (!ok) return
     setSaving(true)
     try {
-      await onSave({ name, address, managerEmail: values.managerEmail, status: values.status })
+      await onSave({ name, address, managerEmail: values.managerEmail, status: values.status, latitude: values.latitude, longitude: values.longitude })
     } finally {
       setSaving(false)
     }
@@ -147,6 +155,15 @@ export default function BusinessFacilityForm({ facility, facilities = [], manage
               ? <span className="bc-field-error" role="alert">{errors.address}</span>
               : <span className="bc-field-hint">Khu vực nhận diện: <strong>{district?.label || 'chưa xác định, nên ghi rõ quận'}</strong> (dùng cho bộ lọc khu vực của khách).</span>}
           </label>
+          <div className="bc-field">
+            <span className="bc-field-label">Vị trí trên bản đồ<em aria-hidden="true"> *</em></span>
+            <LocationPicker
+              value={{ latitude: values.latitude, longitude: values.longitude }}
+              address={values.address}
+              error={touched ? errors.location : ''}
+              onChange={({ latitude, longitude }) => setValues(current => ({ ...current, latitude, longitude }))}
+            />
+          </div>
           <div className="bc-row">
             <label className={`bc-field${touched && errors.managerEmail ? ' has-error' : ''}`}>
               <span className="bc-field-label">Facility Manager<em aria-hidden="true"> *</em></span>

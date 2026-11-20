@@ -53,6 +53,8 @@ function Admin() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false); // đang gửi thao tác cập nhật -> hiện "Đang lưu thay đổi..."
   const [selectedUser, setSelectedUser] = useState(null); // tài khoản đang xem chi tiết
+  // Tài khoản đang xem có được đổi vai trò không: { userId, loading, canChangeRole, blockers[], error }
+  const [roleCheck, setRoleCheck] = useState(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [search, setSearch] = useState("");
@@ -130,6 +132,7 @@ function Admin() {
       void dialog.alert({ tone: "danger", title: "Không cập nhật được tài khoản", message: updateError.message });
     } finally {
       setSaving(false);
+      if (selectedUser?.id === id) void loadRoleCheck(id);
     }
   };
 
@@ -169,7 +172,28 @@ function Admin() {
     void updateUser(id, user.role, nextStatus, `${nextStatus === "Locked" ? "Đã khóa" : "Đã mở khóa"} ${user.username}`);
   };
 
+  /**
+   * Kiểm tra tài khoản có đang trống để đổi vai trò không (không còn đơn thuê, nợ, việc được giao, cơ sở quản lý...).
+   * API: GET /api/admin/users/{id}/role-eligibility -> { canChangeRole, blockers[] }
+   * Gọi khi mở chi tiết 1 tài khoản và sau mỗi lần cập nhật tài khoản đó.
+   */
+  const loadRoleCheck = async (id) => {
+    setRoleCheck({ userId: id, loading: true, canChangeRole: false, blockers: [], error: "" });
+    try {
+      const data = await apiGet(`/api/admin/users/${id}/role-eligibility`);
+      setRoleCheck({ userId: id, loading: false, canChangeRole: !!data?.canChangeRole, blockers: data?.blockers || [], error: "" });
+    } catch (checkError) {
+      setRoleCheck({ userId: id, loading: false, canChangeRole: false, blockers: [], error: checkError.message });
+    }
+  };
+  // Chạy khi đổi tài khoản đang xem: tải lại điều kiện đổi vai trò.
+  useEffect(() => {
+    if (selectedUser?.id) void loadRoleCheck(selectedUser.id);
+    else setRoleCheck(null);
+  }, [selectedUser?.id]);
+
   // Đổi vai trò của tài khoản (hỏi xác nhận, giữ nguyên trạng thái). Chạy khi chọn ô "Thay đổi role".
+  // Chỉ đổi được khi tài khoản trống hoàn toàn (roleCheck.canChangeRole); backend cũng chặn và trả lý do.
   const changeRole = async (id, newRole) => {
     const user = users.find((item) => item.id === id);
     if (!user || user.role === newRole) return;
@@ -361,9 +385,22 @@ function Admin() {
         <div><span>Role</span><strong>{user.role}</strong></div><div><span>Cơ sở</span><strong>{user.facility}</strong></div><div><span>Ngày tạo</span><strong>{user.createdAt}</strong></div><div><span>Đăng nhập gần nhất</span><strong>{user.lastLogin}</strong></div>
       </div>
       <div className="admin-detail-actions">
-        <label>Thay đổi role<select value={user.role} onChange={(e) => changeRole(user.id, e.target.value)}>{roleOptions.map((role) => <option key={role}>{role}</option>)}</select></label>
+        <label>Thay đổi role<select value={user.role} disabled={!roleCheck || roleCheck.userId !== user.id || roleCheck.loading || !roleCheck.canChangeRole} title={roleCheck?.canChangeRole ? undefined : "Tài khoản đang còn nghiệp vụ chưa xong, chưa đổi được vai trò"} onChange={(e) => changeRole(user.id, e.target.value)}>{roleOptions.map((role) => <option key={role}>{role}</option>)}</select></label>
         <div className="admin-action-group"><button className="admin-button admin-button-light" onClick={() => toggleLock(user.id)}>{user.status === "Locked" ? "Mở khóa tài khoản" : "Khóa tài khoản"}</button></div>
       </div>
+      {/* Điều kiện đổi vai trò: tài khoản phải trống hoàn toàn (không còn nghiệp vụ đang mở) */}
+      {roleCheck && roleCheck.userId === user.id && (
+        roleCheck.loading ? <p className="admin-role-check">Đang kiểm tra tài khoản có đang vướng nghiệp vụ không...</p>
+        : roleCheck.error ? <p className="admin-role-check blocked">Không kiểm tra được điều kiện đổi vai trò: {roleCheck.error}</p>
+        : roleCheck.canChangeRole ? <p className="admin-role-check ok">✓ Tài khoản trống, không còn nghiệp vụ nào đang mở — có thể đổi vai trò.</p>
+        : (
+          <div className="admin-role-check blocked">
+            <strong>Chưa đổi được vai trò — tài khoản còn nghiệp vụ chưa xong:</strong>
+            <ul>{roleCheck.blockers.map((b) => <li key={b}>{b}</li>)}</ul>
+            <small>Khóa / mở khóa tài khoản vẫn làm được bình thường.</small>
+          </div>
+        )
+      )}
       {user.role !== "System Administrator" && (
         <form className="admin-password-reset" onSubmit={(event) => { event.preventDefault(); void resetPassword(user); }}>
           <div>

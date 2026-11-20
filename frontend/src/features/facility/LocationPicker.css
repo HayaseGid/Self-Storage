@@ -1,0 +1,20 @@
+/* Chọn vị trí cơ sở trên bản đồ (LocationPicker.jsx) — tiền tố lp-* */
+.lp { display: grid; gap: 8px; }
+.lp-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.lp-search { padding: 7px 14px; border: 1px solid #b9d3ea; border-radius: 10px; background: #eef6ff; color: #075a9f; font-weight: 700; font-size: 13px; cursor: pointer; }
+.lp-search:disabled { opacity: .6; cursor: wait; }
+.lp-hint { color: #7d91a3; font-size: 12.5px; }
+.lp-map { height: 260px; border-radius: 14px; border: 1px solid #d6e4ef; overflow: hidden; z-index: 0; }
+.lp.has-error .lp-map { border-color: #e5484d; }
+.lp-coords { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.lp-coords label { display: grid; gap: 4px; color: #6d8394; font-size: 12px; font-weight: 600; }
+.lp-coords input { width: 150px; padding: 8px 10px; border: 1px solid #d6e4ef; border-radius: 10px; font: inherit; font-size: 13px; color: #173d5e; }
+.lp-status { margin-left: auto; padding: 5px 10px; border-radius: 999px; background: #fff3dd; color: #8a5a12; font-size: 12px; font-weight: 700; }
+.lp-status.ok { background: #e6f6ec; color: #1d7a45; }
+.lp-note { margin: 0; color: #5c7387; font-size: 12.5px; }
+.lp-note.err { color: #c4373c; font-weight: 600; }
+@media (max-width: 560px) {
+  .lp-map { height: 220px; }
+  .lp-coords input { width: 130px; }
+  .lp-status { margin-left: 0; }
+}

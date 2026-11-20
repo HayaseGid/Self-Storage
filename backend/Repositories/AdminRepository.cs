@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using SelfStorageAPI.Constants;
 using SelfStorageAPI.Data;
 using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Interfaces;
@@ -167,12 +169,95 @@ public class AdminRepository : IAdminRepository
             .FirstOrDefaultAsync(item => item.RoleName == roleName, cancellationToken);
     }
 
-    public async Task<bool> HasOperationalAssignmentsAsync(int userId, CancellationToken cancellationToken)
+    /*
+     * Lý do tài khoản CHƯA được đổi vai trò (đang vướng nghiệp vụ). Danh sách rỗng = tài khoản trống, đổi được.
+     * Xét theo vai trò HIỆN TẠI của tài khoản; chỉ tính việc còn đang mở (đơn / việc đã xong, đã hủy không chặn).
+     *   Khách hàng (1): đơn chưa kết thúc, khoản chưa đóng, tiền đang chờ hoàn, đơn trả kho sớm chờ duyệt, mã/thẻ kho còn hiệu lực
+     *                   (kết quả kiểm kho chưa xong do AdminService kiểm thêm qua IReturnInspectionRepository).
+     *   Nhân viên (2):  đang được phân công ở cơ sở, còn việc bàn giao / trả kho chưa xong.
+     *   Quản lý (3):    đang quản lý cơ sở.
+     *   BOM (4):        là BOM đang hoạt động cuối cùng.
+     */
+    public async Task<List<string>> GetRoleChangeBlockersAsync(User user, DateTime nowUtc, CancellationToken cancellationToken)
     {
-        return await _context.Facilities.AnyAsync(item => item.ManagerID == userId, cancellationToken)
-            || await _context.FacilityStaffs.AnyAsync(item => item.UserID == userId, cancellationToken)
-            || await _context.HandoverTasks.AnyAsync(item => item.AssignedStaffID == userId, cancellationToken);
+        var blockers = new List<string>();
+        var id = user.UserID;
+        static string Vnd(decimal v) => v.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("vi-VN")) + "đ";
+
+        switch (user.RoleID)
+        {
+            case 1:
+            {
+                var openReservations = await _context.Reservations
+                    .Where(r => r.CustomerID == id &&
+                                (r.Status == ReservationStatus.Paid || r.Status == ReservationStatus.Confirmed ||
+                                 r.Status == ReservationStatus.HandedOver ||
+                                 (r.Status == ReservationStatus.PendingPayment && r.HoldExpiresAt != null && r.HoldExpiresAt > nowUtc)))
+                    .Select(r => r.Status)
+                    .ToListAsync(cancellationToken);
+                var renting = openReservations.Count(s => s == ReservationStatus.HandedOver);
+                var waiting = openReservations.Count - renting;
+                if (renting > 0) blockers.Add($"Đang thuê {renting} đơn kho (chưa trả kho).");
+                if (waiting > 0) blockers.Add($"Có {waiting} đơn đặt kho đang xử lý (chờ cọc / đã cọc / chờ nhận kho).");
+
+                var unpaid = await _context.Charges
+                    .Where(c => c.Reservation.CustomerID == id && c.Status == "Unpaid" &&
+                                c.Reservation.Status != ReservationStatus.Cancelled && c.Reservation.Status != ReservationStatus.Expired)
+                    .SumAsync(c => (decimal?)c.Amount, cancellationToken) ?? 0m;
+                if (unpaid > 0) blockers.Add($"Còn nợ {Vnd(unpaid)} chưa đóng (tiền thuê / phí).");
+
+                var refunds = await _context.Payments
+                    .Where(p => p.Reservation.CustomerID == id && p.Direction == "Refund" && p.Status == "Pending")
+                    .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
+                if (refunds > 0) blockers.Add($"Còn {Vnd(refunds)} đang chờ hoàn cho khách.");
+
+                if (await _context.EarlyReturnRequests.AnyAsync(e => e.CustomerID == id && e.Status == "Pending", cancellationToken))
+                    blockers.Add("Có đơn trả kho sớm đang chờ Quản lý duyệt.");
+
+                var accesses = await _context.UnitAccesses.CountAsync(a => a.UserID == id && a.Status == "Active", cancellationToken);
+                if (accesses > 0) blockers.Add($"Còn {accesses} mã / thẻ ra vào kho đang hiệu lực.");
+                break;
+            }
+            case 2:
+            {
+                var facilities = await _context.FacilityStaffs
+                    .Where(fs => fs.UserID == id && fs.Status == "Active")
+                    .Select(fs => fs.Facility.FacilityName)
+                    .ToListAsync(cancellationToken);
+                if (facilities.Count > 0)
+                    blockers.Add($"Đang được phân công tại {string.Join(", ", facilities)}. Nhờ Quản lý cơ sở rút nhân viên khỏi cơ sở trước.");
+
+                var openTasks = await _context.HandoverTasks
+                    .CountAsync(t => t.AssignedStaffID == id && t.Status != "Completed" && t.Status != "Cancelled", cancellationToken);
+                if (openTasks > 0) blockers.Add($"Còn {openTasks} việc bàn giao / trả kho chưa hoàn thành.");
+                break;
+            }
+            case 3:
+            {
+                var managed = await _context.Facilities
+                    .Where(f => f.ManagerID == id)
+                    .Select(f => f.FacilityName)
+                    .ToListAsync(cancellationToken);
+                if (managed.Count > 0)
+                    blockers.Add($"Đang quản lý {string.Join(", ", managed)}. Nhờ BOM đổi người quản lý cơ sở trước.");
+                break;
+            }
+            case 4:
+            {
+                if (user.Status == "Active")
+                {
+                    var activeBoms = await _context.Users.CountAsync(u => u.RoleID == 4 && u.Status == "Active", cancellationToken);
+                    if (activeBoms <= 1) blockers.Add("Đây là tài khoản Business Operations Manager đang hoạt động cuối cùng. Hãy có thêm 1 BOM khác trước.");
+                }
+                break;
+            }
+        }
+        return blockers;
     }
+
+    public async Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
+        await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+
 
     public void AddActivityLog(UserActivityLog log)
     {

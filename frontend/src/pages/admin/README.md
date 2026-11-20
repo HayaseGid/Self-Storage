@@ -18,6 +18,7 @@ khóa hoặc mở khóa tài khoản, đổi vai trò, đặt lại mật khẩu
 - `Admin()` (export default): component trang quản trị.
   - `loadAdminData()`: tải song song danh sách tài khoản và nhật ký (`GET /api/admin/users` + `GET /api/admin/activity`).
   - `updateUser(id, role, status, msg)`: `PUT /api/admin/users/{id}` với body `{ roleName, status }`, sau đó tải lại dữ liệu và hiện toast.
+  - `loadRoleCheck(id)`: `GET /api/admin/users/{id}/role-eligibility` -> `{ canChangeRole, blockers[] }`. Ô "Thay đổi role" chỉ mở khi tài khoản **trống hoàn toàn**; còn vướng thì khóa ô và hiện khung cam liệt kê lý do (backend cũng chặn, trả 409 kèm `blockers`). Khóa / mở khóa không bị chặn.
   - `approveUser` / `rejectUser` / `toggleLock` / `changeRole`: thao tác trên 1 tài khoản (hỏi xác nhận khi cần) rồi gọi `updateUser`.
   - `resetPassword(user)`: kiểm tra mật khẩu mới (ít nhất 6 ký tự, khớp ô xác nhận) rồi gọi `PUT /api/admin/users/{id}/password` với body `{ password }`.
   - `userList` / `logList` (dùng `useServerList`): phân trang ở backend; nếu backend trả cả mảng thì tự chia trang ở frontend.
@@ -35,5 +36,6 @@ khóa hoặc mở khóa tài khoản, đổi vai trò, đặt lại mật khẩu
 ## Luồng hoạt động
 
 1. **Duyệt tài khoản:** menu "Duyệt tài khoản" → bấm vào 1 dòng (`selectUser`) → bấm "Duyệt tài khoản" → `approveUser` → `updateUser` → `PUT /api/admin/users/{id}` `{ status: "Active" }` → `loadAdminData` → toast "Đã duyệt...".
-2. **Khóa tài khoản:** menu "Tất cả tài khoản" → chọn tài khoản → bấm "Khóa tài khoản" → `toggleLock` → hộp thoại xác nhận → `PUT /api/admin/users/{id}` `{ status: "Locked" }` → tải lại dữ liệu.
+2. **Đổi vai trò (chỉ khi tài khoản trống hoàn toàn):** chọn tài khoản → `loadRoleCheck` → nếu còn vướng (khách: đơn chưa kết thúc, còn nợ, chờ hoàn tiền, kiểm kho chưa xong, đơn trả kho sớm chờ duyệt, mã/thẻ kho còn hiệu lực; nhân viên: đang được phân công, còn việc chưa xong; quản lý: đang quản lý cơ sở; BOM: BOM hoạt động cuối cùng) thì ô bị khóa và hiện lý do; trống thì chọn vai trò mới → xác nhận → `updateUser`. Khách đổi sang vai trò khác thì mã ra vào cơ sở chuyển Hết hiệu lực.
+3. **Khóa tài khoản:** menu "Tất cả tài khoản" → chọn tài khoản → bấm "Khóa tài khoản" → `toggleLock` → hộp thoại xác nhận → `PUT /api/admin/users/{id}` `{ status: "Locked" }` → tải lại dữ liệu.
 3. **Đặt lại mật khẩu:** trong khung chi tiết, nhập mật khẩu mới và xác nhận → submit form → `resetPassword` → xác nhận → `PUT /api/admin/users/{id}/password` → xóa 2 ô mật khẩu và hiện toast.

@@ -115,6 +115,9 @@ public sealed record CreateFacilityDTO
     public string? ContactPhone { get; init; }
     public string? OpeningHours { get; init; }
     public string? Description { get; init; }
+    // Vị trí cơ sở trên bản đồ (BOM chọn trên bản đồ / tìm theo địa chỉ); thiếu thì cơ sở không hiện ghim trên bản đồ.
+    public decimal? Latitude { get; init; }
+    public decimal? Longitude { get; init; }
     [Required]
     public string ManagerEmail { get; init; } = string.Empty;
     public string Status { get; init; } = "Active";
@@ -133,6 +136,9 @@ public sealed record UpdateFacilityDTO
     public string? ContactPhone { get; init; }
     public string? OpeningHours { get; init; }
     public string? Description { get; init; }
+    // Vị trí mới trên bản đồ (gửi cả 2 hoặc không gửi).
+    public decimal? Latitude { get; init; }
+    public decimal? Longitude { get; init; }
     public string? ManagerEmail { get; init; }
     public string? Status { get; init; }
     public byte? DepositMonths { get; init; }

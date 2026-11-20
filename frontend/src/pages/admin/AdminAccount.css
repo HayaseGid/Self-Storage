@@ -1004,6 +1004,13 @@
     line-height: 1.5;
 }
 
+/* Điều kiện đổi vai trò (tài khoản trống / còn vướng nghiệp vụ) */
+.admin-role-check { margin: 12px 0 0; padding: 10px 14px; border-radius: 12px; background: #f4f7fa; color: #4f6475; font-size: 13.5px; line-height: 1.5; }
+.admin-role-check.ok { background: #e9f8ef; color: #1d6a40; font-weight: 600; }
+.admin-role-check.blocked { background: #fff6e6; color: #7a4b00; }
+.admin-role-check ul { margin: 6px 0; padding-left: 18px; }
+.admin-role-check small { color: #8a6a2a; }
+
 .admin-password-reset {
     display: grid;
     grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
