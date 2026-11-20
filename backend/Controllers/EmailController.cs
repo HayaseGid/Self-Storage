@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using SelfStorageAPI.DTOs;
 using SelfStorageAPI.Interfaces;
+using SelfStorageAPI.Models;
 
 namespace SelfStorageAPI.Controllers;
 
@@ -11,12 +13,35 @@ public class EmailController : ControllerBase
     private readonly IEmailService _emailService;
     private readonly ILogger<EmailController> _logger;
     private readonly IWebHostEnvironment _environment;
+    private readonly BrevoSettings _brevo;
 
-    public EmailController(IEmailService emailService, ILogger<EmailController> logger, IWebHostEnvironment environment)
+    public EmailController(IEmailService emailService, ILogger<EmailController> logger, IWebHostEnvironment environment, IOptions<BrevoSettings> brevo)
     {
         _emailService = emailService;
         _logger = logger;
         _environment = environment;
+        _brevo = brevo.Value;
+    }
+
+    /// <summary>
+    /// GET /api/email/status — KIỂM TRA CẤU HÌNH GỬI EMAIL (không gửi email, không lộ khóa).
+    /// Cho biết backend đang gửi qua Brevo hay Gmail SMTP, 6 ký tự cuối của khóa Brevo đang dùng,
+    /// khóa lấy từ biến môi trường (BrevoSettings__ApiKey, vd đặt trên Render) hay từ appsettings.json, và email người gửi.
+    /// </summary>
+    [HttpGet("status")]
+    public IActionResult Status()
+    {
+        var key = _brevo.ApiKey?.Trim() ?? string.Empty;
+        var envKey = Environment.GetEnvironmentVariable("BrevoSettings__ApiKey");
+        return Ok(new
+        {
+            provider = key.Length == 0 ? "Gmail SMTP (không có khóa Brevo)" : "Brevo",
+            brevoKeySuffix = key.Length >= 6 ? key[^6..] : (key.Length == 0 ? null : "(quá ngắn)"),
+            keySource = !string.IsNullOrWhiteSpace(envKey) ? "biến môi trường BrevoSettings__ApiKey" : key.Length > 0 ? "appsettings.json" : "không có",
+            envVarPresent = !string.IsNullOrWhiteSpace(envKey),
+            senderEmail = string.IsNullOrWhiteSpace(_brevo.SenderEmail) ? null : _brevo.SenderEmail.Trim(),
+            environment = _environment.EnvironmentName
+        });
     }
 
     /* Email người đang đăng nhập (JwtIdentityMiddleware ghi từ token vào X-User-Email). */
