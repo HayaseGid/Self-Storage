@@ -22,6 +22,22 @@ import './LocationPicker.css'
 const DEFAULT_CENTER = [10.7769, 106.7009]
 /* Giới hạn lãnh thổ Việt Nam (khớp kiểm tra ở backend FacilityManagementService.ValidateLocation). */
 const inVietnam = (lat, lng) => lat >= 8 && lat <= 24 && lng >= 102 && lng <= 110
+/** Bỏ dấu tiếng Việt (OpenStreetMap tìm địa chỉ không dấu tốt hơn). */
+const noAccent = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
+/**
+ * Các cách viết địa chỉ để thử lần lượt (OpenStreetMap thường không nhận "Quận..." sau đợt sáp nhập hành chính 2025):
+ * nguyên văn -> không dấu -> bỏ số nhà -> chỉ tên đường + thành phố.
+ */
+function addressCandidates(address) {
+  const parts = address.split(',').map(p => p.trim()).filter(Boolean)
+  const street = (parts[0] || '').replace(/^(sốs*)?[d/]+[a-zA-Z]?s+/i, '')
+  const city = parts.length > 1 ? parts[parts.length - 1] : 'Hồ Chí Minh'
+  const noDistrict = parts.filter(p => !/^(quận|q.|huyện|phường|p.|xã)s/i.test(p)).join(', ')
+  return [...new Set([address, noAccent(address), noAccent(noDistrict), noAccent([street, ...parts.slice(1)].join(', ')), noAccent(`${street}, ${city}`)]
+    .map(s => s.trim()).filter(s => s.length >= 4))].slice(0, 5)
+}
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+
 /** Làm tròn 6 chữ số thập phân (~10 cm), giống cột decimal(9,6) trong database. */
 const round6 = n => Math.round(Number(n) * 1e6) / 1e6
 
@@ -95,13 +111,22 @@ export default function LocationPicker({ value, onChange, address = '', error = 
     if (q.length < 6) { setNote('Nhập địa chỉ cơ sở trước rồi bấm "Tìm theo địa chỉ".'); return }
     setSearching(true); setNote('')
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=vn&accept-language=vi&q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' } })
-      const list = await res.json()
-      if (!Array.isArray(list) || !list.length) { setNote('Không tìm thấy địa chỉ này trên bản đồ. Hãy bấm trực tiếp vào vị trí cơ sở trên bản đồ.'); return }
-      const lat = round6(list[0].lat), lng = round6(list[0].lon)
+      // Thử lần lượt các cách viết địa chỉ, cách nhau 1 giây (quy định sử dụng của Nominatim).
+      const candidates = addressCandidates(q)
+      let hit = null, usedIndex = 0
+      for (let i = 0; i < candidates.length && !hit; i++) {
+        if (i > 0) await wait(1100)
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=vn&accept-language=vi&q=${encodeURIComponent(candidates[i])}`, { headers: { Accept: 'application/json' } })
+        const list = await res.json()
+        if (Array.isArray(list) && list.length) { hit = list[0]; usedIndex = i }
+      }
+      if (!hit) { setNote('Không tìm thấy địa chỉ này trên bản đồ. Hãy bấm trực tiếp vào vị trí cơ sở trên bản đồ.'); return }
+      const lat = round6(hit.lat), lng = round6(hit.lon)
       onChangeRef.current?.({ latitude: lat, longitude: lng })
       placeMarker(lat, lng, true)
-      setNote('Đã đặt ghim theo địa chỉ. Kiểm tra lại và kéo ghim nếu chưa đúng vị trí cổng cơ sở.')
+      setNote(usedIndex >= 3
+        ? 'Chỉ tìm được theo tên đường (vị trí gần đúng). Hãy kéo ghim tới đúng cổng cơ sở.'
+        : 'Đã đặt ghim theo địa chỉ. Kiểm tra lại và kéo ghim nếu chưa đúng vị trí cổng cơ sở.')
     } catch {
       setNote('Không tra được địa chỉ (lỗi mạng). Hãy bấm trực tiếp vào vị trí trên bản đồ.')
     } finally { setSearching(false) }
