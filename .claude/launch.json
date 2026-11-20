@@ -4,8 +4,22 @@
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontend",
+        "run",
+        "dev"
+      ],
       "port": 8080
+    },
+    {
+      "name": "frontend-test6870",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set VITE_API_URL=http://localhost:6870&& npm --prefix frontend run dev -- --port 8090 --strictPort"
+      ],
+      "port": 8090
     }
   ]
 }
