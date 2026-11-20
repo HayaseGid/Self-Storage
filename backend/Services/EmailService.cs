@@ -121,8 +121,8 @@ public class EmailService : IEmailService
 
     /// <summary>
     /// Gửi 1 email qua Brevo HTTP API (BrevoSettings:ApiKey). Chỉ khi máy chưa cấu hình ApiKey mới dùng Gmail SMTP dự phòng.
-    /// Khóa Brevo KHÔNG ghi trong appsettings (file này được commit): máy dev đặt bằng dotnet user-secrets, máy chủ đặt biến
-    /// môi trường BrevoSettings__ApiKey và BrevoSettings__SenderEmail (địa chỉ đã xác minh trong Brevo).
+    /// Khóa Brevo ghi trong appsettings.json (nhóm đồng ý commit để Render dùng được); biến môi trường BrevoSettings__ApiKey /
+    /// BrevoSettings__SenderEmail trên máy chủ (nếu có) sẽ ghi đè. SenderEmail phải là địa chỉ đã xác minh trong Brevo.
     /// replyToEmail (tùy chọn): địa chỉ nhận khi người đọc bấm "Trả lời" (dùng cho email liên hệ của khách).
     /// </summary>
     private async Task SendCoreAsync(string toEmail, string subject, string bodyHtml, string? replyToEmail, string? replyToName, CancellationToken ct)
