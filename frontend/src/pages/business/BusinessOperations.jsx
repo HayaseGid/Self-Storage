@@ -38,6 +38,7 @@ import { BusinessFacilitiesByArea, BusinessPerformance, BusinessReportsCenter } 
 import { BusinessPolicyEditor } from "./BusinessPolicyEditor";
 import BusinessFacilityForm from "./BusinessFacilityForm";
 import LocationPicker from "../../features/facility/LocationPicker"; // chọn vị trí cơ sở trên bản đồ
+import { invalidateFacilityLocations } from "../../features/facility/FacilityMap"; // xóa cache tọa độ sau khi đổi cơ sở
 import BusinessPriceBands from "./BusinessPriceBands";
 
 /**
@@ -77,7 +78,9 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             rentedUnits: units.filter(unit => unit.status === "RENTED").length,
             maintenanceUnits: units.filter(unit => unit.status === "MAINTENANCE").length,
             status: facility.status,
-            createdAt: facility.createdAt
+            createdAt: facility.createdAt,
+            latitude: facility.latitude, // vị trí trên bản đồ (form sửa cơ sở hiện ghim cũ)
+            longitude: facility.longitude
         };
     }) || [];
 
@@ -165,6 +168,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             });
             if (!confirmed) return;
         }
+        invalidateFacilityLocations(); // vị trí / thông tin cơ sở có thể đổi -> bản đồ tải lại
         return runOperation(() =>
             apiPut(`/api/operations/facilities/${facility.facilityId}`, {
                 facilityName: values.name ?? facility.name,
@@ -191,6 +195,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             confirmLabel: "Xóa cơ sở"
         });
         if (!confirmed) return;
+        invalidateFacilityLocations();
         return runOperation(() => apiDelete(`/api/operations/facilities/${facility.facilityId}`), "Không xóa được cơ sở");
     };
 
@@ -237,6 +242,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             latitude: newFacility.latitude,
             longitude: newFacility.longitude
         }).then(async () => {
+            invalidateFacilityLocations(); // bản đồ của khách tải lại vị trí, có ngay cơ sở mới
             await loadBusinessData();
             setNewFacility(EMPTY_FACILITY);
             setShowAddFacility(false);

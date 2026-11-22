@@ -55,7 +55,9 @@ export function loadLeaflet() {
   return leafletPromise
 }
 
-let locationsPromise = null // Promise tọa độ các cơ sở (tải 1 lần, dùng chung)
+let locationsPromise = null // Promise tọa độ các cơ sở (dùng chung giữa các bản đồ)
+let locationsLoadedAt = 0 // lúc bắt đầu tải lần gần nhất
+const LOCATIONS_TTL_MS = 30000 // dùng lại kết quả tối đa 30 giây rồi tải lại
 /**
  * Tải tọa độ các cơ sở (gọi 1 lần, dùng chung kết quả cho mọi nơi). Lỗi thì xóa cache để lần sau gọi lại.
  * API: GET /api/facility-locations  -> [{ id, name, address, latitude, longitude, ... }]
@@ -63,12 +65,22 @@ let locationsPromise = null // Promise tọa độ các cơ sở (tải 1 lần,
  * @returns {Promise<object[]>}
  */
 export function loadFacilityLocations(force = false) {
-  if (!locationsPromise || force) {
+  // Cache chỉ dùng trong LOCATIONS_TTL_MS: quá hạn (vd BOM vừa sửa vị trí cơ sở) thì tải lại để bản đồ không giữ tọa độ cũ.
+  if (!locationsPromise || force || Date.now() - locationsLoadedAt > LOCATIONS_TTL_MS) {
+    locationsLoadedAt = Date.now()
     locationsPromise = apiGet('/api/facility-locations')
       .then(list => (Array.isArray(list) ? list : []))
       .catch(error => { locationsPromise = null; throw error })
   }
   return locationsPromise
+}
+
+/**
+ * Xóa cache tọa độ: gọi sau khi BOM tạo / sửa / xóa cơ sở để mọi bản đồ tải lại vị trí mới ở lần hiển thị kế tiếp.
+ * Được gọi bởi: pages/business/BusinessOperations.jsx.
+ */
+export function invalidateFacilityLocations() {
+  locationsPromise = null
 }
 
 /**
