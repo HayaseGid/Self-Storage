@@ -143,7 +143,7 @@ demoClock (ngày giả lập, gắn vào mọi request)
 4. Thẻ kho `UnitCard` (ảnh thật `UnitTypeArt`) → `UnitDetailPage`. Bản đồ: `features/facility/FacilityMap` (**`GET /api/facility-locations`**).
 
 ### 5.2 Xem kho 3D và tự xếp thùng (không gọi API)
-`UnitDetailPage` / `FacilityFloorPlan` → `features/unit/Unit3DViewer` (3 tab) → tab "Tự xếp thùng" `PackPlanner`
+`UnitDetailPage` → `features/unit/Unit3DViewer` (3 tab) → tab "Tự xếp thùng" `PackPlanner`
 → nhập đồ (`ItemCountsInput`) → "Xếp thử" → `packChannel.run('autoPack')` → worker chạy `utils/packing.js › autoPack()`
 (Extreme Point Best-Fit) → `ThreeUnitScene` vẽ lại. Sidebar: `useBoxFit` (kho vừa trong cơ sở / cơ sở khác) và
 `useSplitPack` (bảng 2 lựa chọn: thuê thêm 1 kho hoặc đổi kho lớn hơn → `handleAddManyToCart` / đổi kho).
@@ -285,7 +285,6 @@ Cột "Luồng" ghi số mục ở **phần 5** (vd `5.7` = Ký hợp đồng). 
 | `features/unit/boxCounts.js` | Nhớ số đồ khách nhập (sessionStorage), đọc / ghi tham số URL `items`, `cs` | 5.1, 5.2 |
 | `features/unit/useBoxFit.js` | Tính kho nào xếp vừa đồ (ước tính ngay rồi xếp thử thật trong worker); tính 2 lựa chọn khi kho thiếu chỗ | 5.1, 5.2 |
 | `features/facility/FacilityMap.jsx` | Bản đồ các cơ sở (Leaflet), tải tọa độ, link chỉ đường Google Maps | 5.1 |
-| `features/facility/FacilityFloorPlan.jsx` | Sơ đồ kho trong 1 cơ sở theo khu kích thước; bấm kho → mở cửa sổ 3D | 5.1, 5.2 |
 | `features/facility/FacilityUnitsMap.jsx` | Vẽ các chấm kho quanh vị trí cơ sở trên bản đồ (vị trí minh họa) | 5.1 |
 | `features/booking/HandoverChoice.jsx` | Chọn cách nhận kho (trực tiếp / online) và khung giờ hẹn khi đặt kho | 5.4, 5.5 |
 | `features/booking/CancelReservation.jsx` | Hộp thoại hủy đặt kho: báo giá hoàn cọc, chọn lý do, gửi hủy, gửi lại hoàn tiền | 5.6 |

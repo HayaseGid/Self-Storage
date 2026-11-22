@@ -19,7 +19,7 @@
  * DÙNG Ở: index.html (không file nào import App.jsx).
  * PHỤ THUỘC: react, react-dom/client; api/api (apiGet, apiPost), api/vnpay, api/otpService; components/common
  *   (Dialog, RentalCalendar); features/unit (unitTypes, Unit3DViewer, boxCounts, ItemCountsInput, useBoxFit);
- *   features/facility (FacilityMap, FacilityFloorPlan); features/booking/HandoverChoice; features/payment/DepositConfirm;
+ *   features/facility (FacilityMap); features/booking/HandoverChoice; features/payment/DepositConfirm;
  *   features/notification/HeaderNotificationBell; services (pricing, storageRules, afterDeposit); store (cart, bookingDraft);
  *   utils (districts, packing); demoClock; pages/* (CartPage, CustomerAccount, PaymentResultPage, StaffAccount,
  *   ManagerAccount, AdminAccount, BusinessOperations); styles/styles.css.
@@ -74,7 +74,6 @@ import CartPage from './pages/customer/CartPage'
 import { announceDepositSuccess, confirmAfterDeposit, openCustomerSection } from './services/afterDeposit'
 import PaymentResultPage from './pages/payment/PaymentResultPage'
 import DepositConfirm from './features/payment/DepositConfirm'
-import FacilityFloorPlan from './features/facility/FacilityFloorPlan'
 import Unit3DViewer from './features/unit/Unit3DViewer'
 import { boxRequests } from './utils/packing'
 import { countsFromParams, loadBoxCounts, normalizeBoxCounts, saveBoxCounts, writeCountsParams } from './features/unit/boxCounts'
@@ -337,7 +336,7 @@ async function handleAddToCart(dialog, facility, unit) {
  * Thêm nhiều kho cùng cơ sở vào giỏ cùng lúc rồi hiện 1 hộp thoại tóm tắt (kho đã thêm, kho đã có sẵn, tổng tiền/tháng).
  * Dừng lại khi giỏ đầy. Bỏ qua kho không còn trống.
  * @param {object} dialog từ useDialog(). @param {object} facility cơ sở. @param {object[]} unitsToAdd các kho cần thêm.
- * Được gọi bởi: onAddToCart của FacilityFloorPlan (sơ đồ kho) và Unit3DViewer (lựa chọn "thuê thêm kho" trong cửa sổ 3D).
+ * Được gọi bởi: onAddToCart của Unit3DViewer (lựa chọn "thuê thêm kho" trong cửa sổ 3D).
  */
 async function handleAddManyToCart(dialog, facility, unitsToAdd) {
   const user = getCurrentUser()
@@ -869,7 +868,7 @@ function FacilitiesMapSection({ list }) {
  * API: GET /api/facility-locations (qua useFacilityLocations)
  * @param {object} props
  * @param {object} props.facility cơ sở cần hiện.
- * @param {boolean} [props.hideMap] ẩn bản đồ (khi sơ đồ kho FacilityFloorPlan đã có bản đồ riêng).
+ * @param {boolean} [props.hideMap] ẩn bản đồ.
  * Dùng ở: FacilityDetailPage.
  */
 function FacilityLocationCard({ facility, hideMap = false }) {
@@ -1007,8 +1006,7 @@ function UnitCard({ facility, unit }) {
 }
 
 /**
- * Component trang chi tiết cơ sở (route /facilities/{slug}): ảnh + thông tin cơ sở, thẻ vị trí, sơ đồ kho
- * (FacilityFloorPlan — từ đây có thể mở chi tiết / đặt / thêm nhiều kho vào giỏ), ghi chú đặt kho theo yêu cầu,
+ * Component trang chi tiết cơ sở (route /facilities/{slug}): ảnh + thông tin cơ sở, thẻ vị trí, ghi chú đặt kho theo yêu cầu,
  * bộ lọc kho (loại, từ khóa, diện tích, tình trạng, giá) và lưới thẻ kho (kho trống lên trước).
  * Bộ lọc loại kho lấy giá trị ban đầu từ ?type= trên URL; các bộ lọc khác chỉ là state trong trang.
  * @param {object} props
@@ -1016,7 +1014,6 @@ function UnitCard({ facility, unit }) {
  * Được Router hiển thị khi route.type === 'detail'.
  */
 function FacilityDetailPage({ facility }) {
-  const dialog = useDialog()
   const units = getStorageUnits(facility.name)
   const { locations: facilityLocations } = useFacilityLocations()
   const [facilityPoint] = toMapPoints([facility], facilityLocations)
@@ -1070,16 +1067,6 @@ function FacilityDetailPage({ facility }) {
             </div>
           </div>
           <FacilityLocationCard facility={facility} />
-          <FacilityFloorPlan
-            facility={facility}
-            units={units}
-            highlightIds={filteredUnits.length === units.length ? null : new Set(filteredUnits.map(unit => unit.id))}
-            onOpenDetail={unit => navigate(getUnitPath(facility, unit))}
-            onBook={unit => navigate(getBookingPath(facility, unit))}
-            otherUnits={facilities.filter(f => f.facilityId !== facility.facilityId).flatMap(f => getStorageUnits(f.name).map(u => ({ facility: f, unit: u })))}
-            onOpenOther={(f, picked) => navigate(getUnitPath(f, picked))}
-            onAddToCart={list => handleAddManyToCart(dialog, facility, list)}
-          />
           <div className="cart-note" role="note" style={{ margin: '18px 0', padding: '14px 16px', borderRadius: 12, background: '#eef5ff', border: '1px solid #c9dcf7' }}>
             <strong>Cần kho lớn hơn các kho đang có, hoặc kích thước đặc biệt?</strong>{' '}
             Kho quá lớn không bán sẵn mà nhận theo đơn đặt riêng: liên hệ cơ sở để được báo giá

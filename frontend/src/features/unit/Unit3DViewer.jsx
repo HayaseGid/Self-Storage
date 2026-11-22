@@ -10,7 +10,7 @@
  *     cho phần dư, B. đổi sang kho lớn hơn (useSplitPack).
  *   Điều khiển: kéo chuột / vuốt để xoay, lăn chuột hoặc nút +/− để phóng to, phím mũi tên để xoay, Esc để đóng.
  * THÀNH PHẦN CHÍNH: Unit3DViewer (default export); hintFor(geo) - câu gợi ý sức chứa.
- * DÙNG Ở: src/App.jsx (trang chi tiết cơ sở), features/facility/FacilityFloorPlan.jsx.
+ * DÙNG Ở: src/App.jsx (trang chi tiết kho, nút "Xem kho 3D").
  * PHỤ THUỘC: ./unitTypes, ./UnitPackPlanner (PackPlanner, SampleRoom), ./boxCounts, ./useBoxFit,
  *   utils/unitGeometry, utils/packing (gridCapacity, itemType), services/storageRules (formatVnd),
  *   Unit3DViewer.css, UnitPackPlanner.css.

@@ -7,7 +7,7 @@ Thư mục `src/features/unit` chứa các **tính năng liên quan tới từng
 | File | Chức năng | Được dùng bởi | API gọi |
 |---|---|---|---|
 | [unitTypes.jsx](./unitTypes.jsx) | Loại kho (lạnh, mát, tiêu chuẩn, trong nhà, xe vào, khác): màu, icon, tên, ảnh; hạng kích thước; component chip / icon / thanh hạng / ảnh kho | `src/App.jsx`, `src/features/unit/Unit3DViewer.jsx`, `src/pages/business/BusinessCatalog.jsx`, `src/pages/business/BusinessPanels.jsx`, `src/pages/customer/CartPage.jsx`, `src/pages/customer/CustomerAccount.jsx`, `src/pages/manager/FacilityManagerAccount.jsx` | Không |
-| [Unit3DViewer.jsx](./Unit3DViewer.jsx) | Cửa sổ xem kho 3D 3 tab; gợi ý kho vừa đồ, kho ở cơ sở khác, phương án thuê thêm / đổi kho lớn hơn | `src/App.jsx`, `src/features/facility/FacilityFloorPlan.jsx` | Không (đặt kho / giỏ qua callback) |
+| [Unit3DViewer.jsx](./Unit3DViewer.jsx) | Cửa sổ xem kho 3D 3 tab; gợi ý kho vừa đồ, kho ở cơ sở khác, phương án thuê thêm / đổi kho lớn hơn | `src/App.jsx` (trang chi tiết kho) | Không (đặt kho / giỏ qua callback) |
 | [UnitPackPlanner.jsx](./UnitPackPlanner.jsx) | `SampleRoom` (đồ mẫu) và `PackPlanner` (tự thêm / kéo / xoay / xóa đồ, "Xếp thử vào kho này") | `src/features/unit/Unit3DViewer.jsx` | Không |
 | [ThreeUnitScene.jsx](./ThreeUnitScene.jsx) | Cảnh 3D Three.js (nạp từ CDN): sàn, vách, cửa, số đo, đồ, lối đi; xoay / phóng to / chọn / kéo món | `src/features/unit/UnitPackPlanner.jsx` | Không |
 | [ItemCountsInput.jsx](./ItemCountsInput.jsx) | Khối nhập số lượng thùng nhỏ/vừa/lớn, thùng tự nhập kích thước, đồ lớn | `src/App.jsx`, `src/features/unit/UnitPackPlanner.jsx` | Không |
@@ -47,10 +47,10 @@ Thư mục `src/features/unit` chứa các **tính năng liên quan tới từng
 ## Kết nối với các phần khác
 
 - **Import từ:** `utils/packing.js` (thuật toán, danh mục đồ, lối đi), `utils/packingClient.js` (Web Worker), `utils/unitGeometry.js` (kích thước kho), `services/storageRules` (`formatVnd`), `react`, `react-dom` (`createPortal`), Three.js qua CDN.
-- **Ai import:** `src/App.jsx` (trang Tìm kho, chi tiết cơ sở), `features/facility/FacilityFloorPlan.jsx` (mở `Unit3DViewer`), các trang `pages/customer`, `pages/business`, `pages/manager` (dùng `unitTypes`).
+- **Ai import:** `src/App.jsx` (trang Tìm kho, chi tiết cơ sở), các trang `pages/customer`, `pages/business`, `pages/manager` (dùng `unitTypes`).
 
 ## Luồng hoạt động
 
-1. **Xem kho 3D và tự xếp thùng:** khách bấm chấm kho ở sơ đồ (FacilityFloorPlan) → `<Unit3DViewer>` → tab "Tự xếp thùng" → nhập số đồ ở `ItemCountsInput` → `counts` đổi, `saveBoxCounts` → bấm "Xếp thử vào kho này" → `runAutoPack` → worker `autoPack` → `setItems` → `ThreeUnitScene` vẽ lại, hiện % thể tích và "còn chứa thêm".
+1. **Xem kho 3D và tự xếp thùng:** khách bấm "Xem kho 3D" ở trang chi tiết kho → `<Unit3DViewer>` → tab "Tự xếp thùng" → nhập số đồ ở `ItemCountsInput` → `counts` đổi, `saveBoxCounts` → bấm "Xếp thử vào kho này" → `runAutoPack` → worker `autoPack` → `setItems` → `ThreeUnitScene` vẽ lại, hiện % thể tích và "còn chứa thêm".
 2. **Gợi ý kho vừa / thuê thêm:** khi `counts` đổi → `useBoxFit` ước tính rồi worker `fitGroups` → sidebar "Kho vừa với đồ của bạn" (bấm → `setUnit` + `autoRun` xếp ngay); `useSplitPack` → worker `splitPack` → nếu kho thiếu chỗ hiện phương án A (bấm "Thêm cả 2 kho vào giỏ" → `onAddToCart`) và B (bấm "Xem kho này").
 3. **Hiển thị loại kho ở mọi trang:** trang có `unit.type`, `unit.size` → `<UnitTypeChip>`, `<UnitTypeArt>`, `<SizeMeter>` → `getUnitTypeStyle` / `parseUnitSize` → nhãn màu, ảnh kho, thanh hạng kích thước.
