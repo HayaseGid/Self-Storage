@@ -18,6 +18,14 @@
  *   -> useServerList gọi GET /api/operations/{kind}?... -> items map sang dạng frontend -> bảng + Pager hiển thị.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   text: Đổi giá trị bất kỳ thành chuỗi chữ thường (để so khớp từ khóa tìm kiếm) → dùng ở: (cấp file)
+ *   byTime: Hàm so sánh để sắp xếp theo thời gian giảm dần (mới nhất trước) → dùng ở: (cấp file)
+ *   byText: Hàm so sánh chuỗi theo tiếng Việt, có so sánh số tự nhiên ("A2" < "A10") → dùng ở: (cấp file)
+ *   useOpsList: Hook lấy 1 danh sách vận hành có tìm kiếm / lọc / sắp xếp / phân trang → dùng ở: FacilityManagerAccount.jsx (FacilityContractsTab, FacilityReservationsTab +1), FacilityStaffAccount.jsx (Portal)
+ */
 import { useMemo } from 'react'
 import { parseTime, useServerList } from '../components/common/listKit'
 import { mapContract, mapReservation, mapUnit } from '../mappers/operationsState'

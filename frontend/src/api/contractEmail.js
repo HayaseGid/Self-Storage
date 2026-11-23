@@ -16,6 +16,17 @@
  *   -> POST /api/email/send-contract -> backend gửi mail -> trả { sentTo } để giao diện báo thành công.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   esc: Escape ký tự đặc biệt HTML (& < > " ') để chèn dữ liệu người dùng vào HTML an toàn → dùng ở: buildContractEmailHtml
+ *   money: Định dạng số tiền kiểu Việt Nam kèm chữ "đ" (ví dụ 1500000 -> "1.500.000đ") → dùng ở: buildContractEmailHtml
+ *   fmtTime: Định dạng thời điểm ISO thành "HH:mm dd/MM/yyyy" theo vi-VN (rỗng nếu không hợp lệ) → dùng ở: buildContractEmailHtml
+ *   buildContractEmailHtml: Dựng nội dung email hợp đồng dạng HTML (dùng inline style để Gmail/Outlook hiển thị đúng): các bên, thời hạn thuê, giá thuê + tiền cọc → dùng ở: sendContractEmail
+ *   h4: Tạo thẻ tiêu đề mục (h4) có style sẵn → dùng ở: buildContractEmailHtml
+ *   td: Tạo 1 ô bảng (td) có viền và padding → dùng ở: buildContractEmailHtml
+ *   sendContractEmail: Gửi email hợp đồng cho khách hàng qua Backend (Brevo HTTP API / SMTP) → dùng ở: ContractDetailModal.jsx (sendMail), CustomerAccount.jsx (signGroupContracts)
+ */
 import { contractUnits } from '../features/contract/ContractDocument'
 import { describePolicy } from '../services/policies'
 import { formatVnd } from '../services/storageRules'

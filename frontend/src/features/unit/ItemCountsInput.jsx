@@ -12,6 +12,15 @@
  *   -> useBoxFit / UnitPackPlanner tính lại kho vừa / cách xếp.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   toInt: Đổi giá trị ô nhập thành số nguyên không âm → dùng ở: set
+ *   ItemCountsInput: Hiển thị các ô nhập số lượng đồ: hàng thùng thường luôn hiện; thùng tự nhập + đồ lớn nằm trong mục mở rộng (<details>) → dùng ở: App.jsx (SearchPage), UnitPackPlanner.jsx (controls)
+ *   set: Khách sửa ô số lượng của loại `key` -> gửi counts mới lên cha → dùng ở: field
+ *   setSize: Khách sửa kích thước thùng tự nhập (w/d/h, cm); giữ nguyên chuỗi gõ, chuẩn hóa ở normalizeBoxCounts → dùng ở: ItemCountsInput
+ *   field: Vẽ 1 ô nhập số lượng: nhãn (tên + kích thước nhỏ) và input số → dùng ở: ItemCountsInput
+ */
 import React from 'react'
 import { BIG_ITEM_KEYS, BOX_KEYS, CUSTOM_BOX_KEY, itemType } from '../../utils/packing'
 import { normalizeBoxCounts } from './boxCounts'
@@ -42,6 +51,7 @@ export default function ItemCountsInput({ counts, onChange }) {
     </label>
   )
 
+  // Ô nhập số thùng / đồ lớn
   return (
     <div className="ici">
       <div className="ici-row">

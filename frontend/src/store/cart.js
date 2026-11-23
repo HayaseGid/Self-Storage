@@ -24,6 +24,29 @@
  *   -> PaymentResultPage cancelHeldReservations() + restoreToCart(takeVnPayCartItems()).
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   read: Đọc và parse JSON từ localStorage; lỗi hoặc không có thì trả giá trị mặc định → dùng ở: getCart, saveCartOrder, getCartOrders
+ *   write: Ghi giá trị (dạng JSON) vào localStorage; bỏ qua nếu trình duyệt chặn lưu trữ → dùng ở: saveCart, saveCartOrder
+ *   getCart: Lấy danh sách kho trong giỏ (lọc bỏ phần tử hỏng thiếu unitId/facilityId) → dùng ở: isInCart, addToCart, removeFromCart +4
+ *   saveCart: Lưu giỏ hàng và phát sự kiện 'storespace-cart-changed' để các component đang dùng useCart() cập nhật → dùng ở: addToCart, removeFromCart, removeManyFromCart +2
+ *   isInCart: Kiểm tra 1 kho (theo cơ sở + mã kho) đã có trong giỏ chưa → dùng ở: App.jsx (UnitCard, UnitDetailPage)
+ *   addToCart: Thêm 1 kho vào giỏ. Được gọi khi khách bấm "Thêm vào giỏ" ở App.jsx → dùng ở: App.jsx (handleAddToCart, handleAddManyToCart)
+ *   removeFromCart: Xóa 1 kho khỏi giỏ (CartPage: bấm nút xóa trên dòng kho) → dùng ở: CartPage.jsx (removeItem)
+ *   removeManyFromCart: Xóa nhiều kho khỏi giỏ theo danh sách khóa "facilityId|unitId" (CartPage: sau khi đặt thành công các kho đã chọn) → dùng ở: CartPage.jsx (checkout)
+ *   clearCart: Xóa toàn bộ giỏ hàng → chưa thấy nơi dùng
+ *   toCartItem: Lấy ra các trường cần lưu của 1 phần tử giỏ (bỏ các trường thừa) → dùng ở: restoreToCart, rememberVnPayCartItems
+ *   restoreToCart: Trả các kho về lại giỏ (khi khách hủy ở bước đặt cọc); bỏ qua kho đã có hoặc khi giỏ đầy → dùng ở: CartPage.jsx (CartPage, cancelOrder), PaymentResultPage.jsx (releaseHeld)
+ *   rememberVnPayCartItems: Ghi nhớ các kho của lần đặt cọc đang chuyển sang VNPay (sessionStorage) để nếu khách hủy giao dịch thì trang kết quả trả lại vào giỏ → dùng ở: CartPage.jsx (payDeposit)
+ *   takeVnPayCartItems: Đọc và xóa danh sách kho đã ghi nhớ khi chuyển sang VNPay (PaymentResultPage gọi khi giao dịch bị hủy / lỗi) → dùng ở: PaymentResultPage.jsx (releaseHeld)
+ *   cancelHeldReservations: Hủy các đơn đang "chờ thanh toán cọc" (chưa cọc nên không hoàn tiền), gọi tuần tự từng đơn → dùng ở: CartPage.jsx (CartPage, cancelOrder), PaymentResultPage.jsx (releaseHeld)
+ *   useCart: Hook React: trả về danh sách kho trong giỏ, tự cập nhật khi giỏ thay đổi (kể cả ở tab trình duyệt khác) → dùng ở: App.jsx (SiteHeader, UnitCard +1), CartPage.jsx (CartPage)
+ *   saveCartOrder: Lưu 1 "đơn đặt từ giỏ" (gom nhiều đặt chỗ thành 1 nhóm để hiển thị như 1 hợp đồng); giữ tối đa 50 đơn → dùng ở: CartPage.jsx (checkout)
+ *   getCartOrders: Lấy danh sách đơn đặt từ giỏ đã lưu (hiện chưa có file nào gọi) → chưa thấy nơi dùng
+ *   newOrderCode: Sinh mã đơn giỏ hàng dạng "GH-yyMMdd-HHmmss" → dùng ở: CartPage.jsx (checkout)
+ *   pad: Thêm số 0 phía trước cho đủ 2 chữ số → dùng ở: newOrderCode
+ */
 import { useEffect, useState } from 'react'
 import { apiPost } from '../api/api'
 

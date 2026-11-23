@@ -30,6 +30,21 @@
  *   -> chuyển sang /customer đúng tab -> trang khách đọc yêu cầu và mở đúng hộp thoại.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   fetchShared: Tải danh sách đơn của khách dùng chung cho chuông + thanh nhắc: nếu đang tải thì dùng lại lần tải đó, nếu dữ liệu còn mới → dùng ở: useSharedRentals
+ *   useSharedRentals: Hook: lấy danh sách đơn dùng chung từ bộ nhớ đệm `shared` (đổi tài khoản thì bỏ dữ liệu cũ) → dùng ở: useHeaderNotices, HeaderPendingDepositBar
+ *   BellIcon: Vẽ biểu tượng cái chuông bằng SVG (màu theo CSS của nút chứa nó) → dùng ở: HeaderNotificationBell
+ *   useHeaderNotices: Hook: gom dữ liệu đơn, gia hạn, chính sách, trả kho, kiểm kho rồi tính danh sách thông báo cho khách bằng useCustomerNotifications → dùng ở: HeaderNotificationBell
+ *   HeaderPendingDepositBar: Thanh nhắc "đơn chưa đặt cọc" ngay dưới header (mọi trang công khai); bấm "Thanh toán" để mở tab Thanh toán của trang khách → dùng ở: App.jsx (SiteHeader)
+ *   openNoticeTarget: Mở đúng nơi xử lý 1 thông báo trong trang khách khi đang ở trang khác (giống openNotice của CustomerAccount): ghi yêu cầu → dùng ở: goTo
+ *   HeaderNotificationBell: Nút chuông thông báo của khách: tính số đỏ (thông báo chưa xem + đơn chờ cọc, không đếm trùng), mở/đóng popup → dùng ở: App.jsx (SiteHeader)
+ *   depositNoticeId: Số đỏ = thông báo chưa xem + đơn chưa đặt cọc (việc phải làm, vẫn đếm dù đã xem; hết giờ giữ kho thì tự mất) → dùng ở: HeaderNotificationBell
+ *   goTo: Bấm 1 thông báo: đóng popup và mở đúng nơi xử lý thông báo đó → dùng ở: HeaderNotificationBell
+ *   openPayment: Mở tab Thanh toán trong trang khách → dùng ở: HeaderNotificationBell
+ *   openAll: Mở tab Thông báo trong trang khách (xem tất cả) → dùng ở: HeaderNotificationBell
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useCustomerNotifications } from '../../services/customerNoticeData'
 import { NotificationsPreview } from './CustomerNotifications'
@@ -273,14 +288,17 @@ export default function HeaderNotificationBell({ user, loadRentals, navigate, va
     )
   }
 
+  // Nút chuông + popup thông báo
   return (
     <div className="header-bell-wrap" ref={wrapRef}>
+      {/* Nút chuông có số đỏ */}
       <button ref={buttonRef} className={`header-cart header-bell${count > 0 ? ' has-new' : ''}${open ? ' open' : ''}`} type="button"
         onClick={() => setOpen(v => !v)} aria-label={label} title={label} aria-haspopup="dialog" aria-expanded={open}>
         <BellIcon />
         {count > 0 && <em aria-hidden="true">{count > 9 ? '9+' : count}</em>}
       </button>
 
+      {/* Popup: đơn chờ cọc + thông báo mới */}
       {open && (
         <div className="header-bell-pop" role="dialog" aria-label="Thông báo">
           <div className="header-bell-pop-head">
@@ -293,6 +311,7 @@ export default function HeaderNotificationBell({ user, loadRentals, navigate, va
               <small>Cần làm ngay</small>
               {pendingDeposits.map(item => {
                 const left = Number.isNaN(item.expiresAtMs) ? null : item.expiresAtMs - now
+                // Đơn chưa đặt cọc (đếm giờ giữ kho)
                 return (
                   <button key={item.reservationId} type="button" className={`header-bell-urgent-item${left != null && left < 5 * 60000 ? ' hot' : ''}`} onClick={openPayment}>
                     <span aria-hidden="true">⏳</span>

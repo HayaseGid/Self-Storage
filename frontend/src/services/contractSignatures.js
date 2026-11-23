@@ -12,6 +12,12 @@
  * LUỒNG: Dữ liệu hợp đồng có signedAt (ISO) -> formatSignedAt(signedAt) -> chuỗi hiển thị.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   formatSignedAt: Định dạng thời điểm ký hợp đồng thành "HH:mm dd/MM/yyyy" theo giờ máy người dùng (rỗng nếu chưa ký) → dùng ở: ContractCard.jsx, ContractModal.jsx, CustomerAccount.jsx
+ *   pad: Thêm số 0 phía trước cho đủ 2 chữ số → dùng ở: formatSignedAt
+ */
 /**
  * Định dạng thời điểm ký hợp đồng thành "HH:mm dd/MM/yyyy" theo giờ máy người dùng (rỗng nếu chưa ký).
  * @param {string} iso thời điểm ký (ISO).

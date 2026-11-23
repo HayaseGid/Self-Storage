@@ -21,6 +21,18 @@
  *   A/B -> khách bấm "Xem kho này" (setUnit + autoRun xếp ngay) hoặc "Thêm cả 2 kho vào giỏ" (onAddToCart) / "Đặt kho này" (onBook).
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   clamp: Giới hạn giá trị trong khoảng [min, max] → dùng ở: onKey, onWheel, onPointerMove +1
+ *   Unit3DViewer: Component cửa sổ xem kho 3D: header (trạng thái, mã kho), 3 tab chế độ, vùng vẽ 3D và cột thông tin bên phải → dùng ở: App.jsx (UnitDetailPage)
+ *   alt: Dựng 2 phương án khi kho đang xem còn dư đồ: A = kho này + kho thêm rẻ nhất chứa vừa phần dư, B = kho rẻ nhất (khác kho này) chứa hết → dùng ở: Unit3DViewer
+ *   onPointerDown: Bắt đầu kéo để xoay: ghi lại vị trí con trỏ và góc nhìn hiện tại → dùng ở: Unit3DViewer
+ *   onPointerMove: Đang kéo: tính góc xoay mới theo khoảng chuột đã di chuyển → dùng ở: Unit3DViewer
+ *   onPointerUp: Thả chuột: kết thúc thao tác kéo → dùng ở: Unit3DViewer
+ *   face: Vẽ một mặt của hộp kho (sàn/tường/cửa) bằng thẻ div có transform CSS 3D → dùng ở: Unit3DViewer
+ *   hintFor: Gợi ý sức chứa ước lượng theo kích thước kho để khách dễ hình dung (vd "Đồ đạc căn hộ 1 phòng ngủ...") → dùng ở: Unit3DViewer
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { getUnitTypeStyle } from './unitTypes'
 import { formatVnd } from '../../services/storageRules'
@@ -192,9 +204,11 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
     <div className={`u3d-face ${className}`} style={{ width: w, height: h, marginLeft: -w / 2, marginTop: -h / 2, transform }}>{children}</div>
   )
 
+  // Cửa sổ xem kho 3D
   return (
     <div className="u3d-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
       <div className={`u3d-modal${mode === 'pack' ? ' is-pack' : ''}`} role="dialog" aria-modal="true" aria-labelledby="u3d-title">
+        {/* Tiêu đề kho + nút đóng */}
         <div className="u3d-head">
           <div>
             <span className={`u3d-status ${status}`}>{STATUS_TEXT[status]}</span>
@@ -204,12 +218,14 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
           <button ref={closeRef} type="button" className="u3d-close" onClick={onClose} aria-label="Đóng">×</button>
         </div>
 
+        {/* Tab: kho trống / đồ mẫu / tự xếp thùng */}
         <div className="u3d-tabs" role="tablist" aria-label="Chế độ xem kho">
           {[['empty', 'Kho trống'], ['sample', 'Có đồ mẫu'], ['pack', 'Tự xếp thùng']].map(([key, label]) => (
             <button key={key} type="button" role="tab" aria-selected={mode === key} className={mode === key ? 'active' : ''} onClick={() => setMode(key)}>{label}</button>
           ))}
         </div>
 
+        {/* Nội dung theo tab + cột gợi ý kho vừa */}
         <div className={`u3d-body mode-${mode}`}>
           {mode === 'sample' && <div className="u3d-three"><SampleRoom geo={geo} color={typeStyle.color || '#075a9f'} /></div>}
           {mode === 'pack' && (
@@ -352,7 +368,7 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
                   <>
                     <p className="u3d-fit-sub">Kho {otherFit.estimated ? 'ước tính vừa' : 'xếp vừa'} ở cơ sở khác, rẻ nhất ở trên:</p>
                     <ul>
-                      {otherResults.slice(0, 5).map(item => (
+                      {otherResults.slice(0, 5).map(item => ( // 1 kho gợi ý ở cơ sở khác
                         <li key={`${item.facility.facilityId}-${item.unit.id}`}>
                           <button type="button" disabled={!onOpenOther} onClick={() => onOpenOther?.(item.facility, item.unit)}>
                             <strong>Kho {item.unit.id}</strong>
@@ -371,7 +387,7 @@ export default function Unit3DViewer({ unit: initialUnit, facilityName, onClose,
                     <p>{fitResults.length} kho còn trống {fit.estimated ? 'ước tính chứa được' : 'xếp vừa'} {fit.total.toLocaleString('vi-VN')} món{aisleOn ? ', đã chừa lối đi' : ''}. Rẻ nhất ở trên:</p>
                     {fit.pending && <p className="u3d-fit-pending">Đang xếp thử để kiểm tra chính xác…</p>}
                     <ul>
-                      {fitResults.slice(0, 6).map(item => (
+                      {fitResults.slice(0, 6).map(item => ( // 1 kho gợi ý xếp vừa
                         <li key={item.unit.id}>
                           <button
                             type="button"

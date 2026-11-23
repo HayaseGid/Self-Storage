@@ -21,6 +21,15 @@
  *   -> gửi handoverMethod + appointmentSlot lên backend.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   slotLabel: Đổi giá trị khung giờ ("08:00") thành nhãn hiển thị ("08:00 – 10:00"); không tìm thấy thì trả nguyên giá trị → dùng ở: App.jsx (BookingPage), CartPage.jsx (checkout, CartPage)
+ *   sameDay: Kiểm tra 2 ngày có cùng ngày/tháng/năm không (bỏ qua giờ) → dùng ở: isSlotPast
+ *   isSlotPast: Khung giờ đã qua nếu ngày nhận kho là hôm nay và giờ hiện tại đã quá giờ kết thúc khung → dùng ở: handoverChoiceError, HandoverChoice
+ *   handoverChoiceError: Kiểm tra lựa chọn nhận kho trước khi đặt: Online luôn hợp lệ; InPerson phải chọn khung giờ và khung đó chưa qua → dùng ở: App.jsx (handleConfirmBooking), CartPage.jsx (checkout)
+ *   HandoverChoice: Vẽ 2 thẻ chọn cách nhận kho (Nhận trực tiếp / Bàn giao online); nếu chọn trực tiếp thì hiện thêm 4 nút khung giờ (khung đã qua bị khóa) → dùng ở: App.jsx (BookingPage), CartPage.jsx (CartPage)
+ */
 import React from 'react'
 import './HandoverChoice.css'
 
@@ -99,9 +108,11 @@ export function handoverChoiceError(method, slot, startDate) {
  * Được gọi bởi: App.jsx (trang Đặt kho), CartPage (Giỏ kho).
  */
 export default function HandoverChoice({ method, onMethodChange, slot, onSlotChange, startDate }) {
+  // Chọn cách nhận kho + khung giờ
   return (
     <div className="booking-large-field handover-choice">
       <label>Cách nhận kho</label>
+      {/* 2 thẻ: nhận trực tiếp / bàn giao online */}
       <div className="payment-mode-grid">
         <button
           type="button"
@@ -124,6 +135,7 @@ export default function HandoverChoice({ method, onMethodChange, slot, onSlotCha
         </button>
       </div>
 
+      {/* Nhận trực tiếp: 4 nút khung giờ */}
       {method === HANDOVER_METHODS.InPerson && (
         <div className="handover-slots">
           <span className="handover-slots-title">Khung giờ đến nhận kho {startDate ? `(ngày ${String(startDate.getDate()).padStart(2, '0')}/${String(startDate.getMonth() + 1).padStart(2, '0')})` : ''}</span>
@@ -150,6 +162,7 @@ export default function HandoverChoice({ method, onMethodChange, slot, onSlotCha
         </div>
       )}
 
+      {/* Bàn giao online: lưu ý nhận chìa ở lễ tân */}
       {method === HANDOVER_METHODS.Online && (
         <div className="handover-online-note" role="note">
           <strong>Lưu ý khi bàn giao online</strong>

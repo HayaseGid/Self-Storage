@@ -20,6 +20,19 @@
  *     -> cleanSignatureImage (bỏ nền, co vừa khung) -> vẽ vào canvas -> toDataURL('image/png') -> kiểm tra ≤ 200 KB -> onChange(dataUrl).
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   cleanSignatureImage: Làm sạch ảnh chữ ký tải lên: bỏ nền giấy (trắng / xám) thành trong suốt, giữ nét mực, rồi co vừa khung ký → dùng ở: handleFile
+ *   SignaturePad: Khung ký 640×200 (hiển thị co giãn theo chiều rộng): ký tay hoặc tải ảnh chữ ký → dùng ở: ContractModal.jsx, ContractSignFlow.jsx (ContractSignFlow)
+ *   getPos: Đổi tọa độ con trỏ trên màn hình thành tọa độ trong canvas (tính theo tỉ lệ kích thước thật/hiển thị) → dùng ở: start, move
+ *   start: Chạy khi nhấn xuống canvas (onPointerDown): bắt đầu nét ký, giữ con trỏ, ghi điểm đầu và chấm một điểm nhỏ → dùng ở: SignaturePad
+ *   move: Chạy khi di chuyển con trỏ (onPointerMove): nếu đang ký thì vẽ đoạn thẳng từ điểm trước tới vị trí hiện tại → dùng ở: SignaturePad
+ *   end: Chạy khi nhả / rời khung / hủy chạm (onPointerUp, onPointerLeave, onPointerCancel): kết thúc nét ký và xuất toàn bộ chữ ký thành ảnh PNG → dùng ở: SignaturePad
+ *   clear: Chạy khi bấm nút "Xoá chữ ký": xóa toàn bộ canvas, xóa thông báo và báo onChange(null) để cha biết chưa có chữ ký → dùng ở: SignaturePad
+ *   pickFile: Bấm "Tải ảnh chữ ký": mở hộp chọn file của trình duyệt → dùng ở: SignaturePad
+ *   handleFile: Sau khi chọn file: kiểm tra loại / dung lượng, đọc ảnh, làm sạch nền, vẽ vào khung, xuất PNG (≤ 200 KB) qua onChange → dùng ở: SignaturePad
+ */
 import React from 'react'
 
 const CANVAS_W = 640
@@ -205,8 +218,10 @@ export default function SignaturePad({ onChange }) {
     img.src = url
   }
 
+  // Khung ký tay
   return (
     <div>
+      {/* Vùng vẽ chữ ký */}
       <canvas
         ref={canvasRef}
         width={CANVAS_W}
@@ -228,6 +243,7 @@ export default function SignaturePad({ onChange }) {
         }}
       />
       <input ref={fileRef} type="file" accept={ACCEPT} onChange={handleFile} style={{ display: 'none' }} />
+      {/* Nút tải ảnh chữ ký / xóa chữ ký */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6, fontSize: 13, color: '#5b7089' }}>
         <span>Ký bằng chuột / ngón tay vào khung trên, hoặc tải ảnh chữ ký có sẵn</span>
         <span style={{ display: 'inline-flex', gap: 12 }}>
@@ -239,6 +255,7 @@ export default function SignaturePad({ onChange }) {
           </button>
         </span>
       </div>
+      {/* Thông báo (lỗi ảnh, dung lượng) */}
       {note && (
         <p role={note.tone === 'err' ? 'alert' : 'status'} style={{ margin: '6px 0 0', padding: '7px 10px', borderRadius: 8, fontSize: 12.5, lineHeight: 1.45, background: note.tone === 'err' ? '#fff3f3' : '#f0fdf4', color: note.tone === 'err' ? '#b13b3b' : '#166534' }}>
           {note.text}

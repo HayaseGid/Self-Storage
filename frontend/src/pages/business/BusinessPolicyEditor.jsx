@@ -26,6 +26,30 @@
  *   dùng chung (services/policies.js) cho các màn hình khác.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   today: "Hôm nay" dạng 'YYYY-MM-DD' theo Demo Clock (ngày áp dụng nhỏ nhất được phép chọn) → dùng ở: PolicyForm, validate, save
+ *   clone: Sao chép sâu 1 giá trị (qua JSON) để sửa form mà không đụng dữ liệu gốc → dùng ở: PolicyForm
+ *   toNumber: Đổi chuỗi người dùng nhập thành số (chấp nhận dấu phẩy thập phân, vd "1,5" -> 1.5) → dùng ở: NumField
+ *   NumField: Ô nhập số dùng trong form chính sách: tự lọc ký tự không phải số, hỗ trợ số thập phân (dấu phẩy), cho phép để trống → dùng ở: DepositFields, OverdueFields, ReservationFields +1
+ *   Choice: Nhóm nút chọn 1 trong nhiều lựa chọn (hoạt động như radio), nút đang chọn có class 'on' → dùng ở: DepositFields, OverdueFields
+ *   BusinessPolicyEditor: Màn hình thiết lập chính sách: tải chính sách hiện hành, hiện thanh tab 4 nhóm và PolicyForm của nhóm đang chọn → dùng ở: BusinessOperations.jsx (BusinessOperations)
+ *   load: Tải chính sách hiện hành và làm mới cache chính sách dùng chung (loadPolicies(true) trong services/policies) → dùng ở: BusinessPolicyEditor
+ *   PolicyForm: Form sửa 1 nhóm chính sách: hiện tóm tắt chính sách hiện hành + bản nháp đang sửa, các ô nhập theo nhóm, chọn ngày áp dụng + ghi chú → dùng ở: BusinessPolicyEditor
+ *   set: Cập nhật 1 trường trong cấu hình chính sách đang sửa → dùng ở: PolicyForm
+ *   validate: Kiểm tra cấu hình theo từng nhóm → dùng ở: save
+ *   save: Lưu phiên bản chính sách mới (bấm "Lưu phiên bản mới"): validate, hỏi xác nhận → dùng ở: PolicyForm
+ *   toggleHistory: Hiện/ẩn bảng lịch sử phiên bản (bấm "Lịch sử thay đổi"); chỉ tải ở lần mở đầu tiên → dùng ở: PolicyForm
+ *   DepositFields: Các ô của nhóm "Tiền đặt cọc": số tháng cọc (1 hoặc 2), phạm vi áp dụng (tất cả / chọn cơ sở), và ví dụ tính cọc cho kho 1.000.000đ/tháng → dùng ở: PolicyForm
+ *   toggleFacility: Thêm/bỏ 1 cơ sở khỏi danh sách cơ sở áp dụng chính sách cọc → dùng ở: DepositFields
+ *   OverdueFields: Các ô của nhóm "Phí quá hạn & phụ phí": loại phí (% hoặc cố định), chu kỳ tính, mức phí, số ngày chưa tính phí, mức trần mỗi kỳ → dùng ở: PolicyForm
+ *   updateFee: Sửa 1 phụ phí trong danh sách theo vị trí → dùng ở: OverdueFields
+ *   ReservationFields: Các ô của nhóm "Đặt chỗ & hủy": thời hạn giữ chỗ chờ cọc, điều kiện hủy, các mức hoàn tiền cọc theo số ngày hủy trước ngày bắt đầu → dùng ở: PolicyForm
+ *   updateTier: Sửa 1 mức hoàn tiền trong danh sách theo vị trí → dùng ở: ReservationFields
+ *   RenewalReturnFields: Các ô của nhóm "Gia hạn & trả kho": số ngày báo trước khi gia hạn, kỳ gia hạn tối thiểu/tối đa, hạn thanh toán → dùng ở: PolicyForm
+ *   toggleTerm: Bật/tắt 1 kỳ gia hạn (số tháng) được phép, rồi cập nhật kỳ gia hạn tối thiểu/tối đa → dùng ở: RenewalReturnFields
+ */
 import React, { useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPut } from '../../api/api'
 import PriceInput from '../../components/common/PriceInput'
@@ -93,6 +117,7 @@ function NumField({ label, value, onChange, suffix, hint, allowDecimal = false, 
     const current = toNumber(text)
     if (current !== value && !(current == null && value == null)) setText(value == null ? '' : String(value).replace('.', ','))
   }, [value])
+  // Ô nhập số có nhãn
   return (
     <label className="pe-field">
       <span>{label}</span>
@@ -123,6 +148,7 @@ function NumField({ label, value, onChange, suffix, hint, allowDecimal = false, 
  * @param {Function} props.onChange nhận key khi bấm 1 nút.
  */
 function Choice({ label, value, options, onChange }) {
+  // Nhóm nút chọn 1 giá trị
   return (
     <div className="pe-field">
       <span>{label}</span>
@@ -180,6 +206,7 @@ export function BusinessPolicyEditor({ facilities = [], dialog }) {
   // Các phiên bản đã lưu nhưng ngày áp dụng ở tương lai.
   const scheduled = (data.scheduled || []).filter(item => item.key === tab)
 
+  // Màn hình chính sách: tab + form
   return (
     <div className="pe-root">
       <div className="pe-tabs" role="tablist" aria-label="Nhóm chính sách">
@@ -332,8 +359,10 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
     }
   }
 
+  // Form sửa 1 nhóm chính sách
   return (
     <section className="business-panel pe-panel">
+      {/* Tiêu đề + tóm tắt chính sách hiện hành */}
       <header className="pe-head">
         <div>
           <span className="pe-eyebrow">Chính sách hiện hành</span>
@@ -349,12 +378,14 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
         </div>
       </header>
 
+      {/* Phiên bản đã hẹn ngày áp dụng */}
       {scheduled.length > 0 && (
         <div className="pe-scheduled">
           ⏱ Đã hẹn {scheduled.map(item => <strong key={item.version}>v{item.version} áp dụng từ {fmtDay(item.effectiveFrom)}</strong>)}. Lưu thêm sẽ tạo phiên bản mới hơn.
         </div>
       )}
 
+      {/* Bảng lịch sử phiên bản */}
       {showHistory && (
         <div className="pe-history">
           {!history ? 'Đang tải...' : history.error ? history.error : history.length === 0 ? 'Chưa có phiên bản nào, đang dùng giá trị mặc định.' : (
@@ -377,6 +408,7 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
         </div>
       )}
 
+      {/* Các ô nhập của nhóm */}
       <div className="pe-body">
         {policyKey === 'deposit' && <DepositFields value={value} set={set} facilities={facilities} />}
         {policyKey === 'overdue' && <OverdueFields value={value} set={set} />}
@@ -384,6 +416,7 @@ function PolicyForm({ policyKey, current, scheduled, facilities, dialog, onSaved
         {policyKey === 'renewal_return' && <RenewalReturnFields value={value} set={set} />}
       </div>
 
+      {/* Ngày áp dụng + ghi chú + nút lưu */}
       <footer className="pe-save">
         <label className="pe-field">
           <span>Ngày bắt đầu áp dụng</span>
@@ -418,6 +451,7 @@ function DepositFields({ value, set, facilities }) {
   const sample = 1000000 // giá thuê mẫu để minh họa
   // Thêm/bỏ 1 cơ sở khỏi danh sách cơ sở áp dụng chính sách cọc.
   const toggleFacility = id => set('facilityIds', value.facilityIds.includes(id) ? value.facilityIds.filter(x => x !== id) : [...value.facilityIds, id])
+  // Ô nhập chính sách tiền cọc
   return (
     <div className="pe-grid">
       <div className="pe-field">
@@ -426,6 +460,7 @@ function DepositFields({ value, set, facilities }) {
       </div>
       <NumField label="Giá trị đặt cọc" value={value.value} onChange={n => set('value', n)} suffix="tháng tiền thuê / kho" width={260} hint="Chọn 1 hoặc 2 tháng (mặc định 2 tháng tiền thuê)." />
       <Choice label="Phạm vi áp dụng" value={value.scope} options={[['all', 'Tất cả cơ sở'], ['selected', 'Các cơ sở được chọn']]} onChange={scope => set('scope', scope)} />
+      {/* Chọn cơ sở áp dụng */}
       {value.scope === 'selected' && (
         <div className="pe-field pe-wide">
           <span>Chọn cơ sở ({value.facilityIds.length}/{facilities.length})</span>
@@ -467,9 +502,11 @@ function OverdueFields({ value, set }) {
   const periods = value.period === 'day' ? units : value.period === 'week' ? Math.ceil(units / 7) : Math.ceil(units / 30)
   let fee = value.feeType === 'percent' ? sampleDebt * (value.feeValue || 0) / 100 * periods : (value.feeValue || 0) * periods
   if (value.maxPercent != null && !Number.isNaN(value.maxPercent)) fee = Math.min(fee, sampleDebt * value.maxPercent / 100)
+  // Ô nhập phí quá hạn & phụ phí
   return (
     <>
       <h4 className="pe-sub">Phí quá hạn</h4>
+      {/* Mức phí trễ, ân hạn, trần phí */}
       <div className="pe-grid">
         <Choice label="Loại phí" value={value.feeType} options={[['percent', 'Tỷ lệ (%) số tiền quá hạn'], ['fixed', 'Số tiền cố định']]} onChange={t => set('feeType', t)} />
         <Choice label="Cách tính" value={value.period} options={Object.entries(PERIOD_LABELS).map(([k, l]) => [k, `Theo ${l}`])} onChange={p => set('period', p)} />
@@ -486,6 +523,7 @@ function OverdueFields({ value, set }) {
 
       <h4 className="pe-sub">Phụ phí chung</h4>
       <p className="pe-muted">Nhân viên chỉ được thu các khoản có trong bảng này. Để trống số tiền nếu tính theo chi phí thực tế.</p>
+      {/* Bảng phụ phí */}
       <div className="admin-table-wrap">
         <table className="admin-table pe-table">
           <thead><tr><th>Mã</th><th>Tên phụ phí</th><th>Điều kiện phát sinh</th><th>Số tiền</th><th>Áp dụng</th><th></th></tr></thead>
@@ -523,8 +561,10 @@ function ReservationFields({ value, set }) {
   const updateTier = (index, patch) => set('refundTiers', tiers.map((t, i) => (i === index ? { ...t, ...patch } : t)))
   // Các mức sắp xếp theo số ngày giảm dần (giữ vị trí gốc `i` để sửa/xóa đúng phần tử); dùng để hiện khoảng "từ X đến Y ngày".
   const sorted =[...tiers].map((t, i) => ({ ...t, i })).sort((a, b) => (b.minDaysBefore ?? 0) - (a.minDaysBefore ?? 0))
+  // Ô nhập đặt chỗ & hủy
   return (
     <>
+      {/* Thời gian giữ chỗ, đặt trước tối đa */}
       <div className="pe-grid">
         <NumField label="Thời hạn giữ chỗ" value={value.holdMinutes} onChange={n => set('holdMinutes', n)} suffix="phút chờ khách trả cọc" width={280} hint="Hết thời gian mà chưa cọc, kho được mở lại cho khách khác." />
         <NumField label="Đặt trước tối đa" value={value.maxAdvanceBookingDays ?? 30} onChange={n => set('maxAdvanceBookingDays', n)} suffix="ngày kể từ hôm nay" width={260} hint="Khách chỉ chọn được ngày bắt đầu thuê (ngày nhận kho) trong khoảng này." />
@@ -535,6 +575,7 @@ function ReservationFields({ value, set }) {
       </div>
 
       <h4 className="pe-sub">Mức hoàn tiền cọc khi hủy</h4>
+      {/* Các mức hoàn cọc khi hủy */}
       <div className="pe-tiers">
         {sorted.map((t, idx) => {
           const upper = idx > 0 ? sorted[idx - 1].minDaysBefore - 1 : null
@@ -582,9 +623,11 @@ function RenewalReturnFields({ value, set }) {
     set('minRenewalMonths', next.length ? Math.min(...next) : 0)
     set('maxRenewalMonths', next.length ? Math.max(...next) : 0)
   }
+  // Ô nhập gia hạn & trả kho
   return (
     <>
       <h4 className="pe-sub">Gia hạn</h4>
+      {/* Báo trước, kỳ gia hạn, hạn hoàn cọc */}
       <div className="pe-grid">
         <NumField label="Gửi yêu cầu gia hạn trước" value={value.renewalNoticeDays} onChange={n => set('renewalNoticeDays', n)} suffix="ngày so với ngày hết hạn" width={300} />
         <div className="pe-field">
@@ -608,6 +651,7 @@ function RenewalReturnFields({ value, set }) {
         <NumField label="Hoàn cọc trong" value={value.depositRefundWorkingDays} onChange={n => set('depositRefundWorkingDays', n)} suffix="ngày làm việc sau khi kiểm tra" width={320} />
         <label className="pe-field pe-wide"><span>Khách cần làm khi trả kho</span><textarea rows={2} value={value.returnRequirements || ''} onChange={e => set('returnRequirements', e.target.value)} /></label>
       </div>
+      {/* Bảng phí khi trả kho */}
       <div className="admin-table-wrap">
         <table className="admin-table pe-table">
           <thead><tr><th>Phí liên quan khi trả kho</th><th>Điều kiện</th><th>Số tiền</th><th></th></tr></thead>

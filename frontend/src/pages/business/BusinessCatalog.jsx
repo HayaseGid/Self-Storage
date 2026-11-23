@@ -23,6 +23,29 @@
  *   -> runSave gọi API -> afterChange đóng form, tải lại, báo thành công.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   fmtArea: Định dạng diện tích kiểu Việt Nam (tối đa 1 chữ số thập phân) → dùng ở: UnitSizeForm, BusinessCatalog
+ *   suggestedSizeLetter: Gợi ý chữ cái nhóm size theo diện tích: <=8 m² 'S', <=16 'M', <=30 'L', lớn hơn 'V' → dùng ở: UnitSizeForm
+ *   CatalogModal: Khung hộp thoại chung cho các form danh mục: tiêu đề, nội dung, nút Hủy / Lưu; đóng bằng Esc, nút × hoặc bấm ra ngoài → dùng ở: UnitTypeForm, UnitSizeForm
+ *   Field: 1 trường form: nhãn (thêm dấu * nếu bắt buộc), ô nhập (children), và câu lỗi (ưu tiên) hoặc gợi ý bên dưới → dùng ở: UnitTypeForm, UnitSizeForm
+ *   UnitTypeForm: Modal thêm / sửa loại kho: tên (2–100 ký tự, không trùng), mô tả (<= 255 ký tự), xem trước chip loại kho (icon + màu tự chọn theo tên) → dùng ở: BusinessCatalog
+ *   submit: Lưu loại kho (submit form): bật hiện lỗi, kiểm tra hợp lệ rồi gọi onSave({ typeName, description }) → dùng ở: UnitTypeForm
+ *   UnitSizeForm: Modal thêm / sửa kích thước: mã size (S/M/L/V + 1–2 số), dài × rộng (0,5–50 m) hoặc tủ Locker + ghi chú; tự ghép chuỗi "S2: 2x2m" → dùng ở: BusinessCatalog
+ *   dimError: Kiểm tra 1 số đo nhập vào (phải là số, từ 0,5 m đến 50 m); trả câu lỗi hoặc '' → dùng ở: UnitSizeForm
+ *   BusinessCatalog: Màn hình danh mục: 2 tab (Loại kho / Kích thước kho) hiển thị bằng DataGrid, nút Thêm / Sửa / Xóa, đếm mức sử dụng của từng mục để chặn xóa → chưa thấy nơi dùng
+ *   usageOfType: Mức sử dụng của 1 loại kho (ưu tiên số backend trả, không có thì dùng số tự đếm) → dùng ở: saveType, deleteType, BusinessCatalog
+ *   usageOfSize: Mức sử dụng của 1 kích thước (ưu tiên số backend trả, không có thì dùng số tự đếm) → dùng ở: saveSize, deleteSize, BusinessCatalog
+ *   load: Tải danh mục loại kho + kích thước; lỗi thì dùng dữ liệu vận hành và chuyển sang chỉ xem → dùng ở: BusinessCatalog, afterChange
+ *   afterChange: Sau khi lưu: đóng form, tải lại danh mục + dữ liệu cha (onChanged), báo thành công → dùng ở: runSave
+ *   runSave: Chạy 1 thao tác lưu/xóa, thành công thì gọi afterChange, lỗi thì hiện pop-up → dùng ở: saveType, deleteType, saveSize +1
+ *   saveType: Thêm hoặc sửa loại kho (hỏi xác nhận khi đổi tên loại đang được kho sử dụng) → dùng ở: BusinessCatalog
+ *   deleteType: Xóa loại kho (bấm "Xóa" trên dòng): chặn và báo lý do nếu đang được kho / đơn / mức giá dùng, ngược lại hỏi xác nhận rồi xóa → dùng ở: BusinessCatalog
+ *   saveSize: Thêm hoặc sửa kích thước (hỏi xác nhận khi sửa kích thước đang được kho sử dụng) → dùng ở: BusinessCatalog
+ *   deleteSize: Xóa kích thước (bấm "Xóa" trên dòng): chặn nếu đang được kho / mức giá dùng, ngược lại hỏi xác nhận rồi xóa → dùng ở: BusinessCatalog
+ *   actionButtons: Vẽ cặp nút Sửa / Xóa cho 1 dòng (khóa khi chỉ xem; nút Xóa mờ khi đang được dùng) → dùng ở: BusinessCatalog
+ */
 import React, { useEffect, useMemo, useState } from 'react'
 import DataGrid from '../../components/common/DataGrid'
 import { SizeMeter, UnitTypeChip, getUnitTypeStyle } from '../../features/unit/unitTypes'
@@ -72,6 +95,7 @@ function CatalogModal({ title, subtitle, children, onClose, onSubmit, submitLabe
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
+  // Khung hộp thoại dùng chung
   return (
     <div className="bc-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
       <form className="bc-modal" role="dialog" aria-modal="true" aria-labelledby="bc-modal-title" onSubmit={event => { event.preventDefault(); onSubmit() }} noValidate>
@@ -102,6 +126,7 @@ function CatalogModal({ title, subtitle, children, onClose, onSubmit, submitLabe
  * @param {boolean} [props.required] hiện dấu * bắt buộc.
  */
 function Field({ label, error, hint, children, required }) {
+  // 1 ô nhập có nhãn + lỗi
   return (
     <label className={`bc-field${error ? ' has-error' : ''}`}>
       <span className="bc-field-label">{label}{required && <em aria-hidden="true"> *</em>}</span>
@@ -153,6 +178,7 @@ function UnitTypeForm({ item, allTypes, usage, onClose, onSave }) {
     }
   }
 
+  // Form thêm/sửa loại kho
   return (
     <CatalogModal
       title={item ? `Sửa loại kho` : 'Thêm loại kho'}
@@ -251,6 +277,7 @@ function UnitSizeForm({ item, allSizes, usage, onClose, onSave }) {
     }
   }
 
+  // Form thêm/sửa kích thước kho
   return (
     <CatalogModal
       title={item ? 'Sửa kích thước kho' : 'Thêm kích thước kho'}
@@ -263,6 +290,7 @@ function UnitSizeForm({ item, allSizes, usage, onClose, onSave }) {
       {item && usage.units > 0 && (
         <div className="bc-note warn">Kích thước này đang được <strong>{usage.units} kho</strong> sử dụng. Thay đổi sẽ áp dụng cho tất cả các kho đó.</div>
       )}
+      {/* Mã size + tên */}
       <div className="bc-row">
         <Field label="Mã size" required error={touched ? errors.code : ''} hint="S = nhỏ, M = vừa, L = lớn, V = rất lớn">
           <input value={code} maxLength={3} onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} onBlur={() => setTouched(true)} placeholder="S2" autoFocus />
@@ -272,6 +300,7 @@ function UnitSizeForm({ item, allSizes, usage, onClose, onSave }) {
           <span>Tủ locker (không đo dài × rộng)</span>
         </label>
       </div>
+      {/* Kích thước dài × rộng (hoặc ghi chú tủ locker) */}
       {isLocker ? (
         <Field label="Ghi chú kích thước locker" error={errors.note} hint='Ví dụ: "< 2.5m" (không bắt buộc)'>
           <input value={lockerNote} maxLength={40} onChange={e => setLockerNote(e.target.value)} placeholder="< 2.5m" />
@@ -288,6 +317,7 @@ function UnitSizeForm({ item, allSizes, usage, onClose, onSave }) {
         </div>
       )}
       {errors.dims && <div className="bc-note error" role="alert">{errors.dims}</div>}
+      {/* Xem trước chuỗi kích thước */}
       <div className="bc-preview">
         <span>Sẽ lưu là:</span>
         <strong>{dimensions || '—'}</strong>
@@ -498,8 +528,10 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
 
   if (!types || !sizes) return <section className="business-panel"><p>Đang tải danh mục...</p></section>
 
+  // Màn hình danh mục loại kho / kích thước
   return (
     <section className="business-panel bc-root">
+      {/* Tiêu đề + tab */}
       <div className="business-panel-header">
         <div>
           <h2>Danh mục thiết lập</h2>
@@ -515,6 +547,7 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
         </button>
       </div>
 
+      {/* Cảnh báo chế độ chỉ xem */}
       {readOnly && (
         <div className="bc-note warn" role="status">
           Backend chưa có API danh mục (<code>/api/operations/unit-types</code>, <code>/api/operations/unit-sizes</code>) nên đang ở <strong>chế độ chỉ xem</strong>.
@@ -527,6 +560,7 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
         <button type="button" role="tab" aria-selected={tab === 'sizes'} className={tab === 'sizes' ? 'active' : ''} onClick={() => setTab('sizes')}>Kích thước kho <em>{sizes.length}</em></button>
       </div>
 
+      {/* Bảng loại kho */}
       {tab === 'types' && (
         <DataGrid
           rows={types}
@@ -553,6 +587,7 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
         />
       )}
 
+      {/* Bảng kích thước kho */}
       {tab === 'sizes' && (
         <DataGrid
           rows={sizes}

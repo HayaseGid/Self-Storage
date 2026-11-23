@@ -20,6 +20,14 @@
  *   bấm "Ký hợp đồng" -> onSign(group) -> CustomerAccount mở ContractSignFlow.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền thành chuỗi kiểu Việt Nam kèm "đ" (rỗng -> "0đ") → dùng ở: ContractDetailModal
+ *   contractStage: Xác định giai đoạn của hợp đồng từ trạng thái đơn/hợp đồng: 'toSign' (chờ ký, kể cả phụ lục gia hạn), 'active' (đang thuê), 'signed' → dùng ở: ContractDetailModal
+ *   ContractDetailModal: Hộp thoại chi tiết hợp đồng cho khách: badge giai đoạn, tiến trình 4 bước, tóm tắt tiền, văn bản hợp đồng, các nút In/PDF, Gửi email → dùng ở: CustomerAccount.jsx (ContractPage)
+ *   sendMail: Gửi hợp đồng qua email cho khách và hiện kết quả trong khung thông báo (state mail) → dùng ở: ContractDetailModal
+ */
 import React, { useEffect, useState } from 'react'
 import { apiGet } from '../../api/api'
 import { formatVnd } from '../../services/storageRules'
@@ -164,8 +172,10 @@ export default function ContractDetailModal({ group, customer, facilityAddress, 
   ]
   const currentIndex = { approval: 1, preparing: 1, toSign: 2, signed: 3, active: 4 }[stage]
 
+  // Hộp thoại chi tiết hợp đồng
   return (
     <div className="csf-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+      {/* Tiến trình 4 bước, tóm tắt tiền, văn bản HĐ, các nút */}
       <div className="csf" role="dialog" aria-modal="true" aria-labelledby="cdm-title">
         <div className="csf-head">
           <div>

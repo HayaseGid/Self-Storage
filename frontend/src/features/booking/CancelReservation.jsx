@@ -22,6 +22,17 @@
  *   (cha tải lại dữ liệu) -> dialog báo kết quả hoàn tiền. Nếu hoàn lỗi: mục Thanh toán -> retryRefund() -> POST .../refund-retry.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền (làm tròn) thành chuỗi kiểu Việt Nam kèm "đ" → dùng ở: submit, CancelReservationModal
+ *   fmtIso: Đổi ngày ISO thành 'dd/MM/yyyy' (rỗng -> '—') → dùng ở: CancelReservationModal
+ *   tierLabel: Tạo nhãn mô tả cho 1 mức hoàn tiền trong bảng chính sách (vd "Hủy trước 3–6 ngày") → dùng ở: CancelReservationModal
+ *   CancelReservationModal: Hộp thoại hủy đặt kho: tải báo giá hoàn tiền theo chính sách, chọn lý do, tick đồng ý rồi xác nhận hủy → dùng ở: PendingPayments.jsx (CustomerPaymentCenter), CustomerAccount.jsx (ContractPage)
+ *   load: Tải báo giá hủy/hoàn tiền vào state quote (404 không kèm message -> báo backend chưa có chức năng) → dùng ở: CancelReservationModal
+ *   submit: Xác nhận hủy: hỏi lại bằng dialog, gửi yêu cầu hủy, báo kết quả hoàn tiền (thành công / còn chờ hoàn) → dùng ở: CancelReservationModal
+ *   retryRefund: Gửi lại yêu cầu hoàn tiền cho đơn đã hủy (khi lần hoàn trước qua VNPay bị lỗi) và báo kết quả bằng dialog → dùng ở: PendingPayments.jsx (retry), CustomerAccount.jsx
+ */
 import React, { useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../../api/api'
 import { useDialog } from '../../components/common/Dialog'
@@ -149,9 +160,11 @@ export default function CancelReservationModal({ rental, onClose, onDone }) {
   const tiers = quote?.tiers || []
   const activeTier = tiers.findIndex(t => quote && quote.daysBefore >= t.minDaysBefore)
 
+  // Hộp thoại hủy đặt kho
   return (
     <div className="csf-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !submitting) onClose() }}>
       <div className="csf cr-modal" role="dialog" aria-modal="true" aria-labelledby="cr-title">
+        {/* Tiêu đề hộp thoại */}
         <div className="csf-head">
           <div>
             <span className="sign-badge wait cr-badge">Hủy đặt kho</span>
@@ -161,6 +174,7 @@ export default function CancelReservationModal({ rental, onClose, onDone }) {
           <button type="button" className="csf-close" onClick={onClose} disabled={submitting} aria-label="Đóng">×</button>
         </div>
 
+        {/* Báo giá hoàn cọc, bảng mức hoàn, chọn lý do, tick đồng ý */}
         <div className="csf-body">
           {loadError && (
             <div className="auth-message error" role="alert">
@@ -228,6 +242,7 @@ export default function CancelReservationModal({ rental, onClose, onDone }) {
           )}
         </div>
 
+        {/* Nút đóng / xác nhận hủy */}
         <div className="csf-actions">
           <span className="csf-spacer" />
           <button type="button" className="dashboard-secondary-btn" onClick={onClose} disabled={submitting}>Không hủy</button>

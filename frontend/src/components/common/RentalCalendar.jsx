@@ -15,6 +15,21 @@
  *   -> trang tính endDate (calculateEndDate) và truyền lại -> lịch tô kỳ thuê + dòng tóm tắt.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   startOfDay: Trả về bản sao của ngày ở 00:00:00 → dùng ở: RentalCalendar
+ *   sameDay: Kiểm tra 2 ngày có trùng ngày/tháng/năm không → dùng ở: RentalCalendar
+ *   addDays: Cộng n ngày vào một ngày → dùng ở: moveFocus, RentalCalendar
+ *   fmt: Định dạng ngày thành 'dd/MM/yyyy' (null -> '—') → dùng ở: RentalCalendar
+ *   keyOf: Tạo khóa duy nhất cho 1 ngày (dùng làm key React và thuộc tính data-day) → dùng ở: RentalCalendar
+ *   buildMonth: Dựng mảng ô của 1 tháng cho lưới 7 cột (Thứ Hai là cột đầu), ô trống ở đầu/cuối là null → dùng ở: RentalCalendar
+ *   RentalCalendar: Component lịch chọn ngày bắt đầu thuê → dùng ở: App.jsx (BookingPage), CartPage.jsx (CartPage)
+ *   isDisabled: Ngày bị khóa nếu trước minDate hoặc sau maxDate → dùng ở: select, RentalCalendar
+ *   select: Chọn 1 ngày (bỏ qua nếu bị khóa): báo lên cha và chuyển focus tới ngày đó → dùng ở: onKeyDown, RentalCalendar
+ *   moveFocus: Dời ô đang focus đi `days` ngày (giới hạn trong min/max), tự chuyển tháng hiển thị nếu cần → dùng ở: onKeyDown
+ *   onKeyDown: Xử lý bàn phím trên lưới ngày: mũi tên để di chuyển, Enter/Space để chọn → dùng ở: RentalCalendar
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { getTodayDate } from '../../demoClock/demoClock'
 import './RentalCalendar.css'
@@ -155,8 +170,10 @@ export default function RentalCalendar({ value, onChange, endDate, minDate, maxD
   const monthLabel = viewMonth.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' })
   const end = endDate ? startOfDay(endDate) : null
 
+  // Lịch chọn ngày bắt đầu thuê
   return (
     <div className="rc">
+      {/* Nút chọn nhanh: hôm nay, ngày mai... */}
       <div className="rc-quick" aria-label="Chọn nhanh ngày bắt đầu">
         {quickPicks.map(([label, date]) => (
           <button
@@ -173,6 +190,7 @@ export default function RentalCalendar({ value, onChange, endDate, minDate, maxD
         ))}
       </div>
 
+      {/* Lưới ngày của tháng + nút chuyển tháng */}
       <div className="rc-card">
         <div className="rc-head">
           <button type="button" className="rc-nav" onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))} disabled={!canPrev} aria-label="Tháng trước">‹</button>
@@ -196,6 +214,7 @@ export default function RentalCalendar({ value, onChange, endDate, minDate, maxD
               inRange && 'in-range',
               sameDay(date, today) && 'today'
             ].filter(Boolean).join(' ')
+            // 1 ô ngày (bị khóa nếu ngoài khoảng cho phép)
             return (
               <button
                 key={keyOf(date)}
@@ -223,6 +242,7 @@ export default function RentalCalendar({ value, onChange, endDate, minDate, maxD
         </div>
       </div>
 
+      {/* Dòng tóm tắt kỳ thuê đã chọn */}
       <div className={`rc-summary${value ? '' : ' empty'}`}>
         {value
           ? <>Thuê từ <strong>{fmt(value)}</strong> đến <strong>{fmt(end)}</strong>{durationMonths ? <> · {durationMonths} tháng</> : null}</>

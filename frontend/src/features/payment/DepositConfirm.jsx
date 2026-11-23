@@ -16,6 +16,13 @@
  *   nút "Thanh toán" -> khách thanh toán (VNPay / mô phỏng) ở trang cha.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền (làm tròn) thành chuỗi kiểu Việt Nam kèm "đ" → dùng ở: DepositConfirm
+ *   DepositConfirm: Vẽ khung xác nhận đặt cọc: tiêu đề, bảng thông tin, bảng tiền + tổng, 2 ô tick và dòng gợi ý khi chưa tick đủ → dùng ở: App.jsx (BookingPage), ContractRenewal.jsx (RenewalModal), CartPage.jsx (CartPage)
+ *   toggle: Chạy khi tick/bỏ tick 1 trong 2 ô: cập nhật state của ô đó rồi gọi onChange(info && policy) với giá trị MỚI → dùng ở: DepositConfirm
+ */
 import React, { useState } from 'react'
 import { describePolicy, usePolicies } from '../../services/policies'
 import { formatVnd } from '../../services/storageRules'
@@ -66,10 +73,12 @@ export default function DepositConfirm({ title = 'Xác nhận đặt cọc', row
   const deposit = describePolicy('deposit', policies.values?.deposit).summary
   const reservation = describePolicy('reservation', policies.values?.reservation).summary
 
+  // Khung xác nhận đặt cọc
   return (
     <section className={`dc-box${agreed ? ' ok' : ''}`} aria-labelledby="dc-title">
       <h3 id="dc-title">{title}</h3>
 
+      {/* Bảng thông tin kho, thời gian thuê */}
       {rows.length > 0 && (
         <dl className="dc-rows">
           {rows.map(([label, value]) => (
@@ -78,6 +87,7 @@ export default function DepositConfirm({ title = 'Xác nhận đặt cọc', row
         </dl>
       )}
 
+      {/* Các khoản tiền + tổng cần trả */}
       <dl className="dc-money">
         {lines.map(([label, value]) => (
           <div key={label}><dt>{label}</dt><dd>{typeof value === 'number' ? money(value) : value}</dd></div>
@@ -89,6 +99,7 @@ export default function DepositConfirm({ title = 'Xác nhận đặt cọc', row
         <input type="checkbox" checked={checkedInfo} onChange={event => toggle('info', event.target.checked)} />
         <span>{infoText || <>Tôi đã kiểm tra đúng <strong>kho, cơ sở và thời gian thuê</strong> ở trên.</>}</span>
       </label>
+      {/* 2 ô tick xác nhận */}
       <label className={`dc-check${checkedPolicy ? ' on' : ''}`}>
         <input type="checkbox" checked={checkedPolicy} onChange={event => toggle('policy', event.target.checked)} />
         <span>

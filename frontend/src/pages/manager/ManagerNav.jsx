@@ -19,6 +19,15 @@
  *   extraCounts (số tính sẵn ở trang) -> hiện số đỏ trên từng mục. Người dùng bấm mục -> onSelect(key) -> trang đổi activeTab.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   svg: Bọc các thẻ path/rect/circle SVG thành 1 icon 24x24 nét mảnh (kích thước, màu nét do ManagerNav.css quy định) → dùng ở: (cấp file), Chevron
+ *   Chevron: Icon mũi tên ">" cạnh tiêu đề nhóm thu gọn được; thêm class "open" để CSS xoay mũi tên xuống khi nhóm mở → dùng ở: ManagerNav
+ *   useManagerBadges: Hook: tính số việc đang chờ cho 3 mục menu của Manager (Sự cố kho, Công nợ & phí trễ, Khiếu nại kiểm kho) → dùng ở: ManagerNav
+ *   ManagerNav: Menu trái của Manager: vẽ các nhóm/mục trong GROUPS, đánh dấu mục đang chọn, hiện số đỏ việc chờ và nhãn "Mới N" ở mục Kho cơ sở → dùng ở: FacilityManagerAccount.jsx (FacilityManagerDashboard)
+ *   toggleSetup: Mở/thu gọn nhóm "Thiết lập" và nhớ lựa chọn vào localStorage → dùng ở: ManagerNav
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet } from '../../api/api'
 import './ManagerNav.css'
@@ -234,12 +243,14 @@ export default function ManagerNav({ activeTab, onSelect, facilityId, freshUnits
     else if (top + item.offsetHeight > nav.scrollTop + nav.clientHeight) nav.scrollTop = top + item.offsetHeight - nav.clientHeight + 8
   }, [activeTab])
 
+  // Menu trái của Manager, chia theo nhóm
   return (
     <nav ref={navRef} className="customer-nav mnav" aria-label="Menu Facility Manager">
       {GROUPS.map(group => {
         const hasActive = group.items.some(i => i.key === activeTab)
         const open = !group.collapsible || setupOpen || hasActive
         const groupCount = group.items.reduce((s, i) => s + Number(counts[i.key] || 0), 0)
+        // 1 nhóm menu (nhóm Thiết lập thu gọn được)
         return (
           <div key={group.id} className="mnav-group">
             {group.title && (group.collapsible ? (
@@ -252,6 +263,7 @@ export default function ManagerNav({ activeTab, onSelect, facilityId, freshUnits
             {open && group.items.map(item => {
               const count = Number(counts[item.key] || 0)
               const hint = count > 0 && HINTS[item.key] ? HINTS[item.key](count) : null
+              // 1 mục menu + số đỏ việc chờ
               return (
                 <button
                   key={item.key}

@@ -18,6 +18,14 @@
  *   onReturn / onOpenPayment của CustomerAccount để mở hộp thoại hoặc chuyển trang tương ứng.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền (làm tròn) thành chuỗi kiểu Việt Nam kèm "đ", vd 1500000 -> "1.500.000đ" → dùng ở: (cấp file)
+ *   parseVnDate: Đổi chuỗi ngày 'dd/MM/yyyy' (dạng backend trả cho startDate) thành đối tượng Date → dùng ở: (cấp file)
+ *   daysFromToday: Tính số ngày từ "hôm nay" tới một ngày → dùng ở: (cấp file)
+ *   ContractCard: Vẽ thẻ của MỘT hợp đồng: đầu thẻ (số HĐ, chip trạng thái, mã đơn, mã kho), vị trí, ghi chú gia hạn / trả kho, 3 nhóm thông tin → dùng ở: CustomerAccount.jsx (ContractPage)
+ */
 import React from 'react'
 import { Code, NewBadge, UnitCodes } from '../../components/common/listKit'
 import { extractDistrict } from '../../utils/districts'
@@ -126,6 +134,7 @@ export default function ContractCard({
     : (rental.statusLabel || rental.status)
   const chipTone = inspectionHeld ? 'warn' : (STATUS_TONE[rental.status] || 'info')
 
+  // Thẻ hợp đồng của khách
   return (
     <article id={`contract-${rental.reservationId}`} className={`cc-card${ended ? ' ended' : ''}`}>
       {/* ---- Đầu thẻ ---- */}
@@ -163,6 +172,7 @@ export default function ContractCard({
       {renewal?.renewedBy && (
         <p className="cc-note">↻ Đã gia hạn bằng phụ lục <strong>{renewal.renewedBy.contractNumber}</strong> đến {fmtIsoDate(renewal.renewedBy.endDate)}.</p>
       )}
+      {/* Trạng thái trả kho / kiểm kho */}
       {returnInfo?.request && (
         <p className="cc-return">
           ⇦ {(() => {
@@ -186,6 +196,7 @@ export default function ContractCard({
           })()} Xem chi tiết ở mục "Trả kho" phía trên.
         </p>
       )}
+      {/* Lỗi tải chữ ký */}
       {signatureError && (
         <div className="auth-message error cc-alert">
           Không tải được trạng thái chữ ký: {signatureError}

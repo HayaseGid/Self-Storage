@@ -24,6 +24,12 @@
  *   -> openCustomerSection(navigate, 'contract') chuyển sang tab Hợp đồng của khách hàng.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   PaymentResultPage: Trang kết quả thanh toán VNPay: khi mở trang sẽ tự xác minh giao dịch đúng 1 lần với backend, hiển thị trạng thái → dùng ở: App.jsx (Router)
+ *   releaseHeld: Khi đặt cọc thất bại / khách bấm Hủy trên VNPay: hủy các đơn đang giữ kho → dùng ở: PaymentResultPage
+ */
 import React, { useEffect, useRef, useState } from 'react'
 import { apiGet, apiPost } from '../../api/api'
 import { useDialog } from '../../components/common/Dialog'
@@ -138,8 +144,10 @@ export default function PaymentResultPage({ navigate }) {
   // failed = đã tải xong nhưng có lỗi gọi API hoặc VNPay báo giao dịch không thành công
   const failed = !loading && (error || (result && !result.success))
 
+  // Trang kết quả thanh toán VNPay
   return (
     <main className="pr-page">
+      {/* Thẻ kết quả: thành công / thất bại + nút tiếp theo */}
       <section className={`pr-card${failed ? ' bad' : ''}`} aria-live="polite">
         {loading && (
           <>

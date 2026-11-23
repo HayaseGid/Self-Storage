@@ -31,6 +31,22 @@
  *   thiếu thì khách bấm "Đóng ..." -> payReturnFees.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền (làm tròn) thành chuỗi VND kèm "đ", vd 150000 -> "150.000đ" → dùng ở: ReturnProgress, ReturnRequestModal
+ *   fmtDay: Đổi ngày ISO ('2026-11-17T...') thành 'dd/MM/yyyy' để hiển thị (rỗng -> '—') → dùng ở: ReturnProgress, ReturnRequestModal; StaffReturns.jsx (InspectForm, StaffReturns)
+ *   toInput: Cắt ngày ISO về 'YYYY-MM-DD' để gán vào ô input type="date" → dùng ở: ReturnRequestModal
+ *   useUnitReturns: Hook: tải dữ liệu trả kho của khách đang đăng nhập (tự tải khi mount) và cung cấp hàm tải lại → dùng ở: HeaderNotificationBell.jsx (useHeaderNotices), CustomerAccount.jsx (MyStoragePage, ContractPage +1)
+ *   returnStage: Xác định bước hiện tại của 1 yêu cầu trả kho (dựa vào trạng thái yêu cầu + kết quả kiểm kho): 'scheduled' (đã hẹn), 'inspecting' → dùng ở: ReturnProgress, ReturnSection
+ *   payReturnFees: Đóng phí phát sinh còn thiếu khi trả kho: nếu bật chế độ demo thì hỏi khách chọn "Mô phỏng" hay "Qua VNPay"; mô phỏng gọi API pay-demo → dùng ở: pay
+ *   ReturnProgress: Thẻ tiến trình của 1 yêu cầu trả kho: thanh 4 bước (Báo trả kho -> Nhận lại & kiểm tra -> Quản lý duyệt & quyết toán -> Hoàn cọc) → dùng ở: ReturnSection
+ *   cancel: Khi bấm "Hủy lịch trả kho": hỏi xác nhận, rồi hủy lịch và gọi onChanged() để tải lại → dùng ở: ReturnProgress
+ *   pay: Khi bấm "Đóng <số tiền>": đóng phí phát sinh còn thiếu (qua payReturnFees) → dùng ở: ReturnProgress
+ *   ReturnSection: Khối "Trả kho" đầu trang Hợp đồng: liệt kê các yêu cầu trả kho đang xử lý hoặc mới xong trong 30 ngày, mỗi yêu cầu là 1 ReturnProgress → dùng ở: CustomerAccount.jsx (ContractPage)
+ *   ReturnRequestModal: Hộp thoại "Báo trả kho": khách chọn ngày (trong khoảng min/max cho phép), khung giờ còn nhân viên rảnh, ghi chú cho nhân viên → dùng ở: CustomerAccount.jsx (MyStoragePage, ContractPage)
+ *   submit: Khi bấm "Đặt lịch trả kho": gửi yêu cầu, gọi onDone, đóng hộp thoại và báo thành công; lỗi thì hiện trong hộp thoại → dùng ở: ReturnRequestModal
+ */
 import React, { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../../api/api'
 import { useDialog } from '../../components/common/Dialog'
@@ -193,8 +209,10 @@ function ReturnProgress({ item, inspection, onChanged }) {
     } finally { setBusy(false) }
   }
 
+  // Thẻ tiến trình trả kho
   return (
     <article className={`ur-card clickable ${stage}`} role="link" tabIndex={0} onClick={e => { if (!e.target.closest('button, a, input')) focusContract(item.reservationId) }} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) focusContract(item.reservationId) }} title="Bấm để xem hợp đồng">
+      {/* Đầu thẻ: kho, ngày hẹn */}
       <div className="ur-card-head">
         <div>
           <span className="ur-eyebrow">TRẢ KHO</span>
@@ -230,6 +248,7 @@ function ReturnProgress({ item, inspection, onChanged }) {
         <p className="ur-help">Trả kho sớm đã được Quản lý duyệt{Number(item.earlyRequest.refundAmount) > 0 ? <> · hoàn <strong>{money(item.earlyRequest.refundAmount)}</strong> tiền thuê các tháng chưa dùng</> : ''}{item.earlyRequest.cancelledPeriods > 0 && Number(item.earlyRequest.refundAmount) === 0 ? ` · đã hủy ${item.earlyRequest.cancelledPeriods} kỳ tiền thuê sau ngày trả kho` : ''}.{item.earlyRequest.managerNote ? ` Ghi chú: ${item.earlyRequest.managerNote}` : ''}</p>
       )}
       {held && <CustomerInspectionBox inspection={inspection} depositTotal={req.depositTotal} debtDeducted={req.deductedFromDeposit} onChanged={onChanged} />}
+      {/* Bảng quyết toán cọc + nút đóng phí thiếu */}
       {req.inspectedAt && !held && (
         <div className={`ur-result ${req.conditionResult === 'Damaged' ? 'bad' : 'ok'}`}>
           <div className="ur-result-header">
@@ -298,6 +317,7 @@ export function ReturnSection({ returns, onChanged }) {
   const earlyCards = returns.items.filter(i => !i.request && i.earlyRequest && (i.earlyRequest.status === 'Pending' ||
     (i.earlyRequest.status === 'Rejected' && Date.now() - Date.parse(i.earlyRequest.decidedAt || i.earlyRequest.createdAt) < 14 * 86400000)))
   if (!active.length && !earlyCards.length) return null
+  // Khối "Trả kho" ở trang Hợp đồng
   return (
     <section className="ur-section" aria-label="Trả kho">
       <h2>Trả kho</h2>
@@ -385,8 +405,10 @@ export function ReturnRequestModal({ item, rules, fees, onClose, onDone }) {
     ...fees.filter(f => !(rr.returnFees || []).some(x => x.name === f.name)).map(f => `${f.name}: ${f.valueType === 'Percentage' ? `${f.minValue}–${f.maxValue}%` : f.minValue === f.maxValue ? money(f.maxValue) : `${money(f.minValue)}–${money(f.maxValue)}`}`)
   ]
 
+  // Hộp thoại báo trả kho
   return (
     <div className="csf-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose() }}>
+      {/* Chọn ngày, khung giờ, ghi chú, đồng ý quy trình */}
       <div className="csf ur-modal" role="dialog" aria-modal="true" aria-labelledby="ur-title">
         <div className="csf-head">
           <div>

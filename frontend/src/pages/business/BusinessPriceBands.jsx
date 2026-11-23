@@ -27,6 +27,19 @@
  *   Nếu không tải được price-band-rules thì canEdit = false (tạm khóa mọi nút chỉnh sửa).
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   BusinessPriceBands: Màn hình khung giá: danh sách thẻ nhóm → dùng ở: BusinessOperations.jsx (BusinessOperations)
+ *   load: Tải song song danh sách khung giá và điều kiện khóa → dùng ở: BusinessPriceBands, remove, toggleActive
+ *   ruleOf: Tìm điều kiện khóa (rule) của 1 nhóm theo mã → dùng ở: toggleActive, BusinessPriceBands
+ *   remove: Xóa 1 nhóm khung giá (bấm "Xóa", chỉ hiện khi nhóm chưa có size): hỏi xác nhận rồi tải lại; lỗi thì báo bằng hộp thoại → dùng ở: BusinessPriceBands
+ *   toggleActive: Ngừng sử dụng / dùng lại 1 nhóm (bấm nút "Ngừng sử dụng" / "Dùng lại"): kiểm tra quy tắc trước bằng validateBand, vi phạm thì báo lý do → dùng ở: BusinessPriceBands
+ *   PriceBandForm: Modal thêm / sửa nhóm khung giá: mã nhóm, tên, diện tích từ–đến, giá từ–đến, Active; hiện lỗi (validateBand) và gợi ý giới hạn → dùng ở: BusinessPriceBands
+ *   set: Cập nhật giá trị 1 trường của form → dùng ở: PriceBandForm
+ *   num: Đổi chuỗi số (cho phép dấu phẩy) thành Number; rỗng -> NaN → dùng ở: PriceBandForm
+ *   submit: Lưu nhóm (submit khi bấm "Lưu"): còn lỗi thì hiện lỗi đầu tiên; khi sửa thì hỏi xác nhận; rồi tạo mới hoặc cập nhật → dùng ở: PriceBandForm
+ */
 import React, { useEffect, useState } from 'react'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../api/api'
 import PriceInput from '../../components/common/PriceInput'
@@ -162,8 +175,10 @@ export default function BusinessPriceBands({ dialog }) {
   // Tổng số kho có giá nằm ngoài khung (ở mọi nhóm) để hiện cảnh báo đầu trang.
   const issueCount =bands.reduce((n, band) => n + band.outOfRange.length, 0)
 
+  // Màn hình khung giá theo nhóm kích thước
   return (
     <section className="business-panel pb-root">
+      {/* Tiêu đề + nút thêm nhóm */}
       <div className="pb-head">
         <div>
           <h2>Quy chuẩn kích thước & khung giá</h2>
@@ -175,6 +190,7 @@ export default function BusinessPriceBands({ dialog }) {
         <button type="button" className="dashboard-primary-btn" disabled={!canEdit} onClick={() => setEditing({ mode: 'create', values: EMPTY })}>+ Thêm nhóm</button>
       </div>
 
+      {/* Sơ đồ quy trình đặt giá */}
       <div className="pb-flow">
         <div><span>1</span><strong>Business Operations</strong><small>Ví dụ nhóm Small: 10–20 m², 400.000–800.000đ</small></div>
         <i>→</i>
@@ -184,6 +200,7 @@ export default function BusinessPriceBands({ dialog }) {
       </div>
 
       {rulesError && <div className="pb-alert" role="alert">⚠ {rulesError}</div>}
+      {/* Ghi chú quy tắc khóa */}
       {rules && (
         <details className="pb-rules">
           <summary>Quy tắc khóa khung giá (để số liệu luôn nhất quán)</summary>
@@ -196,12 +213,14 @@ export default function BusinessPriceBands({ dialog }) {
           ⚠ Có <strong>{issueCount} kho</strong> đang có giá nằm ngoài khung mới. Hệ thống không tự đổi giá; Facility Manager của cơ sở cần cập nhật lại ở mục Bảng giá.
         </div>
       )}
+      {/* Cảnh báo size chưa thuộc nhóm nào */}
       {data.unassignedSizes?.length > 0 && (
         <div className="pb-alert info">
           Các kích thước chưa thuộc khung giá nào: {data.unassignedSizes.map(size => <code key={size.unitSizeId}>{size.dimensions}</code>)}. Hãy thêm nhóm tương ứng (ví dụ nhóm {data.unassignedSizes[0].code || 'mới'}).
         </div>
       )}
 
+      {/* Danh sách thẻ nhóm khung giá */}
       {bands.length === 0
         ? <div className="pb-empty">Chưa có khung giá nào. Bấm “Thêm nhóm” để tạo nhóm S, M, L...</div>
         : (
@@ -212,6 +231,7 @@ export default function BusinessPriceBands({ dialog }) {
               const span =Number(band.maxPrice) - Number(band.minPrice) || 1
               const left = band.currentMinPrice != null ? Math.max(0, Math.min(100, (band.currentMinPrice - band.minPrice) / span * 100)) : null
               const right = band.currentMaxPrice != null ? Math.max(0, Math.min(100, (band.currentMaxPrice - band.minPrice) / span * 100)) : null
+              // Thẻ 1 nhóm: khoảng diện tích, khoảng giá, các size
               return (
                 <article key={band.code} className={`pb-card${band.outOfRange.length ? ' warn' : ''}${band.isActive === false ? ' inactive' : ''}`}>
                   <header>
@@ -290,6 +310,7 @@ export default function BusinessPriceBands({ dialog }) {
           </div>
         )}
 
+      {/* Form thêm/sửa nhóm */}
       {editing && (
         <PriceBandForm
           mode={editing.mode}
@@ -396,8 +417,10 @@ function PriceBandForm({ mode, initial, bands, ruleBands, dialog, onClose, onSav
     }
   }
 
+  // Hộp thoại thêm/sửa nhóm khung giá
   return (
     <div className="pb-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !saving) onClose() }}>
+      {/* Mã, tên, khoảng diện tích, khoảng giá + nút lưu */}
       <form className="pb-modal" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="pb-form-title">
         <h3 id="pb-form-title">{mode === 'create' ? 'Thêm nhóm kích thước chuẩn' : locked ? `Đổi tên nhóm ${values.code}` : `Sửa nhóm ${values.code}`}</h3>
         {mode === 'create' && (

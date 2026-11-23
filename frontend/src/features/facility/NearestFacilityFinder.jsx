@@ -11,6 +11,15 @@
  * LUỒNG: khách gõ địa chỉ / bấm định vị -> tọa độ khách -> distanceKm tới từng cơ sở có tọa độ -> sắp xếp -> 3 cơ sở đầu.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   formatDistance: Hiện khoảng cách: dưới 1 km thì ghi mét (làm tròn 50 m), còn lại ghi km 1 chữ số thập phân → dùng ở: row
+ *   NearestFacilityFinder: Khối tìm cơ sở gần nhất → dùng ở: App.jsx (HomePage)
+ *   searchAddress: Tra tọa độ từ địa chỉ khách gõ → dùng ở: NearestFacilityFinder
+ *   useCurrentLocation: Lấy vị trí hiện tại từ trình duyệt (khách phải cho phép định vị) → dùng ở: NearestFacilityFinder
+ *   row: 1 dòng kết quả → dùng ở: NearestFacilityFinder
+ */
 import React, { useState } from 'react'
 import { geocodeAddress, distanceKm } from '../../utils/geocode'
 import { directionsUrl } from './FacilityMap'
@@ -91,6 +100,7 @@ export default function NearestFacilityFinder({ points, onOpen }) {
     </li>
   )
 
+  // Ô nhập địa chỉ / dùng vị trí + 3 cơ sở gần nhất
   return (
     <div className="nf">
       <form className="nf-form" onSubmit={searchAddress}>

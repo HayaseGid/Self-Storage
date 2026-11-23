@@ -47,6 +47,106 @@
  *   · /admin · /business
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   roleHome: Trả về đường dẫn trang làm việc theo vai trò → dùng ở: resolvePostAuthPath, SiteHeader, Router
+ *   mapBackendRole: Đổi tên vai trò backend trả về khi đăng nhập ("Storage Customer", "Facility Staff"...) thành mã vai trò frontend → dùng ở: loginAndStoreUser
+ *   createSlug: Tạo slug URL từ tên cơ sở (bỏ dấu, chữ thường, nối bằng gạch ngang), vd "Kho Quận 7" -> "kho-quan-7" → dùng ở: getBookingPath, getUnitPath, resolvePostAuthPath +7
+ *   navigate: Điều hướng trong app (SPA) mà không tải lại trang: đổi URL bằng history.pushState rồi phát sự kiện popstate để Router → dùng ở: promptLoginForBooking, handleAddToCart, handleAddManyToCart +28
+ *   getCurrentUser: Đọc người dùng đang đăng nhập từ localStorage (khóa CURRENT_USER_KEY) → dùng ở: handleAddToCart, handleAddManyToCart, fetchCustomerRentals +8
+ *   getStorageUnits: Lấy danh sách kho của 1 cơ sở (theo tên) từ danh mục đã tải (biến storageUnits) → dùng ở: resolvePostAuthPath, FacilityDetailPage, UnitDetailPage +6
+ *   getAllStorageUnits: Lấy toàn bộ kho của mọi cơ sở (object: tên cơ sở -> danh sách kho) → dùng ở: CustomerPage
+ *   formatMoney: Định dạng tiền kiểu Việt Nam kèm "đ", vd 1500000 -> "1.500.000đ" (rỗng/null -> "0đ") → dùng ở: handleAddToCart, handleAddManyToCart, UnitCard +1
+ *   getCatalogTypeKeys: Liệt kê các loại kho thật sự có trong danh sách kho (mã loại như 'standard', 'climate'...), theo thứ tự UNIT_TYPE_ORDER → dùng ở: SiteHeader, FacilityDetailPage, SearchPage +1
+ *   resolveTypeParam: Chuẩn hóa tham số ?type= trên URL về mã loại kho: nhận cả mã mới (?type=climate) lẫn tên cũ (?type=Kho mát / Cool) → dùng ở: FacilityDetailPage, SearchPage
+ *   getBookingPath: Tạo đường dẫn trang đặt kho: /facilities/{slug}/unit/{mã kho}/booking → dùng ở: promptLoginForBooking, handleBookClick, UnitDetailPage +1
+ *   getUnitPath: Tạo đường dẫn trang chi tiết kho: /facilities/{slug}/unit/{mã kho} → dùng ở: open, UnitDetailPage, CartRoute +1
+ *   promptLoginForBooking: Hỏi khách đăng nhập / đăng ký trước khi đặt kho; lưu lựa chọn hiện tại vào bản nháp → dùng ở: handleBookClick, handleConfirmBooking
+ *   handleAddToCart: Thêm 1 kho vào giỏ hàng (store/cart, lưu trên trình duyệt nên khách chưa đăng nhập vẫn thêm được) → dùng ở: UnitCard, UnitDetailPage
+ *   handleAddManyToCart: Thêm nhiều kho cùng cơ sở vào giỏ cùng lúc rồi hiện 1 hộp thoại tóm tắt (kho đã thêm, kho đã có sẵn, tổng tiền/tháng) → dùng ở: UnitDetailPage
+ *   promptLoginForCart: Hỏi khách đăng nhập / đăng ký để đặt kho từ giỏ hàng (giỏ được giữ nguyên) → dùng ở: CartRoute
+ *   CartIcon: Biểu tượng giỏ hàng (SVG) dùng trên header, UnitCard và UnitDetailPage → dùng ở: SiteHeader, UnitCard, UnitDetailPage
+ *   alertNotCustomer: Hiện hộp thoại cảnh báo "Tài khoản này không đặt kho được" (chỉ tài khoản khách hàng mới đặt kho) → dùng ở: handleAddToCart, handleAddManyToCart, handleBookClick +1
+ *   resolvePostAuthPath: Xác định trang cần chuyển tới sau khi đăng nhập / đăng ký: - Nhân viên, quản lý: về trang làm việc theo vai trò (roleHome) → dùng ở: goAfterAuth
+ *   BookingDraftNote: Component dải thông báo "Bạn đang đặt kho X tại Y..." trên trang đăng nhập/đăng ký, có nút "Bỏ đặt kho này" → dùng ở: LoginPage, RegisterPage
+ *   usePendingBooking: Hook đọc bản nháp đặt kho (loadBookingDraft) và tham số ?next= an toàn (getSafeNextPath) một lần khi trang mở → dùng ở: LoginPage, RegisterPage, VerifyOtpPage
+ *   discard: Bỏ bản nháp đặt kho (và bỏ ?next= nếu trỏ tới trang đặt kho đó) → dùng ở: usePendingBooking
+ *   SearchIcon: Biểu tượng kính lúp (SVG) → dùng ở: FacilityDetailPage, SearchPage, HomePage
+ *   ArrowIcon: Biểu tượng mũi tên (SVG) → dùng ở: FacilityCard, UnitCard, UnitDetailPage +3
+ *   ChevronIcon: Biểu tượng mũi tên xuống (SVG) → dùng ở: SiteHeader
+ *   MenuIcon: Biểu tượng menu (SVG) → dùng ở: SiteHeader
+ *   PinIcon: Biểu tượng ghim vị trí (SVG) → dùng ở: FacilityCard, DistrictPicker, FacilityLocationCard +4
+ *   ShieldIcon: Biểu tượng khiên bảo vệ (SVG) → dùng ở: HomePage
+ *   HomeIcon: Biểu tượng ngôi nhà (SVG) → dùng ở: FacilityCard
+ *   fetchCustomerRentals: Tải danh sách đơn của khách đang đăng nhập cho chuông thông báo và thanh nhắc đặt cọc trên header → dùng ở: SiteHeader
+ *   SiteHeader: Component header dùng trên mọi trang công khai: logo (về trang chủ), "Tìm kho", menu thả "Loại kho" (mở /search?type=) → dùng ở: AboutPage, FacilitiesPage, FacilityDetailPage +6
+ *   go: Đóng các menu đang mở rồi điều hướng tới đường dẫn (dùng cho mọi nút trong header và truyền cho chuông thông báo) → dùng ở: SiteHeader
+ *   logout: Bấm "Đăng xuất": xóa phiên (CURRENT_USER_KEY) khỏi localStorage, xóa state currentUser và về trang chủ → dùng ở: SiteHeader
+ *   SiteFooter: Component chân trang (footer) tĩnh: logo, tên hệ thống, bản quyền → dùng ở: AboutPage, FacilitiesPage, FacilityDetailPage +5
+ *   FacilityCard: Component thẻ cơ sở: ảnh, số thứ tự, tên, địa chỉ, khu vực, các loại kho, số kho trống / tổng → dùng ở: FacilitiesPage, HomePage
+ *   getDistrictGroups: Nhóm cơ sở theo khu vực (quận) bằng groupFacilitiesByDistrict, thêm tổng số kho còn trống của mỗi khu vực → dùng ở: FacilitiesPage, SearchPage, HomePage
+ *   DistrictPicker: Component bộ chọn khu vực dạng chip, mỗi chip hiện tên khu vực + số cơ sở + số kho trống → dùng ở: FacilitiesPage, SearchPage, HomePage
+ *   toMapPoints: Ghép danh sách cơ sở với dữ liệu vị trí → dùng ở: FacilitiesMapSection, FacilityLocationCard, FacilityDetailPage +1
+ *   FacilitiesMapSection: Component khối "Bản đồ cơ sở": bản đồ các cơ sở (nút Ẩn/Xem bản đồ) + danh sách bên cạnh → dùng ở: FacilitiesPage, HomePage
+ *   FacilityLocationCard: Component thẻ vị trí của 1 cơ sở: bản đồ 1 điểm (có thể ẩn), địa chỉ, giờ mở cửa, điện thoại, link chỉ đường Google Maps → dùng ở: FacilityDetailPage
+ *   AboutPage: Trang "Về StoreSpace" (/about): giới thiệu + toàn bộ chính sách chung cho khách (features/policy/PolicyGuide) → dùng ở: Router
+ *   FacilitiesPage: Trang danh sách cơ sở (route /facilities): lọc theo khu vực ?district=, bản đồ + lưới thẻ cơ sở → dùng ở: Router
+ *   selectDistrict: Chọn khu vực: đổi URL ?district= (bỏ chọn thì về /facilities) → dùng ở: FacilitiesPage
+ *   UnitCard: Component thẻ 1 kho: ảnh minh họa loại kho, trạng thái (Còn trống / Đang giữ chỗ / Không khả dụng), mã kho, diện tích, hạng size → dùng ở: FacilityDetailPage, SearchPage
+ *   open: Bấm thẻ kho (còn trống) để mở trang chi tiết kho → dùng ở: UnitCard
+ *   FacilityDetailPage: Component trang chi tiết cơ sở (route /facilities/{slug}): ảnh + thông tin cơ sở, thẻ vị trí, ghi chú đặt kho theo yêu cầu, bộ lọc kho → dùng ở: Router
+ *   resetFilters: Bấm "Đặt lại": đưa cả 5 bộ lọc kho về mặc định → dùng ở: FacilityDetailPage
+ *   UnitDetailPage: Component trang chi tiết kho (route /facilities/{slug}/unit/{mã kho}): ảnh, mã kho, loại, hạng size, giá/tháng, đặc điểm loại kho → dùng ở: Router
+ *   handleBookClick: Bấm "Đặt kho": chưa đăng nhập thì hỏi đăng nhập (lưu bản nháp); không phải khách hàng thì báo; ngược lại mở trang đặt kho → dùng ở: UnitDetailPage
+ *   getRestoredBookingForm: Khôi phục form đặt kho từ bản nháp (loadBookingDraft) nếu bản nháp đúng là của kho này: ngày bắt đầu → dùng ở: BookingPage
+ *   BookingPage: Component trang đặt 1 kho (route /facilities/{slug}/unit/{mã kho}/booking), gồm 2 bước: 1. Chọn ngày bắt đầu (RentalCalendar) → dùng ở: Router
+ *   formatPrice: Định dạng tiền kiểu Việt Nam kèm "đ" (giống formatMoney ở đầu file) → dùng ở: handleDepositPaid, BookingPage
+ *   formatDate: Định dạng Date thành 'dd/MM/yyyy' (không hợp lệ -> '—') → dùng ở: handleConfirmBooking, BookingPage
+ *   toApiDate: Định dạng Date thành 'YYYY-MM-DD' để gửi API → dùng ở: currentFormDraft, handleConfirmBooking
+ *   getStartDate: Ghép ngày/tháng/năm khách chọn thành Date; ngày không tồn tại (vd 31/02) -> null → dùng ở: BookingPage
+ *   calculateEndDate: Tính ngày kết thúc thuê = ngày bắt đầu + số tháng - 1 ngày (tháng đích ngắn hơn thì lấy ngày cuối tháng) → dùng ở: BookingPage
+ *   getEndDateFor: Tính ngày kết thúc dự kiến cho một gói bất kỳ (cùng quy tắc với calculateEndDate), hiện trên nút chọn gói → dùng ở: BookingPage
+ *   showBookingError: Hiện lỗi đặt kho cả ở đầu trang (state error) và bằng pop-up để khách không bỏ sót → dùng ở: handleConfirmBooking, handleDepositPaid
+ *   currentFormDraft: Lấy các lựa chọn hiện tại của form (ngày bắt đầu, số tháng, hình thức trả...) để lưu vào bản nháp khi phải chuyển sang đăng nhập giữa chừng → dùng ở: handleConfirmBooking
+ *   handleConfirmBooking: Chạy khi bấm "Xác nhận đặt kho" (bước 1): kiểm tra đăng nhập / vai trò / ngày bắt đầu / khung giờ nhận kho → dùng ở: BookingPage
+ *   handleDepositPaid: Chạy khi bấm "Thanh toán cọc qua VNPay" (bước 2, cần đã tick DepositConfirm) → dùng ở: BookingPage
+ *   handleDurationChange: Chạy khi bấm 1 gói thời hạn: đổi số tháng thuê (giới hạn 1..12); nếu chu kỳ thanh toán lớn hơn số tháng thì đưa về 1 → dùng ở: BookingPage
+ *   SearchPage: Component trang tìm kho (route /search): lọc tới từng kho theo từ khóa (?q=), khu vực (?district=), loại kho (?type=), hạng size (?size=) → dùng ở: Router
+ *   buildUrl: Tạo URL /search?... từ bộ lọc hiện tại cộng các thay đổi (changes, vd { type: 'climate' }); bỏ tham số rỗng → dùng ở: go
+ *   unitMatches: Kiểm tra 1 kho có khớp các bộ lọc không (ignore = bỏ qua 1 bộ lọc để đếm số lượng cho lựa chọn đó) → dùng ở: SearchPage
+ *   countWith: Đếm số kho khớp các bộ lọc còn lại (bỏ qua bộ lọc `ignore`) và điều kiện predicate — hiện số trên từng chip lọc để khách biết trước kết quả → dùng ở: SearchPage
+ *   applyBoxes: Gửi form "Lọc kho xếp vừa": chuẩn hóa số đồ, lưu lại (saveBoxCounts, để cửa sổ xem kho 3D dùng) rồi đưa lên URL → dùng ở: SearchPage
+ *   submit: Gửi ô tìm kiếm (bấm "Tìm kho" / Enter): đưa từ khóa lên URL ?q= → dùng ở: SearchPage
+ *   chip: Vẽ 1 nút chip lọc: active (đang chọn), label, onClick, count (số kho, có thể bỏ), style (màu loại kho) → dùng ở: SearchPage
+ *   AuthShell: Component khung chung cho trang đăng nhập / đăng ký / OTP: nền, thẻ giữa màn hình, logo (bấm về trang chủ), tiêu đề → dùng ở: LoginPage, RegisterPage, VerifyOtpPage
+ *   loginAndStoreUser: Gọi backend đăng nhập, đổi vai trò sang mã frontend (mapBackendRole) và lưu phiên vào localStorage → dùng ở: login
+ *   goAfterAuth: Chuyển trang sau khi đăng nhập theo resolvePostAuthPath; nếu kho trong bản nháp đã hết thì báo bằng pop-up trước → dùng ở: login
+ *   LoginPage: Component trang đăng nhập (route /login): form email + mật khẩu, dải nhắc "Bạn đang đặt kho..." nếu có bản nháp, link sang đăng ký → dùng ở: Router
+ *   login: Gửi form đăng nhập (bấm "Đăng nhập"): gọi loginAndStoreUser, hiện thông báo thành công, sau 0,5 giây gọi goAfterAuth để chuyển trang → dùng ở: LoginPage
+ *   RegisterPage: Component trang đăng ký (route /register): họ, tên, giới tính, ngày sinh, SĐT, email, mật khẩu + xác nhận → dùng ở: Router
+ *   sendRegistrationOtp: Chạy khi gửi form đăng ký: kiểm tra họ tên / email / mật khẩu (>= 6 ký tự, khớp xác nhận); gọi backend tạo bản đăng ký + gửi OTP qua email → dùng ở: RegisterPage
+ *   VerifyOtpPage: Component trang nhập mã OTP (route /verify-otp): đọc phiên đăng ký đang chờ từ sessionStorage 'storespace_register_pending' → dùng ở: Router
+ *   loadPending: Đọc phiên đăng ký đang chờ từ sessionStorage vào state pending (lỗi -> null) và xóa ô OTP → dùng ở: VerifyOtpPage
+ *   clearPending: Xóa phiên đăng ký đang chờ khỏi sessionStorage (sau khi xác thực xong hoặc khi đổi email) → dùng ở: verifyOtp, changeEmail
+ *   formatCountdown: Định dạng số giây thành "mm:ss" → dùng ở: VerifyOtpPage
+ *   verifyOtp: Chạy khi bấm "Xác nhận OTP": kiểm tra mã đủ 6 chữ số và chưa hết hạn; gửi backend xác thực → dùng ở: VerifyOtpPage
+ *   resendOtp: Chạy khi bấm "Gửi lại mã OTP" (chỉ được khi hết thời gian chờ): xin mã mới, cập nhật thời hạn mới vào sessionStorage + state pending → dùng ở: VerifyOtpPage
+ *   changeEmail: Bấm "Đổi email": bỏ phiên đăng ký hiện tại và quay lại trang đăng ký (giữ ?next=) → dùng ở: VerifyOtpPage
+ *   HomePage: Component trang chủ (route /, và mọi URL không khớp): phần giới thiệu có ô tìm kiếm, số kho đang trống, bộ chọn khu vực → dùng ở: Router
+ *   search: Gửi ô tìm kiếm trang chủ (bấm "Tìm kho"): ghi nhận từ khóa đã gửi và cuộn mượt tới phần danh sách cơ sở → dùng ở: HomePage
+ *   getRoute: Phân tích URL hiện tại (window.location.pathname) thành route { type, facility?, unit? } cho Router → dùng ở: Router, onPop, refresh
+ *   CartRoute: Component route /cart: bọc pages/customer/CartPage bằng header/footer và truyền các hàm dùng chung của App → dùng ở: Router
+ *   RedirectTo: Component chuyển hướng: không vẽ gì, sau khi hiển thị thì navigate(path) (useEffect chạy lại nếu path đổi) → dùng ở: Router
+ *   BookingLoginRedirect: Component chuyển hướng khi khách chưa đăng nhập mở thẳng link đặt kho: lưu bản nháp → dùng ở: Router
+ *   formatDashboardDate: Đổi ngày 'YYYY-MM-DD' (hoặc chuỗi ISO) thành 'dd/MM/yyyy' để hiển thị trên trang khách; rỗng -> '—' → dùng ở: mapCustomerReservation
+ *   mapCustomerReservation: Chuẩn hóa 1 đơn của khách từ backend thành dữ liệu hiển thị cho trang khách / chuông thông báo: đổi "Pending Payment" -> "Pending Deposit" → dùng ở: fetchCustomerRentals, loadReservations
+ *   CustomerPage: Component route /customer: tải đơn của khách đang đăng nhập rồi hiển thị pages/customer/CustomerAccount (CustomerDashboard) → dùng ở: Router
+ *   loadReservations: Tải đơn của khách, bỏ đơn "bỏ dở", chuẩn hóa bằng mapCustomerReservation rồi lưu vào state reservations → dùng ở: CustomerPage
+ *   Router: Component bộ định tuyến gốc của app: giữ route hiện tại (getRoute), theo dõi URL (sự kiện popstate do navigate hoặc nút Back phát ra) → dùng ở: (cấp file)
+ *   loadDataFromApi: Tải danh mục cơ sở + kho từ backend, nạp cấu hình tính giá (setCatalogPricing), rồi chuẩn hóa dữ liệu cơ sở → dùng ở: refresh, (cấp file)
+ *   ApiStartupError: Component màn hình lỗi khi không tải được danh mục từ backend lúc khởi động; nút "Thử kết nối lại" tải lại trang → dùng ở: (cấp file)
+ */
 import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles/styles.css'
@@ -461,6 +561,7 @@ function resolvePostAuthPath(user, nextPath) {
  */
 function BookingDraftNote({ draft, action, onClear }) {
   if (!draft) return null
+  // Dải nhắc "Bạn đang đặt kho..." + nút bỏ bản nháp
   return (
     <div className="booking-draft-note" role="status">
       <span aria-hidden="true">i</span>
@@ -595,8 +696,10 @@ function SiteHeader() {
     navigate('/')
   }
 
+  // Header: logo, menu loại kho, giỏ hàng, chuông, tài khoản
   return (
     <>
+      {/* Thanh header trên máy tính */}
       <header className="site-header">
         <button className="brand" type="button" onClick={() => go('/')}>
           <span className="brand-mark">S</span>
@@ -644,6 +747,7 @@ function SiteHeader() {
       {currentUser?.role === 'customer' && !['/cart', '/payment-result'].includes(window.location.pathname) && !window.location.pathname.includes('/unit/') && (
         <HeaderPendingDepositBar user={currentUser} loadRentals={fetchCustomerRentals} navigate={go} />
       )}
+      {/* Menu thả xuống trên điện thoại */}
       {menuOpen && (
         <>
           <div className="mobile-menu-overlay" onClick={() => setMenuOpen(false)} />
@@ -717,6 +821,7 @@ function SiteFooter() {
  * Dùng ở: HomePage, FacilitiesPage.
  */
 function FacilityCard({ facility, index, typeKey = '' }) {
+  // Thẻ cơ sở: ảnh, tên, địa chỉ, số kho trống
   return (
     <article className="facility-card">
       <button className="facility-card-link" type="button" onClick={() => navigate(`/facilities/${createSlug(facility.name)}${typeKey ? `?type=${typeKey}` : ''}`)} aria-label={`Xem chi tiết ${facility.name}`}>
@@ -767,6 +872,7 @@ function getDistrictGroups(facilityList = facilities) {
  */
 function DistrictPicker({ groups, active = '', onSelect, showAll = true, large = false, label = 'Lọc theo khu vực' }) {
   if (!groups.length) return null
+  // Dãy chip chọn khu vực
   return (
     <div className={`district-picker${large ? ' large' : ''}`} role="group" aria-label={label}>
       {showAll && (
@@ -831,8 +937,10 @@ function FacilitiesMapSection({ list }) {
   const [selectedId, setSelectedId] = useState(null) // facilityId đang được chọn để bản đồ phóng tới
   const points = toMapPoints(list, locations)
   const mapped = points.filter(p => p.latitude != null && p.longitude != null).length
+  // Khối bản đồ cơ sở + danh sách bên cạnh
   return (
     <section className="facility-map-section" aria-label="Bản đồ các cơ sở">
+      {/* Tiêu đề + nút ẩn/hiện bản đồ */}
       <div className="facility-map-head">
         <div>
           <h2>Bản đồ cơ sở</h2>
@@ -840,6 +948,7 @@ function FacilitiesMapSection({ list }) {
         </div>
         <button type="button" className="facility-map-toggle" onClick={() => setShow(v => !v)}>{show ? 'Ẩn bản đồ' : 'Xem bản đồ'}</button>
       </div>
+      {/* Bản đồ và danh sách cơ sở */}
       {show && !error && (
         <div className="facility-map-layout">
           <FacilityMap points={points} selectedId={selectedId} onOpen={point => navigate(`/facilities/${createSlug(point.name)}`)} />
@@ -876,6 +985,7 @@ function FacilityLocationCard({ facility, hideMap = false }) {
   const { error, locations } = useFacilityLocations()
   const [point] = toMapPoints([facility], locations)
   if (error || !point || point.latitude == null) return null
+  // Thẻ vị trí cơ sở: bản đồ nhỏ, địa chỉ, giờ mở cửa
   return (
     <div className={`facility-location-card${hideMap ? ' no-map' : ''}`}>
       {!hideMap && <FacilityMap points={[point]} single height={260} />}
@@ -900,6 +1010,7 @@ function FacilityLocationCard({ facility, hideMap = false }) {
  * Số liệu chính sách đọc từ GET /api/policies nên Business Operations Manager đổi chính sách thì trang tự cập nhật.
  */
 function AboutPage() {
+  // Trang "Về StoreSpace": chính sách cho khách
   return (
     <div className="app">
       <SiteHeader />
@@ -918,6 +1029,7 @@ function FacilitiesPage() {
   // Chọn khu vực: đổi URL ?district= (bỏ chọn thì về /facilities).
   const selectDistrict = slug => navigate(slug ? `/facilities?district=${slug}` : '/facilities')
   let index = 0
+  // Trang danh sách cơ sở theo khu vực
   return (
     <div className="app">
       <SiteHeader />
@@ -926,7 +1038,7 @@ function FacilitiesPage() {
           <div className="listing-heading"><div className="eyebrow">OUR FACILITIES</div><h1>Các cơ sở lưu trữ</h1><p>Chọn khu vực gần bạn, rồi chọn cơ sở để xem các kho đang có sẵn.</p></div>
           <DistrictPicker groups={groups} active={activeGroup ? district : ''} onSelect={selectDistrict} />
           {facilities.length > 0 && <FacilitiesMapSection list={activeGroup ? activeGroup.facilities : facilities} />}
-          {(activeGroup ? [activeGroup] : groups).map(group => (
+          {(activeGroup ? [activeGroup] : groups).map(group => ( // Mỗi khu vực: tiêu đề + lưới thẻ cơ sở
             <section className="district-section" key={group.slug} aria-labelledby={`district-${group.slug}`}>
               <div className="district-section-head">
                 <h2 id={`district-${group.slug}`}><PinIcon /> {group.label}</h2>
@@ -961,6 +1073,7 @@ function UnitCard({ facility, unit }) {
   // Bấm thẻ kho (còn trống) để mở trang chi tiết kho.
   const open = () => unit.available && navigate(getUnitPath(facility, unit))
 
+  // Thẻ kho: ảnh, trạng thái, mã, diện tích, giá, nút thêm giỏ
   return (
     <article className={`uc-card${unit.available ? '' : ' unavailable'}`} style={{ '--ut-color': style.color, '--ut-soft': style.soft }}>
       <div className="uc-media">
@@ -968,6 +1081,7 @@ function UnitCard({ facility, unit }) {
         <UnitTypeChip type={unit.type} />
         <span className={`uc-status${unit.available ? ' available' : isBooking ? ' booking' : ''}`}>{statusLabel}</span>
       </div>
+      {/* Thông tin kho + nút xem 3D / thêm giỏ */}
       <div className="uc-body">
         <div className="uc-title">
           <span className="uc-code">{unit.id}</span>
@@ -1051,12 +1165,14 @@ function FacilityDetailPage({ facility }) {
     setPriceRange('all')
   }
 
+  // Trang chi tiết cơ sở
   return (
     <div className="app">
       <SiteHeader />
       <main className="facility-detail-page">
         <div className="container">
           <button className="back-link" type="button" onClick={() => navigate('/facilities')}>← Tất cả cơ sở</button>
+          {/* Ảnh + thông tin cơ sở */}
           <div className="facility-detail-hero">
             <img src={facility.image} alt={facility.name} />
             <div className="facility-detail-info">
@@ -1078,6 +1194,7 @@ function FacilityDetailPage({ facility }) {
             <div><div className="eyebrow">AVAILABLE UNITS</div><h2>Các kho tại {facility.name}</h2></div>
             <span>{filteredUnits.length} / {units.length} kho phù hợp</span>
           </div>
+          {/* Bộ lọc kho (loại, từ khóa, diện tích, tình trạng) */}
           <div className="unit-filter-panel">
             <div className="uc-type-filter" role="group" aria-label="Lọc theo loại kho">
               <button type="button" className={type === 'all' ? 'active' : ''} aria-pressed={type === 'all'} onClick={() => setType('all')}>
@@ -1109,6 +1226,7 @@ function FacilityDetailPage({ facility }) {
               <button type="button" className="filter-reset" onClick={resetFilters}>Đặt lại</button>
             </div>
           </div>
+          {/* Lưới thẻ kho của cơ sở */}
           <div className="uc-grid">
             {sortedUnits.map(unit => <UnitCard key={unit.id} facility={facility} unit={unit} />)}
           </div>
@@ -1147,12 +1265,14 @@ function UnitDetailPage({ facility, unit }) {
     navigate(getBookingPath(facility, unit))
   }
 
+  // Trang chi tiết 1 kho
   return (
     <div className="app">
       <SiteHeader />
       <main className="unit-detail-page">
         <div className="container">
           <button className="back-link" type="button" onClick={() => navigate(`/facilities/${createSlug(facility.name)}`)}>← Quay lại {facility.name}</button>
+          {/* Ảnh, thông số, giá + nút Đặt kho / Thêm giỏ / Xem 3D */}
           <div className="unit-detail-layout">
             <div className="unit-detail-image"><UnitTypeArt type={unit.type} size={unit.size} unitCode={unit.id} /><span className="unit-detail-status">● Còn trống</span></div>
             <div className="unit-detail-content">
@@ -1185,6 +1305,7 @@ function UnitDetailPage({ facility, unit }) {
               </div>
             </div>
           </div>
+          {/* Cửa sổ xem kho 3D */}
           {show3D && (
             <Unit3DViewer
               unit={unit}
@@ -1662,6 +1783,7 @@ function BookingPage({ facility, unit }) {
     }
   }
 
+  // Trang đặt kho 2 bước: chọn thông tin → thanh toán cọc
   return (
     <div className="app">
       <SiteHeader />
@@ -1682,6 +1804,7 @@ function BookingPage({ facility, unit }) {
             ← {step === 2 ? 'Về trang khách hàng' : 'Quay lại thông tin kho'}
           </button>
 
+          {/* Tiêu đề trang + thanh bước */}
           <div className="customer-page-heading">
             <div>
               <span className="customer-eyebrow">BOOK STORAGE</span>
@@ -1702,6 +1825,7 @@ function BookingPage({ facility, unit }) {
             </div>
           </div>
 
+          {/* Thông báo đã khôi phục bản nháp */}
           {step === 1 && showRestoredNote && (
             <div className="booking-draft-note" role="status">
               <span aria-hidden="true">i</span>
@@ -1717,6 +1841,7 @@ function BookingPage({ facility, unit }) {
               {error}
             </div>
           )}
+          {/* Ô đổi sang kho khác cùng loại */}
           {availableUnits.length > 0 && (
             <div className="booking-form-card" style={{ marginBottom: 20 }}>
               <label htmlFor="available-unit-choice">Kho còn trống trong kỳ thuê đã chọn</label>
@@ -1735,6 +1860,7 @@ function BookingPage({ facility, unit }) {
             </div>
           )}
 
+          {/* Bước 1: ngày bắt đầu, thời hạn, hình thức trả, cách nhận kho */}
           {step === 1 && (
             <div className="booking-layout">
               <section className="booking-unit-summary">
@@ -1967,6 +2093,7 @@ function BookingPage({ facility, unit }) {
             </div>
           )}
 
+          {/* Bước 2: tóm tắt đơn + xác nhận + thanh toán cọc */}
           {step === 2 && booking && (
             <div className="deposit-payment-page">
               <div className="deposit-payment-header">
@@ -2234,6 +2361,7 @@ function SearchPage() {
     </button>
   )
 
+  // Trang tìm kho với bộ lọc
   return (
     <div className="app">
       <SiteHeader />
@@ -2245,6 +2373,7 @@ function SearchPage() {
           </div>
             <button type="submit">Tìm kho</button></form>
 
+          {/* Bộ lọc: từ khóa, khu vực, loại, size, giá, số đồ */}
           <div className="search-filters">
             <div className="search-filter-label">Khu vực</div>
             <DistrictPicker groups={districtGroups} active={activeDistrict ? filters.district : ''} onSelect={slug => go({ district: slug })} />
@@ -2315,6 +2444,7 @@ function SearchPage() {
             <h2>{totalUnits} kho phù hợp{groups.length ? ` tại ${groups.length} cơ sở` : ''}</h2>
             {hasFilter && <button type="button" className="inline-link" onClick={() => navigate(filters.all ? '/search?all=1' : '/search')}>Xóa bộ lọc</button>}
           </div>
+          {/* Dòng tóm tắt bộ lọc + nút xóa lọc */}
           {hasFilter && (
             <div className="search-result-note">
               Đang lọc:
@@ -2327,7 +2457,7 @@ function SearchPage() {
             </div>
           )}
 
-          {groups.map(({ facility, units }) => (
+          {groups.map(({ facility, units }) => ( // Kết quả: nhóm kho theo từng cơ sở
             <section className="search-facility-group" key={facility.facilityId}>
               <div className="search-facility-head">
                 <div>
@@ -2344,6 +2474,7 @@ function SearchPage() {
               </div>
             </section>
           ))}
+          {/* Thông báo không có kho phù hợp */}
           {totalUnits === 0 && (
             <div className="empty-state">
               Không có kho nào phù hợp với tất cả lựa chọn của bạn.
@@ -2364,6 +2495,7 @@ function SearchPage() {
  * Dùng ở: LoginPage, RegisterPage, VerifyOtpPage.
  */
 function AuthShell({ children, title, subtitle }) {
+  // Khung chung trang đăng nhập / đăng ký / OTP
   return (
     <div className="auth-page">
       <div className="auth-background auth-bg-one" />
@@ -2444,6 +2576,7 @@ function LoginPage() {
       setIsSubmitting(false)
     }
   }
+  // Trang đăng nhập: form email + mật khẩu
   return (
     <AuthShell title="Chào mừng trở lại" subtitle="Đăng nhập để tiếp tục quản lý việc thuê kho của bạn.">
       <BookingDraftNote draft={draft} action="Đăng nhập để tiếp tục đặt kho." onClear={discard} />
@@ -2528,6 +2661,7 @@ function RegisterPage() {
     }
   }
 
+  // Trang đăng ký tài khoản
   return (
     <AuthShell
       title="Tạo tài khoản"
@@ -2535,9 +2669,11 @@ function RegisterPage() {
     >
       <BookingDraftNote draft={draft} action="Tạo tài khoản xong bạn sẽ quay lại trang đặt kho ngay." onClear={discard} />
 
+      {/* Form đăng ký: gửi xong sẽ nhận mã OTP qua email */}
       <form className="auth-form" onSubmit={sendRegistrationOtp}>
         {error && <div className="auth-message error" role="alert">{error}</div>}
 
+        {/* Họ và tên */}
         <div className="auth-two-columns">
           <label>Họ *
             <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Nguyễn" autoComplete="given-name" required />
@@ -2547,6 +2683,7 @@ function RegisterPage() {
           </label>
         </div>
 
+        {/* Giới tính */}
         <fieldset className="auth-fieldset">
           <legend>Giới tính</legend>
           <div className="auth-radio-group">
@@ -2556,6 +2693,7 @@ function RegisterPage() {
           </div>
         </fieldset>
 
+        {/* Ngày sinh + số điện thoại */}
         <div className="auth-two-columns">
           <label>Ngày sinh
             <input type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)} autoComplete="bday" />
@@ -2565,6 +2703,7 @@ function RegisterPage() {
           </label>
         </div>
 
+        {/* Email, mật khẩu, xác nhận mật khẩu */}
         <label>Email *
           <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required />
         </label>
@@ -2728,6 +2867,7 @@ function VerifyOtpPage() {
   }
 
   if (!pending) {
+    // Không có phiên đăng ký: báo lỗi + nút quay lại
     return (
       <AuthShell title="Xác thực email" subtitle="Không tìm thấy thông tin đăng ký đang chờ.">
         <div className="auth-message error" role="alert">
@@ -2741,15 +2881,19 @@ function VerifyOtpPage() {
     )
   }
 
+  // Trang nhập mã OTP xác thực email
   return (
     <AuthShell
       title="Xác thực email"
       subtitle={`Nhập mã OTP 6 số đã được gửi tới ${pending.email}.`}
     >
+      {/* Form nhập OTP (submit gọi verifyOtp) */}
       <form className="auth-form" onSubmit={verifyOtp}>
+        {/* Thông báo lỗi / thành công */}
         {error && <div className="auth-message error" role="alert">{error}</div>}
         {success && <div className="auth-message success" role="status">{success}</div>}
 
+        {/* Ô nhập 6 số + đồng hồ đếm ngược hạn mã */}
         <div className="auth-otp-box">
           <span className="auth-otp-label">Mã OTP</span>
           <input
@@ -2768,6 +2912,7 @@ function VerifyOtpPage() {
           {secondsRemaining === 0 && <p className="auth-otp-expired">Mã đã hết hạn.</p>}
         </div>
 
+        {/* Nút xác nhận (khóa khi chưa đủ 6 số hoặc hết hạn) */}
         <button
           className="auth-submit"
           type="submit"
@@ -2776,6 +2921,7 @@ function VerifyOtpPage() {
           {isSubmitting ? 'Đang xác thực...' : 'Xác nhận OTP'}
         </button>
 
+        {/* Gửi lại mã / đổi email */}
         <div className="auth-otp-actions">
           <button className="inline-link" type="button" onClick={resendOtp} disabled={isSubmitting || resendSecondsRemaining > 0}>
             {resendSecondsRemaining > 0 ? `Gửi lại mã sau ${resendSecondsRemaining}s` : 'Gửi lại mã OTP'}
@@ -2812,10 +2958,12 @@ function HomePage() {
     setSubmittedQuery(query.trim())
     document.getElementById('facilities')?.scrollIntoView({ behavior: 'smooth' })
   }
+  // Trang chủ
   return (
     <div className="app">
       <SiteHeader />
       <main id="top">
+        {/* Banner giới thiệu + ô tìm kiếm */}
         <section className="hero">
           <div className="hero-glow hero-glow-blue" /><div className="hero-glow hero-glow-yellow" />
           <div className="hero-inner container">
@@ -2832,7 +2980,9 @@ function HomePage() {
             </div>
           </div>
         </section>
+        {/* Dải số liệu: kho trống, cơ sở */}
         <section className="trust-strip"><div className="container trust-inner"><div><strong>{availableUnitCount}</strong><span>kho đang sẵn sàng</span></div><div><strong>{facilities.length}</strong><span>cơ sở đang hoạt động</span></div><div><strong>24/7</strong><span>hỗ trợ & an ninh</span></div><div><strong>100%</strong><span>minh bạch chi phí</span></div></div></section>
+        {/* Tìm cơ sở gần bạn */}
         <section className="nearest-home section" id="nearest">
           <div className="container">
             <div className="section-heading">
@@ -2841,6 +2991,7 @@ function HomePage() {
             <NearestFacilityFinder points={toMapPoints(facilities, locations)} onOpen={point => navigate(`/facilities/${createSlug(point.name)}`)} />
           </div>
         </section>
+        {/* Chọn khu vực */}
         <section className="district-home section" id="districts">
           <div className="container">
             <div className="section-heading">
@@ -2850,9 +3001,13 @@ function HomePage() {
             <DistrictPicker groups={getDistrictGroups()} showAll={false} large label="Chọn khu vực" onSelect={slug => navigate(`/search?district=${slug}`)} />
           </div>
         </section>
+        {/* Lưới cơ sở + bản đồ */}
         <section className="facilities section" id="facilities"><div className="container"><div className="section-heading"><div><div className="eyebrow green">OUR FACILITIES</div><h2>Cơ sở lưu trữ</h2><p>Mỗi cơ sở có nhiều loại kho và kích thước để bạn lựa chọn.</p></div><button className="text-link" type="button" onClick={() => navigate('/facilities')}>Xem tất cả <ArrowIcon /></button></div>{submittedQuery && <div className="search-result-note">Đang hiển thị kết quả cho <strong>“{submittedQuery}”</strong></div>}<div className="facility-grid">{visible.map((f, i) => <FacilityCard key={f.name} facility={f} index={i} />)}</div>{visible.length === 0 && <div className="empty-state">Không tìm thấy cơ sở phù hợp. Hãy thử từ khóa khác.</div>}{facilities.length > 0 && <FacilitiesMapSection list={visible.length ? visible : facilities} />}</div></section>
+        {/* Giới thiệu các loại kho */}
         <section className="types section" id="types"><div className="container types-layout"><div className="types-image-wrap"><img src="https://images.unsplash.com/photo-1537953773345-d172ccf13cf1?auto=format&fit=crop&w=1300&q=90" alt="Các kho lưu trữ với nhiều kích thước" /><div className="image-caption"><span>SPACE THAT FITS</span><strong>Chọn đúng không gian<br />cho đúng nhu cầu.</strong></div></div><div className="types-content"><div className="eyebrow green">STORAGE TYPES</div><h2>Từ vài chiếc hộp<br />đến cả một căn phòng.</h2><p>Không cần thuê quá nhiều. Chọn loại kho và diện tích vừa đủ với đồ đạc, thời gian và ngân sách của bạn.</p><div className="type-list"><div className="type-item"><span>01</span><div><strong>Kho tiêu chuẩn</strong><small>Phù hợp đồ gia dụng, hồ sơ và vật dụng cá nhân.</small></div><ArrowIcon /></div><div className="type-item"><span>02</span><div><strong>Kho mát / Cool</strong><small>Kiểm soát nhiệt độ cho nhóm hàng cần môi trường ổn định.</small></div><ArrowIcon /></div><div className="type-item"><span>03</span><div><strong>Kho lạnh / Frozen</strong><small>Dành cho nhu cầu lưu trữ đặc thù với điều kiện nhiệt độ phù hợp.</small></div><ArrowIcon /></div></div></div></div></section>
+        {/* Giới thiệu StoreSpace */}
         <section className="about section" id="about"><div className="container about-grid"><div><div className="eyebrow green">ABOUT STORESPACE</div><h2>Lưu trữ đơn giản,<br />quản lý rõ ràng.</h2></div><div className="about-copy"><p>StoreSpace kết nối khách hàng với các cơ sở lưu trữ và hỗ trợ toàn bộ vòng đời thuê kho — từ tìm kiếm, đặt kho, thanh toán đến bàn giao và theo dõi hợp đồng.</p><div className="process-list"><div><b>01</b><span>Chọn cơ sở, loại kho, kích thước và thời gian thuê.</span></div><div><b>02</b><span>Giá, tiền cọc, thanh toán và hợp đồng được theo dõi rõ ràng.</span></div><div><b>03</b><span>Quy trình kiểm tra, bàn giao và quản lý quyền truy cập.</span></div></div><button type="button" className="about-policy-link" onClick={() => navigate('/about')}>Xem toàn bộ chính sách thuê kho →</button></div></div></section>
+        {/* Khối hỗ trợ / liên hệ */}
         <section className="support" id="support"><div className="container"><div className="support-card"><div><div className="eyebrow">NEED HELP?</div><h2>Bạn cần hỗ trợ về kho?</h2><p>Đội ngũ StoreSpace sẵn sàng hỗ trợ thông tin về cơ sở, loại kho, đặt kho và quy trình thuê.</p></div><a className="primary-dark-button" href="mailto:storespacevn101@gmail.com">Bắt đầu ngay <ArrowIcon /></a></div></div></section>
       </main>
       <SiteFooter />
@@ -2931,6 +3086,7 @@ function getRoute() {
  */
 function CartRoute() {
   const dialog = useDialog()
+  // Trang giỏ kho (bọc header/footer)
   return (
     <div className="app">
       <SiteHeader />
@@ -3127,6 +3283,7 @@ function CustomerPage() {
     return <div style={{ padding: 40 }}>Đang tải dữ liệu đặt chỗ từ backend...</div>
   }
   if (error) {
+    // Đang tải dữ liệu khách hàng
     return (
       <main className="listing-page">
         <div className="container">
@@ -3140,6 +3297,7 @@ function CustomerPage() {
     )
   }
 
+  // Trang tài khoản khách hàng
   return (
     <CustomerDashboard
       facilities={facilities}
@@ -3259,6 +3417,7 @@ function Router() {
 
   // /payment-result: VNPay chuyển về đây sau khi thanh toán; PaymentResultPage xác minh kết quả.
   if (route.type === 'payment-result') {
+    // Khung chung: trang theo route + header/footer
     return (
       <div className="app">
         <SiteHeader />
@@ -3371,6 +3530,7 @@ async function loadDataFromApi() {
  * Dùng ở: đoạn khởi động cuối file.
  */
 function ApiStartupError({ error }) {
+  // Màn hình lỗi không kết nối được backend
   return (
     <main className="listing-page">
       <div className="container">

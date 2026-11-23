@@ -20,6 +20,14 @@
  *   termsVersion }) -> CustomerAccount gọi API lưu chữ ký; lỗi (nếu có) hiện ngay trong hộp thoại.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền thành chuỗi kiểu Việt Nam kèm "đ" (rỗng -> "0đ") → dùng ở: ContractSignFlow
+ *   ContractSignFlow: Hộp thoại ký hợp đồng / phụ lục gia hạn 3 bước → dùng ở: CustomerAccount.jsx (ContractPage)
+ *   toggle: Chạy khi tick/bỏ tick ô của 1 nhóm điều khoản ở bước 2: thêm/bớt key trong tập accepted → dùng ở: ContractSignFlow
+ *   submit: Gửi ký: kiểm tra đã đồng ý đủ điều khoản, đã ký và họ tên khớp tài khoản; rồi gọi onSign với ảnh chữ ký → dùng ở: ContractSignFlow
+ */
 import React, { useEffect, useState } from 'react'
 import SignaturePad from './SignaturePad'
 import { buildContractTerms, usePolicies } from '../../services/policies'
@@ -105,8 +113,10 @@ export default function ContractSignFlow({ group, customer, onClose, onSign }) {
     }
   }
 
+  // Hộp thoại ký hợp đồng 3 bước
   return (
     <div className="csf-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !submitting) onClose() }}>
+      {/* Bước 1 xem HĐ, bước 2 tick điều khoản, bước 3 ký tay */}
       <div className="csf" role="dialog" aria-modal="true" aria-labelledby="csf-title">
         <div className="csf-head">
           <div>

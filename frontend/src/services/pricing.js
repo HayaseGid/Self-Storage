@@ -23,6 +23,16 @@
  * ======================================================================
  */
 
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   setCatalogPricing: Nạp cấu hình tính giá từ dữ liệu catalog backend trả về (GET /api/catalog/state): danh sách gói thuê (contractTypes) và theo từng cơ sở → dùng ở: App.jsx (loadDataFromApi)
+ *   discountFor: Giảm giá luôn = 0 (tính năng giảm giá đang tắt, giữ hàm để code cũ không lỗi) → chưa thấy nơi dùng
+ *   depositMonthsFor: Số tháng tiền cọc của một cơ sở (mặc định 2) → dùng ở: quote
+ *   holdMinutesFor: Số phút giữ chỗ chờ khách đặt cọc của một cơ sở (mặc định 15) → dùng ở: App.jsx (BookingPage), CartPage.jsx (CartPage)
+ *   effectiveMonthly: Giá thuê thực tế mỗi tháng (= giá niêm yết làm tròn, vì không có giảm giá) → dùng ở: App.jsx (mapCustomerReservation), CartPage.jsx
+ *   quote: Báo giá cho một hoặc nhiều kho cùng cơ sở, cùng gói thuê → dùng ở: App.jsx (BookingPage), CartPage.jsx (CartPage)
+ */
+
 // Cấu hình tính giá trong bộ nhớ (nạp bởi setCatalogPricing): danh sách gói thuê và cấu hình theo cơ sở.
 const state = {
   contractTypes: [],

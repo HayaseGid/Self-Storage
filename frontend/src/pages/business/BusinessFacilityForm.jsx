@@ -16,6 +16,15 @@
  *   -> hộp thoại liệt kê thay đổi -> xác nhận -> onSave(values) -> cha gọi API, thành công thì đóng form.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   BusinessFacilityForm: Form (hộp thoại) sửa thông tin 1 cơ sở, tự kiểm tra hợp lệ và tóm tắt thay đổi trước khi lưu → dùng ở: BusinessOperations.jsx (BusinessOperations)
+ *   set: Tạo hàm xử lý onChange cho 1 trường của form (trả về hàm nhận event) → dùng ở: BusinessFacilityForm
+ *   locText: Vị trí dạng chữ "vĩ độ, kinh độ" để so sánh và hiện trong hộp thoại xác nhận → dùng ở: BusinessFacilityForm
+ *   statusLabel: Đổi mã trạng thái thành nhãn tiếng Việt ("Đang hoạt động" / "Ngừng hoạt động") → dùng ở: BusinessFacilityForm
+ *   submit: Lưu form (submit khi bấm "Lưu thay đổi"): kiểm tra hợp lệ, báo nếu không có thay đổi, hỏi xác nhận kèm danh sách thay đổi → dùng ở: BusinessFacilityForm
+ */
 import React, { useEffect, useState } from 'react'
 import { extractDistrict } from '../../utils/districts'
 import LocationPicker from '../../features/facility/LocationPicker' // chọn vị trí cơ sở trên bản đồ
@@ -127,8 +136,10 @@ export default function BusinessFacilityForm({ facility, facilities = [], manage
     }
   }
 
+  // Hộp thoại sửa cơ sở
   return (
     <div className="bc-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+      {/* Tên, địa chỉ, vị trí, quản lý, trạng thái + nút lưu */}
       <form className="bc-modal" role="dialog" aria-modal="true" aria-labelledby="bf-title" onSubmit={submit} noValidate>
         <div className="bc-modal-head">
           <div>

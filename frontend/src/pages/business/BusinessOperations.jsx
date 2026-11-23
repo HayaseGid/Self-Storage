@@ -27,6 +27,20 @@
  *   -> tải lại ngầm (silent) -> giao diện cập nhật.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   BusinessOperations: Component trang Business Operations: sidebar + topbar, tải dữ liệu vận hành/báo cáo, điều hướng 6 mục menu → dùng ở: (cấp file); App.jsx (Router)
+ *   loadBusinessData: Tải song song dữ liệu vận hành và báo cáo, chuẩn hóa bằng mapOperationsState rồi lưu vào state → dùng ở: BusinessOperations, runOperation, handleAddFacility
+ *   showOperationError: Hiện lỗi thao tác bằng pop-up (không chỉ một dòng nhỏ ở đầu trang) và lưu vào apiError → dùng ở: runOperation, handleAddFacility
+ *   runOperation: Chạy 1 thao tác gọi API, thành công thì tải lại dữ liệu ngầm (silent), lỗi thì hiện pop-up → dùng ở: updateFacility, deleteFacility
+ *   updateFacility: Cập nhật thông tin cơ sở; trường nào không có trong `values` thì giữ giá trị cũ → dùng ở: BusinessOperations
+ *   deleteFacility: Xóa cơ sở sau khi hỏi xác nhận (không hoàn tác được) → dùng ở: BusinessOperations
+ *   handleAddFacility: Tạo cơ sở mới từ modal: kiểm tra đã nhập tên, địa chỉ và chọn quản lý; mã chi nhánh lấy từ autoUnitCodePrefix (tự sinh) → dùng ở: BusinessOperations
+ *   handleCloseAddFacility: Đóng modal thêm cơ sở và xóa dữ liệu đang nhập → dùng ở: BusinessOperations
+ *   handleLogout: Đăng xuất (nút ở cuối sidebar): xóa khóa currentUserKey khỏi localStorage và về trang chủ → dùng ở: BusinessOperations
+ *   BusinessLiveDashboard: Màn hình "Tổng quan" của Business Operations: 4 thẻ KPI → dùng ở: BusinessOperations
+ */
 import React, { useEffect, useState } from "react";
 import "./BusinessOperations.css";
 import { apiDelete, apiGet, apiPost, apiPut } from "../../api/api";
@@ -270,6 +284,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
         </main>;
     }
 
+    // Trang Business Operations: menu trái + nội dung theo mục
     return (
         <div className="customer-layout business-layout">
 
@@ -371,6 +386,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             {/* MAIN */}
             <main className="customer-main">
 
+                {/* Thanh trên: tiêu đề mục + nút làm mới */}
                 <div className="customer-topbar">
 
                     <div>
@@ -413,10 +429,12 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                 <section className="business-content">
                     {apiError && <div className="auth-message error" role="alert">{apiError}</div>}
 
+                    {/* Tổng quan */}
                     {activeMenu === "dashboard" && (
                         <BusinessLiveDashboard facilities={facilities} reports={reports} />
                     )}
 
+                    {/* Cơ sở toàn hệ thống */}
                     {activeMenu === "facilities" && (
                         <BusinessFacilitiesByArea
                             facilities={facilities}
@@ -428,6 +446,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                         />
                     )}
 
+                    {/* Form sửa cơ sở */}
                     {editingFacility && (
                         <BusinessFacilityForm
                             facility={editingFacility}
@@ -442,12 +461,16 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                         />
                     )}
 
+                    {/* Khung giá theo nhóm kích thước */}
                     {activeMenu === "prices" && <BusinessPriceBands dialog={dialog} />}
 
+                    {/* Chính sách chung */}
                     {activeMenu === "policies" && <BusinessPolicyEditor facilities={facilities} dialog={dialog} />}
 
+                    {/* Doanh thu & hiệu suất */}
                     {activeMenu === "revenue" && <BusinessPerformance reports={reports} facilities={facilities} />}
 
+                    {/* Báo cáo & xuất CSV */}
                     {activeMenu === "reports" && (
                         <BusinessReportsCenter reports={reports} operationState={operationState} facilities={facilities} />
                     )}

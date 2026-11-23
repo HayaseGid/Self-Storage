@@ -17,6 +17,15 @@
  *   (kho, đơn, hợp đồng, giá) hiển thị từ object đã chuẩn hóa.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   cleanDate: Cắt giá trị ngày/giờ về dạng 'YYYY-MM-DD' (rỗng nếu không có) → dùng ở: mapOperationsState, mapReservation, mapContract
+ *   mapOperationsState: Chuyển toàn bộ dữ liệu "trạng thái vận hành" (GET /api/operations/state) sang dạng frontend: facilities (cơ sở), units (kho), reservations → dùng ở: BusinessOperations.jsx (loadBusinessData), FacilityManagerAccount.jsx (loadState), FacilityStaffAccount.jsx (loadState)
+ *   mapUnit: Chuẩn hóa 1 dòng KHO (storage unit): mã kho, cơ sở, loại, kích thước, diện tích, giá/tháng, tầng/khu/vị trí, trạng thái → dùng ở: mapOperationsState; opsLists.js
+ *   mapReservation: Chuẩn hóa 1 dòng ĐƠN ĐẶT KHO (reservation): khách hàng, cơ sở, kho được gán, ngày bắt đầu/kết thúc, số tháng → dùng ở: mapOperationsState; opsLists.js
+ *   mapContract: Chuẩn hóa 1 dòng HỢP ĐỒNG (contract): số hợp đồng (mặc định "HD-{id}"), đơn liên quan, khách, kho, ngày hiệu lực, tiền cọc/tổng phí → dùng ở: mapOperationsState; opsLists.js
+ */
 import { DEPOSIT_MONTHS } from '../services/storageRules'
 
 /**

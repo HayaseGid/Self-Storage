@@ -31,6 +31,28 @@
  *   -> POST /api/vnpay/create -> trình duyệt chuyển sang VNPay -> VNPay trả về /payment-result (PaymentResultPage xử lý).
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền (làm tròn) thành chuỗi kiểu Việt Nam kèm "đ" → dùng ở: PendingDepositBar, historyStatus, CustomerPaymentCenter
+ *   parseUtc: Đọc thời điểm UTC từ backend. Backend trả giờ UTC không kèm "Z" -> tự thêm "Z" nếu thiếu để không bị lệch 7 tiếng → dùng ở: fmtDate, pendingDepositsOf, CustomerPaymentCenter
+ *   fmtTime: Định dạng milisecond thành "HH:mm dd/MM" (giờ hết hạn giữ kho) → dùng ở: PendingDepositBar, CustomerPaymentCenter
+ *   fmtDate: Định dạng thời điểm UTC thành ngày giờ đầy đủ theo vi-VN (không hợp lệ -> "—"); dùng cho cột "Ngày" của lịch sử → dùng ở: CustomerPaymentCenter
+ *   fmtLeft: Định dạng thời gian còn lại: "mm:ss" (dưới 1 giờ) hoặc "H giờ mm phút"; hết giờ -> "hết giờ" → dùng ở: PendingDepositBar, CustomerPaymentCenter; HeaderNotificationBell.jsx (HeaderNotificationBell)
+ *   useNow: Hook trả về thời điểm hiện tại, tự cập nhật mỗi `intervalMs` ms (dùng cho đồng hồ đếm ngược) → dùng ở: usePendingDeposits
+ *   pendingDepositsOf: Lọc các đơn đang chờ đặt cọc (status 'Pending Deposit', chưa có giao dịch thành công) và còn trong giờ giữ kho, thêm trường expiresAtMs → dùng ở: usePendingDeposits; CustomerAccount.jsx (CustomerDashboard)
+ *   usePendingDeposits: Hook: danh sách đơn chờ cọc + thời điểm hiện tại (chỉ chạy đồng hồ 1 giây/lần khi có đơn chờ cọc) → dùng ở: PendingDepositBar, CustomerPaymentCenter; HeaderNotificationBell.jsx (HeaderNotificationBell)
+ *   abandonedNote: Câu ghi chú khi lần thanh toán trước chưa xong (mở VNPay rồi thoát / thất bại / bị hủy), dựa trên paymentStatus → dùng ở: PendingDepositBar, CustomerPaymentCenter
+ *   unitsOf: Ghép danh sách số kho của đơn thành chuỗi "A01, A02" (chưa có thì "Chưa phân kho") → dùng ở: PendingDepositBar, CustomerPaymentCenter
+ *   PendingDepositBar: Thanh nhắc đơn chưa đặt cọc: số đơn, tổng tiền cọc, giờ hết hạn giữ kho của đơn sớm nhất và thời gian còn lại (tô đỏ khi còn dưới 5 phút) → dùng ở: HeaderNotificationBell.jsx (HeaderPendingDepositBar), CustomerAccount.jsx (CustomerDashboard)
+ *   historyStatus: Trạng thái hiển thị của 1 dòng lịch sử giao dịch: "Thành công", "Đang hoàn ...", "Đã hoàn ..." → dùng ở: CustomerPaymentCenter
+ *   CustomerPaymentCenter: Trang "Thanh toán & Hóa đơn" của khách: khoản cọc / gia hạn chờ thanh toán, hóa đơn tiền thuê & phí trễ hạn, thẻ tóm tắt → dùng ở: CustomerAccount.jsx (CustomerDashboard)
+ *   lateFeeOf: Lấy thông tin phí trễ hạn của 1 đơn (kèm chính sách phí trễ hạn) → dùng ở: lateUnpaidOf, CustomerPaymentCenter
+ *   lateUnpaidOf: Tính tổng phí trễ hạn CHƯA đóng (và không đang chờ VNPay xác nhận) của 1 đơn → dùng ở: payRentBill, CustomerPaymentCenter
+ *   payWithVnPay: Thanh toán tiền cọc / gia hạn cho 1 hoặc nhiều đơn qua VNPay → dùng ở: CustomerPaymentCenter
+ *   payRentBill: Đóng hóa đơn tiền thuê định kỳ + phí trễ hạn của 1 hợp đồng: hỏi xác nhận rồi chuyển sang VNPay → dùng ở: CustomerPaymentCenter
+ *   retry: Gửi lại yêu cầu hoàn tiền cho 1 đơn đã hủy rồi tải lại dữ liệu → dùng ở: CustomerPaymentCenter
+ */
 import React, { useEffect, useState } from 'react'
 import { Code, NewBadge, Pager, UnitCodes, rowClass, useClientPaging } from '../../components/common/listKit'
 import { formatReservationCode } from '../../services/storageRules'
@@ -172,6 +194,7 @@ export function PendingDepositBar({ rentals, onPay, variant = 'header', actionLa
   const left = Number.isNaN(first.expiresAtMs) ? null : first.expiresAtMs - now
   const urgent = left != null && left < 5 * 60000
   const total = list.reduce((s, r) => s + Number(r.depositAmount || 0), 0)
+  // Thanh nhắc đơn chưa đặt cọc
   return (
     <div className={`pd-bar ${variant}${urgent ? ' urgent' : ''}`} role="status" aria-live="polite">
       <div className="pd-bar-inner">
@@ -326,8 +349,10 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
   const refunding = all.filter(r => Number(r.refundAmount) > 0 && r.refundStatus !== 'Completed')
   const refundTotal = all.filter(r => Number(r.refundAmount) > 0).reduce((s, r) => s + Number(r.refundAmount || 0), 0)
 
+  // Trang "Thanh toán & Hóa đơn"
   return (
     <div className="customer-content-page cp-page">
+      {/* Tiêu đề trang */}
       <div className="customer-page-heading">
         <div>
           <span className="customer-eyebrow">TRUNG TÂM TÀI CHÍNH & HÓA ĐƠN</span>
@@ -354,6 +379,7 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
             const left = Number.isNaN(item.expiresAtMs) ? null : item.expiresAtMs - now
             const urgent = left != null && left < 5 * 60000
             const note = abandonedNote(item)
+            // 1 khoản chờ thanh toán
             return (
               <article key={item.reservationId} className={`cp-due-item${urgent ? ' urgent' : ''}`}>
                 <div className="cp-due-info">
@@ -403,6 +429,7 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
               const totalBill = rentAmount + lateAmount
               const isOverdue = Number(rental.rentOverdue) > 0 || lateAmount > 0
 
+              // 1 hóa đơn tiền thuê
               return (
                 <article key={rental.reservationId} className={`cp-due-item cp-bill-card${isOverdue ? ' urgent' : ''}`}>
                   <div className="cp-due-info">
@@ -510,6 +537,7 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
                   const st = historyStatus(item)
                   const hasRefund = Number(item.refundAmount) > 0
                   const expanded = openRefund === item.reservationId
+                  // 1 dòng lịch sử + tiến trình hoàn cọc
                   return (
                     <React.Fragment key={item.reservationId}>
                       <tr className={rowClass(item.paymentDate)}>

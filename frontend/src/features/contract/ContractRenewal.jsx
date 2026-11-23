@@ -35,6 +35,25 @@
  *   (ghi sessionStorage + phát sự kiện mở tab Hợp đồng) -> CustomerAccount mở ContractSignFlow để ký phụ lục.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền (làm tròn) thành chuỗi kiểu Việt Nam kèm "đ" → dùng ở: finishRenewal, RenewalSection, RenewalModal
+ *   fmtIsoDate: Đổi ngày ISO ('2026-05-01...') thành 'dd/MM/yyyy' (rỗng -> '—') → dùng ở: RenewalSection, RenewalModal; ContractCard.jsx, PendingPayments.jsx (CustomerPaymentCenter), CustomerAccount.jsx
+ *   addMonthsIso: Tính ngày kết thúc sau `months` tháng kể từ ngày ISO (trừ 1 ngày), dùng hiển thị hết tháng đầu của kỳ gia hạn → dùng ở: RenewalModal
+ *   minutesLeft: Số phút còn lại tới một thời điểm ISO (không âm), dùng hiện "còn N phút" giữ yêu cầu gia hạn chờ thanh toán → dùng ở: RenewalSection, submit
+ *   useContractRenewals: Hook: tải thông tin gia hạn của khách (điều kiện, báo giá, yêu cầu đang chờ, đã gia hạn) một lần khi mount → dùng ở: HeaderNotificationBell.jsx (useHeaderNotices), CustomerAccount.jsx (MyStoragePage, ContractPage +1)
+ *   byReservation: Tìm thông tin gia hạn của 1 hợp đồng theo reservationId → dùng ở: useContractRenewals
+ *   payRenewal: Thanh toán 1 yêu cầu gia hạn đang chờ: nếu bật chế độ demo thì hỏi khách chọn "Mô phỏng" hay "Qua VNPay" → dùng ở: continuePay, submit
+ *   finishRenewal: Sau khi gia hạn xong: hiện thông báo "Gia hạn thành công, vui lòng ký phụ lục gia hạn" (announceRenewalSuccess) → dùng ở: continuePay, submit
+ *   RenewalSection: Khối "Gia hạn hợp đồng" đầu tab Hợp đồng, gồm 3 loại thẻ: yêu cầu gia hạn chờ thanh toán (nút Hủy / Thanh toán / Hoàn tất) → dùng ở: CustomerAccount.jsx (ContractPage)
+ *   refresh: Tải lại dữ liệu gia hạn và báo cha tải lại dữ liệu đơn → dùng ở: continuePay, cancelPending
+ *   continuePay: Tiếp tục yêu cầu gia hạn đang chờ: đã trả thì hoàn tất, chưa trả thì thanh toán → dùng ở: RenewalSection
+ *   cancelPending: Hủy yêu cầu gia hạn chưa thanh toán (hỏi xác nhận trước) → dùng ở: RenewalSection
+ *   RenewalModal: Hộp thoại gia hạn 3 bước: 1) 'plan' chọn kỳ (số tháng) + hình thức trả, xem bảng giá từng kho; 2) 'pay' xác nhận bằng DepositConfirm → dùng ở: CustomerAccount.jsx (MyStoragePage, ContractPage)
+ *   dueOf: Số tiền phải trả ngay của 1 báo giá theo hình thức trả đang chọn → dùng ở: RenewalModal
+ *   submit: Tạo yêu cầu gia hạn rồi thanh toán ngay → dùng ở: RenewalModal
+ */
 import React, { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../../api/api'
 import { formatVnd } from '../../services/storageRules'
@@ -238,8 +257,10 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
     }
   }
 
+  // Khối "Gia hạn hợp đồng" đầu tab Hợp đồng
   return (
     <section className="rn-section" aria-label="Gia hạn hợp đồng">
+      {/* Tiêu đề khối */}
       <div className="rn-section-head">
         <h2>Gia hạn hợp đồng</h2>
         {rules && (
@@ -249,9 +270,11 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
           </p>
         )}
       </div>
+      {/* Thẻ: chờ thanh toán / sắp hết hạn / đã gia hạn */}
       <div className="rn-list">
         {pending.map(item => {
           const p = item.pendingRenewal
+          // Thẻ yêu cầu gia hạn chờ thanh toán
           return (
             <article key={`p-${item.reservationId}`} className="rn-card soon clickable" role="link" tabIndex={0} onClick={e => { if (!e.target.closest('button, a, input')) focusContract(item.reservationId) }} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) focusContract(item.reservationId) }}>
               <div>
@@ -271,7 +294,7 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
             </article>
           )
         })}
-        {active.map(item => (
+        {active.map(item => ( // Thẻ hợp đồng sắp hết hạn
           <article key={item.reservationId} className={`rn-card clickable${item.eligible ? '' : ' blocked'}${item.eligible && item.daysLeft <= 30 ? ' soon' : ''}`} role="link" tabIndex={0} onClick={e => { if (!e.target.closest('button, a, input')) focusContract(item.reservationId) }} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) focusContract(item.reservationId) }} title="Bấm để xem hợp đồng">
             <div>
               <span className={`sign-badge ${item.eligible ? (item.daysLeft <= 30 ? 'todo' : 'done') : 'wait'}`}>
@@ -292,7 +315,7 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
             )}
           </article>
         ))}
-        {renewed.map(item => (
+        {renewed.map(item => ( // Thẻ đã gia hạn (chờ ký phụ lục)
           <article key={item.reservationId} className={`rn-card clickable${item.renewedBy.isSigned === false ? ' soon' : ' done'}`} role="link" tabIndex={0} onClick={e => { if (!e.target.closest('button, a, input')) focusContract(item.renewedBy.reservationId) }} onKeyDown={e => { if (e.key === 'Enter' && e.target === e.currentTarget) focusContract(item.renewedBy.reservationId) }} title="Bấm để xem phụ lục gia hạn">
             <div>
               <span className={`sign-badge ${item.renewedBy.isSigned === false ? 'todo' : 'done'}`}>
@@ -389,9 +412,11 @@ export function RenewalModal({ item, onClose, onDone }) {
   const firstMonthEnd = quote ? addMonthsIso(quote.startDate, 1) : null
   const laterMonths = quote ? Number(quote.laterMonths ?? Math.max(0, quote.months - 1)) : 0
 
+  // Hộp thoại gia hạn 3 bước
   return (
     <div className="csf-overlay" onMouseDown={event => { if (event.target === event.currentTarget && !submitting) onClose() }}>
       <div className="csf rn-modal" role="dialog" aria-modal="true" aria-labelledby="rn-title">
+        {/* Tiêu đề hộp thoại */}
         <div className="csf-head">
           <div>
             <span className="sign-badge todo">Gia hạn hợp đồng</span>
@@ -400,12 +425,14 @@ export function RenewalModal({ item, onClose, onDone }) {
           </div>
           <button type="button" className="csf-close" onClick={onClose} disabled={submitting} aria-label="Đóng">×</button>
         </div>
+        {/* Thanh bước */}
         <ol className="csf-steps">
           {steps.map(([key, label], index) => (
             <li key={key} className={index < stepIndex ? 'done' : index === stepIndex ? 'active' : ''}>{label}</li>
           ))}
         </ol>
 
+        {/* Chọn số tháng, hình thức trả, bảng giá, xác nhận */}
         <div className="csf-body">
           {error && <div className="auth-message error rn-modal-error" role="alert">{error}</div>}
 
@@ -504,6 +531,7 @@ export function RenewalModal({ item, onClose, onDone }) {
           )}
         </div>
 
+        {/* Nút quay lại / thanh toán */}
         <div className="csf-actions">
           {step === 'pay' && <button type="button" className="dashboard-secondary-btn" disabled={submitting} onClick={() => { setStep('plan'); setAgreed(false); setError('') }}>Quay lại</button>}
           <span className="csf-spacer" />

@@ -36,6 +36,60 @@
  *   mã truy cập và KEY-<mã kho>) -> tải lại dữ liệu, ghi nhật ký, kho chuyển "Đang thuê".
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   pad: Thêm số 0 phía trước cho đủ 2 chữ số (vd 5 -> "05") → dùng ở: fmtISO
+ *   fmtISO: Định dạng đối tượng Date thành 'YYYY-MM-DD' (theo giờ máy) → dùng ở: addMonths, Portal
+ *   todayStr: "Hôm nay" dạng 'YYYY-MM-DD' theo Demo Clock (đồng hồ giả lập để test), dùng để chia nhóm ngày hẹn → dùng ở: checkHandover, ReservationDetail, Workspace +1
+ *   addMonths: Cộng n tháng vào ngày 'YYYY-MM-DD' (kẹp về cuối tháng nếu tháng đích ngắn hơn, vd 31/01 + 1 tháng = 28/02) → dùng ở: endOf
+ *   fmtDate: Đổi 'YYYY-MM-DD' (hoặc ISO) thành 'dd/MM/yyyy' để hiển thị (rỗng -> '—') → dùng ở: checkHandover, ReservationDetail, TaskDetailModal +2
+ *   fmtMoney: Định dạng tiền kiểu Việt Nam kèm "đ" (vd 1500000 -> "1.500.000đ") → dùng ở: ReservationDetail, Portal
+ *   fmtDateTime: Định dạng ngày giờ theo vi-VN (không hợp lệ -> '—'), dùng cho nhật ký / thời điểm báo cáo → dùng ở: ReservationDetail, TaskDetailModal, Portal
+ *   compressImage: Nén ảnh trước khi gửi: vẽ lên canvas thu nhỏ (cạnh dài tối đa 1280px), xuất JPEG chất lượng 0.7, trả về data URL → dùng ở: addHandoverImages, addImages
+ *   endOf: Ngày kết thúc của đơn: ưu tiên ngày backend trả về (khớp hợp đồng), thiếu thì tự tính = ngày bắt đầu + số tháng → dùng ở: overlaps, checkHandover, ReservationDetail
+ *   overlaps: Kiểm tra 2 đơn có trùng kỳ thuê (khoảng thời gian giao nhau) không → dùng ở: findClashes
+ *   unitsOf: Lấy danh sách mã kho của 1 đơn (đơn có thể gồm nhiều kho: unitNumbers; đơn cũ chỉ có assignedUnitId / unitId) → dùng ở: findClashes, isAssignedToMe, checkHandover +4
+ *   resCode: Mã đơn hiển thị (reservationCode, không có thì định dạng từ id bằng formatReservationCode) → dùng ở: doConfirm, ReservationDetail, ReservationItem +2
+ *   dayGroup: Phân nhóm đơn theo ngày hẹn (appointmentDate) so với hôm nay: 'overdue' (quá hẹn), 'today' (hôm nay), 'upcoming' → dùng ở: DayTag, ReservationDetail, Portal
+ *   findClashes: Tìm các kho của đơn đang bị đơn khác (trạng thái HOLDING) giữ trùng kỳ thuê, để cảnh báo / chặn bàn giao → dùng ở: checkHandover, ReservationDetail
+ *   myMoveInTasks: Lấy các việc "Nhận kho" (Move In, chưa hủy) đã giao cho chính nhân viên này ở đơn đang xét → dùng ở: isAssignedToMe
+ *   isAssignedToMe: Kiểm tra mọi kho của đơn đều đã được giao cho nhân viên này (điều kiện để được bàn giao) → dùng ở: checkHandover, ReservationDetail, ReservationItem +1
+ *   checkHandover: Kiểm tra trước các điều kiện bàn giao → dùng ở: ReservationDetail, Portal
+ *   Badge: Nhãn trạng thái có màu: tra nhãn + tone của `value` trong bảng `map` (không có thì hiện nguyên giá trị) → dùng ở: ReservationDetail, TaskDetailModal, ReservationItem +1
+ *   Info: 1 ô thông tin "nhãn: giá trị" trong khung chi tiết đơn → dùng ở: ReservationDetail
+ *   DayTag: Nhãn ngày hẹn cho đơn đang chờ bàn giao: "Hôm nay" hoặc "Quá hẹn"; đơn khác / ngày sắp tới thì không hiện gì → dùng ở: ReservationItem, Portal
+ *   AuthFrame: Khung trang kiểu màn hình đăng nhập (dùng lại class auth-* của trang khách): logo bấm về trang chủ, tiêu đề, phụ đề → dùng ở: NoAccess
+ *   NoAccess: Màn hình "Cần tài khoản nhân viên": hiện khi tài khoản không phải nhân viên hoặc chưa được phân công cơ sở → dùng ở: StaffPortal
+ *   ReservationDetail: Khung chi tiết 1 đơn + bàn giao kho: cảnh báo (chưa cọc, quá hẹn, trùng lịch...), thông tin khách / kho / thanh toán → dùng ở: Workspace
+ *   addHandoverImages: Khi chọn file ở ô "+ Thêm ảnh kho": nén và thêm ảnh bằng chứng bàn giao (tối đa 3 ảnh) → dùng ở: ReservationDetail
+ *   doHandover: Khi bấm "Xác nhận bàn giao N kho": hỏi xác nhận, gửi yêu cầu bàn giao (tình trạng Good, ghi chú, ảnh) rồi hiện kết quả → dùng ở: ReservationDetail
+ *   doConfirm: Khi bấm "Xác nhận đơn đã cọc": hỏi xác nhận, chuyển đơn Paid -> Confirmed + tạo hợp đồng để khách ký → dùng ở: ReservationDetail
+ *   retryHandover: Khi bấm "Thử bàn giao lại (kiểm tra chống trùng)" ở đơn đã bàn giao: gửi lại yêu cầu bàn giao, backend phải từ chối → dùng ở: ReservationDetail
+ *   UnitReportModal: Hộp thoại "Báo cáo tình trạng kho": chọn Hư hỏng (kho trống chuyển Bảo trì) hoặc Bình thường (kho đang Bảo trì / Chờ kiểm tra được mở lại) → dùng ở: Portal
+ *   addImages: Khi chọn file ở ô "+ Thêm ảnh": nén và thêm ảnh sự cố (tối đa 3 ảnh) → dùng ở: UnitReportModal
+ *   submit: Khi bấm gửi báo cáo (submit form): bắt buộc mô tả khi hư hỏng, gọi onSubmit (-> POST /api/staff-tools/unit-reports) → dùng ở: UnitReportModal
+ *   TaskDetailModal: Hộp thoại chi tiết 1 việc được giao: loại việc, trạng thái, lịch hẹn, hình thức nhận/trả, khách, kho, kết quả / ghi chú, ảnh bằng chứng → dùng ở: Portal
+ *   ReservationItem: 1 dòng đơn trong danh sách bên trái: mã đơn, khách, nhãn Mới / Hôm nay / Quá hẹn, kho, lịch hẹn, trạng thái → dùng ở: Workspace
+ *   handleSelect: Khi bấm vào dòng: đánh dấu đã xem (tắt nhãn Mới, lưu ở listKit) rồi gọi onSelect → dùng ở: ReservationItem
+ *   Workspace: Bố cục 2 cột dùng chung cho mục "Bàn giao kho" và "Đơn đặt chỗ": bên trái ô tìm kiếm + bộ lọc + danh sách đơn → dùng ở: Portal
+ *   sumCounts: Tính tổng các giá trị trong object đếm (vd { AVAILABLE: 3, RENTED: 5 } -> 8), dùng cho số "Tất cả" trên nút lọc → dùng ở: Portal
+ *   Portal: Phần giao diện chính của nhân viên (sau khi đã tải dữ liệu): menu bên trái, các mục → dùng ở: AuthFrame, (cấp file), StaffPortal
+ *   sortKey: Khóa sắp xếp theo lịch hẹn (ngày + khung giờ; chưa hẹn xếp cuối) → dùng ở: bySort
+ *   bySort: So sánh 2 đơn theo lịch hẹn → dùng ở: Portal
+ *   matches: Lọc đơn theo ô tìm kiếm (mã đơn, khách, email, mã kho) → dùng ở: Portal
+ *   changeUnitStatus: Khi chọn trạng thái mới ở ô trạng thái của 1 kho (mục "Kho tại cơ sở"): hỏi xác nhận rồi đổi trạng thái; lỗi thì hiện hộp thoại báo lỗi → dùng ở: Portal
+ *   open: Mở chi tiết 1 đơn trong màn hình Bàn giao kho (bỏ lọc ngày); dùng khi bấm 1 dòng "Việc cần làm hôm nay" ở Tổng quan → dùng ở: Portal
+ *   dayChips: Nút lọc theo ngày hẹn của mục "Bàn giao kho" → dùng ở: Portal
+ *   StaffPortal: Component gốc trang nhân viên (route /staff): tải dữ liệu vận hành, xác định cơ sở đang làm → dùng ở: App.jsx (Router)
+ *   loadState: Tải dữ liệu: trạng thái vận hành -> tự phân công đơn chưa có người -> đồng bộ phí trễ hạn -> việc được giao, rồi lưu vào state db → dùng ở: StaffPortal, handover, confirmReservation +2
+ *   switchFacility: Khi chọn cơ sở khác ở ô "Cơ sở đang làm việc": đổi cơ sở và nhớ lựa chọn vào localStorage → dùng ở: StaffPortal
+ *   logout: Khi bấm "Đăng xuất": xóa phiên (currentUserKey) khỏi localStorage và về trang chủ → dùng ở: StaffPortal
+ *   handover: Bàn giao kho rồi tải lại ngầm. Backend kiểm tra phân công và điều kiện, tự sinh mã truy cập & KEY-<mã kho> → dùng ở: StaffPortal
+ *   confirmReservation: Xác nhận đơn đã cọc (Paid -> Confirmed + tạo hợp đồng) rồi tải lại ngầm → dùng ở: StaffPortal
+ *   reportUnitCondition: Gửi báo cáo tình trạng / sự cố kho rồi tải lại ngầm → dùng ở: StaffPortal
+ *   updateUnitStatus: Đổi trạng thái kho rồi tải lại ngầm → dùng ở: StaffPortal
+ */
 import { useEffect, useMemo, useState } from "react";
 import "../../styles/styles.css";
 import "../../styles/staffstyles.css";
@@ -379,6 +433,7 @@ const DayTag = ({ res, today }) => {
  * @returns {JSX.Element}
  */
 function AuthFrame({ title, subtitle, onBrand, children }) {
+  // Khung kiểu trang đăng nhập
   return (
     <div className="auth-page">
       <div className="auth-background auth-bg-one" />
@@ -407,6 +462,7 @@ function AuthFrame({ title, subtitle, onBrand, children }) {
  * @returns {JSX.Element}
  */
 function NoAccess({ navigate }) {
+  // Màn hình không có quyền nhân viên
   return (
     <AuthFrame title="Cần tài khoản nhân viên" subtitle="Trang này chỉ dành cho Facility Staff đang được phân công tại một cơ sở. Hãy đăng nhập bằng tài khoản nhân viên hoặc liên hệ Facility Manager để được thêm vào cơ sở." onBrand={() => navigate("/")}>
       <div className="auth-form">
@@ -550,8 +606,10 @@ function ReservationDetail({ res, staff, db, actions }) {
     }
   };
 
+  // Chi tiết đơn + bàn giao kho
   return (
     <div className="st-card st-detail">
+      {/* Mã đơn, khách, trạng thái */}
       <div className="st-head">
         <div>
           <div className="st-head-codes">
@@ -578,6 +636,7 @@ function ReservationDetail({ res, staff, db, actions }) {
       {!handedOver && AWAITING.includes(res.status) && !isAssignedToMe(db, res) && (
         <div className="st-alert st-warn">Đơn này do nhân viên khác phụ trách (hoặc chưa có người nhận) nên bạn không bàn giao được. Liên hệ Facility Manager nếu cần đổi người.</div>
       )}
+      {/* Nút xác nhận đơn đã cọc */}
       {res.status === "PENDING_APPROVAL" && (
         <div className="st-alert st-warn st-confirm-box">
           <span>Khách đã đặt cọc nhưng đơn chưa được chuyển sang "Đã xác nhận" nên chưa thể bàn giao.</span>
@@ -597,12 +656,14 @@ function ReservationDetail({ res, staff, db, actions }) {
       {!handedOver && res.startDate && today < res.startDate && (
         <div className="st-alert st-warn">Kỳ thuê bắt đầu ngày {fmtDate(res.startDate)}. Hệ thống không cho bàn giao kho trước ngày này.</div>
       )}
+      {/* Cảnh báo trùng lịch */}
       {clashes.length > 0 && !handedOver && (
         <div className="st-alert st-warn">
           Trùng kỳ thuê: {clashes.map((c) => `${c.unitId} (đơn ${resCode(c.reservation)})`).join(", ")}. Không bàn giao, báo Facility Manager kiểm tra.
         </div>
       )}
 
+      {/* Thông tin khách, kho, thanh toán */}
       <div className="st-grid">
         <Info k="Lịch hẹn nhận kho" strong>{fmtDate(res.appointmentDate)} · {res.appointmentTime}</Info>
         <Info k="Cách nhận kho">{res.handoverMethod === "Online"
@@ -618,6 +679,7 @@ function ReservationDetail({ res, staff, db, actions }) {
       </div>
 
       <h3>Kho bàn giao ({units.length})</h3>
+      {/* Bảng kho trong đơn */}
       <table className="st-table st-units">
         <thead><tr><th>Mã kho</th><th>Loại kho</th><th>Size</th><th>Trạng thái</th></tr></thead>
         <tbody>
@@ -635,6 +697,7 @@ function ReservationDetail({ res, staff, db, actions }) {
         </tbody>
       </table>
 
+      {/* Đã bàn giao: mã truy cập / chưa: checklist + chụp ảnh + nút bàn giao */}
       {handedOver ? (
         <>
           <div className="st-alert st-ok">Đã bàn giao{res.contractId ? <> · hợp đồng <Code kind="contract">{res.contractNumber || `#${res.contractId}`}</Code></> : ""}.</div>
@@ -809,8 +872,10 @@ function UnitReportModal({ unit, onClose, onSubmit }) {
     }
   };
 
+  // Hộp thoại báo cáo tình trạng kho
   return (
     <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-label={`Báo cáo kho ${unit.id}`}>
+      {/* Chọn hư hỏng/bình thường, ghi chú, ảnh */}
       <form className="st-modal" onSubmit={submit}>
         <div className="st-modal-head">
           <h3>Báo cáo tình trạng kho {unit.id}</h3>
@@ -886,9 +951,11 @@ function TaskDetailModal({ task, onClose, onGoToReservation }) {
     }
   }, [task.evidenceImages]);
 
+  // Hộp thoại chi tiết việc được giao
   return (
     <div className="st-modal-overlay" role="dialog" aria-modal="true" aria-label={`Chi tiết việc #${task.taskId}`}>
       <div className="st-modal" style={{ maxWidth: "600px" }}>
+        {/* Tiêu đề + nút đóng */}
         <div className="st-modal-head">
           <div>
             <span style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748b", fontWeight: 700, letterSpacing: "0.5px" }}>
@@ -900,6 +967,7 @@ function TaskDetailModal({ task, onClose, onGoToReservation }) {
         </div>
 
         <div style={{ display: "grid", gap: "12px", margin: "14px 0" }}>
+          {/* Loại việc + trạng thái */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
             <div>
               <small style={{ color: "#64748b", display: "block" }}>Trạng thái công việc</small>
@@ -911,6 +979,7 @@ function TaskDetailModal({ task, onClose, onGoToReservation }) {
             </div>
           </div>
 
+          {/* Lịch hẹn, khách, kho */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
             <div style={{ background: "#f8fafc", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
               <small style={{ color: "#64748b", display: "block" }}>Lịch hẹn thực hiện</small>
@@ -950,6 +1019,7 @@ function TaskDetailModal({ task, onClose, onGoToReservation }) {
             </div>
           </div>
 
+          {/* Kết quả / ghi chú */}
           {(task.notes || task.conditionResult) && (
             <div style={{ background: "#f8fafc", padding: "12px 14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
               <small style={{ color: "#64748b", display: "block", marginBottom: "4px", textTransform: "uppercase", fontWeight: 700 }}>
@@ -973,6 +1043,7 @@ function TaskDetailModal({ task, onClose, onGoToReservation }) {
             </div>
           )}
 
+          {/* Ảnh đính kèm */}
           {parsedImages.length > 0 && (
             <div>
               <small style={{ color: "#64748b", display: "block", marginBottom: "6px", fontWeight: 700 }}>
@@ -994,6 +1065,7 @@ function TaskDetailModal({ task, onClose, onGoToReservation }) {
           )}
         </div>
 
+        {/* Nút đóng / mở đơn */}
         <div className="st-modal-actions" style={{ justifyContent: "space-between" }}>
           {task.reservationId ? (
             <button
@@ -1035,6 +1107,7 @@ function ReservationItem({ r, active, onSelect, db, today }) {
     markItemSeen(r.id);
     onSelect();
   };
+  // 1 đơn trong danh sách bên trái
   return (
     <button type="button" className={rowClass(r.createdAt, `st-item ${active ? "active" : ""}`, r.id)} onClick={handleSelect}>
       <div className="st-item-top">
@@ -1076,6 +1149,7 @@ function ReservationItem({ r, active, onSelect, db, today }) {
  */
 function Workspace({ list, query, setQuery, selected, selectedId, setSelectedId, staff, db, actions, chips, toolbar, pager, loading, error, emptyText }) {
   const today = todayStr();
+  // Bố cục 2 cột: danh sách đơn | chi tiết đơn
   return (
     <div className="st-split">
       <div>
@@ -1365,8 +1439,10 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
     </div>
   );
 
+  // Trang nhân viên: menu trái + nội dung theo mục
   return (
     <div className="customer-layout">
+      {/* Menu trái */}
       <aside className="customer-sidebar">
         <div className="customer-brand">
           <span className="brand-mark">S</span>
@@ -1405,7 +1481,9 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
         </div>
       </aside>
 
+      {/* Nội dung chính */}
       <main className="customer-main">
+        {/* Thanh trên: cơ sở, ngày, làm mới */}
         <div className="customer-topbar">
           <div>
             <span className="customer-eyebrow">{HEAD[0]}</span>
@@ -1454,6 +1532,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
           <Workspace list={handoverPaging.pageRows} query={query} setQuery={setQuery} selected={selected} selectedId={selectedId} setSelectedId={setSelectedId} staff={staff} db={db} actions={actions} chips={dayChips}
             pager={handoverPaging.pagerProps} emptyText="Không có đơn nào cần bàn giao trong nhóm này." />
         )}
+        {/* Mục Đơn đặt chỗ */}
         {section === "all" && (
           <Workspace list={allList.items} query={query} setQuery={setQuery} selected={selected} selectedId={selectedId} setSelectedId={setSelectedId} staff={staff} db={db} actions={actions}
             chips={<FilterChips options={STAFF_RES_FILTERS} value={allStatus} onChange={setAllStatus} counts={allList.statusCounts} total={sumCounts(allList.statusCounts)} className="st-chips-row" />}
@@ -1485,7 +1564,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
               <tbody>
                 {unitList.loading && unitList.items.length === 0 && <tr><td colSpan="8" className="st-empty">Đang tải danh sách kho…</td></tr>}
                 {!unitList.loading && unitList.items.length === 0 && <tr><td colSpan="8" className="st-empty">{units.length === 0 ? "Cơ sở chưa có kho." : "Không có kho phù hợp bộ lọc."}</td></tr>}
-                {unitList.items.map((u) => (
+                {unitList.items.map((u) => ( // 1 dòng kho
                   <tr
                     key={u.id}
                     className={rowClass(u.createdAt, "", u.id)}
@@ -1584,7 +1663,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
                     </td>
                   </tr>
                 )}
-                {taskPaging.pageRows.map((t) => (
+                {taskPaging.pageRows.map((t) => ( // 1 dòng việc được giao
                   <tr
                     key={t.taskId}
                     className={rowClass(t.createdAt, "st-clickable-row", t.taskId)}
@@ -1638,6 +1717,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
           </div>
         )}
 
+        {/* Hộp thoại chi tiết việc */}
         {selectedTask && (
           <TaskDetailModal
             task={selectedTask}
@@ -1649,6 +1729,7 @@ function Portal({ staff, facilities, onSwitchFacility, db, onLogout, onRefresh, 
           />
         )}
 
+        {/* Hộp thoại báo cáo kho */}
         {reportUnit && (
           <UnitReportModal
             unit={reportUnit}
@@ -1844,6 +1925,7 @@ export default function StaffPortal({ embedded = false, currentUser = null, navi
     return response;
   };
 
+  // Khung gốc trang nhân viên
   return (
     <div className="st-root">
       {loading ? <div className="st-card">Đang tải dữ liệu vận hành từ backend...</div> :

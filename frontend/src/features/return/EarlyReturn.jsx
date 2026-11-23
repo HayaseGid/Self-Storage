@@ -27,6 +27,24 @@
  *   -> backend hủy / hoàn các kỳ sau ngày trả + tạo lịch trả kho -> khách thấy tiến trình trả kho như bình thường.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   reasonLabel: Đổi mã lý do trả kho sớm thành nhãn tiếng Việt → dùng ở: EarlyRequestCard, DecisionModal, ManagerEarlyReturnsTab
+ *   money: Định dạng tiền làm tròn kèm "đ" → dùng ở: QuoteTable, EarlyRequestCard, ManagerEarlyReturnsTab
+ *   fmtDay: 'YYYY-MM-DD...' -> 'dd/MM/yyyy' ('—' nếu rỗng) → dùng ở: QuoteTable, EarlyReturnModal, EarlyRequestCard +2
+ *   toInput: Cắt ngày ISO về 'YYYY-MM-DD' cho ô input type="date" → dùng ở: EarlyReturnModal, DecisionModal
+ *   minusDays: Lùi n ngày từ ngày ISO (tính theo ngày, không lệch múi giờ) → dùng ở: EarlyReturnModal
+ *   QuoteTable: Bảng tiền dự kiến khi trả kho sớm (dùng cho khách và Manager) → dùng ở: EarlyReturnModal, DecisionModal
+ *   EarlyReturnModal: Hộp thoại "Trả kho sớm" của khách → dùng ở: CustomerAccount.jsx (MyStoragePage, ContractPage)
+ *   submit: Gửi đơn trả kho sớm. API: POST /api/unit-returns/early → dùng ở: EarlyReturnModal
+ *   EarlyRequestCard: Thẻ trạng thái đơn trả kho sớm của khách (đang chờ duyệt / bị từ chối) → dùng ở: UnitReturn.jsx (ReturnSection)
+ *   cancel: Rút đơn. API: POST /api/unit-returns/early/{id}/cancel → dùng ở: EarlyRequestCard
+ *   DecisionModal: Hộp thoại Manager duyệt / từ chối 1 đơn trả kho sớm (có thể đổi ngày giờ hẹn nếu khung cũ đã kín) → dùng ở: ManagerEarlyReturnsTab
+ *   decide: Duyệt / từ chối. API: POST /api/unit-returns/early/{id}/approve | /reject → dùng ở: DecisionModal
+ *   ManagerEarlyReturnsTab: Mục "Trả kho sớm" của Facility Manager: danh sách đơn (chờ duyệt trước), duyệt / từ chối → dùng ở: FacilityManagerAccount.jsx (FacilityManagerDashboard)
+ *   count: Đếm số đơn trả kho sớm theo trạng thái (hiện số trên nút lọc) → dùng ở: ManagerEarlyReturnsTab
+ */
 import React, { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from '../../api/api'
 import { useDialog } from '../../components/common/Dialog'
@@ -63,6 +81,7 @@ const minusDays = (iso, n) => { const d = new Date(`${String(iso).slice(0, 10)}T
 function QuoteTable({ quote, refundDays }) {
   if (!quote) return null
   const upfront = quote.paymentPlan === 'Upfront'
+  // Bảng tiền dự kiến khi trả sớm
   return (
     <table className="ur-table er-quote">
       <tbody>
@@ -147,8 +166,10 @@ export function EarlyReturnModal({ item, onClose, onDone }) {
 
   const canSubmit = agreed && date && time && reason && (reason !== 'other' || note.trim()) && !busy
 
+  // Hộp thoại gửi đơn trả kho sớm
   return (
     <div className="csf-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose() }}>
+      {/* Ngày, giờ, lý do, bảng tiền, đồng ý */}
       <div className="csf ur-modal" role="dialog" aria-modal="true" aria-labelledby="er-title">
         <div className="csf-head">
           <div>
@@ -251,6 +272,7 @@ export function EarlyRequestCard({ item, onChanged }) {
     finally { setBusy(false) }
   }
 
+  // Thẻ đơn trả sớm (chờ duyệt / bị từ chối)
   return (
     <article className={`ur-card er-card ${pending ? 'pending' : 'rejected'}`}>
       <div className="ur-card-head">
@@ -312,8 +334,10 @@ function DecisionModal({ row, refundDays, onClose, onDone }) {
     } catch (err) { setError(err.message); setBusy(false) }
   }
 
+  // Hộp thoại Manager duyệt / từ chối
   return (
     <div className="csf-overlay" onMouseDown={ev => { if (ev.target === ev.currentTarget && !busy) onClose() }}>
+      {/* Thông tin đơn, đổi giờ hẹn, ghi chú quyết định */}
       <div className="csf ur-modal" role="dialog" aria-modal="true" aria-labelledby="er-dec-title">
         <div className="csf-head">
           <div>
@@ -378,8 +402,10 @@ export function ManagerEarlyReturnsTab({ showToast }) {
   const shown = filter === 'all' ? items : items.filter(i => i.request.status === filter)
   const paging = useClientPaging(shown, { resetKey: filter })
 
+  // Tab "Trả kho sớm" của Manager
   return (
     <div className="fm-section-card">
+      {/* Tiêu đề tab */}
       <div className="fm-card-header-flex">
         <div>
           <h2>Đơn trả kho sớm</h2>
@@ -390,6 +416,7 @@ export function ManagerEarlyReturnsTab({ showToast }) {
         </div>
         <button type="button" className="dashboard-secondary-btn" onClick={load}>Tải lại</button>
       </div>
+      {/* Nút lọc trạng thái */}
       <div className="fp-toolbar">
         <div className="fp-chips">
           {[['Pending', `Chờ duyệt ${count('Pending')}`], ['Approved', `Đã duyệt ${count('Approved')}`], ['Rejected', `Từ chối ${count('Rejected')}`], ['all', `Tất cả ${items.length}`]].map(([v, t]) => (
@@ -398,6 +425,7 @@ export function ManagerEarlyReturnsTab({ showToast }) {
         </div>
       </div>
       {error && <div className="auth-message error" role="alert">{error}</div>}
+      {/* Bảng đơn trả kho sớm */}
       {data === null ? <p className="fm-muted">Đang tải...</p> : shown.length === 0 ? (
         <div className="empty-state">Không có đơn trả kho sớm nào trong mục này.</div>
       ) : (
@@ -427,6 +455,7 @@ export function ManagerEarlyReturnsTab({ showToast }) {
           <Pager {...paging.pagerProps} unit="đơn" />
         </div>
       )}
+      {/* Hộp thoại duyệt đơn */}
       {open && (
         <DecisionModal row={open} refundDays={data?.refundDays} onClose={() => setOpen(null)} onDone={async result => {
           setOpen(null)

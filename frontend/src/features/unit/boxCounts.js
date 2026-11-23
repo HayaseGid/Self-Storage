@@ -19,6 +19,16 @@
  *   và/hoặc writeCountsParams (URL) -> lần sau mở trang / mở kho khác: loadBoxCounts hoặc countsFromParams đọc lại.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   normalizeCustomSize: Chuẩn hóa kích thước thùng tự nhập: làm tròn thành số nguyên, kẹp trong 5–300 cm; trống / sai thì dùng mặc định → dùng ở: normalizeBoxCounts
+ *   normalizeBoxCounts: Chuẩn hóa counts: mọi loại trong COUNT_KEYS có số lượng là số nguyên không âm (thiếu = 0), customSize hợp lệ → dùng ở: (cấp file), loadBoxCounts, saveBoxCounts +2; App.jsx (applyBoxes), ItemCountsInput.jsx (ItemCountsInput)
+ *   loadBoxCounts: Đọc đồ đã lưu từ sessionStorage (khóa 'storespace.boxCounts'); không có hoặc trình duyệt chặn thì trả mặc định → dùng ở: App.jsx (SearchPage), Unit3DViewer.jsx (Unit3DViewer)
+ *   saveBoxCounts: Lưu đồ khách vừa nhập vào sessionStorage (đã chuẩn hóa) → dùng ở: App.jsx (applyBoxes), Unit3DViewer.jsx (Unit3DViewer)
+ *   countsFromParams: Đọc counts từ tham số URL: items=box-m.500,fridge.1 và cs=50x40x30 (kích thước thùng tự nhập, cm) → dùng ở: App.jsx (SearchPage)
+ *   writeCountsParams: Ghi counts vào URLSearchParams (chỉ ghi món có số lượng; cs chỉ ghi khi có thùng tự nhập) → dùng ở: App.jsx (buildUrl)
+ */
 import { COUNT_KEYS, CUSTOM_BOX_KEY, DEFAULT_CUSTOM_SIZE } from '../../utils/packing'
 
 const STORAGE_KEY = 'storespace.boxCounts' // khóa trong sessionStorage

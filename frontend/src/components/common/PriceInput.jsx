@@ -15,6 +15,13 @@
  *   -> validateMonthlyPrice() tính lỗi/cảnh báo -> rời ô -> handleBlur() làm tròn 1.000đ.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   PriceInput: Component ô nhập giá thuê theo tháng → dùng ở: BusinessPolicyEditor.jsx (OverdueFields, RenewalReturnFields), BusinessPriceBands.jsx (PriceBandForm), FacilityManagerAccount.jsx (UnitFormModal) +1
+ *   handleChange: Khi gõ: chỉ giữ chữ số (tối đa 12), định dạng lại có dấu chấm và báo số mới lên component cha → dùng ở: (cấp file)
+ *   handleBlur: Khi rời ô: đánh dấu đã chạm (để hiện lỗi) và tự làm tròn giá theo bước 1.000đ nếu cần → dùng ở: (cấp file)
+ */
 import React, { useEffect, useState } from 'react'
 import { PRICE_RULES, describeVnd, formatVnd, parseVnd, roundPrice, validateMonthlyPrice } from '../../services/storageRules'
 import './PriceInput.css'
@@ -71,8 +78,10 @@ export default function PriceInput({
     }
   }
 
+  // Ô nhập giá + dòng gợi ý / báo lỗi
   return (
     <div className={`price-input${showError ? ' has-error' : ''}${result.warning && !showError ? ' has-warning' : ''}${readOnly ? ' is-readonly' : ''}`}>
+      {/* Ô nhập số tiền có đuôi "đ/tháng" */}
       <div className="price-input-field">
         <input
           id={id}
@@ -90,6 +99,7 @@ export default function PriceInput({
         />
         <span className="price-input-unit">đ/tháng</span>
       </div>
+      {/* Dòng gợi ý cách đọc / lỗi / cảnh báo giá */}
       <div className="price-input-hint" aria-live="polite">
         {showError
           ? <span className="price-input-error">{result.error}</span>

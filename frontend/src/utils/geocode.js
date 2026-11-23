@@ -10,6 +10,16 @@
  * ======================================================================
  */
 
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   noAccent: Bỏ dấu tiếng Việt (OpenStreetMap tìm địa chỉ không dấu tốt hơn) → dùng ở: addressCandidates
+ *   wait: Chờ ms mili-giây (Promise), dùng giãn cách giữa các lần gọi Nominatim → dùng ở: geocodeAddress
+ *   addressCandidates: Các cách viết địa chỉ để thử lần lượt (OpenStreetMap thường không nhận "Quận..." sau đợt sáp nhập hành chính 2025) → dùng ở: geocodeAddress
+ *   geocodeAddress: Tra tọa độ từ địa chỉ (giới hạn Việt Nam) → dùng ở: LocationPicker.jsx (searchAddress), NearestFacilityFinder.jsx (searchAddress)
+ *   distanceKm: Khoảng cách đường chim bay (km) giữa 2 điểm, công thức Haversine (bán kính Trái Đất 6371 km) → dùng ở: NearestFacilityFinder.jsx (NearestFacilityFinder)
+ *   rad: Đổi độ sang radian (dùng trong công thức Haversine) → dùng ở: distanceKm
+ */
+
 /** Bỏ dấu tiếng Việt (OpenStreetMap tìm địa chỉ không dấu tốt hơn). */
 const noAccent = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))

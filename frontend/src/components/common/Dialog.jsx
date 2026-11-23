@@ -24,6 +24,13 @@
  *   cho phần tử đầu -> người dùng bấm nút -> close(value) resolve Promise -> component nhận true/false và xử lý tiếp.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   DialogView: Component vẽ 1 hộp thoại: biểu tượng theo tone, tiêu đề, nội dung (chuỗi có \n được tách đoạn), các nút → dùng ở: DialogProvider
+ *   DialogProvider: Provider cung cấp dialog cho toàn app (bọc ở App.jsx) → dùng ở: App.jsx
+ *   useDialog: Hook lấy đối tượng dialog { open, alert, confirm } → dùng ở: App.jsx (UnitCard, UnitDetailPage +4), CancelReservation.jsx (CancelReservationModal), ContractRenewal.jsx (RenewalSection, RenewalModal) +12
+ */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import './Dialog.css'
 
@@ -101,6 +108,7 @@ function DialogView({ dialog, onClose }) {
 
   const primaryIndex = Math.max(0, actions.findIndex(action => action.variant === 'primary' || action.variant === 'danger'))
 
+  // Hộp thoại: lớp nền mờ + khung nội dung
   return (
     <div
       className="ss-dialog-overlay"
@@ -110,6 +118,7 @@ function DialogView({ dialog, onClose }) {
         }
       }}
     >
+      {/* Khung hộp thoại: icon, tiêu đề, nội dung, các nút */}
       <div
         ref={cardRef}
         className={`ss-dialog ss-dialog-${tone}`}

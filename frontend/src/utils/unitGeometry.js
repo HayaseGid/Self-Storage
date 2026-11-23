@@ -17,6 +17,14 @@
  *   -> dùng để vẽ ô kho trên sơ đồ, dựng phòng 3D (room {w, h, l}) cho utils/packing.js.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   num: Đổi chuỗi số (cho phép dấu phẩy) thành Number → dùng ở: unitGeometry
+ *   unitGeometry: Tính hình học 1 kho từ unit.size: nhóm (S/M/L/V), mã cỡ, nhãn, rộng, dài (dài luôn >= rộng), cao → dùng ở: FacilityUnitsMap.jsx (layoutUnits), Unit3DViewer.jsx (Unit3DViewer, byPrice +1), useBoxFit.js (useBoxFit, fits +2)
+ *   formatMeters: Định dạng số mét để hiển thị (vd 2.5 -> "2,5 m") → dùng ở: FacilityUnitsMap.jsx (FacilityUnitsMap), Unit3DViewer.jsx (Unit3DViewer)
+ *   unitPlanStatus: Trạng thái kho để tô màu trên sơ đồ: 'free' (unit.available = true, còn trống), 'off' (status maintenance / inactive: bảo trì, ngừng dùng) → dùng ở: FacilityUnitsMap.jsx (layoutUnits), Unit3DViewer.jsx (Unit3DViewer)
+ */
 import { getBandCode } from '../services/priceBands'
 
 /* Chiều cao chuẩn (m) theo nhóm cỡ: kho thường 2,5 m, kho xe 3,5 m; tủ locker 2 m. */

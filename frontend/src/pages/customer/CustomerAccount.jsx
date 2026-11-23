@@ -44,6 +44,43 @@
  * ======================================================================
  */
 
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   NavIcon: Vẽ icon SVG 18x18 cho một mục menu bên trái của trang khách → dùng ở: CustomerDashboard
+ *   dateSortValue: Đổi ngày 'dd/MM/yyyy' thành số yyyymmdd (vd '05/03/2026' -> 20260305) để sắp xếp đúng theo ngày → dùng ở: MyStoragePage
+ *   MyStoragePage: Vẽ tab "Kho của tôi": thẻ ra vào nhanh (tối đa 3 kho đang thuê, có mã PIN sao chép được), danh sách mọi đơn dạng Bảng → dùng ở: CustomerDashboard
+ *   changeView: Khi bấm nút "Bảng" / "Thẻ": đổi kiểu hiển thị và nhớ lựa chọn vào localStorage → dùng ở: MyStoragePage
+ *   lateUnpaidOf: Tính tổng phí trễ hạn chưa đóng (không đang chờ VNPay) của 1 đơn → dùng ở: renderUnitActions, MyStoragePage
+ *   copyPin: Khi bấm "Sao chép mã" trên thẻ ra vào: chép mã PIN vào clipboard, hiện "Đã sao chép" trong 1,8 giây → dùng ở: MyStoragePage
+ *   openReturnFor: Khi bấm "Báo trả kho": nếu backend cho phép (info.eligible) thì mở ReturnRequestModal; nếu không thì hiện hộp thoại nêu lý do → dùng ở: renderUnitActions, MyStoragePage
+ *   renderUnitActions: Vẽ các nút tác vụ nhanh theo trạng thái thực tế của 1 kho (dùng trong hộp "Chi tiết kho"): - Chưa đặt cọc → dùng ở: MyStoragePage
+ *   ContractPage: Vẽ tab "Hợp đồng" với 4 tab con (FilterChips): - 'pending' : đơn đã cọc — hợp đồng chờ ký, đang tạo hợp đồng, đã ký chờ nhận kho → dùng ở: CustomerDashboard
+ *   lateFeeOf: Lấy thông tin phí trễ hạn của 1 đơn, kèm chính sách tính phí (để ContractCard hiển thị) → dùng ở: lateUnpaidOf, ContractPage
+ *   payRent: Đóng tiền thuê qua VNPay. Chạy khi bấm nút đóng tiền thuê trên ContractCard (onPayRent) → dùng ở: ContractPage
+ *   unitCountOf: Số kho trong 1 đơn (mặc định 1) → dùng ở: buildGroups, signGroupContracts
+ *   renewedFromOf: Nếu đơn là phụ lục gia hạn: lấy thông tin hợp đồng gốc từ dữ liệu đơn (renewedFrom), nếu không có thì lấy từ API gia hạn → dùng ở: isRenewalRental, buildGroups
+ *   isRenewalRental: Kiểm tra đơn có phải phụ lục gia hạn không → dùng ở: buildGroups, ContractPage
+ *   buildGroups: Dựng "nhóm hợp đồng" để hiển thị/ký: mỗi đơn = 1 hợp đồng (key, code, title, renewedFrom, rentals) → dùng ở: ContractPage
+ *   facilityAddressOf: Lấy địa chỉ cơ sở của 1 nhóm hợp đồng → dùng ở: signGroupContracts, ContractPage
+ *   isSignedRental: Kiểm tra hợp đồng của đơn đã được ký chưa (theo chữ ký đã tải hoặc trạng thái hợp đồng) → dùng ở: ContractPage
+ *   tabOfReservation: Xác định tab chứa 1 đơn (active / pending / ended) để chuyển tab trước khi cuộn tới thẻ hợp đồng → dùng ở: ContractPage
+ *   createPendingContracts: Xác nhận đơn đã cọc ("Paid") + tạo hợp đồng → dùng ở: ContractPage
+ *   signGroupContracts: Ký tất cả hợp đồng trong nhóm đang ký (signGroup) → dùng ở: ContractPage
+ *   keyOf: Khóa của 1 đơn trong các bảng chữ ký = contractId (chuỗi) → dùng ở: reloadSignature, ContractPage, handleSign
+ *   reloadSignature: Tải lại trạng thái chữ ký của 1 hợp đồng (khi bấm "Tải lại" trên ContractCard sau lỗi tải) → dùng ở: ContractPage
+ *   handleSign: Ký 1 hợp đồng từ hộp thoại ContractModal (luồng ký cũ, mở bằng nút ký trên ContractCard) và cập nhật chữ ký, rồi đóng hộp thoại → dùng ở: ContractPage
+ *   fmtUtc: Định dạng thời điểm backend trả về (giờ UTC) thành giờ Việt Nam "HH:mm dd/MM/yyyy" để hiển thị → dùng ở: RefundTimeline
+ *   RefundTimeline: Vẽ tiến trình hoàn cọc khi khách hủy đặt kho: (1) đã hủy đơn, tạo yêu cầu hoàn -> (2) gửi lệnh hoàn sang VNPay → dùng ở: CustomerDashboard
+ *   ProfilePage: Vẽ tab "Hồ sơ" (chỉ xem): thông tin tài khoản (tên, email, mã KH), thống kê đơn (tổng / đang thuê / chờ cọc) → dùng ở: CustomerDashboard
+ *   handleCopyCode: Khi bấm "Sao chép mã": chép mã ra vào cơ sở vào clipboard và hiện "Đã sao chép" trong 2 giây → dùng ở: ProfilePage
+ *   CustomerDashboard: Khung trang tài khoản khách hàng (export default, route /customer) → dùng ở: (cấp file); App.jsx (CustomerPage)
+ *   openNotice: Khi bấm nút hành động của 1 thông báo: ghi yêu cầu vào sessionStorage → dùng ở: CustomerDashboard
+ *   navBadge: Vẽ số đỏ (badge) cho 1 mục menu: thông báo chưa xem; mục Thanh toán còn cộng đơn chờ cọc và hóa đơn đến hạn → dùng ở: CustomerDashboard
+ *   openContractForReservation: Chuyển sang tab Hợp đồng và cuộn tới thẻ hợp đồng của đơn (focusContract ghi mã đơn vào sessionStorage) → dùng ở: CustomerDashboard
+ *   signContractForRental: Chuyển sang tab Hợp đồng và mở màn hình ký cho hợp đồng của đơn (requestContractSign ghi contractId vào sessionStorage) → dùng ở: CustomerDashboard
+ *   logout: Khi bấm "Đăng xuất" (menu trái hoặc tab Hồ sơ): xóa phiên đăng nhập khỏi localStorage (currentUserKey) và về trang chủ → dùng ở: CustomerDashboard
+ */
+
 import React, { useEffect, useState } from 'react'
 import ContractModal from '../../features/contract/ContractModal'
 import { apiGet, apiPost } from '../../api/api'
@@ -289,6 +326,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
     const renewal = renewals.byReservation(rental.reservationId)
     const returnInfo = returns.byReservation(rental.reservationId)
 
+    // Các nút tác vụ nhanh của 1 kho
     return (
       <div className="cportal-unit-actions" onClick={stopProp ? e => e.stopPropagation() : undefined}>
         {needDeposit && onOpenPayment && (
@@ -337,8 +375,10 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
     )
   }
 
+  // Tab "Kho của tôi"
   return (
     <div className="customer-content-page">
+      {/* Hộp thoại gia hạn / trả kho / trả sớm */}
       {renewItem && (
         <RenewalModal
           key={renewItem.reservationId}
@@ -364,6 +404,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
         />
       )}
 
+      {/* Tiêu đề + nút đổi kiểu xem */}
       <div className="customer-page-heading">
         <div>
           <span className="customer-eyebrow">KHO LƯU TRỮ CỦA BẠN</span>
@@ -386,6 +427,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
               const keyId = item.reservationId || item.unitId
               const rentDue = Number(item.rentPayableNow || 0) + lateUnpaidOf(item)
               const renewal = renewals.byReservation(item.reservationId)
+              // Thẻ ra vào: kho, mã PIN, nút sao chép
               return (
                 <article key={keyId} className="cportal-access-card">
                   <div className="cportal-access-top">
@@ -448,6 +490,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
 
       {rentals.length === 0 && <div className="empty-state">Bạn chưa có đặt chỗ hoặc kho thuê nào.</div>}
 
+      {/* Kiểu xem bảng */}
       {rentals.length > 0 && view === 'grid' && (
         <DataGrid
           rows={rentals}
@@ -543,6 +586,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
         />
       )}
 
+      {/* Kiểu xem thẻ */}
       {rentals.length > 0 && view === 'cards' && (
         <div className="dg-toolbar" style={{ marginBottom: 16 }}>
           <div className="dg-view-toggle" role="group" aria-label="Kiểu hiển thị">
@@ -684,6 +728,7 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
       ))}
       {view === 'cards' && <Pager {...cardPaging.pagerProps} unit="kho" />}
 
+      {/* Hộp chi tiết kho đang chọn */}
       {selectedRental && (
         <div
           onClick={() => setSelectedRental(null)}
@@ -1321,9 +1366,11 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
   }), { id: r => r.reservationId })
   const contractPaging = useClientPaging(listedContracts, { resetKey: `${contractTab}|${contractQuery}` })
 
+  // Tab "Hợp đồng"
   return (
     <div className="customer-content-page">
 
+      {/* Tiêu đề trang */}
       <div className="customer-page-heading">
         <div>
           <span className="customer-eyebrow">HỢP ĐỒNG & THỦ TỤC</span>
@@ -1338,6 +1385,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         )}
       </div>
 
+      {/* Tab con: chờ nhận kho / đang thuê / trả kho / đã kết thúc */}
       <FilterChips
         options={[
           ['pending', 'Đã cọc · chờ nhận kho'],
@@ -1351,6 +1399,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         className="cc-tabs"
       />
 
+      {/* Khối trả kho */}
       {contractTab === 'returns' && (
         <>
           <p className="cc-tab-hint">Kho bạn đã báo trả: theo dõi từng bước từ hẹn trả kho đến khi nhận lại tiền cọc.</p>
@@ -1363,6 +1412,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         <RenewalSection renewals={renewals} onRenew={setRenewItem} onChanged={onRentalsChanged} />
       )}
 
+      {/* Các hộp thoại: trả kho, trả sớm, hủy, gia hạn */}
       {returnItem && (
         <ReturnRequestModal
           item={returnItem}
@@ -1400,6 +1450,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
       {contractTab === 'pending' && pendingCountAll === 0 && (
         <div className="empty-state">Không có đơn nào đang chờ. Đơn đã đặt cọc sẽ hiện ở đây để bạn ký hợp đồng và xem lịch nhận kho.</div>
       )}
+      {/* Hợp đồng chờ ký / chờ nhận kho */}
       {contractTab === 'pending' && pendingCountAll > 0 && (
         <section className="sign-queue" aria-label="Hợp đồng đang xử lý">
           {buildGroups(toSign).map(group => (
@@ -1469,6 +1520,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         <ContractSignFlow group={signGroup} customer={customer} onClose={() => setSignGroup(null)} onSign={signGroupContracts} />
       )}
 
+      {/* Hộp thoại chi tiết hợp đồng */}
       {detail && !signGroup && (
         <ContractDetailModal
           key={detail.group.key}
@@ -1489,6 +1541,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         />
       )}
 
+      {/* Khối gia hạn */}
       {(contractTab === 'active' || contractTab === 'ended') && (
         <div className="cc-list-head">
           <div>
@@ -1504,6 +1557,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
         <div className="empty-state">{contractTab === 'active' ? 'Bạn chưa có kho nào đang thuê.' : 'Chưa có hợp đồng nào kết thúc.'}</div>
       )}
       {(contractTab === 'active' || contractTab === 'ended') && tabRentals.length > 0 && listedContracts.length === 0 && <div className="empty-state">Không có hợp đồng phù hợp.</div>}
+      {/* Thẻ hợp đồng đang thuê / đã kết thúc */}
       {(contractTab === 'active' || contractTab === 'ended') && contractPaging.pageRows.map(rental => {
         const signature = signatures[keyOf(rental)]
         const signatureError = signatureErrors[keyOf(rental)]
@@ -1547,6 +1601,7 @@ function ContractPage({ customerRental, customerRentals, getCurrentUser, facilit
 
       {(contractTab === 'active' || contractTab === 'ended') && <Pager {...contractPaging.pagerProps} unit="hợp đồng" />}
 
+      {/* Màn hình ký hợp đồng */}
       {openRental && (
         <ContractModal
           rental={openRental}
@@ -1601,6 +1656,7 @@ function RefundTimeline({ item, formatMoney }) {
       state: done ? 'done' : 'todo'
     }
   ].filter(Boolean) // bỏ bước VNPay (false) khi đơn không trả qua VNPay
+  // Tiến trình hoàn cọc
   return (
     <div className={`refund-box ${done ? 'ok' : 'pending'}`}>
       <div className="refund-box-head">
@@ -1675,6 +1731,7 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
     : accessStatus === 'Inactive' ? 'inactive' // không còn kho đang thuê
     : 'active'
   const accessBadge = { unissued: 'Chưa cấp', locked: 'Tạm khóa do nợ quá hạn', inactive: 'Hết hiệu lực (không còn kho đang thuê)', active: 'Đang hoạt động' }[accessState]
+  // Tab "Hồ sơ"
   return (
     <div className="customer-content-page">
       <div className="customer-page-heading">
@@ -1685,6 +1742,7 @@ function ProfilePage({ user, rentals, onLogout, onOpenStorage }) {
         </div>
       </div>
 
+      {/* Thông tin cá nhân + mã ra vào cơ sở */}
       <div className="profile-layout">
         <section className="profile-card">
           <div className="profile-head">
@@ -1934,9 +1992,11 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
     }))
   ]
 
+  // Khung trang khách: menu trái + nội dung theo tab
   return (
     <div className="customer-layout">
 
+      {/* Menu trái */}
       <aside className="customer-sidebar cportal-sidebar">
 
         <div className="customer-brand" role="button" tabIndex={0} onClick={() => navigate('/')} onKeyDown={e => e.key === 'Enter' && navigate('/')}>
@@ -2059,6 +2119,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
       </aside>
 
+      {/* Nội dung chính */}
       <main className="customer-main">
 
         {/* HEADER GỌN GÀNG */}
@@ -2097,6 +2158,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
           <PendingDepositBar rentals={rentals} variant="inline" onPay={() => setActiveSection('payment')} actionLabel="Thanh toán ngay" />
         )}
 
+        {/* Tab Tổng quan: việc cần làm, số liệu, kho chính, công nợ */}
         {activeSection === 'overview' && (
           <div className="overview-page">
 
@@ -2110,7 +2172,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
                   </h2>
                 </div>
                 <div className="cportal-urgent-list">
-                  {urgentTasks.slice(0, 4).map(task => (
+                  {urgentTasks.slice(0, 4).map(task => ( // 1 việc cần làm ngay
                     <div key={task.id} className="cportal-urgent-item">
                       <div className="cportal-urgent-item-info">
                         <span className={`cportal-urgent-dot ${task.tone === 'danger' ? 'danger' : ''}`} />
@@ -2520,7 +2582,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
 
 
               <div className="activity-list">
-                {rentals.slice(0, 5).map(item => (
+                {rentals.slice(0, 5).map(item => ( // 1 hoạt động gần đây
                   <div className="activity-item" key={item.reservationId}>
                     <span className={`activity-dot ${item.paymentStatus === 'Completed' ? 'green' : 'yellow'}`} />
                     <div>
@@ -2538,6 +2600,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
           </div>
         )}
 
+        {/* Tab Kho của tôi */}
         {activeSection === 'storage' && (
           <MyStoragePage
             customerRental={customerRental}
@@ -2550,6 +2613,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
           />
         )}
 
+        {/* Tab Hợp đồng */}
         {activeSection === 'contract' && (
           <ContractPage
             customerRental={customerRental}
@@ -2561,6 +2625,7 @@ function CustomerDashboard({ facilities, storageUnits, customerRental, customerR
           />
         )}
 
+        {/* Tab Thanh toán */}
         {activeSection === 'payment' && (
           <CustomerPaymentCenter
             reservations={rentals}

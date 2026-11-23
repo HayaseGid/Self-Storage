@@ -21,6 +21,20 @@
  *   -> hiển thị thẻ, bảng; người dùng bấm nút -> gọi onEdit / onUpdateStatus / onDelete hoặc downloadCsv.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   percent: Tính phần trăm part/total, làm tròn 1 chữ số thập phân; total = 0 thì trả 0 (tránh chia cho 0) → dùng ở: BusinessFacilitiesByArea, BusinessReportsCenter
+ *   PinIcon: Biểu tượng ghim bản đồ (SVG) hiển thị cạnh tên khu vực → dùng ở: BusinessFacilitiesByArea
+ *   OccupancyBar: Thanh tỷ lệ sử dụng kho, tô màu theo mức (>=85% cao, >=50% vừa, còn lại thấp), độ rộng tối đa 100% → dùng ở: BusinessFacilitiesByArea, BusinessPerformance
+ *   BusinessFacilitiesByArea: Màn hình "Cơ sở toàn hệ thống": thẻ chọn khu vực (số cơ sở, tổng kho, % đang thuê, số cơ sở tạm ngưng), ô tìm nhanh → dùng ở: BusinessOperations.jsx (BusinessOperations)
+ *   BusinessPerformance: Màn hình "Doanh thu & hiệu suất": 4 thẻ KPI (doanh thu, tỷ lệ sử dụng toàn hệ thống, cơ sở sử dụng cao nhất, số cơ sở dưới 50% công suất) → dùng ở: BusinessOperations.jsx (BusinessOperations)
+ *   downloadCsv: Xuất file CSV (thêm ký tự BOM UTF-8 ở đầu để Excel đọc đúng tiếng Việt) và tải về máy → dùng ở: exportCurrent, exportAll
+ *   escape: Bọc giá trị trong dấu nháy kép nếu chứa dấu phẩy, nháy kép, chấm phẩy hoặc xuống dòng (chuẩn CSV) → dùng ở: downloadCsv
+ *   BusinessReportsCenter: Màn hình "Báo cáo & xuất file": chọn tab báo cáo (cơ sở / loại kho / doanh thu tháng / trạng thái thuê), xem bảng → dùng ở: BusinessOperations.jsx (BusinessOperations)
+ *   exportCurrent: Nút "Xuất báo cáo này": xuất báo cáo đang xem ra CSV → dùng ở: BusinessReportsCenter
+ *   exportAll: Nút "Xuất tất cả (4 file)": xuất lần lượt từng báo cáo, cách nhau 300ms để trình duyệt không chặn tải nhiều file → dùng ở: BusinessReportsCenter
+ */
 import React, { useMemo, useState } from 'react'
 import { getFacilityDistrict, groupFacilitiesByDistrict } from '../../utils/districts'
 import { UNIT_TYPE_ORDER, UNIT_TYPE_STYLES, UnitTypeChip, getUnitTypeKey, getUnitTypeStyle } from '../../features/unit/unitTypes'
@@ -114,8 +128,10 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
   const shown = newestFirst(searchResults || (showAll ? withStats : activeGroup?.facilities) || [], { id: f => f.facilityId })
   const paging = useClientPaging(shown, { resetKey: `${district}|${keyword}` })
 
+  // Danh sách cơ sở theo khu vực
   return (
     <section className="business-panel bp-root">
+      {/* Tiêu đề + ô tìm kiếm + nút thêm cơ sở */}
       <div className="business-panel-header">
         <div>
           <h2>Danh sách cơ sở toàn hệ thống</h2>
@@ -129,6 +145,7 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
         {query && <button type="button" onClick={() => setQuery('')}>Xóa</button>}
       </div>
 
+      {/* Thẻ chọn khu vực */}
       {!searchResults && (
         <div className="bp-area-grid" role="group" aria-label="Chọn khu vực">
           <button type="button" className={`bp-area${showAll ? ' active' : ''}`} aria-pressed={showAll} onClick={() => setDistrict('__all')}>
@@ -157,6 +174,7 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
         </div>
       )}
 
+      {/* Danh sách cơ sở đã lọc */}
       {(searchResults || activeGroup || showAll) ? (
         <>
           <div className="bp-list-head">
@@ -164,7 +182,7 @@ export function BusinessFacilitiesByArea({ facilities, units, onAdd, onEdit, onU
             <span>{shown.length} cơ sở</span>
           </div>
           <div className="bp-facility-grid">
-            {paging.pageRows.map(f => (
+            {paging.pageRows.map(f => ( // Thẻ cơ sở: số kho, tỷ lệ thuê, nút sửa / tạm ngưng / xóa
               <article key={f.facilityId} className={rowClass(f.createdAt, `bp-facility${f.status === 'inactive' ? ' inactive' : ''}`)}>
                 <div className="bp-facility-top">
                   <div>
@@ -229,8 +247,10 @@ export function BusinessPerformance({ reports, facilities }) {
   const best = [...rows].sort((a, b) => b.occupancy - a.occupancy)[0] // cơ sở có tỷ lệ sử dụng cao nhất
   const low = rows.filter(r => r.totalUnits > 0 && r.occupancy < 50)
 
+  // Doanh thu & hiệu suất
   return (
     <div className="bp-root">
+      {/* Thẻ KPI */}
       <div className="business-kpi-grid">
         <div className="business-kpi-card"><span className="business-kpi-label">Doanh thu đã ghi nhận</span><div className="business-kpi-value">{money(reports?.totalRevenue)}</div></div>
         <div className="business-kpi-card"><span className="business-kpi-label">Tỷ lệ sử dụng toàn hệ thống</span><div className="business-kpi-value">{reports?.occupancyRate ?? 0}%</div><small>{reports?.handedOverUnits ?? 0} / {reports?.totalUnits ?? 0} kho đang thuê</small></div>
@@ -238,6 +258,7 @@ export function BusinessPerformance({ reports, facilities }) {
         <div className="business-kpi-card"><span className="business-kpi-label">Cơ sở dưới 50% công suất</span><div className="business-kpi-value">{low.length}</div><small>Cần xem lại giá / khuyến mại</small></div>
       </div>
 
+      {/* Biểu đồ cột doanh thu theo tháng */}
       <section className="business-panel">
         <div className="business-panel-header"><div><h2>Doanh thu theo tháng</h2><p>Tổng thanh toán hoàn tất (12 tháng gần nhất).</p></div></div>
         {!months.length ? <p className="bp-muted">Chưa có giao dịch thanh toán.</p> : (
@@ -253,6 +274,7 @@ export function BusinessPerformance({ reports, facilities }) {
         )}
       </section>
 
+      {/* Bảng hiệu suất từng cơ sở */}
       <section className="business-panel">
         <div className="business-panel-header">
           <div><h2>Hiệu suất từng cơ sở</h2><p>Tỷ lệ sử dụng = kho đang thuê / tổng kho.</p></div>
@@ -381,8 +403,10 @@ export function BusinessReportsCenter({ reports, operationState, facilities }) {
     })
   }
 
+  // Trung tâm báo cáo
   return (
     <section className="business-panel bp-root">
+      {/* Tab loại báo cáo + nút xuất CSV */}
       <div className="business-panel-header">
         <div>
           <h2>Báo cáo toàn hệ thống</h2>
@@ -399,6 +423,7 @@ export function BusinessReportsCenter({ reports, operationState, facilities }) {
         ))}
       </div>
       <h3 className="bp-report-title">{current.title} <small>· {current.rows.length} dòng · cập nhật {today.split('-').reverse().join('/')}</small></h3>
+      {/* Bảng báo cáo đang chọn */}
       <div className="admin-table-wrap"><table className="admin-table"><thead><tr>{current.headers.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>
         {current.rows.length === 0 && <tr><td colSpan={current.headers.length} className="bp-muted">Chưa có dữ liệu.</td></tr>}
         {current.rows.map((row, i) => (

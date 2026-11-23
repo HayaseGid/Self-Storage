@@ -18,6 +18,16 @@
  *   -> PUT .../rates -> gọi onChanged() để trang tải lại dữ liệu -> bảng hiện giá mới.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền thành chuỗi VNĐ có dấu chấm ngăn cách, thêm "đ" ở cuối (null/0 -> "0đ") → dùng ở: save, ManagerPriceTable
+ *   ManagerPriceTable: Bảng giá của cơ sở: liệt kê từng cặp loại + size (lấy từ mức giá đã lưu và từ kho thực tế), khung giá nhóm, giá đang áp dụng → dùng ở: FacilityManagerAccount.jsx (FacilityManagerDashboard)
+ *   currentPrice: Giá đang áp dụng của 1 dòng: mức giá đã lưu, hoặc giá chung nếu mọi kho cùng giá → dùng ở: save
+ *   outOfBand: Kiểm tra giá hiện tại của dòng có nằm ngoài khung giá nhóm không (để cảnh báo cần cập nhật) → dùng ở: ManagerPriceTable
+ *   save: Lưu giá mới cho 1 dòng: kiểm tra trong khung giá, hỏi xác nhận rồi gửi lên backend, xóa giá nháp và tải lại dữ liệu → dùng ở: addRow, ManagerPriceTable
+ *   addRow: Bấm nút "Thêm giá": thêm giá cho 1 cặp loại + size chưa có trong bảng (báo nếu đã có), dùng lại hàm save (PUT .../rates) → dùng ở: ManagerPriceTable
+ */
 import React, { useMemo, useState } from 'react'
 import { apiPut } from '../../api/api'
 import PriceInput from '../../components/common/PriceInput'
@@ -166,8 +176,10 @@ export default function ManagerPriceTable({ facility, units, rentalRates, unitTy
 
   if (!facility) return <div className="fm-card"><p>Chưa có cơ sở được phân công.</p></div>
 
+  // Bảng giá của cơ sở
   return (
     <div className="fm-card mpt-root">
+      {/* Tiêu đề + giải thích */}
       <div>
         <h3 style={{ margin: '0 0 6px' }}>Bảng giá cơ sở {facility.name}</h3>
         <p className="fm-muted" style={{ margin: 0 }}>
@@ -176,6 +188,7 @@ export default function ManagerPriceTable({ facility, units, rentalRates, unitTy
         </p>
       </div>
 
+      {/* Khung giá các nhóm do Business đặt */}
       <div className="mpt-bands" aria-label="Khung giá do Business Operations đặt">
         {priceBands.length
           ? priceBands.map(band => (
@@ -184,6 +197,7 @@ export default function ManagerPriceTable({ facility, units, rentalRates, unitTy
           : <span>Chưa có khung giá. Giá chỉ bị giới hạn bởi quy tắc chung.</span>}
       </div>
 
+      {/* Bảng giá theo loại kho + size, ô nhập giá mới */}
       <div className="admin-table-wrap">
         <table className="admin-table mpt-table">
           <thead>
@@ -233,6 +247,7 @@ export default function ManagerPriceTable({ facility, units, rentalRates, unitTy
         </table>
       </div>
 
+      {/* Thêm giá cho cặp loại/size mới */}
       <div className="mpt-add">
         <strong style={{ width: '100%', color: '#073d70' }}>Thêm giá cho loại + size chưa có kho</strong>
         <label>Loại kho

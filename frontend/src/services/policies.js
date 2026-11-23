@@ -25,6 +25,20 @@
  *   describePolicy()/buildContractTerms() hiển thị điều khoản. BusinessPolicyEditor lưu xong gọi loadPolicies(true) để tải lại.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền phụ phí; null/rỗng -> "Theo chi phí thực tế" → dùng ở: describePolicy
+ *   pct: Định dạng phần trăm kiểu Việt Nam (0.05 -> "0,05%") → dùng ở: describeDepositShort, describePolicy
+ *   fmtDay: Đổi ngày 'YYYY-MM-DD' (hoặc ISO) thành 'DD/MM/YYYY' để hiển thị; rỗng -> '—' → dùng ở: ContractDocument.jsx (ContractDocument), PolicyGuide.jsx (PolicyGuide), BusinessPolicyEditor.jsx (save, PolicyForm) +1
+ *   depositFor: Tính tiền cọc của 1 kho theo chính sách cọc → dùng ở: BusinessPolicyEditor.jsx (DepositFields)
+ *   describeDepositShort: Mô tả ngắn mức cọc để hiển thị, ví dụ "2 tháng tiền thuê / kho", "10% tổng tiền thuê", "500.000đ / kho" → dùng ở: describePolicy; PolicyGuide.jsx (PolicyGuide)
+ *   describePolicy: Đổi cấu hình 1 nhóm chính sách thành dữ liệu hiển thị → dùng ở: buildContractTerms; contractEmail.js (buildContractEmailHtml), DepositConfirm.jsx (DepositConfirm), PolicyGuide.jsx (PolicyGuide) +2
+ *   buildContractTerms: Dựng danh sách nhóm điều khoản hợp đồng khách phải đọc/xác nhận trước khi ký → dùng ở: ContractDocument.jsx (ContractDocument), ContractSignFlow.jsx (ContractSignFlow)
+ *   loadPolicies: Tải chính sách hiện hành từ backend, có cache dùng chung và chống gọi trùng (inflight) → dùng ở: usePolicies; BusinessPolicyEditor.jsx (load)
+ *   usePolicies: Hook React: lấy chính sách hiện hành (dùng cache của loadPolicies), tự cập nhật khi có dữ liệu mới → dùng ở: useMaxAdvanceBookingDays; ContractDetailModal.jsx (ContractDetailModal), ContractDocument.jsx (ContractDocument), ContractSignFlow.jsx (ContractSignFlow) +6
+ *   useMaxAdvanceBookingDays: Hook: số ngày được đặt trước tối đa (chính sách "Đặt chỗ & hủy" -> maxAdvanceBookingDays, mặc định 30) → dùng ở: App.jsx (BookingPage), CartPage.jsx (CartPage)
+ */
 import { useEffect, useState } from 'react'
 import { apiGet } from '../api/api'
 import { MAX_ADVANCE_BOOKING_DAYS, RENTAL_TERMS, formatVnd } from './storageRules'

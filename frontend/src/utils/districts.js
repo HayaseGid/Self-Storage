@@ -20,6 +20,15 @@
  * ======================================================================
  */
 
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   slugifyDistrict: Chuyển tên khu vực thành "slug" không dấu, nối bằng gạch ngang (vd "Quận 7" -> "quan-7", "Thủ Đức" -> "thu-duc") → dùng ở: extractDistrict, getFacilityDistrict
+ *   normalizeLabel: Chuẩn hóa nhãn khu vực: số -> "Quận N", tiền tố huyện -> "Huyện X", còn lại giữ tên → dùng ở: extractDistrict
+ *   extractDistrict: Đoán khu vực từ địa chỉ (và tên cơ sở nếu cần) → dùng ở: getFacilityDistrict; ContractCard.jsx, BusinessFacilityForm.jsx (BusinessFacilityForm)
+ *   getFacilityDistrict: Lấy khu vực của 1 cơ sở: ưu tiên districtName từ backend, không có thì tách từ location / address (và tên) → dùng ở: groupFacilitiesByDistrict; App.jsx (loadDataFromApi), BusinessPanels.jsx (BusinessFacilitiesByArea, BusinessPerformance +1)
+ *   groupFacilitiesByDistrict: Gom danh sách cơ sở theo khu vực, sắp thứ tự: Quận 1, Quận 2 → dùng ở: App.jsx (getDistrictGroups), BusinessPanels.jsx (BusinessFacilitiesByArea)
+ */
+
 /* Các mẫu nhận diện đoạn địa chỉ: tên thành phố, quốc gia (bị bỏ qua), phường/xã (không phải khu vực),
    và tiền tố quận/huyện/thị xã/thành phố (nhóm 1 = tiền tố, nhóm 2 = tên). */
 const CITY_PATTERN = /^(?:tp\.?|thành phố|thanh pho)?\s*(?:hcm|hồ chí minh|ho chi minh|sài gòn|sai gon|hà nội|ha noi|đà nẵng|da nang|cần thơ|can tho|hải phòng|hai phong)\.?$/i

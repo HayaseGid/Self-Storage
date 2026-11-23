@@ -13,6 +13,16 @@
  * LUỒNG: value {latitude, longitude} -> vẽ ghim -> người dùng bấm / kéo / tìm địa chỉ / nhập số -> onChange({latitude, longitude}).
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   inVietnam: Giới hạn lãnh thổ Việt Nam (khớp kiểm tra ở backend FacilityManagementService.ValidateLocation) → dùng ở: applyTyped
+ *   round6: Làm tròn 6 chữ số thập phân (~10 cm), giống cột decimal(9,6) trong database → dùng ở: placeMarker, LocationPicker, searchAddress +1
+ *   LocationPicker: Khung chọn vị trí cơ sở → dùng ở: BusinessFacilityForm.jsx (BusinessFacilityForm), BusinessOperations.jsx (BusinessOperations)
+ *   placeMarker: Đặt / dời ghim tới (lat, lng); pan = true thì kéo bản đồ tới đó → dùng ở: LocationPicker, searchAddress, applyTyped
+ *   searchAddress: Tra tọa độ từ địa chỉ trong form (Nominatim, giới hạn Việt Nam) rồi đặt ghim + phóng to tới đó → dùng ở: LocationPicker
+ *   applyTyped: Nhập tay vĩ độ / kinh độ: hợp lệ thì cập nhật ghim → dùng ở: LocationPicker
+ */
 import React, { useEffect, useRef, useState } from 'react'
 import { loadLeaflet } from './FacilityMap'
 import { geocodeAddress } from '../../utils/geocode' // tra tọa độ từ địa chỉ (Nominatim)
@@ -120,6 +130,7 @@ export default function LocationPicker({ value, onChange, address = '', error = 
     placeMarker(lat, lng, true)
   }
 
+  // Bản đồ chọn vị trí + nút tìm địa chỉ + ô vĩ độ/kinh độ
   return (
     <div className={`lp${error ? ' has-error' : ''}`}>
       <div className="lp-toolbar">

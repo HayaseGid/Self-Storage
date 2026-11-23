@@ -34,6 +34,35 @@
  *   -> "Disputed" -> Manager quyết định từng khoản (resolve) -> "Settled".
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền (làm tròn) thành chuỗi VND kèm "đ" → dùng ở: FeeTable, DisputeModal, accept +3
+ *   fmtDateTime: Định dạng thời điểm ISO thành giờ:phút ngày/tháng/năm theo kiểu Việt Nam (không hợp lệ -> "—") → dùng ở: ManagerApprovalBadge, CustomerInspectionBox, StaffInspectionStatus +2
+ *   timeLeft: Mô tả thời gian còn lại tới hạn xác nhận ("còn 2 ngày 3 giờ", "còn 5 giờ", "đã quá hạn") → dùng ở: CustomerInspectionBox, StaffInspectionStatus
+ *   missingTableMessage: Tạo câu lỗi khi tải dữ liệu kiểm kho: 404 -> báo backend chưa có ReturnInspectionsController, còn lại lấy message lỗi → dùng ở: useInspectionDetail, useMyInspections, useStaffInspections +1
+ *   parseReturnNotes: Tách ghi chú trả kho (backend gộp nhiều phần vào 1 chuỗi `notes`) thành 3 phần bằng biểu thức chính quy: - customerNote → dùng ở: StaffReturns.jsx (StaffReturns), UnitReturn.jsx (ReturnProgress)
+ *   compressImage: Nén ảnh trước khi gửi: đọc file -> vẽ lên canvas thu nhỏ (cạnh dài tối đa 1280px) -> xuất JPEG chất lượng 0.7 dạng data URL → dùng ở: add
+ *   PhotoPicker: Ô chọn / chụp ảnh (tối đa `max` ảnh): nén từng ảnh bằng compressImage, hiện ảnh thu nhỏ, cho xóa từng ảnh → dùng ở: DisputeModal; StaffReturns.jsx (InspectForm)
+ *   add: Khi chọn file trong ô "Chụp / chọn ảnh": cắt theo số ảnh còn được thêm, nén rồi báo onChange → dùng ở: PhotoPicker
+ *   PhotoGallery: Lưới ảnh thu nhỏ; bấm 1 ảnh thì mở xem phóng to (lightbox, vẽ bằng portal ra <body>); phím ←/→ hoặc nút Trước/Sau để chuyển ảnh → dùng ở: InspectionPhotos, ResolveModal
+ *   useInspectionDetail: Hook: tải chi tiết 1 kết quả kiểm kho kèm ảnh (API danh sách không trả ảnh cho nhẹ), chỉ tải khi enabled = true → dùng ở: InspectionPhotos, ResolveModal
+ *   InspectionPhotos: Nút "📷 Xem N ảnh kiểm kho": chỉ khi bấm mới tải chi tiết (useInspectionDetail) rồi hiện ảnh nhân viên chụp và ảnh khách gửi kèm khiếu nại → dùng ở: CustomerInspectionBox, StaffInspectionStatus
+ *   FeeTable: Bảng các khoản phí kiểm kho: mô tả, số đề xuất, (tuỳ chọn) cột số chốt cuối; khoản bị giảm thì gạch số đề xuất → dùng ở: CustomerInspectionBox, StaffInspectionStatus
+ *   useMyInspections: Hook (KHÁCH): tải các kết quả kiểm kho của khách đang đăng nhập (tự tải khi mount) → dùng ở: HeaderNotificationBell.jsx (useHeaderNotices), UnitReturn.jsx (ReturnSection), CustomerAccount.jsx (ContractPage, CustomerDashboard)
+ *   DisputeModal: Hộp thoại "Đơn khiếu nại kết quả kiểm kho" (vẽ bằng portal ra <body>): hiện thông tin kho thuê + các khoản phí, khách nhập lý do → dùng ở: CustomerInspectionBox
+ *   submit: Khi bấm "Gửi khiếu nại" (submit form): kiểm tra lý do >= 10 ký tự, gửi khiếu nại rồi gọi onDone(result) → dùng ở: DisputeModal
+ *   ManagerApprovalBadge: Khối "Quản lý cơ sở phê duyệt": tên người duyệt, email, SĐT, thời điểm và nội dung quyết định → dùng ở: CustomerInspectionBox, StaffInspectionStatus, ResolveModal
+ *   CustomerInspectionBox: Hộp kết quả kiểm kho trong thẻ "Trả kho" của KHÁCH: trạng thái (chờ Quản lý duyệt / chờ bạn xác nhận / đang khiếu nại / đã quyết toán) → dùng ở: UnitReturn.jsx (ReturnProgress)
+ *   accept: Khi khách bấm "Đồng ý & quyết toán": hỏi xác nhận (nêu số trừ cọc / hoàn / nợ, sau đó không khiếu nại được nữa) → dùng ở: CustomerInspectionBox
+ *   useStaffInspections: Hook (STAFF): tải các kết quả kiểm kho của nhân viên đang đăng nhập (tự tải khi mount) → dùng ở: StaffReturns.jsx (StaffReturns)
+ *   StaffInspectionStatus: Khối trạng thái kiểm kho ở thẻ "Đã xong" của Staff: nhãn trạng thái (chờ Quản lý duyệt / chờ khách / khiếu nại / đã quyết toán) → dùng ở: StaffReturns.jsx (StaffReturns)
+ *   ResolveModal: Hộp thoại của MANAGER: tải chi tiết 1 kết quả kiểm kho (kèm ảnh), rồi duyệt kết quả Staff gửi (Pending Manager) hoặc giải quyết khiếu nại → dùng ở: ManagerReturnInspectionsTab
+ *   finalOf: Đọc số tiền chốt Manager nhập cho 1 khoản phí (không phải số -> NaN) → dùng ở: ResolveModal, submit
+ *   ManagerReturnInspectionsTab: Tab "Xác nhận & khiếu nại kết quả kiểm kho" của Quản lý cơ sở: 4 thẻ số liệu tóm tắt, nút lọc theo trạng thái, bảng danh sách phân trang → dùng ở: FacilityManagerAccount.jsx (FacilityManagerDashboard)
+ *   pill: Chọn class màu cho nhãn trạng thái của 1 kết quả kiểm kho → dùng ở: ManagerReturnInspectionsTab
+ *   fmtMoneyShort: Định dạng tiền làm tròn kèm "đ" theo kiểu vi-VN, dùng trong bảng và thẻ số liệu của ManagerReturnInspectionsTab → dùng ở: ManagerReturnInspectionsTab
+ */
 import React, { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Code, NewBadge, Pager, UnitCodes, rowClass, useClientPaging } from '../../components/common/listKit'
@@ -182,6 +211,7 @@ export function PhotoPicker({ images, onChange, max = MAX_STAFF_PHOTOS, required
       setError(err.message)
     } finally { setBusy(false) }
   }
+  // Chọn ảnh kiểm kho
   return (
     <div className={`ri-picker${required && images.length === 0 ? ' need' : ''}`}>
       <div className="ri-picker-head">
@@ -189,6 +219,7 @@ export function PhotoPicker({ images, onChange, max = MAX_STAFF_PHOTOS, required
         <span>{images.length}/{max}</span>
       </div>
       {hint && <p className="ri-hint">{hint}</p>}
+      {/* Ảnh đã chọn + nút thêm ảnh */}
       <div className="ri-thumbs">
         {images.map((src, i) => (
           <figure key={i} className="ri-thumb">
@@ -234,6 +265,7 @@ export function PhotoGallery({ images = [], emptyText = 'Không có ảnh.' }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, images.length])
   if (!images.length) return <p className="ri-hint">{emptyText}</p>
+  // Lưới ảnh + xem phóng to
   return (
     <>
       <div className="ri-thumbs">
@@ -305,6 +337,7 @@ function InspectionPhotos({ inspection, showCustomer = true }) {
     )
   }
   if (detail.loading || !detail.data) return <p className="ri-hint">{detail.error || 'Đang tải ảnh...'}</p>
+  // Ảnh của nhân viên và của khách
   return (
     <div className="ri-photos">
       <h5>Ảnh nhân viên chụp khi kiểm kho</h5>
@@ -328,6 +361,7 @@ function InspectionPhotos({ inspection, showCustomer = true }) {
  * @returns {JSX.Element}
  */
 function FeeTable({ inspection, showFinal }) {
+  // Bảng các khoản phí kiểm kho
   return (
     <table className="ri-table">
       <thead>
@@ -511,6 +545,7 @@ function DisputeModal({ inspection, onClose, onDone }) {
  */
 function ManagerApprovalBadge({ resolvedBy, resolvedByEmail, resolvedByPhone, resolvedAt, resolutionNotes }) {
   if (!resolvedBy && !resolutionNotes) return null
+  // Khối "Quản lý cơ sở phê duyệt"
   return (
     <div className="ri-quote decision ri-manager-decision-card" style={{ marginTop: '12px', background: '#f8fafc', borderLeft: '4px solid #0877cf', padding: '12px 16px', borderRadius: '6px' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px', marginBottom: '6px' }}>
@@ -590,9 +625,11 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
     } finally { setBusy(false) }
   }
 
+  // Kết quả kiểm kho phía khách
   return (
     <div className={`ri-box ${tone}`}
       onClick={e => e.stopPropagation()}>{/* chỉ chặn click (thẻ trả kho bấm vào là mở hợp đồng); không chặn phím để Esc / mũi tên vẫn chạy */}
+      {/* Tiêu đề + trạng thái */}
       <div className="ri-box-head">
         <div>
           <strong>
@@ -611,12 +648,14 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
         {isAwaiting && <span className="ri-deadline">Hạn {fmtDateTime(i.confirmDeadline)} · {timeLeft(i.confirmDeadline)}</span>}
       </div>
 
+      {/* Đang chờ Manager duyệt */}
       {isPendingManager && (
         <div className="st-alert st-info" style={{ margin: '4px 0 0' }}>
           Nhân viên cơ sở đã hoàn thành việc kiểm tra kho. Đơn kiểm kho đang được chuyển qua <b>Facility Manager (Quản lý cơ sở)</b> để xem xét hình ảnh và duyệt các khoản phí. Sau khi Quản lý duyệt, bạn sẽ nhận được thông báo để xác nhận hoặc khiếu nại nếu có nhầm lẫn.
         </div>
       )}
 
+      {/* Ghi chú của nhân viên */}
       {i.staffNotes && (
         <div className="ri-staff-notes-box">
           <span className="ri-notes-label">Ghi chú hiện trạng của nhân viên:</span>
@@ -624,6 +663,7 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
         </div>
       )}
       <InspectionPhotos inspection={i} />
+      {/* Ảnh + bảng phí */}
       {i.fees && i.fees.length > 0 && (
         <div className="ri-fees-section">
           <div className="ri-section-title">
@@ -661,6 +701,7 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
         resolutionNotes={i.resolutionNotes}
       />
 
+      {/* Nút đồng ý / khiếu nại */}
       {isAwaiting && (
         <>
           <p className="ri-hint">
@@ -676,6 +717,7 @@ export function CustomerInspectionBox({ inspection, depositTotal, debtDeducted =
       )}
       {isDisputed && <p className="ri-hint">Đơn khiếu nại của bạn kèm thông tin kho và ảnh đã được gửi lại cho Facility Manager kiểm tra và xác nhận lại. Tiền cọc chưa bị trừ cho tới khi Manager quyết định.</p>}
 
+      {/* Hộp thoại khiếu nại */}
       {disputing && (
         <DisputeModal inspection={i} onClose={() => setDisputing(false)} onDone={async result => {
           setDisputing(false)
@@ -732,6 +774,7 @@ export function StaffInspectionStatus({ inspection, fallbackNote }) {
   const i = inspection
   if (!i) {
     if (!fallbackNote) return null
+    // Kiểm kho không có vấn đề
     return (
       <div className="ri-staff ok">
         <div className="ri-staff-head">
@@ -750,8 +793,10 @@ export function StaffInspectionStatus({ inspection, fallbackNote }) {
   const tone = isDisputed ? 'bad' : isPendingManager ? 'info' : isAwaiting ? 'warn' : 'ok'
   const isDamaged = i.conditionResult === 'Damaged'
 
+  // Kết quả kiểm kho phía nhân viên
   return (
     <div className={`ri-staff ${tone}`}>
+      {/* Tiêu đề + trạng thái */}
       <div className="ri-staff-head">
         <div className="ri-staff-head-left">
           <span className={`ri-pill ${tone}`}>{i.statusLabel}</span>
@@ -772,6 +817,7 @@ export function StaffInspectionStatus({ inspection, fallbackNote }) {
         )}
       </div>
 
+      {/* Đang chờ Manager duyệt */}
       {isPendingManager && (
         <p className="ri-hint" style={{ fontStyle: 'italic', margin: '4px 0' }}>
           Đã hoàn tất kiểm tra kho. Đơn đang được Facility Manager xem xét hình ảnh và phê duyệt phí trước khi chuyển về cho khách hàng.
@@ -796,6 +842,7 @@ export function StaffInspectionStatus({ inspection, fallbackNote }) {
         </div>
       )}
 
+      {/* Lý do khách khiếu nại */}
       {i.disputeReason && (
         <div className="ri-quote">
           <b>Khách khiếu nại{i.respondedAt ? ` (${fmtDateTime(i.respondedAt)})` : ''}:</b>
@@ -922,15 +969,18 @@ function ResolveModal({ inspectionId, onClose, onDone }) {
     }
   }
 
+  // Hộp thoại Manager duyệt / giải quyết khiếu nại
   return (
     <div className="fm-modal-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose() }}>
       <div className="fm-modal-card ri-resolve" role="dialog" aria-modal="true" aria-labelledby="ri-resolve-title">
+        {/* Tiêu đề hộp thoại */}
         <div className="fm-modal-header">
           <h2 id="ri-resolve-title">
             {isPendingManager ? 'Duyệt kết quả kiểm kho (từ Staff)' : isDisputed ? 'Giải quyết khiếu nại kiểm kho' : 'Chi tiết kiểm kho'}
           </h2>
           <button type="button" className="fm-modal-close" onClick={onClose} disabled={busy} aria-label="Đóng">×</button>
         </div>
+        {/* Ảnh, bảng phí (sửa số tiền cuối), ghi chú, nút lưu */}
         {!d ? <p className="fm-muted">{detail.error || 'Đang tải...'}</p> : (
           <form onSubmit={submit} className="fm-modal-form">
             {error && <div className="auth-message error" role="alert">{error}</div>}
@@ -1069,8 +1119,10 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
     return 'fm-badge fm-ok'
   }
 
+  // Tab "Khiếu nại kiểm kho" của Manager
   return (
     <div className="fm-section-card">
+      {/* Tiêu đề tab */}
       <div className="fm-card-header-flex">
         <div>
           <h2>Xác nhận & khiếu nại kết quả kiểm kho</h2>
@@ -1082,6 +1134,7 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
         <button type="button" className="dashboard-secondary-btn" onClick={load}>Tải lại</button>
       </div>
 
+      {/* Thẻ số liệu tóm tắt */}
       {s && (
         <section className="customer-stats" style={{ marginBottom: 16 }}>
           <div className="customer-stat-card">
@@ -1111,6 +1164,7 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
         </section>
       )}
 
+      {/* Nút lọc + ô tìm kiếm */}
       <div className="fp-toolbar">
         <div className="fp-chips">
           {[
@@ -1126,6 +1180,7 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
       </div>
       {error && <div className="auth-message error" role="alert">{error}</div>}
 
+      {/* Bảng kết quả kiểm kho */}
       {data === null ? <p className="fm-muted">Đang tải...</p> : shown.length === 0 ? (
         <div className="empty-state">Không có kết quả kiểm kho nào trong mục này.</div>
       ) : (
@@ -1170,6 +1225,7 @@ export function ManagerReturnInspectionsTab({ facilityId, showToast = () => {} }
         </div>
       )}
 
+      {/* Hộp thoại chi tiết */}
       {openId && (
         <ResolveModal inspectionId={openId} onClose={() => setOpenId(null)} onDone={async result => {
           setOpenId(null)

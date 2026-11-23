@@ -22,6 +22,23 @@
  *   -> PackPlanner cập nhật items -> cảnh vẽ lại.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   loadThree: Nạp thư viện Three.js từ CDN một lần duy nhất (dùng chung Promise), trả về window.THREE → dùng ở: ThreeUnitScene
+ *   snap: Làm tròn tọa độ theo lưới 5 cm (SNAP) → dùng ở: onMoveEvt
+ *   clamp: Giới hạn giá trị trong khoảng [min, max] → dùng ở: onMoveEvt, onWheel, zoom +1
+ *   makeLabel: Tạo nhãn chữ 3D (sprite) bo góc từ canvas, dùng hiển thị số đo và chữ "Lối đi" → dùng ở: ThreeUnitScene
+ *   buildItem: Dựng mô hình 3D của 1 món đồ: hộp có viền; một số món có chi tiết riêng → dùng ở: ThreeUnitScene
+ *   addBox: Thêm 1 khối hộp (có đổ bóng) vào nhóm của món đồ → dùng ở: buildItem
+ *   cm: Đổi mét sang centimet (làm tròn) → dùng ở: sizeText
+ *   sizeText: Mô tả kích thước món đồ: "Rộng × Sâu × Cao cm" (dùng cho tooltip khi rê chuột) → dùng ở: onMoveEvt
+ *   ThreeUnitScene: Component cảnh 3D: tạo renderer, camera, ánh sáng, sàn kẻ ô, vách, cửa cuốn, số đo; vẽ đồ và lối đi; xử lý chuột/cảm ứng để xoay, phóng to → dùng ở: UnitPackPlanner.jsx (SampleRoom, PackPlanner)
+ *   zoom: Nút phóng to/thu nhỏ: nhân bán kính camera với factor (giới hạn min/max) → dùng ở: ThreeUnitScene
+ *   rotate: Nút xoay: xoay camera ngang thêm delta radian → dùng ở: ThreeUnitScene
+ *   resetView: Nút "Đặt lại": đưa camera về góc nhìn ban đầu (radius gốc = min / 0.35) → dùng ở: ThreeUnitScene
+ *   topView: Nút "Nhìn từ trên": đưa camera lên gần thẳng đứng phía trên kho → dùng ở: ThreeUnitScene
+ */
 import React, { useEffect, useRef, useState } from 'react'
 import { magnetSnap, placeAt } from '../../utils/packing'
 
@@ -559,6 +576,7 @@ export default function ThreeUnitScene({ geo, color = '#075a9f', mode = 'sample'
     c.placeCamera()
   }
 
+  // Khung cảnh 3D + nút xoay / phóng to
   return (
     <div className="t3d-wrap" style={{ height }}>
       <div ref={boxRef} className="t3d-canvas" role="img" aria-label={`Mô hình 3D kho rộng ${geo.width} m, dài ${geo.length} m, cao ${geo.height} m`} />

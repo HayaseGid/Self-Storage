@@ -17,6 +17,14 @@
  *   -> POST pay-demo -> gọi reload() để tải lại.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   useLateFees: Hook React: tải phí trễ hạn của khách đang đăng nhập (backend tự tính phí cập nhật tới hôm nay) → dùng ở: PendingPayments.jsx (CustomerPaymentCenter), CustomerAccount.jsx (MyStoragePage, ContractPage)
+ *   byReservation: Tìm khoản phí trễ hạn của một đơn đặt kho theo reservationId → dùng ở: useLateFees
+ *   payLateFeesDemo: Đóng (mô phỏng) toàn bộ phí trễ hạn chưa đóng của 1 đơn đặt kho → dùng ở: PendingPayments.jsx, CustomerAccount.jsx
+ *   lateFeePolicyText: Trả về câu mô tả chính sách phí trễ hạn để hiển thị cho khách / nhân viên (lấy policy.summary từ backend, không có thì dùng câu mặc định) → dùng ở: ContractCard.jsx, PendingPayments.jsx (CustomerPaymentCenter)
+ */
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet, apiPost } from './api'
 

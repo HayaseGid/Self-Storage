@@ -21,6 +21,18 @@
  *   <UnitTypeArt type size unitCode> -> getUnitTypeStyle / parseUnitSize -> vẽ nhãn màu, ảnh thật hoặc ảnh SVG.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   getUnitTypeKey: Nhận diện khóa loại kho từ tên loại (không dấu, chữ thường, khớp từ khóa tiếng Anh/Việt) → dùng ở: getUnitTypeStyle, UnitTypeIcon; App.jsx (getCatalogTypeKeys, resolveTypeParam +3), BusinessPanels.jsx (BusinessFacilitiesByArea)
+ *   getUnitTypeStyle: Lấy bộ style (tên, màu, mô tả, ảnh...) của loại kho từ tên loại → dùng ở: UnitTypeChip, UnitTypeArt; App.jsx (handleAddToCart, UnitCard +3), Unit3DViewer.jsx (Unit3DViewer), BusinessCatalog.jsx (UnitTypeForm, BusinessCatalog) +2
+ *   parseUnitSize: Đọc chuỗi kích thước trong DB (vd "S2: 2x2m", "L1: 4x6m", "S1: Locker (< 2.5m)") thành mã size, nhãn, diện tích (m²), hạng kích thước → dùng ở: SizeMeter, UnitTypeArt; App.jsx (UnitCard, unitMatches +1)
+ *   UnitTypeIcon: Component icon SVG của loại kho (nét vẽ theo màu chữ hiện tại - currentColor) → dùng ở: UnitTypeChip, UnitTypeArt; App.jsx (SiteHeader, UnitCard +2)
+ *   UnitTypeChip: Component nhãn loại kho: icon + tên tiếng Việt, tô màu theo loại qua biến CSS --ut-color / --ut-soft → dùng ở: App.jsx (FacilityCard, UnitCard +3), BusinessCatalog.jsx (UnitTypeForm, BusinessCatalog), BusinessPanels.jsx (BusinessFacilitiesByArea) +3
+ *   SizeMeter: Component thanh hạng kích thước gồm 4 nấc (Nhỏ / Vừa / Lớn / Rất lớn) kèm nhãn; số nấc sáng = sizeClass.level → dùng ở: App.jsx (UnitCard, UnitDetailPage +1), BusinessCatalog.jsx (UnitSizeForm, BusinessCatalog)
+ *   pickUnitPhoto: Chọn 1 ảnh trong danh sách theo mã kho: tính hash chuỗi mã (hash = hash × 31 + mã ký tự) rồi lấy phần dư cho số ảnh → dùng ở: UnitTypeArt
+ *   UnitTypeArt: Component ảnh minh họa kho. Nếu loại có `photos`: hiện ảnh thật (chọn theo mã kho, tải lười) kèm biển số kho và icon loại → dùng ở: App.jsx (UnitCard, UnitDetailPage +1), CartPage.jsx (CartPage)
+ */
 import React, { useId } from 'react'
 
 /**
@@ -219,6 +231,7 @@ const ICON_PATHS = {
  */
 export function UnitTypeIcon({ type, typeKey, size = 18, className = '', title }) {
   const key = typeKey || getUnitTypeKey(type)
+  // Icon loại kho
   return (
     <svg
       className={`ut-icon ${className}`.trim()}
@@ -246,6 +259,7 @@ export function UnitTypeIcon({ type, typeKey, size = 18, className = '', title }
  */
 export function UnitTypeChip({ type, compact = false, className = '' }) {
   const style = getUnitTypeStyle(type)
+  // Nhãn loại kho có màu
   return (
     <span
       className={`ut-chip${compact ? ' ut-chip-compact' : ''} ${className}`.trim()}
@@ -299,6 +313,7 @@ export function UnitTypeArt({ type, size, unitCode, className = '' }) {
   const reactId = useId()
   const photo = pickUnitPhoto(style.photos, unitCode)
   if (photo) {
+    // Ảnh thật của kho
     return (
       <div className={`ut-art ut-art-photo ${className}`.trim()}>
         <img src={photo} alt={`${style.label}${unitCode ? ` ${unitCode}` : ''}`} loading="lazy" />
@@ -316,6 +331,7 @@ export function UnitTypeArt({ type, size, unitCode, className = '' }) {
   const doorY = 150 - doorHeight
   const slats = Math.floor((doorHeight - 10) / 9)
 
+  // Ảnh minh họa vẽ bằng SVG (khi không có ảnh thật)
   return (
     <div className={`ut-art ${className}`.trim()} role="img" aria-label={`Ảnh minh họa ${style.label}, kích thước ${info.sizeClass.label.toLowerCase()}`}>
       <svg viewBox="0 0 320 190" preserveAspectRatio="xMidYMid slice" aria-hidden="true">

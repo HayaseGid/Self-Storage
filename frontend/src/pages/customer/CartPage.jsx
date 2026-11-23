@@ -37,6 +37,22 @@
  *   3. Bấm "Hủy" hoặc rời trang khi chưa trả cọc: hủy các đơn đang giữ + trả kho về giỏ.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   ArrowIcon: Vẽ icon mũi tên sang phải (SVG) đặt cạnh chữ trong các nút "Xác nhận đặt", "Tìm kho lưu trữ ngay" → dùng ở: CartPage
+ *   money: Định dạng số tiền kiểu Việt Nam kèm chữ "đ" (vd 1500000 -> "1.500.000đ"); giá trị rỗng coi là 0 → dùng ở: checkout, payDeposit, CartPage
+ *   toApiDate: Đổi Date thành chuỗi 'YYYY-MM-DD' (theo giờ máy) để gửi trường startDate lên API POST /api/reservation → dùng ở: checkout
+ *   fmtDate: Định dạng Date thành 'dd/MM/yyyy' để hiển thị cho khách; chưa có ngày (null) thì trả '—' → dùng ở: checkout, CartPage
+ *   endDateFor: Tính ngày kết thúc thuê = ngày bắt đầu + số tháng - 1 ngày (vd 15/01 + 6 tháng -> 14/07) → dùng ở: CartPage
+ *   CartPage: Trang giỏ kho (route /cart): cho khách chọn kho trong giỏ, điền thông tin thuê, giữ kho rồi trả tiền cọc → dùng ở: App.jsx (CartRoute)
+ *   toggleItem: Khi khách bấm checkbox của 1 kho: thêm / bỏ key kho khỏi tập `excluded` (kho bị bỏ chọn) → dùng ở: CartPage
+ *   removeItem: Khi bấm nút "×" của 1 kho: hỏi xác nhận rồi xóa kho khỏi giỏ (removeFromCart, chỉ ở trình duyệt, không gọi API) → dùng ở: CartPage
+ *   checkout: Bước 1 -> 2: giữ các kho đã chọn và chuyển sang bước trả cọc → dùng ở: CartPage
+ *   sumOf: Tính tổng 1 trường tiền (depositAmount, monthlyPrice, rentalAmount) của các đơn vừa tạo → dùng ở: CartPage
+ *   payDeposit: Bước 2: trả tiền cọc cho các đơn chưa trả → dùng ở: CartPage
+ *   cancelOrder: Hủy đặt kho ở bước thanh toán. Chạy khi bấm "Hủy đặt, quay lại giỏ hàng" hoặc nút quay lại phía trên → dùng ở: CartPage
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { apiPost } from '../../api/api'
 import { useDialog } from '../../components/common/Dialog'
@@ -483,6 +499,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
           {step === 'payment' ? '← Hủy và quay lại giỏ hàng' : '← Quay lại tìm kho'}
         </button>
 
+        {/* Tiêu đề + thanh bước */}
         <div className="customer-page-heading">
           <div>
             <span className="customer-eyebrow">BOOK STORAGE</span>
@@ -567,6 +584,7 @@ export default function CartPage({ facilities, getStorageUnits, navigate, getCur
                 <div className="booking-cart-unit-list" role="group" aria-label="Danh sách kho trong giỏ">
                   {activeGroup.items.map(item => {
                     const checked = item.available && !excluded.has(item.key)
+                    // 1 kho trong giỏ: ô chọn, thông tin, nút xóa
                     return (
                       <div
                         key={item.key}

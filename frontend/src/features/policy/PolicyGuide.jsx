@@ -16,6 +16,19 @@
  * API: GET /api/policies (gián tiếp qua usePolicies, không cần đăng nhập).
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   Icon: Biểu tượng SVG nét mảnh theo tên → dùng ở: Section, Checks, Callout
+ *   useActiveSection: Hook: trả về id mục đang đọc (mục cuối cùng có mép trên đã cuộn qua vạch 150px dưới header) để tô sáng mục lục → dùng ở: PolicyGuide
+ *   Section: Khung 1 mục chính sách: biểu tượng + số thứ tự + tiêu đề + câu tóm tắt + nội dung → dùng ở: PolicyGuide
+ *   Checks: Danh sách gạch đầu dòng có dấu ✓ → dùng ở: PolicyGuide
+ *   Facts: Bảng thông số [tên, giá trị] dạng 2 cột, kẻ dòng → dùng ở: PolicyGuide
+ *   Steps: Các bước có đánh số theo trục dọc → dùng ở: PolicyGuide
+ *   Callout: Khung ghi chú nổi bật (info / ok / warn) → dùng ở: PolicyGuide
+ *   PolicyGuide: Nội dung trang chính sách. Số liệu lấy từ chính sách hiện hành (thiếu thì dùng mặc định) → dùng ở: App.jsx (AboutPage)
+ *   go: Cuộn mượt tới mục chính sách khi bấm 1 dòng trong mục lục → dùng ở: PolicyGuide
+ */
 import React, { useEffect, useRef, useState } from 'react'
 import { describeDepositShort, describePolicy, fmtDay, usePolicies } from '../../services/policies'
 import { MAX_ADVANCE_BOOKING_DAYS, RENTAL_TERMS } from '../../services/storageRules'
@@ -98,6 +111,7 @@ function useActiveSection() {
  * @param {{index:number, id:string, title:string, tone:string, lead?:string, children:any}} props
  */
 function Section({ index, id, title, tone, lead, children }) {
+  // 1 mục chính sách
   return (
     <section className={`pg-section tone-${tone}`} id={`pg-${id}`} aria-labelledby={`pg-${id}-title`}>
       <header className="pg-section-head">
@@ -197,8 +211,10 @@ export default function PolicyGuide() {
     ['0đ', 'Phí chấm dứt hợp đồng sớm']
   ]
 
+  // Trang chính sách cho khách
   return (
     <div className="pg">
+      {/* Phần đầu: giới thiệu + 4 con số chính */}
       <header className="pg-hero">
         <div className="pg-hero-copy">
           <span className="pg-eyebrow">VỀ STORESPACE</span>
@@ -223,6 +239,7 @@ export default function PolicyGuide() {
       </header>
 
       <div className="pg-layout">
+        {/* Mục lục bên trái */}
         <aside className="pg-aside">
           <nav className="pg-toc" aria-label="Mục lục chính sách" ref={tocRef}>
             <span className="pg-toc-title">Mục lục</span>
@@ -240,6 +257,7 @@ export default function PolicyGuide() {
           <p className="pg-aside-note">Hợp đồng đang hiệu lực giữ nguyên giá thuê đã ký. Khi chính sách thay đổi, trang này tự cập nhật.</p>
         </aside>
 
+        {/* Nội dung các mục chính sách */}
         <div className="pg-content">
           <Section index={1} id="booking" title="Đặt kho & giữ chỗ" tone="blue" lead={`Chọn kho, chọn gói ${RENTAL_TERMS.join(' hoặc ')} tháng và ngày nhận kho trong vòng ${advanceDays} ngày tới.`}>
             <Checks items={[

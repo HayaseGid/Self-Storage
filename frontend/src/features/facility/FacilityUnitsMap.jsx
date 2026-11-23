@@ -17,6 +17,14 @@
  *   chấm kho, ghim "Cổng vào" -> khách bấm chấm -> onSelect(unit) -> FacilityFloorPlan mở Unit3DViewer.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   esc: Escape ký tự đặc biệt HTML để chèn vào tooltip bản đồ → dùng ở: FacilityUnitsMap
+ *   layoutUnits: Tính bố cục các kho theo khu, đơn vị mét quanh cổng vào (x: hướng đông +, y: hướng bắc +): mỗi khu là lưới gần vuông → dùng ở: FacilityUnitsMap
+ *   order: Thứ tự của nhóm size theo BAND_ORDER (nhóm lạ xếp cuối) → dùng ở: layoutUnits
+ *   FacilityUnitsMap: Component bản đồ các kho trong cơ sở: tạo bản đồ 1 lần, vẽ khu + chấm kho + cổng vào, làm mờ kho không khớp bộ lọc → chưa thấy nơi dùng
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { loadLeaflet } from './FacilityMap'
 import { formatVnd } from '../../services/storageRules'
@@ -189,6 +197,7 @@ export default function FacilityUnitsMap({ facility, units, point, highlightIds 
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
 
+  // Khung bản đồ các kho trong cơ sở
   return (
     <div className="fum-wrap" style={{ height }}>
       <div ref={boxRef} className="fum-map" role="region" aria-label={`Bản đồ các kho tại ${facility.name}`} />

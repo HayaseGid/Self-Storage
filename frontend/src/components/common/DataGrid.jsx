@@ -15,6 +15,13 @@
  *   -> cắt trang pageRows -> hiển thị; bấm dòng -> onRowClick(row) của trang.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   DataGrid: Component bảng dữ liệu có tìm kiếm / lọc / sắp xếp / phân trang ở frontend → dùng ở: BusinessCatalog.jsx (BusinessCatalog), CustomerAccount.jsx (MyStoragePage)
+ *   toggleSort: Bấm tiêu đề cột: lần lượt tăng dần -> giảm dần -> bỏ sắp xếp → dùng ở: (cấp file)
+ *   resetAll: Xóa ô tìm kiếm, đưa mọi bộ lọc về "Tất cả" và về trang 1 → dùng ở: (cấp file)
+ */
 import React, { useMemo, useState } from 'react'
 import './DataGrid.css'
 import { DEFAULT_PAGE_SIZE, Pager, newestFirst, rowClass } from './listKit'
@@ -99,8 +106,10 @@ export default function DataGrid({
   }
   const hasActiveFilter = query.trim() || Object.values(filterValues).some(v => v !== 'all')
 
+  // Bảng dữ liệu: thanh công cụ + bảng + phân trang
   return (
     <div className="dg">
+      {/* Ô tìm kiếm, các ô lọc, nút đặt lại */}
       <div className="dg-toolbar">
         {searchText && (
           <div className="dg-search">
@@ -129,6 +138,7 @@ export default function DataGrid({
         {toolbarExtra}
       </div>
 
+      {/* Bảng: tiêu đề cột bấm để sắp xếp, các dòng dữ liệu */}
       <div className="dg-wrap">
         <table className="dg-table">
           {caption && <caption className="dg-caption">{caption}</caption>}
@@ -137,6 +147,7 @@ export default function DataGrid({
               {columns.map(column => {
                 const active = sort?.key === column.key
                 const ariaSort = active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'
+                // Tiêu đề 1 cột (bấm để sắp xếp)
                 return (
                   <th
                     key={column.key}
@@ -159,7 +170,7 @@ export default function DataGrid({
             {pageRows.length === 0 && (
               <tr><td className="dg-empty" colSpan={columns.length}>{hasActiveFilter ? 'Không có dòng nào khớp bộ lọc.' : emptyText}</td></tr>
             )}
-            {pageRows.map(row => (
+            {pageRows.map(row => ( // 1 dòng dữ liệu (bấm để mở chi tiết)
               <tr
                 key={getRowId(row)}
                 className={rowClass(getCreatedAt ? getCreatedAt(row) : null, onRowClick ? 'dg-clickable' : '')}
@@ -178,6 +189,7 @@ export default function DataGrid({
         </table>
       </div>
 
+      {/* Thanh phân trang */}
       <Pager
         page={currentPage}
         pageCount={pageCount}

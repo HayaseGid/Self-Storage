@@ -30,6 +30,19 @@
  *   có phí kiểm kho thì chờ Manager duyệt + khách xác nhận/khiếu nại; kho trở lại "Còn trống" hoặc "Bảo trì".
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền (làm tròn) thành chuỗi VND kèm "đ", vd 150000 -> "150.000đ" → dùng ở: submit, InspectForm, StaffReturns
+ *   todayIso: Lấy "hôm nay" dạng 'YYYY-MM-DD' theo Demo Clock (đồng hồ giả lập để test) → dùng ở: StaffReturns
+ *   useStaffReturns: Hook: tải danh sách việc trả kho của nhân viên đang đăng nhập (tự tải khi mount) và hàm tải lại → dùng ở: StaffReturns
+ *   InspectForm: Form "Hoàn tất kiểm tra kho": chọn tình trạng (Không có vấn đề / Có vấn đề), ghi chú, ảnh hiện trạng (bắt buộc khi có vấn đề hoặc có phí) → dùng ở: StaffReturns
+ *   addFee: Khi chọn 1 mục trong ô "+ Thêm khoản phí...": thêm khoản phí đó (hoặc dòng trống nếu "Khoản khác") vào danh sách → dùng ở: InspectForm
+ *   update: Khi gõ vào ô tên / số tiền của 1 khoản phí: sửa khoản phí ở vị trí i → dùng ở: InspectForm
+ *   submit: Khi bấm "Hoàn tất kiểm tra": bắt buộc mô tả khi có vấn đề, bắt buộc ảnh khi có vấn đề/có phí, hỏi xác nhận → dùng ở: InspectForm
+ *   StaffReturns: Trang "Trả kho" của nhân viên: lọc yêu cầu theo Hôm nay & quá hẹn / Sắp tới / Đang kiểm tra / Đã xong, phân trang, hiện nút "Nhận lại kho" → dùng ở: FacilityStaffAccount.jsx (Portal)
+ *   start: Khi bấm "Nhận lại kho & bắt đầu kiểm tra": hỏi xác nhận, gọi API, tải lại danh sách → dùng ở: StaffReturns
+ */
 import React, { useCallback, useEffect, useState } from 'react'
 import { Code, Pager, UnitCodes, useClientPaging } from '../../components/common/listKit' // [THÊM] chia trang + mã nổi bật
 import { apiGet, apiPost } from '../../api/api'
@@ -168,6 +181,7 @@ function InspectForm({ item, catalog, refundDays, confirmDays = 3, onDone, onCan
     }
   }
 
+  // Form hoàn tất kiểm tra kho
   return (
     <div className="sr-form">
       <div className="sr-radio" role="radiogroup" aria-label="Tình trạng kho">
@@ -182,6 +196,7 @@ function InspectForm({ item, catalog, refundDays, confirmDays = 3, onDone, onCan
       <PhotoPicker images={images} onChange={setImages} max={MAX_STAFF_PHOTOS} required={photosRequired} disabled={busy}
         hint={photosRequired ? 'Chụp rõ chỗ hư hỏng / bẩn / thiếu đồ: khách và Facility Manager sẽ xem ảnh này trước khi trừ cọc.' : 'Nên chụp vài ảnh kho trống để lưu bằng chứng tình trạng lúc nhận lại.'} />
 
+      {/* Các khoản phí phát sinh */}
       <div>
         <strong>Phí phát sinh</strong>
         {fees.map((f, i) => (
@@ -198,12 +213,14 @@ function InspectForm({ item, catalog, refundDays, confirmDays = 3, onDone, onCan
         </select>
       </div>
 
+      {/* Trạng thái kho sau kiểm tra */}
       <label>Kho sau khi kiểm tra
         <select className="st-input" value={unitStatus} onChange={e => setUnitStatus(e.target.value)}>
           <option value="Available">Sẵn sàng cho thuê (Còn trống)</option>
           <option value="Maintenance">Cần bảo trì / sửa chữa</option>
         </select>
       </label>
+      {/* Cảnh báo khi chuyển kho sang bảo trì */}
       {unitStatus === 'Maintenance' && (
         <div className="st-alert st-warn">
           Hệ thống sẽ ghi báo cáo sự cố gửi Facility Manager.
@@ -211,6 +228,7 @@ function InspectForm({ item, catalog, refundDays, confirmDays = 3, onDone, onCan
         </div>
       )}
 
+      {/* Công nợ hợp đồng trừ vào cọc */}
       {debt && (debtTotal > 0 || debt.futureRents?.length > 0) && (
         <div className="st-alert st-warn">
           <strong>Công nợ của hợp đồng sẽ trừ vào cọc trước phí kiểm kho:</strong>
@@ -226,6 +244,7 @@ function InspectForm({ item, catalog, refundDays, confirmDays = 3, onDone, onCan
         </div>
       )}
 
+      {/* Tóm tắt: trừ cọc / khách nợ thêm / hoàn cọc */}
       <div className="sr-summary">
         <div><span>Tiền cọc khách đã đóng</span><b>{money(deposit)}</b></div>
         {debtTotal > 0 && <div><span>Công nợ hợp đồng (tiền thuê, phí trễ hạn)</span><b>{money(debtTotal)}</b></div>}
@@ -320,8 +339,10 @@ export default function StaffReturns({ staff }) {
   if (data.loading && !data.data) return <div className="st-card">Đang tải lịch trả kho...</div>
   if (data.error) return <div className="st-card"><div className="st-alert st-warn" role="alert">{data.error}</div><button type="button" className="dashboard-primary-btn" onClick={data.reload}>Thử lại</button></div>
 
+  // Danh sách việc trả kho của nhân viên
   return (
     <div className="sr-wrap">
+      {/* Nút lọc theo nhóm */}
       <div className="sr-chips">
         {[['todo', `Hôm nay & quá hẹn ${groups.todo.length}`], ['upcoming', `Sắp tới ${groups.upcoming.length}`], ['inspecting', `Đang kiểm tra ${groups.inspecting.length}`], ['done', `Đã xong ${groups.done.length}`]].map(([key, label]) => (
           <button key={key} type="button" className={filter === key ? 'active' : ''} onClick={() => setFilter(key)}>{label}</button>
@@ -330,10 +351,12 @@ export default function StaffReturns({ staff }) {
 
       {shown.length === 0 && <div className="st-card st-empty">Không có yêu cầu trả kho nào trong mục này.</div>}
 
+      {/* Thẻ từng yêu cầu trả kho */}
       {paging.pageRows.map(item => {
         const req = item.request
         return (
           <article key={item.reservationId} className="sr-item">
+            {/* Đầu thẻ: kho, khách, lịch hẹn */}
             <div className="sr-item-head">
               <div>
                 <h3>
@@ -364,6 +387,7 @@ export default function StaffReturns({ staff }) {
             {item.requestStatus !== 'Completed' && !item.assignedToMe && (
               <div className="st-alert st-info">Yêu cầu này do NV {req.staffName} phụ trách nên bạn không thao tác được. Nếu cần đổi người, báo Facility Manager.</div>
             )}
+            {/* Nút "Nhận lại kho" / form kiểm tra */}
             {item.requestStatus === 'Scheduled' && item.assignedToMe && (
               <div className="sr-actions">
                 {String(item.scheduledDate || '').slice(0, 10) > todayIso()
@@ -376,6 +400,7 @@ export default function StaffReturns({ staff }) {
             {item.requestStatus === 'In Progress' && item.assignedToMe && (inspecting === item.reservationId
               ? <InspectForm item={item} catalog={catalog} refundDays={data.rules?.depositRefundDays ?? 7} confirmDays={inspections.confirmDays} onCancel={() => setInspecting(null)} onDone={() => { setInspecting(null); data.reload(); inspections.reload(); setFilter('done') }} />
               : <div className="sr-actions"><button type="button" className="dashboard-primary-btn" onClick={() => setInspecting(item.reservationId)}>Nhập kết quả kiểm tra</button></div>)}
+            {/* Kết quả kiểm kho đã xong */}
             {item.requestStatus === 'Completed' && (() => {
               // Phí kiểm kho đang chờ khách xác nhận / khiếu nại thì chưa có số hoàn cọc
               const insp = inspections.byReservation(item.reservationId)

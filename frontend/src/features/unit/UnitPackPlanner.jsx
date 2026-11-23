@@ -16,6 +16,25 @@
  *   (capacityChannel.run('remainingCapacity')). Thêm tay: bấm loại đồ -> add -> placeAt / findPosition -> setItems.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   roomOf: Đổi hình học kho thành kích thước phòng { w: rộng, h: cao, l: dài } → dùng ở: SampleRoom, PackPlanner
+ *   pct: Tính phần trăm a/b (làm tròn 1 chữ số thập phân) → dùng ở: SampleRoom, runAutoPack, controls +1
+ *   fmtPct: Định dạng phần trăm kiểu Việt Nam → dùng ở: SampleRoom, runAutoPack, controls +1
+ *   SampleRoom: Component "Có đồ mẫu": bày đồ mẫu theo cỡ kho (sampleFurniture, chỉ tính lại khi kích thước kho đổi - useMemo) → dùng ở: Unit3DViewer.jsx (Unit3DViewer)
+ *   fmtM3: Định dạng thể tích m³ kiểu Việt Nam (2 chữ số thập phân) → dùng ở: controls
+ *   PackPlanner: Component "Tự xếp thùng": cho khách tự thêm/kéo/xoay/xóa đồ trong kho hoặc tự động xếp → dùng ở: Unit3DViewer.jsx (Unit3DViewer)
+ *   withZones: Ghép danh sách món với các vùng lối đi (để tính va chạm) → dùng ở: PackPlanner, add, rotate +1
+ *   add: Thêm 1 món loại `key` (khi khách bấm một loại đồ trong bảng "Thêm đồ vào kho"): nếu đang chọn 1 món thì ưu tiên chồng lên trên món đó → dùng ở: controls
+ *   move: Cập nhật vị trí món sau khi kéo thả (ThreeUnitScene gọi onMove với vị trí đã kiểm tra hợp lệ) → dùng ở: PackPlanner
+ *   rotate: Nút "↻ Xoay": xoay món đang chọn 90° (đổi rộng/sâu), thử tại chỗ trước, không đủ thì tìm chỗ khác → dùng ở: PackPlanner
+ *   remove: Nút "Xóa món": xóa món đang chọn; các món nằm phía trên sẽ "rơi" xuống theo trọng lực → dùng ở: PackPlanner
+ *   clearAll: Nút "Xóa hết": xóa toàn bộ đồ trong kho → dùng ở: PackPlanner
+ *   toggleAisle: Ô "Chừa lối đi 80 cm": bật/tắt lối đi (báo lên Unit3DViewer qua onAisleChange); khi bật mà có món nằm trên lối đi thì báo lỗi và không bật → dùng ở: PackPlanner
+ *   runAutoPack: Nút "Xếp thử vào kho này": xếp toàn bộ đồ khách nhập bằng autoPack trong worker → dùng ở: PackPlanner, controls
+ *   controls: Danh sách đồ + khối nhập số thùng (vẽ ở cột phải nếu có slot) → dùng ở: PackPlanner
+ */
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ThreeUnitScene from './ThreeUnitScene'
@@ -46,6 +65,7 @@ export function SampleRoom({ geo, color }) {
   const { items, aisles } = useMemo(() => sampleFurniture(geo), [geo.width, geo.length, geo.height, geo.band, geo.isLocker])
   const room = roomOf(geo)
   const used = pct(volumeOf(items), room.w * room.h * room.l)
+  // Kho có đồ mẫu
   return (
     <div className="upp">
       <ThreeUnitScene geo={geo} color={color} mode="sample" items={items} zones={aisles} />
@@ -262,6 +282,7 @@ export function PackPlanner({ geo, color, counts, onCountsChange, aisleOn, onAis
     </div>
   )
 
+  // Kho tự xếp thùng
   return (
     <div className="upp">
       {/* Cảnh 3D + số liệu + nút thao tác (cột trái). */}

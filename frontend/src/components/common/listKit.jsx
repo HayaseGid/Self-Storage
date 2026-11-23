@@ -26,6 +26,32 @@
  *   Backend trả mảng / 404 -> chuyển mode 'client', lọc / sắp xếp / cắt trang từ fallback.rows.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   getSeenSet: Đọc tập id bản ghi người dùng đã bấm "đã xem" (tắt nhãn Mới) từ localStorage → dùng ở: isItemSeen, markItemSeen, markAllItemsSeen
+ *   isItemSeen: Kiểm tra 1 id đã được đánh dấu đã xem chưa → dùng ở: isNewItem, NewBadge, rowClass
+ *   markItemSeen: Đánh dấu 1 id là đã xem (giữ tối đa 2000 id) và phát sự kiện 'storespace:seen_updated' để các nhãn Mới cập nhật → dùng ở: handleClick; FacilityManagerAccount.jsx (UnitReportsTab, FacilityContractsTab +2), FacilityStaffAccount.jsx (ReservationDetail, handleSelect +1)
+ *   markAllItemsSeen: Đánh dấu nhiều id là đã xem cùng lúc và phát sự kiện 'storespace:seen_updated' (Manager/Staff dùng cho nút "Đánh dấu đã xem tất cả") → dùng ở: FacilityManagerAccount.jsx (FacilityManagerDashboard), FacilityStaffAccount.jsx (Portal)
+ *   parseTime: Parse thời điểm từ backend thành milisecond → dùng ở: isNewItem, newestFirst, fmtDateTimeShort +1; opsLists.js (byTime), AdminAccount.jsx (Admin)
+ *   isNewItem: Kiểm tra bản ghi có còn "mới" không: tạo trong `hours` giờ gần đây và chưa bị đánh dấu đã xem → dùng ở: NewBadge, rowClass; FacilityStaffAccount.jsx
+ *   newestFirst: Sắp xếp mới nhất lên đầu: theo ngày tạo (hàm date), nếu không có ngày thì theo id giảm dần → dùng ở: useServerList; DataGrid.jsx, AdminAccount.jsx (renderPending), BusinessPanels.jsx (BusinessFacilitiesByArea) +3
+ *   NewBadge: Component nhãn "Mới" (bấm ✕ để tắt nhãn của bản ghi đó) → dùng ở: ContractCard.jsx, PendingPayments.jsx (CustomerPaymentCenter), EarlyReturn.jsx (ManagerEarlyReturnsTab) +5
+ *   handleClick: Bấm vào nhãn: chặn sự kiện lan ra dòng cha, đánh dấu đã xem, gọi onDismiss → dùng ở: NewBadge
+ *   rowClass: Trả về className cho dòng/thẻ: thêm 'ss-row-new' (tô sáng) nếu bản ghi còn mới và chưa xem → dùng ở: DataGrid.jsx, PendingPayments.jsx (CustomerPaymentCenter), EarlyReturn.jsx (ManagerEarlyReturnsTab) +5
+ *   fmtDateTimeShort: Định dạng ngày giờ ngắn "HH:mm dd/MM/yyyy" (không hợp lệ -> "—") → dùng ở: timeAgo
+ *   timeAgo: Thời gian tương đối: "vừa xong", "5 phút trước", "3 giờ trước", "2 ngày trước"; quá 30 ngày thì hiện ngày → dùng ở: AdminAccount.jsx (renderUsers), FacilityManagerAccount.jsx (FacilityReservationsTab), FacilityStaffAccount.jsx (ReservationDetail)
+ *   Code: Component hiển thị 1 mã quan trọng dạng thẻ in đậm (kind: 'order' mã đơn | 'unit' mã kho | 'contract' mã HĐ) → dùng ở: UnitCodes; ContractCard.jsx, PendingPayments.jsx (CustomerPaymentCenter), EarlyReturn.jsx (ManagerEarlyReturnsTab) +6
+ *   UnitCodes: Component hiển thị danh sách mã kho, mỗi mã 1 thẻ; quá `max` mã thì hiện "+N" → dùng ở: ContractCard.jsx, PendingPayments.jsx, EarlyReturn.jsx (ManagerEarlyReturnsTab) +5
+ *   pageWindow: Tính các số trang cần hiển thị trên thanh phân trang (trang đầu, cuối, quanh trang hiện tại, chèn "…") → dùng ở: Pager
+ *   Pager: Component thanh phân trang: thông tin "Hiển thị từ–đến trong tổng", nút Trước / Sau và các số trang → dùng ở: DataGrid.jsx, CustomerNotifications.jsx (CustomerNotificationsPage), PendingPayments.jsx (CustomerPaymentCenter) +8
+ *   useClientPaging: Hook chia trang ở frontend cho một mảng có sẵn → dùng ở: CustomerNotifications.jsx (CustomerNotificationsPage), PendingPayments.jsx (CustomerPaymentCenter), EarlyReturn.jsx (ManagerEarlyReturnsTab) +6
+ *   useDebounced: Hook trì hoãn (debounce): chỉ cập nhật giá trị sau `delay` ms người dùng ngừng gõ (tránh gọi API liên tục) → dùng ở: useServerList
+ *   toQuery: Đổi object tham số thành query string (bỏ giá trị rỗng; mảng nối bằng dấu phẩy) → dùng ở: useServerList
+ *   useServerList: Hook danh sách phân trang ở backend → dùng ở: opsLists.js, AdminAccount.jsx (Admin), FacilityStaffAccount.jsx
+ *   FilterChips: Component dãy nút lọc (chip) có số đếm → dùng ở: CustomerAccount.jsx (ContractPage), FacilityManagerAccount.jsx (FacilityContractsTab, FacilityReservationsTab +1), FacilityStaffAccount.jsx (Portal)
+ *   SortSelect: Component ô chọn kiểu sắp xếp → dùng ở: FacilityManagerAccount.jsx (FacilityContractsTab, FacilityReservationsTab +1), FacilityStaffAccount.jsx (Portal)
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { apiGet } from '../../api/api'
 import './listKit.css'
@@ -171,6 +197,7 @@ export function NewBadge({ createdAt, id, show, label = 'Mới', onDismiss }) {
     onDismiss?.()
   }
 
+  // Nhãn "Mới" (bấm ✕ để tắt)
   return (
     <span
       className="ss-new-badge"
@@ -283,6 +310,7 @@ export function Pager({ page, pageCount, total, pageSize, onPage, unit = 'dòng'
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1
   const to = Math.min(total, page * pageSize)
   if (!total && !loading) return null
+  // Thanh phân trang: số dòng, Trước/Sau, số trang
   return (
     <nav className={`ss-pager${compact ? ' compact' : ''}`} aria-label="Phân trang">
       <span className="ss-pager-info">
@@ -478,6 +506,7 @@ export function useServerList({ path, q = '', status = '', sort = 'newest', extr
  * @param {object} props options ([[value,label]] hoặc [{value,label}]), value, onChange, counts ({ MÃ: số }), total.
  */
 export function FilterChips({ options = [], value, onChange, counts, total, className = '' }) {
+  // Dãy nút lọc có số đếm
   return (
     <div className={`ss-chips ${className}`.trim()} role="tablist">
       {options.map((opt) => {
@@ -503,6 +532,7 @@ export function FilterChips({ options = [], value, onChange, counts, total, clas
  * @param {object} props value, onChange, options ([[value,label]]), label.
  */
 export function SortSelect({ value, onChange, options = [], label = 'Sắp xếp' }) {
+  // Ô chọn kiểu sắp xếp
   return (
     <label className="ss-sort">
       <span>{label}</span>

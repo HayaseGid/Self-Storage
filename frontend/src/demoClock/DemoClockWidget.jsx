@@ -14,6 +14,15 @@
  *   -> bấm "Xác nhận" -> handleConfirm() -> setSimulatedDateISO() -> window.location.reload().
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   ClockIcon: Biểu tượng đồng hồ (SVG) → dùng ở: DemoClockWidget
+ *   DemoClockWidget: Component tiện ích giả lập ngày: nút nổi hiển thị ngày đang áp dụng + bảng điều chỉnh khi mở rộng → dùng ở: App.jsx
+ *   toggleOpen: Mở/thu gọn bảng điều chỉnh; khi mở thì nạp ngày đang áp dụng vào ô chọn ngày → dùng ở: DemoClockWidget
+ *   handleConfirm: Bấm "Xác nhận": lưu ngày giả lập vào localStorage rồi tải lại trang → dùng ở: DemoClockWidget
+ *   handleResetToday: Bấm "Về hôm nay": tắt giả lập (về ngày thật) rồi tải lại trang → dùng ở: DemoClockWidget
+ */
 import React, { useState } from 'react'
 import {
   addDaysISO,
@@ -76,8 +85,10 @@ export default function DemoClockWidget() {
 
   const hasUnconfirmedChange = Boolean(draftDate && draftDate !== activeDate)
 
+  // Nút đồng hồ giả lập ngày (góc màn hình)
   return (
     <aside className={`demo-clock-root${isSimulated ? ' is-simulated' : ''}`} aria-label="Tiện ích giả lập ngày hệ thống">
+      {/* Bảng chọn ngày giả lập + nút nhảy nhanh */}
       {expanded && (
         <div className="demo-clock-panel" role="dialog" aria-label="Điều chỉnh ngày giả lập (Demo)">
           <div className="demo-clock-header">
@@ -156,6 +167,7 @@ export default function DemoClockWidget() {
         </div>
       )}
 
+      {/* Nút thu gọn hiện ngày đang áp dụng */}
       <button
         type="button"
         className={`demo-clock-trigger${expanded ? ' active' : ''}`}

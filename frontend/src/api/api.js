@@ -22,6 +22,21 @@
  *   -> apiRequest() parse JSON -> trả data (hoặc ném ApiError) -> Component hiển thị.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   getCurrentUser: Đọc thông tin người dùng đang đăng nhập từ localStorage (key 'storespace_current_user') → dùng ở: apiRequest
+ *   translateValidationMessage: Dịch câu lỗi kiểm tra dữ liệu (model validation) tiếng Anh mặc định của ASP.NET Core sang tiếng Việt → dùng ở: getErrorMessage
+ *   isUsefulMessage: Kiểm tra một chuỗi lỗi có "đáng hiển thị" không: phải là chuỗi khác rỗng và không phải tiêu đề lỗi tiếng Anh chung chung của ASP.NET → dùng ở: getErrorMessage
+ *   getErrorMessage: Rút ra câu thông báo lỗi tiếng Việt phù hợp nhất từ body lỗi backend trả về → dùng ở: apiRequest
+ *   ApiError: Lỗi trả về từ API. Ngoài message tiếng Việt còn có: error.status - mã HTTP → dùng ở: apiRequest
+ *   codeForStatus: Đổi mã HTTP thành mã lỗi rút gọn để code giao diện dễ rẽ nhánh → dùng ở: apiRequest
+ *   apiRequest: 1. Lấy user hiện tại (trừ các API /api/auth như đăng nhập/đăng ký thì không gửi danh tính) → dùng ở: apiGet, apiPost, apiPut +1
+ *   apiGet: Gửi request GET (đọc dữ liệu). Ví dụ: apiGet('/api/catalog/state') → dùng ở: App.jsx (fetchCustomerRentals, handleConfirmBooking +2), catalogApi.js (listUnitTypes, listUnitSizes), lateFees.js (useLateFees) +19
+ *   apiPost: Gửi request POST kèm body JSON (tạo mới / thực hiện hành động) → dùng ở: App.jsx (handleConfirmBooking, handleDepositPaid +1), catalogApi.js (createUnitType, createUnitSize), contractEmail.js (sendContractEmail) +20
+ *   apiPut: Gửi request PUT kèm body JSON (cập nhật dữ liệu) → dùng ở: catalogApi.js (updateUnitType, updateUnitSize), AdminAccount.jsx (updateUser, resetPassword), BusinessOperations.jsx (updateFacility) +5
+ *   apiDelete: Gửi request DELETE (xóa dữ liệu) → dùng ở: catalogApi.js (deleteUnitType, deleteUnitSize +1), BusinessOperations.jsx (deleteFacility), BusinessPriceBands.jsx (remove) +1
+ */
 import { SIMULATED_DATE_HEADER, getSimulatedDateISO } from '../demoClock/demoClock'
 
 // Địa chỉ gốc backend (bỏ dấu "/" thừa ở cuối), key localStorage lưu phiên đăng nhập, timeout mặc định (ms).

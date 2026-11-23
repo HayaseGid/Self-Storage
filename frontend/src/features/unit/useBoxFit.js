@@ -20,6 +20,16 @@
  *   -> component gọi fits(unit) / usedPctOf(unit) để lọc / hiển thị.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   geoKey: Khóa nhận diện 1 cỡ kho "rộng|dài|cao|locker|nhóm" (kho cùng khóa có cùng kết quả xếp, nên chỉ xếp thử 1 lần) → dùng ở: useBoxFit, fits, usedPctOf +1; Unit3DViewer.jsx (alt)
+ *   useBoxFit: Hook tính những kho trong `units` xếp vừa toàn bộ đồ khách nhập (ước tính ngay, rồi xếp thử thật trong worker) → dùng ở: App.jsx (SearchPage), Unit3DViewer.jsx (Unit3DViewer)
+ *   fits: Hỏi 1 kho có vừa không / đồ chiếm bao nhiêu % thể tích kho (undefined nếu không vừa) → dùng ở: useBoxFit
+ *   usedPctOf: Lấy % thể tích kho mà đồ của khách chiếm (undefined nếu không vừa) → dùng ở: useBoxFit
+ *   roomOfUnit: Phòng (m) + vùng lối đi + thể tích của 1 kho, dạng gửi được cho worker → dùng ở: useSplitPack
+ *   useSplitPack: Kho đang xem có chứa hết đồ không; nếu không, phần dư vừa với những cỡ kho nào trong `others` (để gợi ý thuê thêm 1 kho) → dùng ở: Unit3DViewer.jsx (Unit3DViewer)
+ */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { EXACT_PACK_LIMIT, PACK_EFFICIENCY, aisleZones, boxRequests, volumeOf } from '../../utils/packing'
 import { CANCELLED, usePackChannel } from '../../utils/packingClient'

@@ -25,6 +25,21 @@
  * ======================================================================
  */
 
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   pad: Thêm số 0 phía trước cho đủ 2 chữ số (5 -> "05"), dùng khi định dạng ngày/tháng → dùng ở: formatISODate
+ *   formatISODate: Định dạng đối tượng Date thành chuỗi 'YYYY-MM-DD' theo giờ địa phương → dùng ở: getRealTodayISO, addDaysISO, addMonthsISO
+ *   getRealTodayISO: Trả về ngày THẬT hôm nay dạng 'YYYY-MM-DD' (không tính giả lập) → dùng ở: getTodayISO, setSimulatedDateISO; DemoClockWidget.jsx (DemoClockWidget)
+ *   getSimulatedDateISO: Đọc ngày giả lập đang lưu trong localStorage → dùng ở: getTodayISO; api.js (apiRequest), DemoClockWidget.jsx (DemoClockWidget)
+ *   getTodayISO: Trả về "hôm nay" của hệ thống: ngày giả lập nếu có, không thì ngày thật → dùng ở: getTodayDate, addDaysISO, addMonthsISO; DemoClockWidget.jsx (toggleOpen), StaffReturns.jsx (todayIso), BusinessPanels.jsx (BusinessReportsCenter) +4
+ *   getTodayDate: Giống getTodayISO() nhưng trả về đối tượng Date (00:00:00 giờ địa phương) → dùng ở: App.jsx (getRestoredBookingForm, BookingPage +1), RentalCalendar.jsx (RentalCalendar), ContractCard.jsx (daysFromToday) +2
+ *   setSimulatedDateISO: Bật/đổi ngày giả lập. Nếu truyền chuỗi rỗng, sai định dạng hoặc trùng ngày thật thì TẮT giả lập → dùng ở: DemoClockWidget.jsx (handleConfirm)
+ *   clearSimulatedDate: Tắt chế độ giả lập ngày (xóa key khỏi localStorage) -> hệ thống quay về ngày thật → dùng ở: DemoClockWidget.jsx (handleResetToday)
+ *   addDaysISO: Cộng/trừ số ngày vào một ngày ISO → dùng ở: DemoClockWidget.jsx (DemoClockWidget)
+ *   addMonthsISO: Cộng số tháng vào một ngày ISO; nếu tháng đích ngắn hơn thì lấy ngày cuối tháng (ví dụ 31/01 + 1 tháng -> 28/02 hoặc 29/02) → dùng ở: DemoClockWidget.jsx (DemoClockWidget)
+ *   formatDateVN: Đổi 'YYYY-MM-DD' sang định dạng hiển thị Việt Nam 'DD/MM/YYYY' (sai định dạng -> '—') → dùng ở: DemoClockWidget.jsx (DemoClockWidget)
+ */
+
 export const DEMO_DATE_STORAGE_KEY = 'storespace_demo_date'
 export const SIMULATED_DATE_HEADER = 'X-Simulated-Date'
 

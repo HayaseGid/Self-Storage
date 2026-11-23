@@ -23,6 +23,29 @@
  *   (vd "Khóa tài khoản") -> hỏi xác nhận bằng dialog -> updateUser gọi PUT -> tải lại dữ liệu -> hiện toast.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   Admin: Trang quản trị hệ thống: tải danh sách tài khoản + nhật ký từ backend → dùng ở: (cấp file); App.jsx (Router)
+ *   loadAdminData: Tải song song danh sách tài khoản và nhật ký hoạt động, đổi thời gian nhật ký sang dạng hiển thị vi-VN rồi lưu vào state users / logs → dùng ở: Admin, updateUser, resetPassword
+ *   showToast: Hiện thông báo nhỏ (toast) góc màn hình trong 2,5 giây; hẹn giờ lưu ở window để hủy hẹn giờ cũ khi có toast mới → dùng ở: updateUser, resetPassword
+ *   updateUser: Cập nhật vai trò + trạng thái 1 tài khoản, tải lại dữ liệu, đồng bộ khung chi tiết đang mở và hiện toast → dùng ở: approveUser, rejectUser, toggleLock +1
+ *   approveUser: Duyệt tài khoản đang chờ (status -> Active) → dùng ở: renderPending
+ *   rejectUser: Từ chối tài khoản đang chờ (hỏi xác nhận, status -> Rejected) → dùng ở: renderPending
+ *   toggleLock: Khóa / mở khóa tài khoản (status Active <-> Locked; chỉ hỏi xác nhận khi khóa) → dùng ở: renderUserDetail
+ *   loadRoleCheck: Kiểm tra tài khoản có đang trống để đổi vai trò không (không còn đơn thuê, nợ, việc được giao, cơ sở quản lý...) → dùng ở: updateUser, Admin
+ *   changeRole: Đổi vai trò của tài khoản (hỏi xác nhận, giữ nguyên trạng thái) → dùng ở: renderUserDetail
+ *   resetPassword: Đặt lại mật khẩu cho tài khoản: kiểm tra mật khẩu mới >= 6 ký tự và khớp ô xác nhận, hỏi xác nhận rồi gửi; thành công thì xóa 2 ô mật khẩu → dùng ở: renderUserDetail
+ *   selectUser: Chọn 1 tài khoản để xem chi tiết (bấm vào dòng / nút "Xem"): xóa 2 ô mật khẩu và cuộn mượt tới khung chi tiết → dùng ở: renderPending, renderUsers, renderDashboard
+ *   logout: Đăng xuất (nút "Đăng xuất" ở sidebar): xóa khóa storespace_current_user trong localStorage rồi tải lại trang chủ → dùng ở: Admin
+ *   renderStatus: Vẽ nhãn trạng thái tài khoản có màu theo trạng thái → dùng ở: renderPending, renderUsers, renderUserDetail
+ *   renderPending: Vẽ màn hình "Tài khoản chờ duyệt" (nút Duyệt / Từ chối) → dùng ở: Admin
+ *   renderUsers: Vẽ màn hình "Quản lý tài khoản": tìm kiếm, lọc vai trò/trạng thái, bảng phân trang, khung chi tiết → dùng ở: Admin
+ *   renderUserDetail: Vẽ khung chi tiết 1 tài khoản: thông tin, đổi vai trò, khóa/mở khóa, đặt lại mật khẩu → dùng ở: renderUsers
+ *   renderRoles: Vẽ màn hình "Phân quyền": số tài khoản theo từng vai trò → dùng ở: Admin
+ *   renderLogs: Vẽ màn hình "Nhật ký hoạt động": tìm kiếm + bảng phân trang → dùng ở: Admin
+ *   renderDashboard: Vẽ màn hình "Tổng quan": thẻ số liệu tài khoản và hoạt động gần đây → dùng ở: Admin
+ */
 import React, { useEffect, useMemo, useState } from "react";
 import { NewBadge, Pager, newestFirst, parseTime, rowClass, timeAgo, useServerList } from "../../components/common/listKit"; // phân trang ở backend + tô sáng bản ghi mới
 import "./AdminAccount.css";
@@ -321,6 +344,7 @@ function Admin() {
   // Vẽ màn hình "Tài khoản chờ duyệt" (nút Duyệt / Từ chối).
   const renderPending = () => (
     <section className="admin-section">
+      {/* Tiêu đề mục */}
       <div className="admin-section-heading">
         <div>
           <p className="admin-eyebrow">ACCOUNT APPROVAL</p>
@@ -330,6 +354,7 @@ function Admin() {
         <span className="admin-count-badge">{pendingUsers.length} chờ duyệt</span>
       </div>
 
+      {/* Bảng tài khoản chờ duyệt */}
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead><tr><th>Người dùng</th><th>Tài khoản</th><th>Role đăng ký</th><th>Cơ sở</th><th>Ngày đăng ký</th><th>Trạng thái</th><th></th></tr></thead>
@@ -345,6 +370,7 @@ function Admin() {
         </table>
       </div>
 
+      {/* Nút duyệt / từ chối tài khoản đang chọn */}
       {selectedUser && selectedUser.status === "Pending" && (
         <div className="admin-approval-actions">
           <div><strong>{selectedUser.name}</strong><span>Đang xem tài khoản {selectedUser.username}</span></div>
@@ -401,6 +427,7 @@ function Admin() {
           </div>
         )
       )}
+      {/* Nút khóa/mở khóa, đổi vai trò, đặt lại mật khẩu */}
       {user.role !== "System Administrator" && (
         <form className="admin-password-reset" onSubmit={(event) => { event.preventDefault(); void resetPassword(user); }}>
           <div>

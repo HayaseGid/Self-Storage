@@ -19,6 +19,17 @@
  * ======================================================================
  */
 
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   readRaw: Đọc bản nháp thô từ localStorage (lỗi parse -> null) → dùng ở: loadBookingDraft
+ *   loadBookingDraft: Lấy bản nháp hợp lệ (có unitId, path và chưa quá 24 giờ); quá hạn thì tự xóa → dùng ở: saveBookingDraft; App.jsx (resolvePostAuthPath, usePendingBooking +1)
+ *   saveBookingDraft: Lưu (hoặc gộp) bản nháp. Nếu bản nháp cũ cùng kho thì giữ các trường đã chọn trước, chỉ ghi đè các trường được truyền vào → dùng ở: App.jsx (promptLoginForBooking, BookingLoginRedirect)
+ *   clearBookingDraft: Xóa bản nháp đặt kho → dùng ở: loadBookingDraft; App.jsx (resolvePostAuthPath, discard +1)
+ *   draftMatchesUnit: Kiểm tra bản nháp có đúng là của kho đang xem (cùng cơ sở, cùng mã kho, không phân biệt hoa thường) → dùng ở: App.jsx (getRestoredBookingForm)
+ *   getSafeNextPath: Đọc tham số ?next= trên URL; chỉ chấp nhận đường dẫn nội bộ (bắt đầu bằng "/", không phải "//") để tránh bị chuyển hướng ra trang ngoài → dùng ở: App.jsx (usePendingBooking)
+ *   withNext: Gắn tham số ?next= vào đường dẫn (vd withNext('/login', '/facility/1') -> '/login?next=%2Ffacility%2F1') → dùng ở: App.jsx (promptLoginForBooking, promptLoginForCart +6)
+ */
+
 // Key localStorage của bản nháp và thời gian sống tối đa.
 const BOOKING_DRAFT_KEY = 'storespace_booking_draft'
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000 // giữ bản nháp tối đa 24 giờ

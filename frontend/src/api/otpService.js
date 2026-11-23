@@ -20,6 +20,14 @@
  *   Hết 60 giây có thể bấm "Gửi lại mã" -> resendRegistrationOtp().
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   toTimes: Chuẩn hóa phản hồi của backend về dạng mốc thời gian (milisecond) để giao diện đếm ngược → dùng ở: startRegistration, resendRegistrationOtp
+ *   startRegistration: Bước 1 đăng ký: gửi thông tin tài khoản để backend tạo bản đăng ký tạm và gửi mã OTP về email → dùng ở: App.jsx (sendRegistrationOtp)
+ *   resendRegistrationOtp: Yêu cầu backend gửi lại mã OTP mới cho email đang đăng ký → dùng ở: App.jsx (resendOtp)
+ *   verifyRegistrationOtp: Bước 2 đăng ký: gửi mã OTP người dùng nhập để backend kiểm tra; đúng thì backend tạo tài khoản → dùng ở: App.jsx (verifyOtp)
+ */
 import { apiPost } from './api'
 
 

@@ -18,6 +18,13 @@
  *   bấm nút hành động trên 1 dòng -> onAction(item) (cha điều hướng tới đúng chỗ xử lý).
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   NotificationItem: Vẽ 1 dòng thông báo: biểu tượng theo tone, tiêu đề, nhãn "Mới", nội dung và nút hành động (nếu có) → dùng ở: CustomerNotificationsPage, NotificationsPreview
+ *   CustomerNotificationsPage: Trang "Thông báo" đầy đủ của khách: mở trang là đánh dấu tất cả đã xem → dùng ở: CustomerAccount.jsx (CustomerDashboard)
+ *   NotificationsPreview: Khối nhỏ "Thông báo": hiện tối đa 3 thông báo đầu danh sách (đã được sắp theo độ quan trọng) kèm số chưa xem và nút "Xem tất cả" → dùng ở: HeaderNotificationBell.jsx (HeaderNotificationBell), CustomerAccount.jsx (CustomerDashboard)
+ */
 import React, { useEffect, useRef, useState } from 'react'
 import './CustomerNotifications.css'
 import { Pager, useClientPaging } from '../../components/common/listKit'
@@ -43,6 +50,7 @@ const FILTERS = [
  * @returns {JSX.Element} thẻ <li>.
  */
 function NotificationItem({ item, isNew, onAction }) {
+  // 1 dòng thông báo
   return (
     <li className={`cn-item ${item.tone}${isNew ? ' new' : ''}`}>
       <span className="cn-icon" aria-hidden="true">{ICON[item.tone] || 'i'}</span>
@@ -89,8 +97,10 @@ export default function CustomerNotificationsPage({ center, onAction }) {
   const shown = center.notifications.filter(n => filter === 'all' || n.section === filter)
   const paging = useClientPaging(shown, { resetKey: filter })
 
+  // Trang thông báo của khách
   return (
     <div className="customer-content-page">
+      {/* Tiêu đề trang */}
       <div className="customer-page-heading">
         <div>
           <span className="customer-eyebrow">NOTIFICATIONS</span>
@@ -100,6 +110,7 @@ export default function CustomerNotificationsPage({ center, onAction }) {
         {center.notifications.length > 0 && <span className="page-count">{center.notifications.length} thông báo</span>}
       </div>
 
+      {/* Nút lọc theo nhóm */}
       <div className="cn-filters" role="tablist" aria-label="Lọc thông báo">
         {FILTERS.filter(([key]) => key === 'all' || counts[key]).map(([key, label]) => (
           <button key={key} type="button" role="tab" aria-selected={filter === key} className={filter === key ? 'active' : ''} onClick={() => setFilter(key)}>
@@ -108,6 +119,7 @@ export default function CustomerNotificationsPage({ center, onAction }) {
         ))}
       </div>
 
+      {/* Danh sách thông báo + phân trang */}
       {shown.length === 0
         ? <div className="empty-state">Bạn chưa có thông báo nào.</div>
         : (
@@ -133,6 +145,7 @@ export default function CustomerNotificationsPage({ center, onAction }) {
 export function NotificationsPreview({ center, onAction, onOpenAll }) {
   const top = center.notifications.slice(0, 3)
   if (!top.length) return null
+  // Khối 3 thông báo mới + "Xem tất cả"
   return (
     <section className="cn-preview" aria-label="Thông báo mới">
       <div className="cn-preview-head">

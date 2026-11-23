@@ -25,6 +25,22 @@
  *   lưu 'contract' vào sessionStorage + chuyển /customer -> CustomerAccount gọi takeCustomerSection() mở tab Hợp đồng.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   confirmAfterDeposit: Xác nhận các đơn vừa thanh toán cọc -> backend xác nhận đơn và tạo hợp đồng → dùng ở: App.jsx (handleDepositPaid), CartPage.jsx (payDeposit), CustomerAccount.jsx (createPendingContracts)
+ *   openCustomerSection: Chuyển tới trang khách hàng (/customer) và mở sẵn một tab (mặc định 'contract' = Hợp đồng) → dùng ở: App.jsx (SiteHeader, handleDepositPaid), HeaderNotificationBell.jsx (HeaderPendingDepositBar, openNoticeTarget +2), CartPage.jsx (payDeposit) +1
+ *   takeCustomerSection: Đọc tab cần mở (đã lưu bởi openCustomerSection) đúng 1 lần rồi xóa khỏi sessionStorage → dùng ở: CustomerAccount.jsx (CustomerDashboard)
+ *   announceDepositSuccess: Hiện hộp thoại "Đặt cọc thành công" và nhắc khách ký hợp đồng (chờ khách bấm OK) → dùng ở: App.jsx (handleDepositPaid), CartPage.jsx (payDeposit), PaymentResultPage.jsx (PaymentResultPage)
+ *   requestContractSign: Yêu cầu mở màn hình ký cho 1 hợp đồng cụ thể (ví dụ ký phụ lục sau khi gia hạn) → dùng ở: ContractRenewal.jsx (finishRenewal, RenewalSection), HeaderNotificationBell.jsx (openNoticeTarget), CustomerAccount.jsx (openNotice, signContractForRental) +1
+ *   peekContractSignRequest: Xem (không xóa) yêu cầu ký hợp đồng đang chờ → dùng ở: CustomerAccount.jsx (ContractPage, onOpen)
+ *   clearContractSignRequest: Xóa yêu cầu ký hợp đồng đang chờ (CustomerAccount gọi sau khi đã mở màn ký) → dùng ở: CustomerAccount.jsx (ContractPage)
+ *   announceRenewalSuccess: Hiện hộp thoại "Gia hạn thành công" và nhắc khách ký phụ lục gia hạn → dùng ở: ContractRenewal.jsx (finishRenewal), PaymentResultPage.jsx (PaymentResultPage)
+ *   requestRenewal: Yêu cầu mở hộp thoại gia hạn của 1 đơn (từ thông báo "Kho sắp hết hạn"): lưu reservationId + mở tab Hợp đồng → dùng ở: HeaderNotificationBell.jsx (openNoticeTarget), CustomerAccount.jsx (openNotice)
+ *   takeRenewalRequest: Đọc và xóa yêu cầu gia hạn đang chờ (CustomerAccount gọi để mở hộp thoại gia hạn) → dùng ở: CustomerAccount.jsx (ContractPage)
+ *   focusContract: Cuộn tới thẻ hợp đồng (phần tử id "contract-{reservationId}") và nháy sáng để khách thấy → dùng ở: ContractRenewal.jsx (RenewalSection), HeaderNotificationBell.jsx (openNoticeTarget), UnitReturn.jsx (ReturnProgress) +1
+ *   takePendingContractFocus: Đọc và xóa yêu cầu cuộn tới hợp đồng đang chờ (CustomerAccount gọi khi danh sách hợp đồng hiển thị xong) → dùng ở: CustomerAccount.jsx (ContractPage)
+ */
 import { apiPost } from '../api/api'
 
 // Key sessionStorage lưu tên tab cần mở khi vào trang /customer.

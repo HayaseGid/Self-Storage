@@ -20,6 +20,16 @@
  * ======================================================================
  */
 
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   ContractModal: Hộp thoại hợp đồng của 1 đơn: 5 mục thu gọn được + khu vực ký (nếu chưa ký) hoặc ảnh chữ ký (nếu đã ký) → dùng ở: CustomerAccount.jsx (ContractPage)
+ *   toggleSection: Chạy khi bấm tiêu đề 1 mục: mở/thu gọn mục đó (parties, storage, payment, terms, signature) → dùng ở: renderSection
+ *   formatMoney: Định dạng số tiền kèm "đ"; rỗng -> "Chưa cập nhật"; chuỗi thì giữ nguyên → dùng ở: (cấp file)
+ *   submit: Chạy khi bấm "✍ Ký và xác nhận hợp đồng": kiểm tra đã tick đồng ý, đã ký, họ tên khớp tài khoản; rồi gọi onSign với dữ liệu chữ ký → dùng ở: (cấp file)
+ *   renderSection: Vẽ 1 mục có tiêu đề + biểu tượng, bấm để mở/thu gọn nội dung (gọi toggleSection) → dùng ở: (cấp file)
+ *   detailItem: Vẽ 1 ô thông tin "nhãn / giá trị" trong lưới (giá trị rỗng -> "Chưa cập nhật") → dùng ở: (cấp file)
+ */
+
 import React, { useState } from 'react'
 import SignaturePad from './SignaturePad'
 import { formatSignedAt } from '../../services/contractSignatures'
@@ -182,6 +192,7 @@ export default function ContractModal({
     </div>
   )
 
+  // Hộp thoại hợp đồng (giao diện cũ)
   return (
     <div
       className="contract-modal-backdrop"
@@ -191,6 +202,7 @@ export default function ContractModal({
         className="contract-modal-panel"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Tiêu đề + nút đóng */}
         <div className="contract-modal-header">
           <div>
             <span className="customer-eyebrow">
@@ -214,6 +226,7 @@ export default function ContractModal({
           </button>
         </div>
 
+        {/* Trạng thái ký */}
         <div className="contract-modal-status">
           <span className={isSigned ? 'signed' : 'unsigned'}>
             <span className="contract-status-dot" />
@@ -225,6 +238,7 @@ export default function ContractModal({
           </span>
         </div>
 
+        {/* 5 mục: các bên, kho, chi phí, điều khoản, chữ ký */}
         <div className="contract-detail-list">
           {renderSection(
             'parties',
@@ -391,6 +405,7 @@ export default function ContractModal({
           )}
         </div>
 
+        {/* Nút đóng */}
         <div className="contract-modal-footer">
           <span>
             StoreSpace · Your Space. Your Freedom.
@@ -406,6 +421,7 @@ export default function ContractModal({
         </div>
       </div>
 
+      {/* CSS riêng của hộp thoại */}
       <style>{`
         .contract-modal-backdrop {
           position: fixed;

@@ -14,6 +14,12 @@
  *   -> thành công: xóa ô nhập, hiện khung "Đã gửi"; lỗi (vd gửi dồn trong 30 giây, lỗi máy chủ email): hiện câu lỗi.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   ContactSupport: Trang "Liên hệ" trong khu tài khoản khách hàng: gửi tin nhắn cho bộ phận hỗ trợ qua email → dùng ở: CustomerAccount.jsx (CustomerDashboard)
+ *   submit: Bấm "Gửi tin nhắn": kiểm tra độ dài, gọi POST /api/support/contact; thành công thì xóa ô nhập và hiện khung "Đã gửi" → dùng ở: ContactSupport
+ */
 import React, { useState } from 'react'
 import { apiPost } from '../../api/api'
 import './ContactSupport.css'
@@ -64,8 +70,10 @@ export default function ContactSupport({ user }) {
     }
   }
 
+  // Trang liên hệ hỗ trợ
   return (
     <div className="customer-content-page">
+      {/* Tiêu đề trang */}
       <div className="customer-page-heading">
         <div>
           <span className="customer-eyebrow">HỖ TRỢ KHÁCH HÀNG</span>
@@ -74,6 +82,7 @@ export default function ContactSupport({ user }) {
         </div>
       </div>
 
+      {/* Form chủ đề + nội dung, khung thông tin liên hệ */}
       <div className="cs-layout">
         <form className="cs-card" onSubmit={submit}>
           <span className="cs-label">Chủ đề</span>

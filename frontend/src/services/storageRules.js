@@ -24,6 +24,29 @@
  * ======================================================================
  */
 
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   maxBookingStartDate: Ngày bắt đầu thuê muộn nhất được chọn: hôm nay (theo Demo Clock) + số ngày được đặt trước, lúc 0 giờ → dùng ở: App.jsx (BookingPage), CartPage.jsx (checkout, CartPage)
+ *   formatReservationCode: Định dạng mã đơn đặt kho thống nhất trên mọi màn hình → dùng ở: getUnitLock; HeaderNotificationBell.jsx (HeaderNotificationBell), PendingPayments.jsx (PendingDepositBar, payRentBill +1), CustomerAccount.jsx (MyStoragePage, CustomerDashboard) +2
+ *   todayISO: Lấy "hôm nay" dạng 'YYYY-MM-DD' (có tính ngày giả lập của Demo Clock) → dùng ở: isReservationActive
+ *   isReservationActive: Kiểm tra một đơn đặt kho còn hiệu lực không: trạng thái thuộc ACTIVE_RESERVATION_STATUSES, nếu đang chờ cọc thì chưa quá hạn giữ chỗ → dùng ở: getActiveReservationsForUnit
+ *   getActiveReservationsForUnit: Lấy các đơn còn hiệu lực đang gắn với 1 kho (cùng cơ sở), sắp xếp theo ngày bắt đầu tăng dần (đơn gần nhất trước) → dùng ở: getUnitLock
+ *   getUnitLock: Xác định kho có bị khóa không (khóa = không cho quản lý sửa thông tin kho) → dùng ở: FacilityManagerAccount.jsx (FacilityManagerDashboard)
+ *   normalizeWords: Chuẩn hóa tên cơ sở thành mảng từ không dấu, chữ thường → dùng ở: generateUnitCodePrefix
+ *   generateUnitCodePrefix: Sinh tiền tố mã kho (mã chi nhánh) từ tên cơ sở, bỏ qua các từ chung (storespace, kho, chi nhánh...) → dùng ở: BusinessOperations.jsx (BusinessOperations)
+ *   getUnitTypeCode: Lấy mã 3 ký tự của loại kho (Climate-Control Unit -> CLM...) → chưa thấy nơi dùng
+ *   previewNextUnitCode: Dự đoán mã kho tiếp theo của cơ sở (ví dụ tiền tố "Q7" và đã có Q7-U01..Q7-U05 -> "Q7-U06") → chưa thấy nơi dùng
+ *   calculateEndDate: Tính ngày kết thúc hợp đồng = ngày bắt đầu + số tháng - 1 ngày → chưa thấy nơi dùng
+ *   formatMoney: Định dạng số tiền kiểu Việt Nam kèm "đ" (rỗng -> 0đ), vd 1500000 -> "1.500.000đ" → dùng ở: BusinessOperations.jsx (BusinessLiveDashboard), BusinessPanels.jsx (BusinessPerformance, BusinessReportsCenter), BusinessPriceBands.jsx (BusinessPriceBands)
+ *   formatVnd: Định dạng số thành tiền kiểu Việt Nam có dấu chấm (1500000 -> "1.500.000"), không hợp lệ -> rỗng → dùng ở: formatMoney, validateMonthlyPrice; contractEmail.js (money), PriceInput.jsx (handleChange, handleBlur), CancelReservation.jsx (money) +23
+ *   parseVnd: Đọc chuỗi tiền người dùng nhập (có dấu chấm, chữ...) thành số; không có chữ số -> null → dùng ở: validateMonthlyPrice; PriceInput.jsx (handleBlur)
+ *   roundPrice: Làm tròn giá theo bước giá PRICE_RULES.step (1.000đ) → dùng ở: validateMonthlyPrice; PriceInput.jsx (handleBlur)
+ *   describeVnd: Diễn giải số tiền bằng chữ ngắn gọn để người nhập dễ kiểm tra (2500000 -> "2,5 triệu") → dùng ở: PriceInput.jsx
+ *   validateMonthlyPrice: Kiểm tra giá thuê theo tháng người quản lý nhập → dùng ở: PriceInput.jsx, FacilityManagerAccount.jsx (handleSubmit)
+ *   medianPrice: Tính giá trung vị của danh sách giá (bỏ giá trị không hợp lệ), dùng làm giá tham chiếu → dùng ở: FacilityManagerAccount.jsx (UnitFormModal)
+ *   computeDeposit: Tính tiền cọc mặc định = giá thuê tháng × DEPOSIT_MONTHS (2 tháng) → chưa thấy nơi dùng
+ */
+
 import { getTodayISO } from '../demoClock/demoClock'
 
 // Phút giữ chỗ chờ cọc mặc định, các gói thời hạn thuê mới (tháng), số tháng tiền cọc mặc định.

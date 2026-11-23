@@ -18,6 +18,17 @@
  *   -> ngoài khung thì hiện câu lỗi, trong khung mới cho lưu.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   getBandCode: Lấy mã nhóm kích thước từ chuỗi kích thước, ví dụ "M2: 2x3m" -> "M" (không khớp -> null) → dùng ở: findBand; unitGeometry.js (unitGeometry)
+ *   getArea: Tính diện tích (m²) của kho: ưu tiên `volume` nếu có, không thì tính dài×rộng từ chuỗi kích thước, hoặc lấy con số đầu tiên → dùng ở: ManagerPriceTable.jsx (ManagerPriceTable)
+ *   num: Đổi chuỗi số (cho phép dấu phẩy thập phân) thành Number → dùng ở: getArea
+ *   findBand: Tìm khung giá của nhóm tương ứng với chuỗi kích thước → dùng ở: checkPriceInBand; ManagerPriceTable.jsx (ManagerPriceTable)
+ *   formatArea: Định dạng diện tích để hiển thị (ví dụ 6 -> "6 m²", null -> "—") → dùng ở: BusinessPriceBands.jsx (BusinessPriceBands, submit), ManagerPriceTable.jsx (ManagerPriceTable)
+ *   formatBandPrice: Định dạng khoảng giá của khung: "minPrice đ – maxPrice đ" → dùng ở: checkPriceInBand; BusinessPriceBands.jsx (BusinessPriceBands), ManagerPriceTable.jsx (ManagerPriceTable)
+ *   checkPriceInBand: Kiểm tra giá quản lý nhập có nằm trong khung giá của nhóm không (nhóm chưa có khung thì không chặn) → dùng ở: ManagerPriceTable.jsx (save, ManagerPriceTable)
+ */
 import { formatVnd } from './storageRules'
 
 /**

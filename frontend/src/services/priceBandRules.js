@@ -22,6 +22,16 @@
  *   -> có lỗi thì hiện ngay, không lỗi mới gửi API lưu.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng số tiền kèm "đ" → dùng ở: validateBand, bandHints
+ *   area: Định dạng diện tích kèm "m²" → dùng ở: validateBand, bandHints
+ *   isSpecialBand: Kiểm tra mã nhóm có phải nhóm đặc biệt "V" (kho cho xe) không → dùng ở: validateBand, bandHints
+ *   validateBand: Kiểm tra dữ liệu khung giá trước khi lưu theo 5 quy tắc ở đầu file → dùng ở: BusinessPriceBands.jsx (toggleActive, PriceBandForm)
+ *   neighbours: Tìm nhóm liền kề nhỏ hơn và lớn hơn (theo diện tích) của nhóm đang xét → dùng ở: validateBand, bandHints
+ *   bandHints: Sinh các dòng gợi ý giới hạn để hiển thị dưới ô nhập trong form khung giá → dùng ở: BusinessPriceBands.jsx (PriceBandForm)
+ */
 import { formatVnd } from './storageRules'
 
 // Sai số cho phép khi so sánh diện tích (m²), tránh lỗi làm tròn số thực.

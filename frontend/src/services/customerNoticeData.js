@@ -22,6 +22,24 @@
  *   -> khách mở tab -> markSection(section) -> writeSeen() lưu localStorage -> badge biến mất.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   money: Định dạng tiền làm tròn kèm "đ" (vd 1500000 -> "1.500.000đ") → dùng ở: buildCustomerNotifications
+ *   isoDay: Cắt chuỗi ngày/giờ ISO lấy phần 'YYYY-MM-DD' → dùng ở: daysUntil, buildCustomerNotifications
+ *   parseUtc: Parse thời điểm backend trả về theo giờ UTC → dùng ở: buildCustomerNotifications
+ *   fmtTimeVn: Định dạng milisecond thành "HH:mm dd/MM" theo vi-VN → dùng ở: buildCustomerNotifications
+ *   daysUntil: Tính số ngày từ "hôm nay" (theo Demo Clock) tới một ngày ISO (âm = đã qua) → dùng ở: buildCustomerNotifications
+ *   stageOf: Phân mốc nhắc hạn theo số ngày còn lại: <=3 'd3', <=7 'd7', <=14 'd14', còn lại 'd30' → dùng ở: buildCustomerNotifications
+ *   unitsText: Ghép danh sách số kho của 1 đơn thành chuỗi "A01, A02" để đưa vào câu thông báo → dùng ở: buildCustomerNotifications
+ *   buildCustomerNotifications: Tạo danh sách thông báo cho khách từ dữ liệu đơn/gia hạn/chính sách/trả kho/kiểm kho → dùng ở: useCustomerNotifications
+ *   push: Thêm 1 thông báo vào danh sách (priority mặc định 50 nếu không truyền) → dùng ở: buildCustomerNotifications
+ *   rentalById: Tìm đơn đặt kho theo reservationId trong danh sách rentals → dùng ở: buildCustomerNotifications
+ *   seenKey: Tạo key localStorage lưu danh sách thông báo đã xem theo email → dùng ở: readSeen, writeSeen
+ *   readSeen: Đọc tập id thông báo đã xem của 1 email từ localStorage → dùng ở: useCustomerNotifications
+ *   writeSeen: Ghi tập id thông báo đã xem (giữ tối đa 400 id gần nhất) vào localStorage → dùng ở: useCustomerNotifications
+ *   useCustomerNotifications: Hook React: tính thông báo cho khách + quản lý trạng thái "đã xem" (đọc/ghi localStorage theo email) → dùng ở: HeaderNotificationBell.jsx (useHeaderNotices), CustomerAccount.jsx (CustomerDashboard)
+ */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { POLICY_TITLES, describePolicy, fmtDay } from './policies'
 import { formatVnd } from './storageRules'

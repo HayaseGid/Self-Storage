@@ -16,6 +16,14 @@
  *   Nếu component gọi run lần nữa trước khi xong -> worker cũ bị dừng, Promise cũ resolve CANCELLED (component bỏ qua).
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   createPackChannel: Tạo 1 kênh gửi việc cho worker. Worker chỉ được tạo khi chạy việc đầu tiên (lười tạo) → dùng ở: usePackChannel
+ *   stop: Dừng worker đang chạy và báo việc đang chờ là đã hủy → dùng ở: run, createPackChannel
+ *   run: Gửi 1 việc (op, args) cho worker; hủy việc cũ nếu còn chạy → dùng ở: createPackChannel
+ *   usePackChannel: Hook: 1 kênh worker gắn với vòng đời component → dùng ở: UnitPackPlanner.jsx (PackPlanner), useBoxFit.js (useBoxFit, useSplitPack)
+ */
 import { useEffect, useRef } from 'react'
 
 /* Giá trị trả về khi việc bị hủy (có việc mới thay thế, hoặc component đã đóng). */

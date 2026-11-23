@@ -22,6 +22,13 @@
  *   -> PaymentResultPage gọi return-verify, đọc readPendingVnPay() để biết khoản gì, rồi clearPendingVnPay().
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   startVnPayPayment: Khởi tạo giao dịch VNPay cho 1 hoặc nhiều đơn đặt kho rồi chuyển hướng sang trang thanh toán VNPay → dùng ở: App.jsx (handleDepositPaid), ContractRenewal.jsx (payRenewal), PendingPayments.jsx (payWithVnPay, payRentBill) +3
+ *   readPendingVnPay: Đọc thông tin giao dịch VNPay đang chờ (đã lưu khi bắt đầu thanh toán) từ sessionStorage → dùng ở: PaymentResultPage.jsx (PaymentResultPage)
+ *   clearPendingVnPay: Xóa thông tin giao dịch VNPay đang chờ khỏi sessionStorage → dùng ở: PaymentResultPage.jsx (releaseHeld, PaymentResultPage)
+ */
 import { apiPost } from './api'
 
 // Key sessionStorage lưu giao dịch VNPay đang chờ, và đường dẫn trang VNPay trả về sau khi thanh toán.

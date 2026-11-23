@@ -45,6 +45,47 @@
  * ======================================================================
  */
 
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   itemType: Tìm loại đồ trong danh mục PACK_ITEMS theo key (vd 'box-m' -> Thùng vừa) → dùng ở: typeOf; ItemCountsInput.jsx (ItemCountsInput), Unit3DViewer.jsx (hintFor), UnitPackPlanner.jsx (PackPlanner, add)
+ *   overlap1: Kiểm tra 2 đoạn [a0,a1) và [b0,b1) trên cùng một trục có giao nhau không (có sai số EPS) → dùng ở: collides, stackHeight
+ *   inside1: Kiểm tra giá trị v có nằm trong đoạn [a0,a1) không (có sai số EPS) → dùng ở: projectDown, projectBack, projectLeft +1
+ *   r3: Làm tròn 3 chữ số thập phân (tức tới milimét), để các điểm gần như trùng nhau có cùng khóa và bị loại trùng → dùng ở: add, magnetSnap
+ *   topOf: Độ cao nóc của món; món noTop (ghế, đèn, xe...) coi như chiếm cả cột tới trần để không chồng gì lên → dùng ở: collides, projectDown, projectBack +2
+ *   collides: Kiểm tra hộp (x,y,z,w,h,d) có va chạm với món nào khác trong kho không: va chạm = giao nhau đồng thời trên trục x, trục z và trục y → dùng ở: fitsAt
+ *   supportRatio: Tính TỈ LỆ ĐỠ: phần diện tích đáy của hộp được nóc các món bên dưới nâng đỡ, ở độ cao y → dùng ở: fitsAt
+ *   fitsAt: Kiểm tra hộp có đặt hợp lệ tại vị trí cho trước → dùng ở: placeAt, findPosition
+ *   stackHeight: Tìm độ cao mặt đỡ khi KÉO THẢ: mô phỏng trọng lực, món "rơi" xuống nóc cao nhất trong số các món có hình chiếu đáy giao với vùng → dùng ở: placeAt
+ *   placeAt: Đặt món tại (x, z) theo trọng lực: tính độ cao rơi xuống (stackHeight) rồi kiểm tra hợp lệ → dùng ở: ThreeUnitScene.jsx (onMoveEvt), UnitPackPlanner.jsx (add, rotate +1)
+ *   projectDown: Chiếu điểm theo hướng -y (xuống dưới) tới nóc món gần nhất hoặc sàn → dùng ở: newExtremePoints
+ *   projectBack: Chiếu điểm theo hướng -z (vào trong) tới mặt trước của món gần nhất hoặc vách trong → dùng ở: newExtremePoints
+ *   projectLeft: Chiếu điểm theo hướng -x (sang trái) tới mặt phải của món gần nhất hoặc vách trái → dùng ở: newExtremePoints
+ *   newExtremePoints: Sinh các ĐIỂM CỰC (Extreme Points) mới khi vừa đặt món k (Thuật toán 1 "Update_3DEPL" trong bài báo) → dùng ở: buildExtremePoints, packOnce
+ *   add: Thêm 1 điểm vào danh sách nếu còn nằm trong kho → dùng ở: newExtremePoints
+ *   epKey: Tạo khóa chuỗi "x|y|z" cho 1 điểm (để loại điểm trùng) → dùng ở: buildExtremePoints, packOnce
+ *   buildExtremePoints: Dựng danh sách điểm cực cho các món đã có sẵn trong kho (giả lập đặt lần lượt từ thấp lên cao, trong ra ngoài, trái sang phải) → dùng ở: findPosition, packOnce
+ *   residualSpace: Tính KHOẢNG TRỐNG DƯ (Residual Space) quanh một điểm cực: đứng tại điểm (px, py, pz) nhìn theo hướng +x (sang phải), +y (lên trên), +z → dùng ở: findPosition
+ *   findPosition: Chọn vị trí (điểm cực) tốt nhất để đặt món kích thước (w, h, d), có thử XOAY 90° trên mặt sàn → dùng ở: packOnce; UnitPackPlanner.jsx (add, rotate)
+ *   lexLess: So sánh 2 mảng điểm số theo thứ tự từ điển: a < b nếu phần tử khác nhau đầu tiên của a nhỏ hơn (có sai số EPS) → dùng ở: findPosition
+ *   sortClusteredAreaHeight: Sắp thứ tự món theo "CLUSTERED AREA-HEIGHT" (mục 4.1 của bài báo): clusterSize = diện tích sàn × δ / 100 → dùng ở: packOnce
+ *   autoPack: TỰ XẾP danh sách món vào kho (EP-BFD) → dùng ở: remainingCapacity, sampleFurniture; packing.worker.js
+ *   envelopeOf: Thể tích KHỐI BAO NGOÀI của các món, tính từ góc trong-trái-sàn (0,0,0): envelope = max(x + w) × max(y + h) × max(z + d) → dùng ở: autoPack
+ *   packOnce: Xếp 1 lần theo 1 biến thể prefer → dùng ở: autoPack
+ *   volumeOf: Tính tổng thể tích các món: Σ w × h × d (m³) → dùng ở: autoPack; UnitPackPlanner.jsx (SampleRoom, PackPlanner +1), useBoxFit.js (useBoxFit), packing.worker.js
+ *   customBoxType: Tạo loại "thùng tự nhập" theo kích thước khách nhập (cm) → dùng ở: typeOf; UnitPackPlanner.jsx (add, controls)
+ *   boxRequests: Đổi đồ khách nhập (counts, xem features/unit/boxCounts.js) thành danh sách yêu cầu cho autoPack, kèm tổng số món, số thùng → dùng ở: App.jsx (SearchPage), UnitPackPlanner.jsx (PackPlanner), useBoxFit.js (useBoxFit, useSplitPack)
+ *   typeOf: Lấy loại đồ theo key (thùng tự nhập kích thước thì dựng loại riêng) → dùng ở: boxRequests
+ *   sum: Cộng tổng số lượng của danh sách yêu cầu → dùng ở: boxRequests
+ *   gridCapacity: Số thùng cùng cỡ chất kín được trong phòng nếu xếp thẳng hàng theo lưới (chưa chừa lối đi): số tầng = floor(H / h) → dùng ở: Unit3DViewer.jsx (hintFor)
+ *   fit: Số món xếp vừa theo 1 chiều (làm tròn xuống, có sai số EPS) → dùng ở: gridCapacity
+ *   remainingCapacity: Tính còn xếp thêm được bao nhiêu món loại `type`: xếp thử thật bằng autoPack (kiểu 'floor') với `limit` món trên nền các món đang có → dùng ở: packing.worker.js
+ *   magnetSnap: "Hít mép" khi kéo thả: nếu x / z gần mép vách hoặc mép món khác trong bán kính `radius` m (mặc định 12 cm) thì khớp vào đúng mép → dùng ở: ThreeUnitScene.jsx (onMoveEvt)
+ *   near: Tìm giá trị trong danh sách gần v nhất (trong bán kính radius); không có thì giữ v → dùng ở: magnetSnap
+ *   aisleZones: Tạo VÙNG LỐI ĐI: các hộp "vật cản ảo" (obstacle + noTop, cao tới trần) để thuật toán không đặt đồ vào → dùng ở: sampleFurniture; UnitPackPlanner.jsx (PackPlanner, toggleAisle), useBoxFit.js (useBoxFit, roomOfUnit)
+ *   sampleFurniture: Bày đồ mẫu phù hợp kích thước kho (kho xe: ô tô; tủ: kệ, vali...; kho lớn: sofa, nệm, tủ...) → dùng ở: UnitPackPlanner.jsx (SampleRoom)
+ *   describeItems: Gom tên đồ theo loại thành câu mô tả, ví dụ "Kệ sách, 4 thùng vừa, Ghế" → dùng ở: UnitPackPlanner.jsx (SampleRoom)
+ */
+
 /* Sai số so sánh số thực (1 phần triệu mét): tránh lỗi kiểu 0.1 + 0.2 !== 0.3 khi so tọa độ. */
 const EPS = 1e-6
 /**

@@ -42,6 +42,98 @@
  * Dùng ở: App.jsx (role FACILITY_MANAGER).
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   fmtMoney: Định dạng số tiền kiểu Việt Nam kèm "đ" (null/0 -> "0đ") → dùng ở: UnitFormModal, UnitDetailModal, remove +5
+ *   fmtDate: Đổi ngày ISO ('2026-05-10' hoặc '2026-05-10T...') thành 'dd/MM/yyyy'; rỗng -> '—' → dùng ở: UnitDetailModal, OwnerModal, LateFeesTab +6
+ *   fmtDateTime: Định dạng ngày giờ dạng "dd/MM, HH:mm" theo vi-VN; rỗng hoặc không hợp lệ -> '—' → dùng ở: StaffHistoryModal, UnitReportsTab, FacilityStaffTab +3
+ *   pad: Thêm số 0 phía trước cho đủ 2 chữ số (vd 5 -> "05"), dùng khi ghép ngày/tháng → chưa thấy nơi dùng
+ *   compareNatural: So sánh 2 mã có số theo kiểu tự nhiên (Q1-U2 đứng trước Q1-U10), không phân biệt hoa thường → dùng ở: FacilityManagerDashboard
+ *   unitSizeValue: Giá trị kích thước để sắp xếp kho: theo diện tích thật (m²; thiếu thì dùng thể tích), không theo chữ của tên size → dùng ở: FacilityManagerDashboard
+ *   todayStr: Ngày "hôm nay" dạng 'YYYY-MM-DD' lấy từ Demo Clock (đồng hồ giả lập để demo, có thể khác ngày thật) → dùng ở: OwnerModal, FacilityStaffTab, daysLeft +1
+ *   loadFreshUnits: Đọc danh sách kho vừa tạo của 1 cơ sở từ sessionStorage (bỏ các mục quá 12 giờ) → dùng ở: FacilityManagerDashboard
+ *   saveFreshUnits: Ghi danh sách kho vừa tạo của 1 cơ sở vào sessionStorage (giữ nguyên dữ liệu của cơ sở khác) → dùng ở: dismissFreshUnit, handleSaveUnit
+ *   previewNextUnitCode: Dự đoán mã kho tiếp theo, vd đã có Q1-U07 thì trả "Q1-U08" (chỉ để xem trước trong form tạo kho; mã thật do backend cấp khi lưu vào DB) → dùng ở: FacilityManagerDashboard
+ *   formatUnitLocation: Ghép vị trí kho thành chuỗi "Tầng · Dãy/Khu · Ghi chú" (cột Floor / Zone / LocationNote của bảng StorageUnit), bỏ qua phần trống → dùng ở: UnitFormModal, UnitDetailModal, FacilityManagerDashboard
+ *   Badge: Nhãn trạng thái có màu: tra chữ + tone trong bảng map, rồi vẽ <span class="fm-badge fm-{tone}"> → dùng ở: UnitDetailModal, FacilityStaffTab, FacilityContractsTab +2
+ *   UnitFormModal: Hộp thoại tạo / sửa kho: chọn loại kho, size, giá thuê, trạng thái, vị trí (tầng, dãy, ghi chú) → dùng ở: FacilityManagerDashboard
+ *   changedField: Kiểm tra 1 trường (theo nhãn) có bị thay đổi so với ban đầu không (để tô đánh dấu) → dùng ở: UnitFormModal
+ *   resetToOriginal: Bấm "Khôi phục giá trị ban đầu": đưa toàn bộ form về giá trị ban đầu của kho và xóa lỗi → dùng ở: UnitFormModal
+ *   handleSubmit: Bấm nút "Tạo kho" / "Lưu thay đổi" (submit form): kiểm tra loại/size, kiểm tra giá (validateMonthlyPrice), hỏi xác nhận → dùng ở: UnitFormModal
+ *   UnitDetailModal: Hộp thoại chi tiết 1 kho: thông tin cơ sở, loại, size, vị trí, giá, trạng thái, hợp đồng đang hiệu lực, các đơn đặt chỗ liên quan → dùng ở: FacilityManagerDashboard
+ *   Tile: Component ô thông tin nhỏ (nhãn + nội dung) trong hộp chi tiết kho → dùng ở: UnitDetailModal
+ *   fpNum: Đổi giá trị thành số (rỗng/null -> 0) → dùng ở: fpFmt, normalizeType, normalizeSize
+ *   fpFmt: Định dạng số kiểu Việt Nam với tối đa d chữ số thập phân → dùng ở: submit, SizeModal, (cấp file)
+ *   fpClean: Cắt khoảng trắng thừa trong chuỗi (gộp nhiều khoảng trắng thành 1) → dùng ở: submit
+ *   fpArray: Lấy mảng từ dữ liệu backend (mảng trực tiếp hoặc { items: [...] }) → dùng ở: loadFacilityCatalog
+ *   normalizeType: Chuẩn hóa 1 loại kho từ backend về 1 dạng thống nhất (backend có thể trả unitTypeID / unitTypeId / id...) → dùng ở: loadFacilityCatalog, saveType
+ *   normalizeSize: Chuẩn hóa 1 kích thước từ backend → dùng ở: loadFacilityCatalog, saveSize
+ *   loadFacilityCatalog: Tải song song danh sách loại kho + kích thước kèm trạng thái Active tại cơ sở, chuẩn hóa và sắp xếp → dùng ở: reloadFacilityCatalog
+ *   fpCategoryOf: Tìm nhóm size chuẩn (Small/Medium/Large/Vehicle) theo chữ cái đầu của mã size (vd "M2" -> Medium) → dùng ở: SizeModal, (cấp file)
+ *   TypeModal: Hộp thoại thêm / sửa loại kho tại cơ sở: tên, mô tả, trạng thái Active/Deactive (không cho chuyển Deactive khi còn kho đang dùng loại này) → dùng ở: (cấp file)
+ *   submit: Bấm "Thêm loại kho" / "Lưu thay đổi": kiểm tra (tên bắt buộc, độ dài, trùng tên, không tắt khi còn kho dùng, có thay đổi) rồi gọi onSave → dùng ở: TypeModal
+ *   SizeModal: Hộp thoại thêm / sửa kích thước kho: chọn nhóm size, mã (tự gợi ý mã kế tiếp), tên hiển thị, rộng × dài → dùng ở: (cấp file)
+ *   FacilityPropertiesTab: Tab "Đặc tính kho": 2 chế độ xem Loại kho / Kích thước, đếm Active/Deactive, lọc, tìm kiếm, thêm/sửa (mở TypeModal / SizeModal) → dùng ở: FacilityManagerDashboard
+ *   usage: Mức sử dụng của 1 loại/size tại cơ sở: tổng số kho, số kho đang hoạt động, các mức giá liên quan → dùng ở: toggle, remove, Actions +2
+ *   label: Nhãn mô tả 1 dòng (vd 'loại kho #3 "Kho mát"' hoặc 'kích thước M2 "..."') dùng trong hộp thoại → dùng ở: (cấp file), Badge, changedField +22
+ *   switchView: Bấm tab "Loại kho" / "Kích thước kho": đổi chế độ xem và xóa bộ lọc, từ khóa → dùng ở: (cấp file)
+ *   typeBody: Tạo body gửi backend cho loại kho (luôn kèm facilityID để backend chỉ đổi trạng thái tại cơ sở này) → dùng ở: toggle
+ *   sizeBody: Tạo body gửi backend cho kích thước (luôn kèm facilityID) → dùng ở: toggle
+ *   saveType: Lưu loại kho từ TypeModal (sửa hoặc thêm mới), đóng hộp thoại, gọi onChanged() để tải lại rồi hiện toast → dùng ở: (cấp file)
+ *   saveSize: Lưu kích thước từ SizeModal (sửa hoặc thêm mới), đóng hộp thoại, gọi onChanged() để tải lại rồi hiện toast → dùng ở: (cấp file)
+ *   toggle: Bấm nút "Active"/"Deactive" ở 1 dòng: chuyển trạng thái loại/size tại cơ sở (chặn tắt khi còn kho đang dùng; hỏi xác nhận) → dùng ở: Actions
+ *   remove: Bấm nút "Xóa" ở 1 dòng: chặn (và giải thích) nếu còn kho hoặc đã có đơn; hỏi xác nhận → dùng ở: Actions
+ *   StatusBadge: Component nhãn Active / Deactive của 1 dòng → dùng ở: (cấp file)
+ *   Actions: Component các nút thao tác của 1 dòng (Sửa, Active/Deactive, Xóa — có khóa khi đang được dùng) → dùng ở: (cấp file)
+ *   UsageCell: Component ô hiển thị mức sử dụng (số kho, số mức giá) của 1 dòng → dùng ở: (cấp file)
+ *   StaffStatusBadge: Nhãn trạng thái nhân viên tại cơ sở (Active / Inactive) theo STAFF_STATUS_MAP → dùng ở: FacilityStaffTab
+ *   appointmentKey: Ngày hẹn bàn giao của đơn dạng 'YYYY-MM-DD' (dùng để so sánh / nhóm theo ngày); không có thì lấy ngày bắt đầu thuê → dùng ở: FacilityStaffTab
+ *   AddStaffModal: Hộp thoại thêm nhân viên vào cơ sở: ô tìm theo tên/email + danh sách chọn các tài khoản Facility Staff chưa thuộc cơ sở → dùng ở: FacilityStaffTab
+ *   StaffHistoryModal: Hộp thoại lịch sử công việc (các lượt bàn giao) của 1 nhân viên tại cơ sở → dùng ở: FacilityStaffTab
+ *   isOpenTask: Kiểm tra 1 việc còn mở (Đã lên lịch hoặc Đang làm) hay đã xong/hủy → dùng ở: openTasksOf, FacilityStaffTab
+ *   toMinutes: Đổi giờ hẹn "HH:mm" thành số phút trong ngày (vd "09:30" -> 570); giờ "Cả ngày" hoặc rỗng -> null → dùng ở: OwnerModal, conflictsOf
+ *   OwnerModal: Hộp thoại giao / đổi người phụ trách 1 đơn đặt chỗ: chọn ngày hẹn, xem số lần hẹn trong ngày + trong tuần và cảnh báo trùng giờ → dùng ở: FacilityStaffTab
+ *   conflictsOf: Các việc của nhân viên trùng giờ hẹn với đơn (±60 phút), không tính việc của chính đơn này → dùng ở: OwnerModal
+ *   loadOf: Số lượt hẹn trong ngày của nhân viên (đếm theo đơn, không tính chính đơn này) → dùng ở: OwnerModal
+ *   LateFeesTab: Tab "Công nợ & phí trễ": thẻ tóm tắt, danh sách hợp đồng (lọc "Đang nợ" / "Tất cả", có phân trang) với tiền thuê quá hạn, phí trễ → dùng ở: FacilityManagerDashboard
+ *   load: Tải công nợ & phí trễ của cơ sở (backend tự cộng phí trễ tới hôm nay trước khi trả) → dùng ở: LateFeesTab, submitWaive
+ *   isOpen: Hợp đồng còn nợ (có kỳ thuê quá hạn, phí trễ chưa đóng hoặc phí khác chưa đóng) → dùng ở: LateFeesTab
+ *   submitWaive: Bấm "Xác nhận miễn phí" trong hộp thoại miễn: bắt buộc ghi lý do, gửi yêu cầu, đóng hộp thoại, hiện toast rồi tải lại → dùng ở: LateFeesTab
+ *   UnitReportsTab: Tab "Sự cố kho": danh sách báo cáo tình trạng kho do nhân viên gửi (lọc Cần xử lý / Hư hỏng / Tất cả, có phân trang), xem ảnh phóng to → dùng ở: FacilityManagerDashboard
+ *   needsAction: Báo cáo cần xử lý: hư hỏng, là báo cáo mới nhất của kho và kho vẫn đang Bảo trì / Chờ kiểm tra → dùng ở: UnitReportsTab
+ *   reopenUnit: Bấm "Mở lại kho" ở 1 báo cáo: hỏi xác nhận, chuyển kho sang "Còn trống", rồi tải lại báo cáo + dữ liệu trang → dùng ở: UnitReportsTab
+ *   FacilityStaffTab: Tab "Nhân sự": danh sách nhân viên (thêm / gỡ / xem lịch sử), đơn chờ bàn giao kèm người phụ trách (giao / đổi người qua OwnerModal) → dùng ở: FacilityManagerDashboard
+ *   loadTasks: Tải các việc đã giao tại cơ sở. API: GET /api/manager-tools/facilities/{facilityId}/tasks Được gọi khi mở tab, khi assignVersion đổi → dùng ở: FacilityStaffTab, changeOwner
+ *   openTasksOf: Các việc còn mở của 1 nhân viên → dùng ở: removeStaff, FacilityStaffTab
+ *   moveInTasksOf: Các việc "Nhận kho" (chưa hủy) của 1 đơn → dùng ở: FacilityStaffTab
+ *   changeOwner: OwnerModal bấm "Giao việc" / "Đổi người": giao / đổi người phụ trách đơn, đóng hộp thoại, tải lại việc, hiện toast → dùng ở: FacilityStaffTab
+ *   reservationOf: Tìm đơn chờ bàn giao theo id → dùng ở: FacilityStaffTab
+ *   removeStaff: Bấm "Gỡ" ở thẻ nhân viên: hỏi xác nhận rồi gỡ nhân viên khỏi cơ sở (chuyển Inactive; backend từ chối nếu còn việc chưa xong) → dùng ở: FacilityStaffTab
+ *   historyOf: Lịch sử bàn giao của 1 nhân viên → dùng ở: FacilityStaffTab
+ *   addStaff: AddStaffModal bấm "Thêm vào cơ sở": thêm nhân viên (lỗi 403 -> báo không có quyền), đóng hộp thoại, tải lại, hiện toast → dùng ở: FacilityStaffTab
+ *   daysLeft: Số ngày còn lại tới ngày kết thúc hợp đồng (âm = đã quá hạn), tính theo "hôm nay" của Demo Clock → dùng ở: contractPhase, ManagerContractModal, FacilityContractsTab +1
+ *   contractPhase: Giai đoạn hợp đồng: 'renewed' (đã gia hạn), 'closed' (đã kết thúc), 'expired' (quá hạn), 'expiring' (sắp hết hạn trong EXPIRING_DAYS ngày) → dùng ở: ManagerContractModal, FacilityContractsTab, FacilityManagerDashboard
+ *   buildContractGroup: Chuyển dữ liệu hợp đồng của Manager sang dạng `group` mà ContractDocument cần để in văn bản hợp đồng → dùng ở: ManagerContractModal
+ *   ManagerContractModal: Hộp thoại xem văn bản hợp đồng (ContractDocument) ở chế độ chỉ xem cho Manager: tóm tắt tiền, mã đơn, thông tin ra vào, giai đoạn hợp đồng → dùng ở: FacilityContractsTab
+ *   sumCounts: Cộng tất cả giá trị trong object đếm theo trạng thái (vd { ACTIVE: 3, EXPIRED: 1 } -> 4), dùng cho nút "Tất cả" → dùng ở: FacilityContractsTab, FacilityReservationsTab, FacilityManagerDashboard
+ *   FacilityContractsTab: Tab "Hợp đồng" (chỉ xem): lọc theo giai đoạn, tìm kiếm, sắp xếp, phân trang ở backend; hợp đồng mới tạo nằm đầu và được tô sáng → dùng ở: FacilityManagerDashboard
+ *   FacilityReservationsTab: Tab "Đơn đặt chỗ" (chỉ xem): mọi đơn của khách tại cơ sở, lọc trạng thái, tìm kiếm, sắp xếp, phân trang ở backend; bấm 1 dòng → dùng ở: FacilityManagerDashboard
+ *   contractOf: Tìm hợp đồng ứng với 1 đơn → dùng ở: FacilityReservationsTab
+ *   FacilityManagerDashboard: Component gốc trang Facility Manager: tải dữ liệu vận hành, lọc theo cơ sở được giao, vẽ menu ManagerNav và tab đang chọn → dùng ở: App.jsx (Router)
+ *   loadState: Tải toàn bộ dữ liệu vận hành của Manager rồi chuẩn hóa bằng mapOperationsState() và lưu vào state `db` → dùng ở: FacilityManagerDashboard, handleSaveUnit, handleDeleteUnit
+ *   showToast: Hiện thông báo nhỏ (toast) trong 3 giây; được truyền xuống các tab con qua prop showToast → dùng ở: handleSaveUnit, handleDeleteUnit, FacilityManagerDashboard
+ *   openEditUnit: Bấm "Sửa kho": mở UnitFormModal ở chế độ sửa (chặn và giải thích nếu kho đang bị khóa vì đã có đơn) → dùng ở: openEditFromDetail
+ *   dismissFreshUnit: Bỏ đánh dấu "Mới" của 1 kho (cập nhật state + sessionStorage); gọi khi bấm bỏ nhãn hoặc sau khi xóa kho → dùng ở: handleDeleteUnit, FacilityManagerDashboard
+ *   handleSaveUnit: Lưu kho từ form: sửa (báo nếu giá được lưu theo biểu giá) hoặc tạo mới → dùng ở: FacilityManagerDashboard
+ *   handleLogout: Đăng xuất: xóa phiên khỏi localStorage và về trang chủ → dùng ở: FacilityManagerDashboard
+ *   toggleUnitSort: Bấm tiêu đề cột bảng kho: đổi unitSort theo vòng tăng dần -> giảm dần -> về mặc định → dùng ở: renderSortHeader
+ *   renderSortHeader: Vẽ tiêu đề cột có nút sắp xếp và biểu tượng ↕ ▲ ▼ → chưa thấy nơi dùng
+ *   openEditFromDetail: Bấm "Sửa kho" trong UnitDetailModal: đóng hộp chi tiết rồi mở form sửa kho → dùng ở: FacilityManagerDashboard
+ *   handleDeleteUnit: Bấm "Xóa kho" trong UnitDetailModal: hỏi xác nhận rồi xóa hẳn kho (backend chỉ cho xóa kho chưa từng có đơn / bàn giao / hỗ trợ) → dùng ở: FacilityManagerDashboard
+ *   reloadFacilityCatalog: Tải lại danh mục loại kho + kích thước của cơ sở → dùng ở: FacilityManagerDashboard
+ *   renderReservationCodes: Vẽ ô "Đơn" của bảng kho: các mã đơn đang giữ kho kèm trạng thái (và hạn giữ chỗ nếu chờ cọc) → dùng ở: FacilityManagerDashboard
+ */
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import '../../styles/styles.css'
 import '../../styles/fmanagerstyles.css'
@@ -400,6 +492,7 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
     }
   }
 
+  // Hộp thoại tạo/sửa kho
   return (
     <div className="fm-modal-overlay">
       <div className="fm-modal-card">
@@ -410,6 +503,7 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
         <form onSubmit={handleSubmit} className="fm-modal-form">
           {error && <div className="auth-message error" role="alert">{error}</div>}
 
+          {/* Xem trước mã kho tự sinh */}
           <div className="fm-code-preview">
             <small>Mã kho</small>
             {editingUnit
@@ -422,6 +516,7 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
             </span>
           </div>
 
+          {/* Loại kho + kích thước */}
           <div className="fm-form-row">
             <label className={changedField('Loại kho') ? 'fm-field-changed' : ''}>
               Loại kho
@@ -438,6 +533,7 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
             </label>
           </div>
 
+          {/* Giá + trạng thái */}
           <div className="fm-form-row">
             <label className={changedField('Giá thuê') ? 'fm-field-changed' : ''}>
               Giá thuê (VNĐ/tháng)
@@ -481,6 +577,7 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
             <input value={locationNote} maxLength={200} onChange={(e) => setLocationNote(e.target.value)} placeholder="VD: Gần thang máy, cạnh cửa số 2" />
           </label>
 
+          {/* Danh sách thay đổi khi sửa */}
           {editingUnit && (
             <div className="fm-original-box">
               <div>
@@ -494,6 +591,7 @@ function UnitFormModal({ facilityDbId, nextUnitCode, editingUnit, onClose, onSav
             </div>
           )}
 
+          {/* Nút hủy / lưu */}
           <div className="fm-modal-actions">
             <button type="button" className="dashboard-secondary-btn" onClick={onClose}>Hủy</button>
             <button type="submit" className="dashboard-primary-btn" disabled={saving}>{saving ? 'Đang lưu...' : editingUnit ? 'Lưu thay đổi' : 'Tạo kho'}</button>
@@ -546,6 +644,7 @@ function UnitDetailModal({ unit, facility, lock, contract, onClose, onEdit, onDe
     </div>
   )
 
+  // Hộp thoại chi tiết kho
   return (
     <div className="fm-modal-overlay" onClick={onClose}>
       <div
@@ -816,6 +915,7 @@ function TypeModal({ editing, types, activeUnits, facilityName, onClose, onSave 
     }
   }
 
+  // Hộp thoại thêm/sửa loại kho
   return (
     <div className="fm-modal-overlay">
       <div className="fm-modal-card fp-modal">
@@ -973,6 +1073,7 @@ function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facility
     }
   }
 
+  // Hộp thoại thêm/sửa kích thước kho
   return (
     <div className="fm-modal-overlay">
       <div className="fm-modal-card fp-modal">
@@ -1304,8 +1405,10 @@ function FacilityPropertiesTab({
   const editingRow = modal?.row
   const editingUsage = editingRow ? usage(editingRow) : { activeUnits: 0, rates: [] }
 
+  // Tab "Đặc tính kho": loại kho + kích thước
   return (
     <div className="fm-section-card fp-card">
+      {/* Tiêu đề tab */}
       <div className="fp-head">
         <div>
           <h2>Thiết lập đặc tính kho</h2>
@@ -1316,6 +1419,7 @@ function FacilityPropertiesTab({
         </button>
       </div>
 
+      {/* Chuyển giữa loại kho / kích thước */}
       <div className="fp-tabs" role="tablist">
         <button type="button" role="tab" aria-selected={isTypes} className={isTypes ? 'active' : ''} onClick={() => switchView('types')}>
           Loại kho <span>{catalog.types.length}</span>
@@ -1325,6 +1429,7 @@ function FacilityPropertiesTab({
         </button>
       </div>
 
+      {/* Lọc + tìm kiếm + nút thêm */}
       <div className="fp-toolbar">
         <div className="fp-chips">
           {[['all', `Tất cả ${stats.all}`], ['on', `Active ${stats.on}`], ['off', `Deactive ${stats.off}`]].map(([v, t]) => (
@@ -1337,6 +1442,7 @@ function FacilityPropertiesTab({
 
       {error && <div className="auth-message error" role="alert">Không tải được dữ liệu: {error}</div>}
 
+      {/* Bảng danh mục */}
       {loading && !rows.length ? (
         <div className="empty-state">Đang tải...</div>
       ) : (
@@ -1459,6 +1565,7 @@ function AddStaffModal({ facilityName, candidates, onClose, onSave }) {
     }
   }
 
+  // Hộp thoại thêm nhân viên
   return (
     <div className="fm-modal-overlay">
       <div className="fm-modal-card fp-modal">
@@ -1524,6 +1631,7 @@ function StaffHistoryModal({ staff, items, onClose }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // Hộp thoại lịch sử việc của nhân viên
   return (
     <div className="fm-modal-overlay" onClick={onClose}>
       <div className="fm-modal-card fp-modal" onClick={(e) => e.stopPropagation()}>
@@ -1657,6 +1765,7 @@ function OwnerModal({ facilityId, reservation, currentOwnerId, onClose, onSave }
     }
   }
 
+  // Hộp thoại giao người phụ trách đơn
   return (
     <div className="fm-modal-overlay">
       <div className="fm-modal-card fp-modal">
@@ -1805,8 +1914,10 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
     }
   }
 
+  // Tab "Công nợ & phí trễ"
   return (
     <div className="fm-section-card">
+      {/* Tiêu đề + nút cập nhật phí */}
       <div className="fm-card-header-flex">
         <div>
           <h2>Công nợ & phí trễ hạn tiền thuê</h2>
@@ -1815,6 +1926,7 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
         <button type="button" className="dashboard-secondary-btn" onClick={load}>Tải lại</button>
       </div>
 
+      {/* Thẻ số liệu công nợ */}
       {s && (
         <section className="customer-stats" style={{ marginBottom: 16 }}>
           <div className="customer-stat-card">
@@ -1838,6 +1950,7 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
         </section>
       )}
 
+      {/* Nút lọc */}
       <div className="fp-toolbar">
         <div className="fp-chips">
           {[['open', `Đang nợ ${items.filter(isOpen).length}`], ['all', `Tất cả ${items.length}`]].map(([v, t]) => (
@@ -1847,6 +1960,7 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
       </div>
       {error && <div className="auth-message error" role="alert">{error}</div>}
 
+      {/* Bảng hợp đồng còn nợ */}
       {data === null ? <p className="fm-muted">Đang tải công nợ...</p> : visible.length === 0 ? (
         <div className="empty-state">Không có hợp đồng nào đang nợ tiền thuê hoặc phí trễ hạn.</div>
       ) : (
@@ -1908,6 +2022,7 @@ function LateFeesTab({ facilityId, showToast = () => {} }) {
         </div>
       )}
 
+      {/* Hộp thoại miễn phí trễ */}
       {waiving && (
         <div className="fm-modal-overlay">
           <div className="fm-modal-card">
@@ -2010,8 +2125,10 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
     }
   }
 
+  // Tab "Sự cố kho"
   return (
     <div className="fm-section-card">
+      {/* Tiêu đề tab */}
       <div className="fm-card-header-flex">
         <div>
           <h2>Báo cáo sự cố kho</h2>
@@ -2019,6 +2136,7 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
         </div>
         <button type="button" className="dashboard-secondary-btn" onClick={load}>Tải lại</button>
       </div>
+      {/* Nút lọc */}
       <div className="fp-toolbar">
         <div className="fp-chips">
           {[['open', `Cần xử lý ${counts.open}`], ['damaged', `Hư hỏng ${counts.damaged}`], ['all', `Tất cả ${counts.all}`]].map(([v, t]) => (
@@ -2027,6 +2145,7 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
         </div>
       </div>
       {error && <div className="auth-message error" role="alert">{error}</div>}
+      {/* Bảng báo cáo sự cố */}
       {reports === null ? <p className="fm-muted">Đang tải báo cáo...</p> : visible.length === 0 ? (
         <div className="empty-state">Không có báo cáo nào trong mục này.</div>
       ) : (
@@ -2079,6 +2198,7 @@ function UnitReportsTab({ facilityId, showToast = () => {}, onChanged = async ()
           <Pager {...paging.pagerProps} unit="báo cáo" />
         </div>
       )}
+      {/* Xem ảnh phóng to */}
       {preview && (
         <div className="fm-modal-overlay" onClick={() => setPreview(null)}>
           <div className="fm-image-preview" onClick={(e) => e.stopPropagation()}>
@@ -2234,8 +2354,10 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
     showToast(`Đã thêm ${candidate.fullName} vào ${facilityName}.`)
   }
 
+  // Tab "Nhân sự"
   return (
     <div className="fm-section-card">
+      {/* Tiêu đề + nút thêm nhân viên */}
       <div className="fm-card-header-flex">
         <div>
           <h2>Đội ngũ Facility Staff tại {facilityName}</h2>
@@ -2248,6 +2370,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
         </div>
       </div>
 
+      {/* Thẻ số liệu nhân sự */}
       <div className="fs-stats">
         <div><small>Tổng nhân viên</small><strong>{stats.total}</strong></div>
         <div><small>Đang Active</small><strong className="fs-ok">{stats.active}</strong></div>
@@ -2255,6 +2378,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
         <div><small>Đơn chờ bàn giao</small><strong className={upcoming.length ? 'fs-warn' : ''}>{upcoming.length}</strong></div>
       </div>
 
+      {/* Lọc + tìm kiếm */}
       <div className="fp-toolbar">
         <div className="fp-chips">
           {[['all', `Tất cả ${stats.total}`], ['active', `Active ${stats.active}`], ['inactive', `Inactive ${stats.inactive}`]].map(([v, t]) => (
@@ -2263,6 +2387,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
         </div>
       </div>
 
+      {/* Thẻ từng nhân viên */}
       {visibleStaff.length === 0 ? (
         <div className="empty-state">
           {staffList.length === 0
@@ -2300,6 +2425,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
         </div>
       )}
 
+      {/* Đơn chờ bàn giao + người phụ trách */}
       <div className="fs-section">
         <h3>Việc chờ bàn giao tại cơ sở ({upcoming.length})</h3>
         <p className="fm-muted">Đơn khách đã đặt cọc. Hệ thống tự giao cho nhân viên không trùng giờ hẹn và ít việc nhất trong ngày; chỉ người phụ trách mới bàn giao được.</p>
@@ -2412,6 +2538,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
         )}
       </div>
 
+      {/* Hộp thoại giao / đổi người phụ trách */}
       {ownerDraft && (
         <OwnerModal
           facilityId={facilityId}
@@ -2422,6 +2549,7 @@ function FacilityStaffTab({ facilityId, facilityName, staffList = [], staffUsers
         />
       )}
 
+      {/* Hộp thoại thêm nhân viên */}
       {showAdd && (
         <AddStaffModal
           facilityName={facilityName}
@@ -2554,6 +2682,7 @@ function ManagerContractModal({ contract, reservation, facility, facilityUnits, 
   const left = daysLeft(contract.endDate)
   const phaseInfo = CONTRACT_PHASE_MAP[phase]
 
+  // Hộp thoại xem hợp đồng
   return (
     <div className="csf-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="csf" role="dialog" aria-modal="true" aria-labelledby="fmc-title">
@@ -2654,6 +2783,7 @@ function FacilityContractsTab({ facility, facilityName, contracts = [], reservat
     String(x.contractId ?? '') === String(c.id) ||
     (c.reservationId != null && String(x.id) === String(c.reservationId)))
 
+  // Tab "Hợp đồng"
   return (
     <div className="fm-section-card">
       <div className="fm-card-header">
@@ -2669,6 +2799,7 @@ function FacilityContractsTab({ facility, facilityName, contracts = [], reservat
       <FilterChips options={CONTRACT_FILTERS} value={filter} onChange={setFilter} counts={list.statusCounts} total={sumCounts(list.statusCounts)} className="fm-chips-row" />
       {list.error && <div className="ss-error-line" role="alert">{list.error}</div>}
 
+      {/* Bảng hợp đồng */}
       <div className="fm-table-wrap">
         <table className="fm-table">
           <thead>
@@ -2735,6 +2866,7 @@ function FacilityContractsTab({ facility, facilityName, contracts = [], reservat
       </div>
       <Pager {...list.pagerProps} unit="hợp đồng" />
 
+      {/* Hộp thoại xem hợp đồng */}
       {viewing && (
         <ManagerContractModal
           contract={viewing}
@@ -2784,6 +2916,7 @@ function FacilityReservationsTab({ facility, facilityName, reservations = [], co
   // Tìm hợp đồng ứng với 1 đơn.
   const contractOf = r => contracts.find(c => String(c.reservationId) === String(r.id) || String(c.id) === String(r.contractId))
 
+  // Tab "Đơn đặt chỗ"
   return (
     <div className="fm-section-card">
       <div className="fm-card-header">
@@ -2799,6 +2932,7 @@ function FacilityReservationsTab({ facility, facilityName, reservations = [], co
       <FilterChips options={MANAGER_RES_FILTERS} value={filter} onChange={setFilter} counts={list.statusCounts} total={sumCounts(list.statusCounts)} className="fm-chips-row" />
       {list.error && <div className="ss-error-line" role="alert">{list.error}</div>}
 
+      {/* Bảng đơn (bấm dòng để mở chi tiết) */}
       <div className="fm-table-wrap">
         <table className="fm-table">
           <thead>
@@ -2836,6 +2970,7 @@ function FacilityReservationsTab({ facility, facilityName, reservations = [], co
                     <td><b>{fmtMoney(r.deposit)}</b><div><Badge map={PAY_STATUS_MAP} value={r.paymentStatus} /></div></td>
                     <td><Badge map={RES_STATUS_MAP} value={r.status} /></td>
                   </tr>
+                  {/* Chi tiết đơn mở rộng */}
                   {isOpen && (
                     <tr className="fm-row-detail">
                       <td colSpan="7">
@@ -3407,6 +3542,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     )
   }
 
+  // Trang Quản lý cơ sở: menu trái + nội dung theo tab
   return (
     <div className="customer-layout fm-root">
       {/* SIDEBAR */}
@@ -3585,6 +3721,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                 const charge = type => report.charges.find(c => c.chargeType === type) || { paid: 0, unpaid: 0, refunded: 0 }
                 return (
                   <>
+                    {/* Biểu đồ thực thu theo tháng */}
                     <div className="fm-revenue-bars" role="list" aria-label="Thực thu theo tháng">
                       {monthly.map(m => (
                         <div key={m.month} className="fm-revenue-bar" role="listitem">
@@ -3596,6 +3733,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                         </div>
                       ))}
                     </div>
+                    {/* Số liệu báo cáo nhanh */}
                     <div className="fm-report-mini">
                       <div className="fm-report-box">
                         <small>Tiền cọc đang giữ</small>
@@ -3709,7 +3847,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                   <button type="button" className="overview-text-button" onClick={() => setUnitFilter('fresh')}>Chỉ xem kho mới →</button>
                 </div>
                 <div className="fm-fresh-grid">
-                  {freshUnitDetails.map(({ unitNumber, createdAt, unit }) => (
+                  {freshUnitDetails.map(({ unitNumber, createdAt, unit }) => ( // Thẻ kho vừa tạo
                     <article key={unitNumber} className={`fm-fresh-card${highlightUnitId === unitNumber ? ' fm-flash' : ''}`}>
                       <div className="fm-fresh-card-top">
                         <span className="fm-new-tag">Mới</span>
@@ -3785,6 +3923,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
                     {unitList.items.map(unit => {
                       const lock = unitLocks.get(unit.id)
                       const isFresh = freshIds.has(unit.id)
+                      // 1 dòng kho trong bảng
                       return (
                         <tr
                           key={unit.id}

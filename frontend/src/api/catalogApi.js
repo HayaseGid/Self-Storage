@@ -22,6 +22,25 @@
  *   -> mảng object thống nhất -> trang hiển thị bảng; bấm Lưu -> createUnitType/updateUnitType -> API.
  * ======================================================================
  */
+
+/**
+ * GHI CHÚ CÁC HÀM (tên: chức năng)
+ *   normalizeUnitType: Chuẩn hóa 1 bản ghi loại kho (UnitType) từ backend: gom các tên trường khác nhau → dùng ở: listUnitTypes, createUnitType, updateUnitType
+ *   normalizeUnitSize: Chuẩn hóa 1 bản ghi kích thước kho (UnitSize) từ backend: id, mã cỡ, tên hiển thị, kích thước, thể tích, diện tích, dài/rộng/cao → dùng ở: listUnitSizes, createUnitSize, updateUnitSize
+ *   listUnitTypes: Lấy danh sách loại kho (có thể lọc theo cơ sở) → dùng ở: (cấp file)
+ *   createUnitType: Tạo loại kho mới. API: POST /api/unit-types (UnitTypesController) → dùng ở: (cấp file)
+ *   updateUnitType: Cập nhật loại kho. API: PUT /api/unit-types/{id} (UnitTypesController) → dùng ở: (cấp file)
+ *   deleteUnitType: Xóa loại kho. API: DELETE /api/unit-types/{id} (UnitTypesController) → dùng ở: (cấp file)
+ *   listUnitSizes: Lấy danh sách kích thước kho (có thể lọc theo cơ sở) → dùng ở: (cấp file)
+ *   createUnitSize: Tạo kích thước kho mới (mã cỡ, tên, thể tích, dài/rộng/cao...) → dùng ở: (cấp file)
+ *   updateUnitSize: Cập nhật kích thước kho. API: PUT /api/unit-sizes/{id} (UnitSizesController) → dùng ở: (cấp file)
+ *   deleteUnitSize: Xóa kích thước kho. API: DELETE /api/unit-sizes/{id} (UnitSizesController) → dùng ở: (cấp file)
+ *   deleteRentalRate: Xóa một mức giá thuê (theo cơ sở + loại kho + kích thước) → dùng ở: (cấp file)
+ *   parseDimensions: Tách chuỗi kích thước kho thành các phần riêng → dùng ở: BusinessCatalog.jsx (UnitSizeForm, BusinessCatalog)
+ *   composeDimensions: Ghép các phần kích thước thành chuỗi chuẩn (ngược lại với parseDimensions), ví dụ { code:'M2', length:2, width:3 } -> "M2: 2x3m" → dùng ở: BusinessCatalog.jsx (UnitSizeForm)
+ *   fmt: Chuẩn hóa một số đo (chấp nhận dấu phẩy), làm tròn 1 chữ số thập phân; không hợp lệ -> '' → dùng ở: composeDimensions
+ *   isMissingEndpoint: Kiểm tra lỗi có phải do backend chưa có endpoint này không (404/405/501 hoặc message "not found") → dùng ở: BusinessCatalog.jsx (load)
+ */
 import { apiDelete, apiGet, apiPost, apiPut } from './api'
 
 /**
