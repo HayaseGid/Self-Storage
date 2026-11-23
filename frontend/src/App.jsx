@@ -70,6 +70,7 @@ import { RENTAL_TERMS, maxBookingStartDate } from './services/storageRules'
 import { useMaxAdvanceBookingDays } from './services/policies' // số ngày được đặt trước (BOM chỉnh)
 import { effectiveMonthly, holdMinutesFor, quote, setCatalogPricing } from './services/pricing'
 import FacilityMap, { directionsUrl, useFacilityLocations } from './features/facility/FacilityMap'
+import NearestFacilityFinder from './features/facility/NearestFacilityFinder' // trang chủ: tìm cơ sở gần khách nhất
 import CartPage from './pages/customer/CartPage'
 import { announceDepositSuccess, confirmAfterDeposit, openCustomerSection } from './services/afterDeposit'
 import PaymentResultPage from './pages/payment/PaymentResultPage'
@@ -795,7 +796,7 @@ function DistrictPicker({ groups, active = '', onSelect, showAll = true, large =
  * thành các "điểm" để FacilityMap vẽ ghim. Cơ sở chưa có tọa độ thì latitude/longitude = null.
  * @param {object[]} list danh sách cơ sở. @param {object[]} locations dữ liệu từ useFacilityLocations().
  * @returns {object[]} { id, name, address, latitude, longitude, available, total, phone, hours, facility }.
- * Được gọi bởi: FacilitiesMapSection, FacilityLocationCard, FacilityDetailPage.
+ * Được gọi bởi: FacilitiesMapSection, FacilityLocationCard, FacilityDetailPage, HomePage (tìm cơ sở gần nhất).
  */
 function toMapPoints(list, locations) {
   return list.map(f => {
@@ -2798,6 +2799,7 @@ function HomePage() {
   const [query, setQuery] = useState('') // chữ đang gõ: lọc thẻ cơ sở ngay khi gõ
   const [submittedQuery, setSubmittedQuery] = useState('') // từ khóa đã gửi, dùng để hiện dòng "Đang hiển thị kết quả cho ..."
   const availableUnitCount = Object.values(storageUnits).flat().filter(unit => unit.available).length
+  const { locations } = useFacilityLocations() // tọa độ cơ sở cho khối "Tìm cơ sở gần bạn"
   const visible = facilities.filter(f => {
     const unitText = getStorageUnits(f.name)
       .map(unit => `${unit.id} ${unit.type} ${unit.size}`)
@@ -2831,6 +2833,14 @@ function HomePage() {
           </div>
         </section>
         <section className="trust-strip"><div className="container trust-inner"><div><strong>{availableUnitCount}</strong><span>kho đang sẵn sàng</span></div><div><strong>{facilities.length}</strong><span>cơ sở đang hoạt động</span></div><div><strong>24/7</strong><span>hỗ trợ & an ninh</span></div><div><strong>100%</strong><span>minh bạch chi phí</span></div></div></section>
+        <section className="nearest-home section" id="nearest">
+          <div className="container">
+            <div className="section-heading">
+              <div><div className="eyebrow green">NEAR YOU</div><h2>Tìm cơ sở gần bạn</h2><p>Nhập địa chỉ của bạn hoặc dùng vị trí hiện tại, chúng tôi gợi ý cơ sở gần nhất.</p></div>
+            </div>
+            <NearestFacilityFinder points={toMapPoints(facilities, locations)} onOpen={point => navigate(`/facilities/${createSlug(point.name)}`)} />
+          </div>
+        </section>
         <section className="district-home section" id="districts">
           <div className="container">
             <div className="section-heading">
