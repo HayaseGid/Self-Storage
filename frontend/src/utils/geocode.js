@@ -3,10 +3,12 @@
  * FILE: src/utils/geocode.js  —  ĐỔI ĐỊA CHỈ THÀNH TỌA ĐỘ + TÍNH KHOẢNG CÁCH
  * CHỨC NĂNG:
  *   - geocodeAddress: tra tọa độ từ địa chỉ bằng Nominatim (OpenStreetMap), thử nhiều cách viết địa chỉ.
+ *   - suggestAddresses: gợi ý địa chỉ khi khách đang gõ (dịch vụ Photon, dữ liệu OpenStreetMap, làm riêng cho gợi ý khi gõ).
  *   - distanceKm: khoảng cách đường chim bay giữa 2 tọa độ (công thức Haversine).
  * DÙNG Ở: features/facility/LocationPicker.jsx (BOM chọn vị trí cơ sở),
  *         features/facility/NearestFacilityFinder.jsx (khách tìm cơ sở gần nhất).
- * API: GET https://nominatim.openstreetmap.org/search (chỉ gửi chuỗi địa chỉ, không gửi gì khác).
+ * API: GET https://nominatim.openstreetmap.org/search và GET https://photon.komoot.io/api (chỉ gửi chuỗi địa chỉ, không gửi gì khác).
+ *   Lưu ý: Nominatim cấm dùng để gợi ý trong lúc gõ, nên phần gợi ý dùng Photon.
  * ======================================================================
  */
 
@@ -16,6 +18,7 @@
  *   wait: Chờ ms mili-giây (Promise), dùng giãn cách giữa các lần gọi Nominatim → dùng ở: geocodeAddress
  *   addressCandidates: Các cách viết địa chỉ để thử lần lượt (OpenStreetMap thường không nhận "Quận..." sau đợt sáp nhập hành chính 2025) → dùng ở: geocodeAddress
  *   geocodeAddress: Tra tọa độ từ địa chỉ (giới hạn Việt Nam) → dùng ở: LocationPicker.jsx (searchAddress), NearestFacilityFinder.jsx (searchAddress)
+ *   suggestAddresses: Gợi ý tối đa 5 địa điểm khớp với chữ khách đang gõ (Photon) → dùng ở: NearestFacilityFinder.jsx
  *   distanceKm: Khoảng cách đường chim bay (km) giữa 2 điểm, công thức Haversine (bán kính Trái Đất 6371 km) → dùng ở: NearestFacilityFinder.jsx (NearestFacilityFinder)
  *   rad: Đổi độ sang radian (dùng trong công thức Haversine) → dùng ở: distanceKm
  */
@@ -52,6 +55,28 @@ export async function geocodeAddress(address) {
     if (Array.isArray(list) && list.length) return { latitude: Number(list[0].lat), longitude: Number(list[0].lon), approximate: i >= 3 }
   }
   return null
+}
+
+/**
+ * Gợi ý địa điểm khi khách đang gõ (Photon, giới hạn khung Việt Nam, ưu tiên gần trung tâm TP.HCM).
+ * @param {string} text chữ khách đang gõ. @param {AbortSignal} [signal] để hủy khi khách gõ tiếp.
+ * @returns {Promise<{main:string, sub:string, label:string, latitude:number, longitude:number}[]>}
+ *   main = tên / số nhà + đường (dòng đậm), sub = phường, quận, thành phố (dòng nhạt), label = cả địa chỉ.
+ */
+export async function suggestAddresses(text, signal) {
+  const res = await fetch(`https://photon.komoot.io/api/?limit=8&lang=default&lat=10.7769&lon=106.7009&bbox=102,8,110,24&q=${encodeURIComponent(text)}`, { signal })
+  const data = await res.json()
+  const seen = new Set()
+  return (data.features || [])
+    .filter(f => f.properties?.countrycode === 'VN')
+    .map(({ properties: p, geometry }) => {
+      const road = [p.housenumber, p.street].filter(Boolean).join(' ')
+      const main = p.name || road || p.district || p.city || ''
+      const sub = [p.name && road, p.locality, p.district, p.city].filter(s => s && s !== main).join(', ')
+      return { main, sub, label: sub ? `${main}, ${sub}` : main, latitude: geometry.coordinates[1], longitude: geometry.coordinates[0] }
+    })
+    .filter(s => s.main && !seen.has(s.label) && seen.add(s.label))
+    .slice(0, 5)
 }
 
 /**

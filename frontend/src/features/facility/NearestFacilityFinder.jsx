@@ -1,14 +1,15 @@
 /**
  * ======================================================================
  * FILE: src/features/facility/NearestFacilityFinder.jsx  —  TÌM CƠ SỞ GẦN BẠN NHẤT
- * CHỨC NĂNG: Khách nhập địa chỉ của mình (hoặc bấm "Dùng vị trí hiện tại") -> web xếp các cơ sở theo khoảng cách
+ * CHỨC NĂNG: Khách gõ địa chỉ -> hiện danh sách địa điểm gợi ý (kiểu Shopee) -> khách chọn 1 địa điểm
+ *   (hoặc bấm "Dùng vị trí hiện tại") -> web xếp các cơ sở theo khoảng cách
  *   đường chim bay và gợi ý 3 cơ sở gần nhất (khoảng cách, số kho trống, nút xem cơ sở / chỉ đường).
  *   Vị trí của khách chỉ dùng trên trình duyệt, không gửi về backend và không lưu lại.
  * THÀNH PHẦN CHÍNH: NearestFacilityFinder (export default).
  * DÙNG Ở: src/App.jsx (HomePage, khối "Tìm cơ sở gần bạn").
- * PHỤ THUỘC: utils/geocode (geocodeAddress, distanceKm), ./FacilityMap (directionsUrl), NearestFacilityFinder.css.
- * API: Không gọi backend. Tra địa chỉ qua Nominatim (trong utils/geocode).
- * LUỒNG: khách gõ địa chỉ / bấm định vị -> tọa độ khách -> distanceKm tới từng cơ sở có tọa độ -> sắp xếp -> 3 cơ sở đầu.
+ * PHỤ THUỘC: utils/geocode (suggestAddresses, geocodeAddress, distanceKm), ./FacilityMap (directionsUrl), NearestFacilityFinder.css.
+ * API: Không gọi backend. Gợi ý địa chỉ qua Photon, tra dự phòng qua Nominatim (trong utils/geocode).
+ * LUỒNG: khách gõ (chờ ngừng gõ 0,4 giây) -> gợi ý -> khách chọn / bấm định vị -> tọa độ khách -> distanceKm tới từng cơ sở có tọa độ -> sắp xếp -> 3 cơ sở đầu.
  * ======================================================================
  */
 
@@ -16,12 +17,14 @@
  * GHI CHÚ CÁC HÀM (tên: chức năng)
  *   formatDistance: Hiện khoảng cách: dưới 1 km thì ghi mét (làm tròn 50 m), còn lại ghi km 1 chữ số thập phân → dùng ở: row
  *   NearestFacilityFinder: Khối tìm cơ sở gần nhất → dùng ở: App.jsx (HomePage)
- *   searchAddress: Tra tọa độ từ địa chỉ khách gõ → dùng ở: NearestFacilityFinder
+ *   choose: Chọn 1 địa điểm gợi ý làm vị trí của khách → dùng ở: NearestFacilityFinder
+ *   searchAddress: Bấm "Tìm": dùng gợi ý đang chọn / gợi ý đầu tiên, không có thì tra địa chỉ (Nominatim) → dùng ở: NearestFacilityFinder
+ *   onKeyDown: Phím lên / xuống / Enter / Esc trong danh sách gợi ý → dùng ở: NearestFacilityFinder
  *   useCurrentLocation: Lấy vị trí hiện tại từ trình duyệt (khách phải cho phép định vị) → dùng ở: NearestFacilityFinder
  *   row: 1 dòng kết quả → dùng ở: NearestFacilityFinder
  */
-import React, { useState } from 'react'
-import { geocodeAddress, distanceKm } from '../../utils/geocode'
+import React, { useEffect, useRef, useState } from 'react'
+import { suggestAddresses, geocodeAddress, distanceKm } from '../../utils/geocode'
 import { directionsUrl } from './FacilityMap'
 import './NearestFacilityFinder.css'
 
@@ -39,6 +42,23 @@ export default function NearestFacilityFinder({ points, onOpen }) {
   const [busy, setBusy] = useState('') // '' | 'address' | 'gps': đang tra theo cách nào
   const [origin, setOrigin] = useState(null) // { latitude, longitude, label, approximate } vị trí của khách
   const [error, setError] = useState('')
+  const [suggestions, setSuggestions] = useState([]) // địa điểm gợi ý cho chữ đang gõ
+  const [open, setOpen] = useState(false) // đang mở danh sách gợi ý
+  const [active, setActive] = useState(-1) // dòng gợi ý đang được chọn bằng phím
+  const pickedRef = useRef('') // địa chỉ vừa chọn từ gợi ý: không tra gợi ý lại cho chính chữ này
+
+  // Khách gõ -> chờ ngừng gõ 0,4 giây rồi lấy gợi ý; gõ tiếp thì hủy lần tra cũ.
+  useEffect(() => {
+    const q = address.trim()
+    if (q.length < 3 || q === pickedRef.current) { setSuggestions([]); return }
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => {
+      suggestAddresses(q, ctrl.signal)
+        .then(list => { setSuggestions(list); setActive(-1); setOpen(true) })
+        .catch(() => {}) // lỗi mạng / bị hủy: bỏ qua, khách vẫn bấm "Tìm" được
+    }, 400)
+    return () => { clearTimeout(timer); ctrl.abort() }
+  }, [address])
 
   // Chỉ xét cơ sở đã có tọa độ; xếp theo khoảng cách tới vị trí khách.
   const ranked = origin
@@ -52,9 +72,19 @@ export default function NearestFacilityFinder({ points, onOpen }) {
   const nearestWithStock = ranked.find(p => p.available > 0)
   const extra = top[0] && top[0].available === 0 && nearestWithStock && !top.includes(nearestWithStock) ? nearestWithStock : null
 
-  /** Tra tọa độ từ địa chỉ khách gõ. */
+  /** Chọn 1 địa điểm gợi ý làm vị trí của khách. */
+  const choose = s => {
+    pickedRef.current = s.label
+    setAddress(s.label)
+    setSuggestions([]); setOpen(false); setError('')
+    setOrigin({ latitude: s.latitude, longitude: s.longitude, label: s.main, approximate: false })
+  }
+
+  /** Bấm "Tìm": dùng gợi ý đang chọn (hoặc gợi ý đầu tiên); chưa có gợi ý thì tra địa chỉ như cũ. */
   const searchAddress = async event => {
     event.preventDefault()
+    const pick = suggestions[active] || suggestions[0]
+    if (pick) { choose(pick); return }
     const q = address.trim()
     if (q.length < 4) { setError('Nhập địa chỉ của bạn, ví dụ: 268 Lý Thường Kiệt, Quận 10.'); return }
     setBusy('address'); setError('')
@@ -65,6 +95,14 @@ export default function NearestFacilityFinder({ points, onOpen }) {
     } catch {
       setError('Không tra được địa chỉ (lỗi mạng). Vui lòng thử lại.')
     } finally { setBusy('') }
+  }
+
+  /** Phím trong ô nhập: lên / xuống để chọn gợi ý, Esc để đóng (Enter = gửi form -> searchAddress). */
+  const onKeyDown = event => {
+    if (!open || !suggestions.length) return
+    if (event.key === 'ArrowDown') { event.preventDefault(); setActive(i => (i + 1) % suggestions.length) }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); setActive(i => (i <= 0 ? suggestions.length - 1 : i - 1)) }
+    else if (event.key === 'Escape') setOpen(false)
   }
 
   /** Lấy vị trí hiện tại từ trình duyệt (khách phải cho phép định vị). */
@@ -104,7 +142,38 @@ export default function NearestFacilityFinder({ points, onOpen }) {
   return (
     <div className="nf">
       <form className="nf-form" onSubmit={searchAddress}>
-        <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Nhập địa chỉ của bạn, ví dụ: 268 Lý Thường Kiệt, Quận 10" aria-label="Địa chỉ của bạn" />
+        <div className="nf-input-wrap">
+          <input
+            value={address}
+            onChange={e => setAddress(e.target.value)}
+            onKeyDown={onKeyDown}
+            onFocus={() => suggestions.length && setOpen(true)}
+            onBlur={() => setOpen(false)}
+            placeholder="Nhập địa chỉ của bạn, ví dụ: 268 Lý Thường Kiệt, Quận 10"
+            aria-label="Địa chỉ của bạn"
+            role="combobox"
+            aria-expanded={open && suggestions.length > 0}
+            aria-autocomplete="list"
+            autoComplete="off"
+          />
+          {open && suggestions.length > 0 && (
+            <ul className="nf-suggest" role="listbox">
+              {suggestions.map((s, i) => (
+                <li
+                  key={s.label}
+                  role="option"
+                  aria-selected={i === active}
+                  className={i === active ? 'active' : ''}
+                  onMouseDown={e => { e.preventDefault(); choose(s) }} // mousedown: chọn trước khi ô nhập mất focus
+                  onMouseEnter={() => setActive(i)}
+                >
+                  <span className="nf-suggest-pin">⌖</span>
+                  <span><strong>{s.main}</strong>{s.sub && <small>{s.sub}</small>}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <button type="submit" className="nf-primary" disabled={!!busy}>{busy === 'address' ? 'Đang tìm...' : 'Tìm cơ sở gần tôi'}</button>
         <button type="button" className="nf-gps" onClick={useCurrentLocation} disabled={!!busy}>{busy === 'gps' ? 'Đang định vị...' : '◎ Dùng vị trí hiện tại'}</button>
       </form>
