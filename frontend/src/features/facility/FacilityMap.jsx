@@ -25,7 +25,7 @@
  *   loadFacilityLocations: Tải tọa độ các cơ sở (gọi 1 lần, dùng chung kết quả cho mọi nơi) → dùng ở: useFacilityLocations
  *   invalidateFacilityLocations: Xóa cache tọa độ: gọi sau khi BOM tạo / sửa / xóa cơ sở để mọi bản đồ tải lại vị trí mới ở lần hiển thị kế tiếp → dùng ở: BusinessOperations.jsx (updateFacility, deleteFacility +1)
  *   useFacilityLocations: Hook React: lấy danh sách tọa độ cơ sở kèm trạng thái loading/error → dùng ở: App.jsx (FacilitiesMapSection, FacilityLocationCard +2)
- *   directionsUrl: Tạo link Google Maps chỉ đường tới tọa độ của cơ sở (dùng trong popup bản đồ và trang chi tiết cơ sở ở App.jsx) → dùng ở: App.jsx (FacilityLocationCard), NearestFacilityFinder.jsx (row)
+ *   directionsUrl: Tạo link Google Maps chỉ đường tới tọa độ của cơ sở (dùng trong popup bản đồ và trang chi tiết cơ sở ở App.jsx) → dùng ở: App.jsx (FacilityLocationCard)
  *   esc: Escape ký tự đặc biệt HTML để chèn vào nội dung popup của bản đồ → dùng ở: FacilityMap
  *   FacilityMap: Component bản đồ các cơ sở: tạo bản đồ 1 lần, vẽ lại ghim khi dữ liệu đổi, bay tới cơ sở đang chọn → dùng ở: App.jsx (FacilitiesMapSection, FacilityLocationCard)
  */
