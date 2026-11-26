@@ -147,7 +147,7 @@
  *   loadDataFromApi: Tải danh mục cơ sở + kho từ backend, nạp cấu hình tính giá (setCatalogPricing), rồi chuẩn hóa dữ liệu cơ sở → dùng ở: refresh, (cấp file)
  *   ApiStartupError: Component màn hình lỗi khi không tải được danh mục từ backend lúc khởi động; nút "Thử kết nối lại" tải lại trang → dùng ở: (cấp file)
  */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles/styles.css'
 import { apiPost, apiGet } from './api/api'
@@ -3310,6 +3310,11 @@ function CustomerPage() {
  */
 function Router() {
   const [route, setRoute] = useState(getRoute())
+  const dialog = useDialog()
+  const routeRef = useRef(route) // route đang hiện, để lần làm mới danh mục so sánh trước / sau
+  routeRef.current = route
+  const dialogRef = useRef(dialog)
+  dialogRef.current = dialog
   // Chạy 1 lần: lắng nghe popstate để tính lại route khi URL đổi; gỡ khi unmount.
   useEffect(() => {
     // Khi URL đổi (popstate): tính lại route và cuộn lên đầu trang.
@@ -3341,7 +3346,37 @@ function Router() {
       try {
         const changed = await loadDataFromApi()
         lastRefresh = Date.now()
-        if (changed) setRoute(getRoute())
+        if (changed) {
+          const prev = routeRef.current
+          const next = getRoute()
+          setRoute(next)
+          // Khách đang xem / đang điền đặt kho mà kho vừa bị khách khác đặt cọc (getRoute trả về trang cơ sở):
+          // đổi URL về trang cơ sở và báo rõ để khách chọn kho khác, thay vì chuyển trang không nói gì.
+          if ((prev.type === 'booking' || prev.type === 'unit-detail') && next.type === 'detail' && next.facility?.name === prev.facility?.name) {
+            window.history.replaceState(null, '', `/facilities/${createSlug(next.facility.name)}`)
+            const left = getStorageUnits(next.facility.name).filter(unit => unit.available).length // số kho còn trống ở cơ sở này
+            void dialogRef.current.open({
+              tone: 'info',
+              title: 'Kho đã được đặt trước',
+              message: (
+                <div className="taken-notice">
+                  <p>Rất tiếc, kho Quý khách đang chọn vừa được một khách hàng khác hoàn tất đặt cọc. Hệ thống chưa ghi nhận khoản thanh toán nào từ Quý khách cho kho này.</p>
+                  <dl className="taken-info">
+                    <div><dt>Mã kho</dt><dd>{prev.unit?.id}</dd></div>
+                    <div><dt>Cơ sở</dt><dd>{next.facility.name}</dd></div>
+                    <div><dt>Kho còn trống tại cơ sở</dt><dd>{left > 0 ? `${left} kho` : 'Đã hết'}</dd></div>
+                  </dl>
+                  <p className="taken-hint">
+                    {left > 0
+                      ? 'Kính mời Quý khách chọn một kho khác tại cơ sở này để tiếp tục. Xin cảm ơn Quý khách.'
+                      : 'Cơ sở này hiện đã hết kho trống. Kính mời Quý khách tham khảo các cơ sở khác của StoreSpace. Xin cảm ơn Quý khách.'}
+                  </p>
+                </div>
+              ),
+              actions: [{ label: left > 0 ? 'Xem kho còn trống' : 'Xem cơ sở khác', value: true, variant: 'primary' }]
+            }).then(() => { if (left === 0) navigate('/facilities') })
+          }
+        }
       } catch (error) {
         console.error('Không thể làm mới trạng thái danh mục.', error)
       } finally {

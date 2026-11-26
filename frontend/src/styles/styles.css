@@ -4188,3 +4188,13 @@ img { display: block; width: 100%; }
 .search-box-filter input { width: 110px; height: 40px; padding: 0 12px; border: 1px solid #d6e4ef; border-radius: 10px; background: #fff; font: inherit; }
 .search-box-filter .dashboard-primary-btn { min-height: 40px; }
 .search-box-note { margin: 0 0 14px; color: #4f6880; font-size: 12.5px; }
+
+/* Thông báo "kho vừa có người đặt" (Router trong App.jsx, hiện trong hộp thoại dùng chung) */
+.taken-notice { display: grid; gap: 12px; }
+.taken-notice p { margin: 0; }
+.taken-info { margin: 0; border: 1px solid #e3ebf2; border-radius: 10px; overflow: hidden; }
+.taken-info div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 14px; font-size: 13.5px; }
+.taken-info div + div { border-top: 1px solid #edf2f7; }
+.taken-info dt { color: #6d8394; }
+.taken-info dd { margin: 0; color: #173d5e; font-weight: 700; text-align: right; }
+.taken-hint { color: #5c7387; font-size: 13.5px; }
