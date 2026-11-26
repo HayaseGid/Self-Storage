@@ -3499,6 +3499,35 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
     return () => { cancelled = true }
   }, [managedFacility?.facilityId, db])
 
+  // Nhóm size do BOM quản lý (S, M, L, V, X...): tải từ backend để FM thấy ngay nhóm mới
+  const [sizeCategories, setSizeCategories] = useState([])
+  useEffect(() => {
+    if (activeTab !== 'unitTypes') return
+    let cancelled = false
+    apiGet('/api/price-band-rules')
+      .then(data => {
+        if (cancelled) return
+        const list = (Array.isArray(data?.bands) ? data.bands : [])
+          .filter(b => b && b.code && b.isActive !== false)
+          .map((b, i) => {
+            const code = String(b.code).toUpperCase()
+            const heightM = code === 'V' ? 3.5 : 2.5
+            return {
+              id: i + 1,
+              name: b.name || code,
+              prefix: code,
+              heightM,
+              minVolume: Number(b.minArea) * heightM,
+              maxVolume: Number(b.maxArea) * heightM
+            }
+          })
+          .sort((a, b) => a.minVolume / a.heightM - b.minVolume / b.heightM)
+        setSizeCategories(list)
+      })
+      .catch(() => { if (!cancelled) setSizeCategories([]) })
+    return () => { cancelled = true }
+  }, [activeTab])
+
   /* ===== BẢNG GIÁ TẠI CƠ SỞ (dữ liệu truyền cho ManagerPriceTable) ===== */
   // Khung giá nhóm (S/M/L...) do Business Operations đặt: GET /api/price-bands trả { bands, unassignedSizes }
   const [priceBands, setPriceBands] = useState([])
@@ -4006,6 +4035,7 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
             error={catalogError}
             facilityUnits={facilityUnits}
             rentalRates={db.rentalRates || []}
+            sizeCategories={sizeCategories}
             dialog={dialog}
             showToast={showToast}
             onChanged={() => Promise.all([reloadFacilityCatalog(), loadState({ silent: true })])}
@@ -4107,4 +4137,4 @@ export default function FacilityManagerDashboard({ embedded = false, currentUser
       )}
     </div>
   )
-}
+}
