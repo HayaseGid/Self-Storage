@@ -36,6 +36,29 @@ public sealed class ContractSignatureService(SelfStorageDbContext context) : ICo
             .SingleOrDefaultAsync(cancellationToken);
     }
 
+    // Manager chỉ xem được chữ ký hợp đồng thuộc cơ sở mình quản lý (Facility.ManagerID).
+    public async Task<ContractSignatureStatusResponse?> GetForFacilityManagerAsync(
+        int contractId,
+        int managerUserId,
+        CancellationToken cancellationToken)
+    {
+        return await context.Contracts
+            .Where(contract =>
+                contract.ContractID == contractId &&
+                contract.Reservation.Facility.ManagerID == managerUserId)
+            .Select(contract => contract.Signature == null
+                ? new ContractSignatureStatusResponse(
+                    contract.ContractID, false, null, null, null, null)
+                : new ContractSignatureStatusResponse(
+                    contract.ContractID,
+                    true,
+                    contract.Signature.SignerName,
+                    contract.Signature.SignatureImage,
+                    contract.Signature.TermsVersion,
+                    contract.Signature.SignedAt))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<SaveContractSignatureResult?> SaveForCustomerAsync(
         int contractId,
         int userId,

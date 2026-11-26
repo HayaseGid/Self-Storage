@@ -9,6 +9,12 @@ public interface IContractSignatureService
         int userId,
         CancellationToken cancellationToken);
 
+    /// <summary>Chữ ký của hợp đồng thuộc cơ sở do Manager (userId) quản lý; null nếu không thuộc quyền.</summary>
+    Task<ContractSignatureStatusResponse?> GetForFacilityManagerAsync(
+        int contractId,
+        int managerUserId,
+        CancellationToken cancellationToken);
+
     Task<SaveContractSignatureResult?> SaveForCustomerAsync(
         int contractId,
         int userId,

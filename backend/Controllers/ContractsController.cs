@@ -12,6 +12,8 @@ public sealed class ContractsController(
     IContractSignatureService signatures,
     SelfStorageDbContext context) : ControllerBase
 {
+    private const int CustomerRoleId = 1;
+    private const int FacilityManagerRoleId = 3;
     private const int MaximumSignatureBytes = 200_000;
     private static readonly byte[] PngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
 
@@ -30,6 +32,23 @@ public sealed class ContractsController(
             return Unauthorized();
 
         var signature = await signatures.GetForCustomerAsync(contractId, userId.Value, cancellationToken);
+        return signature is null ? NotFound() : Ok(signature);
+    }
+
+    /// <summary>Gets signature status for a contract in a facility managed by the Facility Manager in X-User-Email.</summary>
+    [HttpGet("{contractId:int}/signature/manager")]
+    [ProducesResponseType<ContractSignatureStatusResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ContractSignatureStatusResponse>> GetSignatureForManager(
+        int contractId,
+        CancellationToken cancellationToken)
+    {
+        var managerId = await GetActiveUserIdAsync(FacilityManagerRoleId, cancellationToken);
+        if (!managerId.HasValue)
+            return Unauthorized();
+
+        var signature = await signatures.GetForFacilityManagerAsync(contractId, managerId.Value, cancellationToken);
         return signature is null ? NotFound() : Ok(signature);
     }
 
@@ -76,13 +95,16 @@ public sealed class ContractsController(
     }
 
     private Task<int?> GetCustomerIdAsync(CancellationToken cancellationToken)
+        => GetActiveUserIdAsync(CustomerRoleId, cancellationToken);
+
+    private Task<int?> GetActiveUserIdAsync(int roleId, CancellationToken cancellationToken)
     {
         var email = Request.Headers["X-User-Email"].ToString();
         if (string.IsNullOrWhiteSpace(email))
             return Task.FromResult<int?>(null);
 
         return context.Users
-            .Where(user => user.Email == email && user.RoleID == 1 && user.Status == "Active")
+            .Where(user => user.Email == email && user.RoleID == roleId && user.Status == "Active")
             .Select(user => (int?)user.UserID)
             .FirstOrDefaultAsync(cancellationToken);
     }

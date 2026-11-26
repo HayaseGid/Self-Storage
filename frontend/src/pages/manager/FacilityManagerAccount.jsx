@@ -2651,7 +2651,8 @@ function buildContractGroup(c, r, facilityUnits, facilityName) {
 
 /**
  * Hộp thoại xem văn bản hợp đồng (ContractDocument) ở chế độ chỉ xem cho Manager: tóm tắt tiền, mã đơn,
- * thông tin ra vào, giai đoạn hợp đồng; có nút In / Lưu PDF. Không gọi API.
+ * thông tin ra vào, giai đoạn hợp đồng, chữ ký điện tử của khách; có nút In / Lưu PDF.
+ * API: GET /api/contracts/{id}/signature/manager — lấy chữ ký khách (chỉ hợp đồng thuộc cơ sở mình quản lý).
  * @param {object} props
  * @param {object} props.contract hợp đồng đang xem.
  * @param {object} props.reservation đơn đặt chỗ tương ứng.
@@ -2670,6 +2671,22 @@ function ManagerContractModal({ contract, reservation, facility, facilityUnits, 
     document.body.style.overflow = 'hidden'
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = previous }
   }, [onClose])
+
+  const [signature, setSignature] = useState(null) // chữ ký { image, signerName, signedAt } nếu khách đã ký
+  const [signatureLoading, setSignatureLoading] = useState(true)
+  // Chạy khi mở hộp thoại / đổi hợp đồng: lấy chữ ký khách từ backend.
+  useEffect(() => {
+    let cancelled = false
+    setSignature(null)
+    setSignatureLoading(true)
+    apiGet(`/api/contracts/${contract.id}/signature/manager`)
+      .then(status => {
+        if (!cancelled && status?.isSigned) setSignature({ image: status.signatureImage, signerName: status.signerName, signedAt: status.signedAt })
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSignatureLoading(false) })
+    return () => { cancelled = true }
+  }, [contract.id])
 
   const group = buildContractGroup(contract, reservation, facilityUnits, facility?.name || '')
   const rental = group.rentals[0]
@@ -2710,10 +2727,11 @@ function ManagerContractModal({ contract, reservation, facility, facilityUnits, 
             <div><small>Mã đơn</small><strong>{rental.reservationCode}</strong></div>
             <div><small>Thông tin ra vào</small><strong>{contract.accessType ? `${contract.accessType}: ${contract.accessValue || '—'}` : 'Chưa cấp'}</strong></div>
             <div><small>Liên hệ khách</small><strong>{customer.phone || customer.email || '—'}</strong></div>
+            <div><small>Chữ ký khách</small><strong>{signatureLoading ? 'Đang tải...' : signature ? 'Đã ký điện tử' : 'Chưa ký'}</strong></div>
           </div>
 
           <p className="fmc-note">
-            Bạn đang xem hợp đồng ở chế độ <strong>chỉ xem</strong>. Chữ ký điện tử của khách hiển thị ở trang khách hàng.
+            Bạn đang xem hợp đồng ở chế độ <strong>chỉ xem</strong>.
             Giá trong Phụ lục lấy theo giá hiện tại của từng kho.
           </p>
 
@@ -2721,6 +2739,7 @@ function ManagerContractModal({ contract, reservation, facility, facilityUnits, 
             group={group}
             customer={customer}
             facilityAddress={facility?.address}
+            signature={signature}
             showTerms
           />
         </div>
