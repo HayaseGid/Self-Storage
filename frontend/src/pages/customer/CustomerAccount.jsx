@@ -349,7 +349,8 @@ function MyStoragePage({ customerRental, customerRentals, facilities, onRentalsC
             📄 Hợp đồng
           </button>
         )}
-        {rental.status === 'Handed Over' && !renewal?.renewedBy && (
+        {/* Chỉ hiện nút Gia hạn trong 30 ngày cuối (windowOpen); trong cửa sổ mà bị chặn (nợ tiền...) thì mờ + nêu lý do. */}
+        {rental.status === 'Handed Over' && !renewal?.renewedBy && renewal?.windowOpen && (
           <button
             type="button"
             className="cportal-action-chip"

@@ -216,7 +216,7 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
       section: 'contract', tone: days <= 7 ? 'danger' : 'warn', priority: days <= 7 ? 1 : 20,
       title: days === 0 ? 'Kho của bạn hết hạn hôm nay' : `Kho của bạn sắp hết hạn (còn ${days} ngày)`,
       message: item.eligible
-        ? `Kho ${units} tại ${item.facility} hết hạn ngày ${fmtDay(item.endDate)}. Nếu cần dùng tiếp, bạn có thể gia hạn online trước ngày ${fmtDay(item.renewDeadline)}: chỉ trả trước tiền thuê tháng đầu, tiền cọc được chuyển sang kỳ mới. Nếu không gia hạn, vui lòng báo trả kho trước ít nhất ${returnNotice} ngày; tiền cọc được hoàn trong ${refundDays} ngày làm việc sau khi trả kho.`
+        ? `Kho ${units} tại ${item.facility} hết hạn ngày ${fmtDay(item.endDate)}. Bạn có muốn gia hạn để tiếp tục dùng kho không? Bạn có thể gia hạn online trước ngày ${fmtDay(item.renewDeadline)}: chỉ trả trước tiền thuê tháng đầu, tiền cọc được chuyển sang kỳ mới. Nếu không gia hạn, vui lòng báo trả kho trước ít nhất ${returnNotice} ngày; tiền cọc được hoàn trong ${refundDays} ngày làm việc sau khi trả kho.`
         : `Kho ${units} tại ${item.facility} hết hạn ngày ${fmtDay(item.endDate)}. ${item.reason || ''} Nếu không gia hạn, vui lòng báo trả kho trước ít nhất ${returnNotice} ngày; tiền cọc được hoàn trong ${refundDays} ngày làm việc sau khi trả kho.`,
       action: item.eligible
         ? { label: 'Gia hạn ngay', section: 'contract', renewReservationId: item.reservationId }

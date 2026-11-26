@@ -201,10 +201,10 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
   // Chia item thành 3 nhóm: pending (yêu cầu gia hạn chờ thanh toán/hoàn tất), active (sắp hết hạn, có thể gia hạn
   // hoặc bị chặn kèm lý do), renewed (đã gia hạn bằng phụ lục, còn hiệu lực).
   const pending = renewals.items.filter(item => item.pendingRenewal && !item.renewedBy)
-  // Chỉ nhắc các hợp đồng sắp hết hạn; hợp đồng còn xa vẫn gia hạn được bằng nút "Gia hạn" trên thẻ hợp đồng.
-  const soonDays = Math.max(30, Number(rules?.renewalNoticeDays || 0) + 30)
+  // Chỉ nhắc các hợp đồng đã vào cửa sổ gia hạn (còn <= 30 ngày, backend trả windowOpen);
+  // hợp đồng còn xa thì chưa gia hạn được và không hiện nút Gia hạn.
   const active = renewals.items.filter(item =>
-    !item.renewedBy && !item.pendingRenewal && item.daysLeft >= 0 && item.daysLeft <= soonDays &&
+    !item.renewedBy && !item.pendingRenewal && item.daysLeft >= 0 && item.windowOpen &&
     (item.eligible || (item.reason && item.contractStatus !== 'Renewed' && !/kết thúc|chỉ gia hạn/i.test(item.reason))))
   const renewed = renewals.items.filter(item => item.renewedBy && item.daysLeft >= 0)
   if (pending.length === 0 && active.length === 0 && renewed.length === 0) return null
@@ -265,7 +265,7 @@ export function RenewalSection({ renewals, onRenew, onChanged }) {
         <h2>Gia hạn hợp đồng</h2>
         {rules && (
           <p>
-            Gia hạn trong khoảng <strong>{Number(rules.renewalNoticeDays) + 30} đến {rules.renewalNoticeDays} ngày</strong> trước ngày hết hạn · kỳ gia hạn {rules.minRenewalMonths}–{rules.maxRenewalMonths} tháng
+            Gia hạn trong khoảng <strong>30 đến {rules.renewalNoticeDays} ngày</strong> trước ngày hết hạn · kỳ gia hạn {rules.minRenewalMonths}–{rules.maxRenewalMonths} tháng
             {rules.requireNoOverdue ? ' · không còn khoản phí quá hạn' : ''}. Khi gia hạn bạn trả trước tiền thuê tháng đầu của kỳ mới, tiền cọc được chuyển sang kỳ mới.
           </p>
         )}

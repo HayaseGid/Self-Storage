@@ -29,7 +29,8 @@ namespace SelfStorageAPI.Controllers;
  *     trả 1 lần -> toàn bộ tiền thuê kỳ mới; trả theo tháng -> tháng đầu kỳ mới (các tháng sau trả hằng tháng);
  *     cộng phần cọc bổ sung nếu giá tăng. Tiền cọc kỳ cũ được chuyển sang kỳ mới (RentPaymentRules / ContractRenewalFinalizer).
  *   - Không gia hạn khi còn nợ tiền thuê / phí quá hạn (chính sách requireNoOverdue).
- *   - Chỉ gia hạn trong cửa sổ: từ (hạn chót - 30 ngày) tới hạn chót; phải đóng đủ tiền thuê đã đến hạn;
+ *   - Chỉ gia hạn trong cửa sổ: từ (ngày hết hạn - 30 ngày) tới hạn chót (ngày hết hạn - renewalNoticeDays);
+ *     còn hơn 30 ngày mới hết hạn thì chưa cho gia hạn (frontend ẩn nút, dựa vào windowOpen). Phải đóng đủ tiền thuê đã đến hạn;
  *     hợp đồng đã báo trả kho thì không gia hạn (muốn thuê tiếp thì hủy lịch trả kho trước).
  *   - Thanh toán xong (ContractRenewalFinalizer): đơn được xác nhận + tạo hợp đồng (phụ lục gia hạn) + bàn giao ngay
  *     (khách đang giữ kho, không cần Staff bàn giao lại). Khách ký phụ lục gia hạn online ngay sau đó.
@@ -51,9 +52,9 @@ public sealed class ContractRenewalsController(
     private static readonly string[] RenewableContractStatuses = ["Active", "Expiring Soon"];
     // Thời gian giữ yêu cầu gia hạn chờ thanh toán (giống giữ kho khi đặt cọc).
     private const int PaymentHoldMinutes = 15;
-    // Cửa sổ gia hạn: mở từ (hạn chót - RenewalWindowDays) tới hạn chót (= ngày hết hạn - renewalNoticeDays).
-    // Khớp mục "Gia hạn hợp đồng" trên trang khách (chỉ hiện hợp đồng còn <= renewalNoticeDays + 30 ngày).
-    // Không cho gia hạn ngay sau khi vừa nhận kho.
+    // Cửa sổ gia hạn: mở từ (ngày hết hạn - RenewalWindowDays) tới hạn chót (= ngày hết hạn - renewalNoticeDays).
+    // Khớp thông báo "Kho sắp hết hạn" và mục "Gia hạn hợp đồng" trên trang khách (chỉ hiện khi còn <= 30 ngày).
+    // Còn hơn 30 ngày mới hết hạn thì chưa cho gia hạn (không hiện nút Gia hạn).
     private const int RenewalWindowDays = 30;
 
     public sealed record RenewContractRequest(int ReservationId, int Months, string? PaymentPlan, decimal? ExpectedAmount);
@@ -139,7 +140,7 @@ public sealed class ContractRenewalsController(
                 : parents.FirstOrDefault(c => c.ContractID == contract.RenewedFromContractID);
             var (eligible, reason) = CheckEligibility(r, renewedBy != null, rules, today);
             var deadline = r.EndDate.Date.AddDays(-rules.NoticeDays);
-            var opensOn = deadline.AddDays(-RenewalWindowDays);
+            var opensOn = RenewalOpensOn(r);
             var pending = renewedBy != null ? null : pendingRenewals.FirstOrDefault(p =>
                 p.FacilityID == r.FacilityID && p.StartDate.Date == r.EndDate.Date.AddDays(1));
 
@@ -159,6 +160,7 @@ public sealed class ContractRenewalsController(
                 daysLeft = (r.EndDate.Date - today).Days,
                 renewDeadline = deadline,
                 renewOpensOn = opensOn,
+                windowOpen = today >= opensOn, // false: còn hơn 30 ngày mới hết hạn -> frontend ẩn nút Gia hạn
                 eligible,
                 reason,
                 renewedBy = renewedBy == null ? null : new
@@ -658,6 +660,9 @@ public sealed class ContractRenewalsController(
 
     // ------------------------------------------------------------------ Helpers
 
+    // Ngày mở gia hạn = ngày hết hạn - 30 ngày.
+    private static DateTime RenewalOpensOn(Reservation r) => r.EndDate.Date.AddDays(-RenewalWindowDays);
+
     private (bool Eligible, string? Reason) CheckEligibility(Reservation r, bool alreadyRenewed, RenewalRules rules, DateTime today)
     {
         var contract = r.Contract!;
@@ -672,11 +677,10 @@ public sealed class ContractRenewalsController(
         var deadline = r.EndDate.Date.AddDays(-rules.NoticeDays);
         if (today > deadline)
             return (false, $"Theo chính sách, cần gia hạn trước ngày hết hạn ít nhất {rules.NoticeDays} ngày (hạn chót {deadline:dd/MM/yyyy}). Vui lòng liên hệ cơ sở.");
-        // Cho phép khách hàng chủ động gia hạn sớm bất kỳ lúc nào khi đang thuê
-        // (không ép buộc phải chờ tới 30 ngày cuối mới được bấm gia hạn).
-        // var opensOn = deadline.AddDays(-RenewalWindowDays);
-        // if (today < opensOn)
-        //     return (false, $"Chưa tới thời gian gia hạn. Hợp đồng này gia hạn được từ {opensOn:dd/MM/yyyy} đến {deadline:dd/MM/yyyy}.");
+        // Chỉ mở gia hạn trong 30 ngày cuối trước khi hết hạn.
+        var opensOn = RenewalOpensOn(r);
+        if (today < opensOn)
+            return (false, $"Chưa tới thời gian gia hạn. Hợp đồng này gia hạn được từ {opensOn:dd/MM/yyyy} đến {deadline:dd/MM/yyyy}.");
         if (r.HandoverTasks.Any(t => t.TaskType == "Move Out" && t.Status != "Cancelled"))
             return (false, "Bạn đã báo trả kho cho hợp đồng này nên không gia hạn được. Muốn thuê tiếp, hãy hủy lịch trả kho trước.");
         if (r.Charges.Any(c => RentPaymentRules.IsRent(c) && c.Status == "Unpaid" && c.DueDate.Date <= today))
