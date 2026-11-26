@@ -61,6 +61,7 @@ import { apiPost } from '../../api/api'
 import { SIMULATED_PAYMENT_ENABLED, startVnPayPayment } from '../../api/vnpay'
 import { lateFeePolicyText, payLateFeesDemo, useLateFees } from '../../api/lateFees'
 import { fmtIsoDate } from '../contract/ContractRenewal'
+import { announceDepositSuccess, confirmAfterDeposit } from '../../services/afterDeposit'
 import CancelReservationModal, { retryRefund } from '../booking/CancelReservation'
 import './PendingPayments.css'
 
@@ -271,9 +272,18 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
   /**
    * Thanh toán tiền cọc / gia hạn cho 1 hoặc nhiều đơn qua VNPay.
    * Chạy khi bấm "Thanh toán qua VNPay" (1 đơn) hoặc "Thanh toán tất cả" (mọi đơn chờ cọc).
+   * Chế độ demo (SIMULATED_PAYMENT_ENABLED) và khách chọn "Mô phỏng" -> payDemo (không qua VNPay).
    * API: POST /api/vnpay/create (qua startVnPayPayment), kind = 'renewal' nếu toàn đơn gia hạn, ngược lại 'deposit'.
    */
   const payWithVnPay = async items => {
+    const demo = SIMULATED_PAYMENT_ENABLED && await dialog.confirm({
+      tone: 'info',
+      title: 'Chọn cách thanh toán',
+      message: 'Đang bật chế độ demo. Thanh toán mô phỏng (không qua VNPay)?',
+      confirmLabel: 'Mô phỏng',
+      cancelLabel: 'Qua VNPay'
+    })
+    if (demo) return payDemo(items)
     setPaying(items.map(i => i.reservationId).join(','))
     try {
       await startVnPayPayment(items.map(i => i.reservationId), {
@@ -288,9 +298,57 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
   }
 
   /**
-   * Đóng hóa đơn tiền thuê định kỳ + phí trễ hạn của 1 hợp đồng: hỏi xác nhận rồi chuyển sang VNPay.
+   * Thanh toán mô phỏng tiền cọc / gia hạn (chế độ demo): ghi nhận từng đơn, đơn cọc thì tạo hợp đồng ngay.
+   * Lỗi giữa chừng: báo số đơn đã ghi nhận, bấm thanh toán lại để ghi nhận các đơn còn lại.
+   * API: POST /api/payment/confirm (đơn cọc), POST /api/contract-renewals/{id}/pay-demo (đơn gia hạn),
+   *      POST /api/reservation-confirmations/mine (qua confirmAfterDeposit).
+   */
+  const payDemo = async items => {
+    setPaying(items.map(i => i.reservationId).join(','))
+    const deposits = []
+    let renewals = 0
+    try {
+      for (const item of items) {
+        if (item.isRenewal) {
+          await apiPost(`/api/contract-renewals/${item.reservationId}/pay-demo`, {})
+          renewals += 1
+        } else {
+          await apiPost('/api/payment/confirm', { reservationID: item.reservationId, amount: Number(item.depositAmount || 0), paymentType: 'QR' })
+          deposits.push(item)
+        }
+      }
+    } catch (error) {
+      setPaying(null)
+      onChanged?.()
+      const done = deposits.length + renewals
+      await dialog.alert({
+        tone: 'danger',
+        title: 'Chưa ghi nhận được thanh toán',
+        message: `${error.message}${done ? `\nĐã ghi nhận ${done}/${items.length} đơn. Bấm thanh toán lại để ghi nhận các đơn còn lại.` : ''}`
+      })
+      return
+    }
+    const confirmation = deposits.length ? await confirmAfterDeposit(deposits.map(i => i.reservationId)) : null
+    setPaying(null)
+    onChanged?.()
+    if (deposits.length) {
+      await announceDepositSuccess(dialog, {
+        count: deposits.length,
+        amountText: `${new Intl.NumberFormat('vi-VN').format(deposits.reduce((n, i) => n + Number(i.depositAmount || 0), 0))}đ`,
+        failed: Boolean(confirmation?.error) || confirmation?.failed?.length > 0
+      })
+    }
+    if (renewals) {
+      await dialog.alert({ tone: 'success', title: 'Đã thanh toán gia hạn', message: `Đã ghi nhận thanh toán cho ${renewals} đơn gia hạn.` })
+    }
+  }
+
+  /**
+   * Đóng hóa đơn tiền thuê định kỳ + phí trễ hạn của 1 hợp đồng: hỏi xác nhận rồi chuyển sang VNPay
+   * (chế độ demo: cho chọn thanh toán mô phỏng).
    * Chạy khi bấm nút "Đóng ..." trên thẻ hóa đơn tiền thuê.
-   * API: POST /api/vnpay/create (qua startVnPayPayment, kind 'rent').
+   * API: POST /api/vnpay/create (qua startVnPayPayment, kind 'rent'); mô phỏng: POST /api/rent-payments/{id}/pay-demo,
+   *      POST /api/late-fees/{id}/pay-demo (qua payLateFeesDemo).
    */
   const payRentBill = async rental => {
     const rentAmount = Number(rental.rentPayableNow || 0)
@@ -309,10 +367,30 @@ export function CustomerPaymentCenter({ reservations, onChanged, renderRefund, o
     if (!ok) return
     setPayingRentId(rental.reservationId)
     try {
-      await startVnPayPayment([rental.reservationId], { amount, count: 1, label: rental.contractNumber, kind: 'rent' })
+      // Chế độ demo: cho chọn thanh toán mô phỏng (không qua VNPay)
+      const demo = SIMULATED_PAYMENT_ENABLED && await dialog.confirm({
+        tone: 'info',
+        title: 'Chọn cách thanh toán',
+        message: 'Đang bật chế độ demo. Thanh toán mô phỏng (không qua VNPay)?',
+        confirmLabel: 'Mô phỏng',
+        cancelLabel: 'Qua VNPay'
+      })
+      if (!demo) {
+        await startVnPayPayment([rental.reservationId], { amount, count: 1, label: rental.contractNumber, kind: 'rent' })
+        return
+      }
+      const messages = []
+      if (rentAmount > 0) messages.push((await apiPost(`/api/rent-payments/${rental.reservationId}/pay-demo`, {})).message)
+      if (lateAmount > 0) messages.push((await payLateFeesDemo(rental.reservationId)).message)
+      setPayingRentId(null)
+      onChanged?.()
+      lateFees.reload()
+      await dialog.alert({ tone: 'success', title: 'Đã thanh toán', message: messages.join(' ') })
     } catch (error) {
       await dialog.alert({ tone: 'danger', title: 'Chưa đóng được tiền thuê', message: error.message })
       setPayingRentId(null)
+      onChanged?.()
+      lateFees.reload()
     }
   }
 
