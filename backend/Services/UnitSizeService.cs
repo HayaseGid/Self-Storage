@@ -72,6 +72,7 @@ public class UnitSizeService : IUnitSizeService
         await _unitSizeRepository.SaveChangesAsync(cancellationToken);
 
         await _unitSizeRepository.EnsureAllFacilitiesLinkAsync(entity.UnitSizeID, user.UserID, cancellationToken);
+        await _unitSizeRepository.SaveChangesAsync(cancellationToken);
         if (request.FacilityID.HasValue)
         {
             await _unitSizeRepository.EnsureFacilityLinkAsync(request.FacilityID.Value, entity.UnitSizeID, isActive, user.UserID, cancellationToken);
