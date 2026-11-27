@@ -44,6 +44,10 @@ public class PaymentService : IPaymentService
             if (ContractRenewalFinalizer.IsRenewal(reservation))
                 return new PaymentServiceResponse(false, "Đơn gia hạn thanh toán ở mục Gia hạn hợp đồng.", 409, null);
 
+            // Cơ sở tạm ngưng sau khi khách giữ kho: không nhận đặt cọc nữa.
+            if (reservation.Facility.Status != "Active")
+                return new PaymentServiceResponse(false, $"{reservation.Facility.FacilityName} đang tạm ngưng hoạt động nên không nhận đặt kho mới. Vui lòng chọn cơ sở khác.", 409, null);
+
             // Lúc đặt kho CHỈ thu tiền cọc. Tiền thuê đóng vào ngày nhận kho theo hình thức trả (RentPaymentRules).
             var chargesToSettle = reservation.Charges
                 .Where(c => c.ChargeType == "Deposit" && c.Status == "Unpaid")

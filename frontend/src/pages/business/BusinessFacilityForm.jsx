@@ -40,9 +40,10 @@ import './BusinessCatalog.css'
  * @param {object} props.dialog đối tượng hộp thoại (useDialog) để alert / confirm.
  * @param {Function} props.onClose đóng form (bấm Hủy, ×, Esc hoặc bấm ra ngoài).
  * @param {Function} props.onSave nhận { name, address, managerEmail, status } khi người dùng xác nhận lưu.
+ * @param {JSX.Element} [props.pauseWarning] nội dung cảnh báo khi chuyển cơ sở sang tạm ngưng (do BusinessOperations dựng).
  * @returns {JSX.Element} modal form.
  */
-export default function BusinessFacilityForm({ facility, facilities = [], managers = [], dialog, onClose, onSave }) {
+export default function BusinessFacilityForm({ facility, facilities = [], managers = [], dialog, onClose, onSave, pauseWarning }) {
   // Giá trị gốc của cơ sở, dùng làm giá trị ban đầu và để so sánh tìm thay đổi.
   const original = {
     name: facility.name || '',
@@ -128,7 +129,7 @@ export default function BusinessFacilityForm({ facility, facilities = [], manage
           <ul className="bc-changes">
             {changes.map(([label, from, to]) => <li key={label}><strong>{label}:</strong> {from} → <strong>{to}</strong></li>)}
           </ul>
-          {values.status === 'inactive' && original.status !== 'inactive' && <p>Khách hàng sẽ không đặt được kho mới tại cơ sở này.</p>}
+          {values.status === 'inactive' && original.status !== 'inactive' && (pauseWarning || <p>Khách hàng sẽ không đặt được kho mới tại cơ sở này.</p>)}
         </>
       ),
       confirmLabel: 'Lưu thay đổi'

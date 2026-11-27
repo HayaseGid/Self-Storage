@@ -111,3 +111,7 @@
 .bc-root.business-panel { background: #fff; border: 1px solid #e1edf4; border-radius: 14px; padding: 22px; box-shadow: 0 3px 12px rgba(15, 23, 42, .03); }
 .bc-root .business-panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 12px; }
 .bc-root .business-panel-header h2 { margin: 0; font: 800 20px 'Be Vietnam Pro', sans-serif; color: #073d70; }
+/* Cảnh báo khi tạm ngưng cơ sở (BusinessOperations.pauseWarning) */
+.bc-pause-warning { display: grid; gap: 8px; margin-top: 8px; }
+.bc-pause-warning p { margin: 0; }
+.bc-pause-warning ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }

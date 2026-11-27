@@ -209,6 +209,15 @@ public class FacilityManagementRepository : IFacilityManagementRepository
             cancellationToken);
     }
 
+    /* Tên cơ sở khác mà nhân viên đang làm việc (phân công Active), null nếu không có. */
+    public async Task<string?> GetOtherActiveFacilityOfStaffAsync(int userId, int excludeFacilityId, CancellationToken cancellationToken)
+    {
+        return await _context.FacilityStaffs
+            .Where(fs => fs.UserID == userId && fs.Status == "Active" && fs.FacilityID != excludeFacilityId)
+            .Select(fs => fs.Facility.FacilityName)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public void AddFacilityStaff(FacilityStaff assignment) => _context.FacilityStaffs.Add(assignment);
 
     public async Task<Reservation?> GetReservationByIdAsync(int reservationId, CancellationToken cancellationToken)

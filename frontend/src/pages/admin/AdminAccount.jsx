@@ -183,6 +183,17 @@ function Admin() {
     const user = users.find((item) => item.id === id);
     if (!user) return;
     const nextStatus = user.status === "Locked" ? "Active" : "Locked";
+    // Nhân viên / Quản lý cơ sở còn nghiệp vụ đang mở (phụ trách cơ sở, việc bàn giao chưa xong): không cho khóa,
+    // hiện luôn lý do (cùng danh sách với điều kiện đổi vai trò; backend cũng chặn).
+    const staffRole = user.role === "Facility Staff" || user.role === "Facility Manager";
+    if (nextStatus === "Locked" && staffRole && roleCheck?.userId === id && !roleCheck.loading && roleCheck.blockers?.length) {
+      await dialog.alert({
+        tone: "warning",
+        title: `Chưa thể khóa tài khoản ${user.username}`,
+        message: <><p>Tài khoản đang còn nghiệp vụ chưa xong. Hãy xử lý trước khi khóa:</p><ul>{roleCheck.blockers.map((b) => <li key={b}>{b}</li>)}</ul></>,
+      });
+      return;
+    }
     if (nextStatus === "Locked") {
       const confirmed = await dialog.confirm({
         tone: "danger",

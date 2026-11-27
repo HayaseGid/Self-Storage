@@ -1329,6 +1329,12 @@ public class FacilityManagementService : IFacilityManagementService
         if (!await _repo.FacilityExistsAsync(facilityId, cancellationToken))
             return new OperationsServiceResponse(false, "Không tìm thấy cơ sở.", 404, null);
 
+        // Mỗi nhân viên chỉ làm việc tại 1 cơ sở: đang làm ở cơ sở khác thì cơ sở đó phải gỡ nhân viên trước.
+        var otherFacility = await _repo.GetOtherActiveFacilityOfStaffAsync(staffUser.UserID, facilityId, cancellationToken);
+        if (otherFacility is not null)
+            return new OperationsServiceResponse(false,
+                $"{staffUser.FullName} ({staffUser.Email}) đang làm việc tại \"{otherFacility}\". Mỗi nhân viên chỉ làm việc tại 1 cơ sở; Quản lý cơ sở đó cần gỡ nhân viên trước.", 409, null);
+
         var assignment = await _repo.GetFacilityStaffAssignmentAsync(facilityId, staffUser.UserID, cancellationToken);
         if (assignment is null)
         {

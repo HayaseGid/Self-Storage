@@ -193,8 +193,22 @@ export function buildCustomerNotifications({ rentals = [], renewals = null, poli
 
   // 4) Kho sắp hết hạn / đã quá hạn (ưu tiên dữ liệu gia hạn từ backend)
   const handled = new Set()
+  // Cơ sở đang tạm ngưng: báo cho khách đang thuê ở đó (hợp đồng vẫn chạy tới hết hạn, không gia hạn được).
+  renewalItems.filter(item => item.facilityPaused).forEach(item => {
+    const r = rentalById(item.reservationId)
+    if (r && r.status !== 'Handed Over') return
+    if (!r && item.contractStatus !== 'Active' && item.contractStatus !== 'Expiring Soon') return
+    handled.add(String(item.reservationId))
+    push({
+      id: `paused:${item.reservationId}`,
+      section: 'contract', tone: 'danger', priority: 1,
+      title: `${item.facility} đang tạm ngưng hoạt động`,
+      message: `${item.facility} đã tạm ngưng hoạt động. Hợp đồng ${item.contractNumber} (kho ${unitsText(r) || item.contractNumber}) vẫn có hiệu lực đến hết ngày ${fmtDay(item.endDate)}: bạn vẫn đóng tiền thuê và trả kho bình thường, nhưng không thể gia hạn cho đến khi cơ sở hoạt động trở lại. Vui lòng sắp xếp trả kho trước khi hết hạn (báo trước ít nhất ${returnNotice} ngày).`,
+      action: { label: 'Xem hợp đồng', section: 'contract', focusReservationId: item.reservationId }
+    })
+  })
   renewalItems.forEach(item => {
-    if (item.renewedBy || item.pendingRenewal) return
+    if (item.renewedBy || item.pendingRenewal || item.facilityPaused) return
     const r = rentalById(item.reservationId)
     if (r && r.status !== 'Handed Over') return
     const days = item.daysLeft ?? daysUntil(item.endDate)

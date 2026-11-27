@@ -33,6 +33,7 @@ public class PaymentRepository : IPaymentRepository
                 .ThenInclude(ru => ru.Unit)
             .Include(r => r.Charges)
             .Include(r => r.Payments)
+            .Include(r => r.Facility)
             .FirstOrDefaultAsync(r => r.ReservationID == reservationId && r.CustomerID == customerId, cancellationToken);
     }
 

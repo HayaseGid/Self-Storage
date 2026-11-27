@@ -10,6 +10,8 @@ public class AdminService : IAdminService
 {
     private const int SystemAdministratorRoleId = 5;
     private const int CustomerRoleId = 1;
+    private const int FacilityStaffRoleId = 2;
+    private const int FacilityManagerRoleId = 3;
     private static readonly string[] OpenInspectionStatuses = ["Pending Manager", "Awaiting Customer", "Disputed"];
     private readonly IAdminRepository _adminRepository;
     private readonly IReturnInspectionRepository _inspections;
@@ -190,7 +192,17 @@ public class AdminService : IAdminService
         // Đổi vai trò chỉ khi tài khoản trống hoàn toàn (không còn nghiệp vụ đang mở). Kiểm tra + ghi trong cùng transaction
         // để không có đơn / việc mới chen vào giữa lúc kiểm tra và lúc đổi. Khóa / mở khóa (chỉ đổi trạng thái) không bị chặn.
         var roleChanging = role.RoleID != user.RoleID;
-        await using var transaction = roleChanging ? await _adminRepository.BeginTransactionAsync(cancellationToken) : null;
+        // Khóa / ngừng tài khoản Nhân viên hoặc Quản lý cơ sở đang hoạt động: cơ sở và lịch bàn giao không được bỏ ngỏ,
+        // nên cũng phải trống nghiệp vụ như khi đổi vai trò (vd Quản lý còn phụ trách cơ sở, Nhân viên còn việc chưa xong).
+        var deactivatingStaff = !roleChanging && user.Status == "Active" && normalizedStatus != "Active" &&
+                                (user.RoleID == FacilityStaffRoleId || user.RoleID == FacilityManagerRoleId);
+        await using var transaction = roleChanging || deactivatingStaff ? await _adminRepository.BeginTransactionAsync(cancellationToken) : null;
+        if (deactivatingStaff)
+        {
+            var blockers = await RoleChangeBlockersAsync(user, cancellationToken);
+            if (blockers.Count > 0)
+                return new AdminServiceResponse(false, "Chưa thể khóa tài khoản: tài khoản đang còn nghiệp vụ chưa xong. " + string.Join(" ", blockers), 409, blockers);
+        }
         if (roleChanging)
         {
             var blockers = await RoleChangeBlockersAsync(user, cancellationToken);

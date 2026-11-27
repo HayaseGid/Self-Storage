@@ -43,6 +43,7 @@ public interface IFacilityManagementRepository
     Task<List<UnitSize>> GetAllUnitSizesAsync(CancellationToken cancellationToken);
 
     Task<FacilityStaff?> GetFacilityStaffAssignmentAsync(int facilityId, int userId, CancellationToken cancellationToken);
+    Task<string?> GetOtherActiveFacilityOfStaffAsync(int userId, int excludeFacilityId, CancellationToken cancellationToken);
     void AddFacilityStaff(FacilityStaff assignment);
 
     Task<Reservation?> GetReservationByIdAsync(int reservationId, CancellationToken cancellationToken);

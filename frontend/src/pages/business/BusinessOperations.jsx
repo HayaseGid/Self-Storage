@@ -90,6 +90,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             managerEmail: facility.managerEmail,
             totalUnits: units.length,
             rentedUnits: units.filter(unit => unit.status === "RENTED").length,
+            reservedUnits: units.filter(unit => unit.status === "RESERVED").length, // kho đã được đặt cọc, chưa nhận
             maintenanceUnits: units.filter(unit => unit.status === "MAINTENANCE").length,
             status: facility.status,
             createdAt: facility.createdAt,
@@ -175,10 +176,10 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
     const updateFacility = async (facility, values, { skipConfirm = false } = {}) => {
         if (!skipConfirm && values.status === "inactive" && facility.status !== "inactive") {
             const confirmed = await dialog.confirm({
-                tone: "warning",
-                title: `Ngừng hoạt động "${facility.name}"?`,
-                message: "Khách hàng sẽ không thể đặt kho mới tại cơ sở này cho đến khi bật lại.",
-                confirmLabel: "Ngừng hoạt động"
+                tone: "danger",
+                title: `Tạm ngưng "${facility.name}"?`,
+                message: pauseWarning(facility),
+                confirmLabel: "Tạm ngưng cơ sở"
             });
             if (!confirmed) return;
         }
@@ -194,6 +195,28 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             "Không cập nhật được cơ sở"
         );
     };
+
+    /**
+     * Nội dung cảnh báo khi tạm ngưng cơ sở: hậu quả với khách mới, khách đang thuê và đơn đã cọc.
+     * Được gọi bởi: updateFacility (nút "Tạm ngưng") và BusinessFacilityForm (đổi trạng thái rồi Lưu).
+     * @param {object} facility cơ sở (có rentedUnits, reservedUnits).
+     * @returns {JSX.Element}
+     */
+    const pauseWarning = facility => (
+        <div className="bc-pause-warning">
+            <p>Khi tạm ngưng, cơ sở này sẽ:</p>
+            <ul>
+                <li><strong>Bị ẩn khỏi web</strong>: khách không xem, không tìm thấy và không đặt được kho tại cơ sở này.</li>
+                <li><strong>Không nhận thanh toán cọc</strong> cho các đơn đang chờ thanh toán.</li>
+                <li><strong>Không cho gia hạn</strong>: khách đang thuê được báo cơ sở tạm ngưng và không gia hạn được.</li>
+            </ul>
+            <p>
+                Đang có <strong>{facility.rentedUnits || 0} kho đang cho thuê</strong> và <strong>{facility.reservedUnits || 0} kho đã được đặt cọc</strong>.
+                Các hợp đồng này vẫn tiếp tục đến hết hạn: nhận kho, đóng tiền thuê và trả kho diễn ra bình thường.
+            </p>
+            <p>Bấm "Mở lại" khi muốn cơ sở hoạt động trở lại.</p>
+        </div>
+    );
 
     /**
      * Xóa cơ sở sau khi hỏi xác nhận (không hoàn tác được).
@@ -462,6 +485,7 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                             facilities={facilities}
                             managers={operationState.managers}
                             dialog={dialog}
+                            pauseWarning={pauseWarning(editingFacility)}
                             onClose={() => setEditingFacility(null)}
                             onSave={async values => {
                                 const ok = await updateFacility(editingFacility, values, { skipConfirm: true });

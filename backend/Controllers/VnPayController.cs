@@ -95,6 +95,7 @@ public sealed class VnPayController(
         var reservations = await context.Reservations
             .Include(r => r.Charges)
             .Include(r => r.Payments)
+            .Include(r => r.Facility)
             .Where(r => ids.Contains(r.ReservationID) && r.CustomerID == customerId.Value)
             .ToListAsync(ct);
         if (reservations.Count != ids.Count)
@@ -112,6 +113,9 @@ public sealed class VnPayController(
             }
             if (r.Status != ReservationStatus.PendingPayment)
                 return Conflict(new { message = $"Đơn {r.ReservationCode} không còn ở trạng thái chờ thanh toán cọc." });
+            // Cơ sở tạm ngưng: không nhận thêm đơn đặt kho / gia hạn (đơn đã cọc, đang thuê vẫn đóng tiền bình thường ở nhánh trên).
+            if (r.Facility.Status != "Active")
+                return Conflict(new { message = $"{r.Facility.FacilityName} đang tạm ngưng hoạt động nên không nhận đặt kho hoặc gia hạn mới. Vui lòng chọn cơ sở khác." });
             if (r.HoldExpiresAt <= now.AddSeconds(30))
                 return Conflict(new { message = $"Đơn {r.ReservationCode} đã hết thời gian giữ kho. Vui lòng đặt lại." });
             if (!ChargesToCollect(r).Any())

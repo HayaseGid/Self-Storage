@@ -153,6 +153,7 @@ public sealed class ContractRenewalsController(
                 contractStatus = contract.ContractStatus,
                 facilityId = r.FacilityID,
                 facility = r.Facility.FacilityName,
+                facilityPaused = r.Facility.Status != "Active", // cơ sở tạm ngưng -> UI khách hiện thông báo
                 startDate = r.StartDate.Date,
                 endDate = r.EndDate.Date,
                 months = r.RentalPeriod,
@@ -320,6 +321,7 @@ public sealed class ContractRenewalsController(
         var renewal = await context.Reservations
             .Include(r => r.Charges)
             .Include(r => r.Payments)
+            .Include(r => r.Facility)
             .FirstOrDefaultAsync(r => r.ReservationID == reservationId && r.CustomerID == customerId.Value, cancellationToken);
         if (renewal is null || !ContractRenewalFinalizer.IsRenewal(renewal))
             return NotFound(new { message = "Không tìm thấy đơn gia hạn thuộc tài khoản này." });
@@ -327,6 +329,8 @@ public sealed class ContractRenewalsController(
         var now = DateTime.UtcNow;
         if (renewal.Status == ReservationStatus.PendingPayment)
         {
+            if (renewal.Facility.Status != "Active")
+                return Conflict(new { message = $"{renewal.Facility.FacilityName} đang tạm ngưng hoạt động nên không nhận gia hạn. Hợp đồng hiện tại vẫn có hiệu lực đến hết hạn." });
             if (renewal.HoldExpiresAt <= now)
                 return Conflict(new { message = "Yêu cầu gia hạn đã quá thời gian chờ thanh toán. Vui lòng gia hạn lại." });
 
@@ -670,6 +674,8 @@ public sealed class ContractRenewalsController(
             return (false, "Hợp đồng này đã được gia hạn.");
         if (r.Status != ReservationStatus.HandedOver)
             return (false, r.Status == ReservationStatus.Completed ? "Hợp đồng đã kết thúc." : "Chỉ gia hạn được hợp đồng đang thuê (đã nhận kho).");
+        if (r.Facility.Status != "Active")
+            return (false, PausedRenewalMessage(r));
         if (!RenewableContractStatuses.Contains(contract.ContractStatus))
             return (false, $"Hợp đồng đang ở trạng thái \"{contract.ContractStatus}\" nên không thể gia hạn.");
         if (r.EndDate.Date < today)
@@ -693,10 +699,13 @@ public sealed class ContractRenewalsController(
             return (false, "Bạn còn tiền thuê quá hạn chưa đóng. Vui lòng đóng tiền thuê trước khi gia hạn.");
         if (!r.ReservationUnits.Any(ru => ru.Status == "Active"))
             return (false, "Hợp đồng không còn kho đang thuê để gia hạn.");
-        if (r.Facility.Status != "Active")
-            return (false, "Cơ sở đang tạm ngừng hoạt động nên chưa nhận gia hạn.");
         return (true, null);
     }
+
+    /* Cơ sở tạm ngưng: hợp đồng đang thuê vẫn chạy tới hết hạn nhưng không gia hạn. */
+    private static string PausedRenewalMessage(Reservation r) =>
+        $"{r.Facility.FacilityName} đang tạm ngưng hoạt động. Hợp đồng hiện tại vẫn có hiệu lực đến hết ngày {r.EndDate:dd/MM/yyyy} " +
+        "(bạn vẫn đóng tiền thuê và trả kho bình thường), nhưng cơ sở không nhận gia hạn cho đến khi hoạt động trở lại.";
 
     private static PlanQuote BuildQuote(Reservation r, int months, decimal discountRate)
     {
