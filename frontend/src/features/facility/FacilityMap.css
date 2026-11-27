@@ -45,6 +45,9 @@
 .facility-location-info { display: grid; gap: 8px; align-content: start; padding: 16px; border-radius: 16px; border: 1px solid #e1edf7; background: #fff; }
 .facility-location-info h3 { margin: 0; color: #073d70; font-size: 16px; }
 .facility-location-info p { margin: 0; color: #4f6880; font-size: 13.5px; line-height: 1.5; }
+.facility-location-info p svg { width: 16px; height: 16px; flex: none; margin-right: 4px; vertical-align: -3px; fill: none; stroke: currentColor; stroke-width: 2; }
+/* Bản đồ giãn cao bằng thẻ thông tin bên cạnh (ghi đè height inline của FacilityMap) */
+.facility-location-card .fm-wrap { height: 100% !important; min-height: 320px; }
 .facility-location-info a { justify-self: start; padding: 9px 14px; border-radius: 10px; background: #ffd21f; color: #073d70; font-weight: 800; font-size: 13.5px; text-decoration: none; }
 
 @media (max-width: 860px) {
