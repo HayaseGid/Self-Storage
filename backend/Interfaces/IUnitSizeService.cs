@@ -5,7 +5,6 @@ namespace SelfStorageAPI.Interfaces;
 public interface IUnitSizeService
 {
     Task<IReadOnlyList<UnitSizeResponse>> GetAllAsync(int? facilityId = null, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<SizeCategoryOption>> GetCategoriesAsync(CancellationToken cancellationToken);
     Task<UnitSizeResponse?> GetByIdAsync(int id, int? facilityId = null, CancellationToken cancellationToken = default);
     Task<(bool IsSuccess, string? ErrorMessage, UnitSizeResponse? Data)> CreateAsync(UpsertUnitSizeDTO request, string? userEmail, CancellationToken cancellationToken);
     Task<(bool IsSuccess, string? ErrorMessage, UnitSizeResponse? Data)> UpdateAsync(int id, UpsertUnitSizeDTO request, string? userEmail, CancellationToken cancellationToken);

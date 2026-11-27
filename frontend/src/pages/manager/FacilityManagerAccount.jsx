@@ -9,7 +9,7 @@
  *   - Hàm định dạng: fmtMoney, fmtDate, fmtDateTime, pad, compareNatural, unitSizeValue, todayStr, formatUnitLocation.
  *   - Bảng nhãn: RES_STATUS_MAP, UNIT_STATUS_MAP, PAY_STATUS_MAP (trạng thái -> chữ + màu) và component Badge.
  *   - loadFreshUnits / saveFreshUnits: nhớ "kho vừa tạo" trong sessionStorage để tô nổi bật.
- *   - Hộp thoại (modal): UnitFormModal (tạo/sửa kho), UnitDetailModal (chi tiết kho),
+ *   - Hộp thoại (modal): UnitFormModal (tạo/sửa kho), UnitDetailModal (chi tiết kho), TypeModal / SizeModal (loại / size kho),
  *     AddStaffModal, StaffHistoryModal, OwnerModal (giao người phụ trách đơn), ManagerContractModal (xem hợp đồng).
  *   - Tab con (mỗi mục menu 1 component): FacilityPropertiesTab (Đặc tính kho), LateFeesTab (Công nợ & phí trễ),
  *     UnitReportsTab (Sự cố kho), FacilityStaffTab (Nhân sự), FacilityContractsTab (Hợp đồng),
@@ -29,7 +29,7 @@
  *   DELETE /api/storage-units/{unitId}                              (StorageUnitController) -> xóa kho chưa có lịch sử
  *   POST   /api/operations/facilities/{id}/staff                    -> thêm nhân viên vào cơ sở
  *   DELETE /api/operations/facilities/{id}/rates/{typeId}/{sizeId}  -> xóa mức giá (khi xóa loại/size)
- *   GET/PUT /api/unit-types[?facilityId=], /api/unit-sizes[?facilityId=]  (UnitTypes/UnitSizesController; PUT chỉ bật/tắt tại cơ sở)
+ *   GET/POST/PUT /api/unit-types[?facilityId=], /api/unit-sizes[?facilityId=]  (UnitTypes/UnitSizesController)
  *   GET    /api/price-bands                                         (PriceBandsController) -> khung giá cho bảng giá
  *   GET    /api/manager-tools/facilities/{id}/reports?months=6 | tasks | unit-reports | workload?date=  (ManagerToolsController)
  *   POST   /api/manager-tools/facilities/{id}/auto-assign           -> tự phân công đơn đã cọc
@@ -64,19 +64,26 @@
  *   UnitDetailModal: Hộp thoại chi tiết 1 kho: thông tin cơ sở, loại, size, vị trí, giá, trạng thái, hợp đồng đang hiệu lực, các đơn đặt chỗ liên quan → dùng ở: FacilityManagerDashboard
  *   Tile: Component ô thông tin nhỏ (nhãn + nội dung) trong hộp chi tiết kho → dùng ở: UnitDetailModal
  *   fpNum: Đổi giá trị thành số (rỗng/null -> 0) → dùng ở: fpFmt, normalizeType, normalizeSize
- *   fpFmt: Định dạng số kiểu Việt Nam với tối đa d chữ số thập phân → dùng ở: (cấp file)
+ *   fpFmt: Định dạng số kiểu Việt Nam với tối đa d chữ số thập phân → dùng ở: submit, SizeModal, (cấp file)
+ *   fpClean: Cắt khoảng trắng thừa trong chuỗi (gộp nhiều khoảng trắng thành 1) → dùng ở: submit
  *   fpArray: Lấy mảng từ dữ liệu backend (mảng trực tiếp hoặc { items: [...] }) → dùng ở: loadFacilityCatalog
- *   normalizeType: Chuẩn hóa 1 loại kho từ backend về 1 dạng thống nhất (backend có thể trả unitTypeID / unitTypeId / id...) → dùng ở: loadFacilityCatalog
- *   normalizeSize: Chuẩn hóa 1 kích thước từ backend → dùng ở: loadFacilityCatalog
+ *   normalizeType: Chuẩn hóa 1 loại kho từ backend về 1 dạng thống nhất (backend có thể trả unitTypeID / unitTypeId / id...) → dùng ở: loadFacilityCatalog, saveType
+ *   normalizeSize: Chuẩn hóa 1 kích thước từ backend → dùng ở: loadFacilityCatalog, saveSize
  *   loadFacilityCatalog: Tải song song danh sách loại kho + kích thước kèm trạng thái Active tại cơ sở, chuẩn hóa và sắp xếp → dùng ở: reloadFacilityCatalog
- *   fpCategoryOf: Tìm nhóm size chuẩn (Small/Medium/Large/Vehicle) theo chữ cái đầu của mã size (vd "M2" -> Medium) → dùng ở: (cấp file)
- *   FacilityPropertiesTab: Tab "Đặc tính kho": 2 chế độ xem Loại kho / Kích thước, đếm Active/Deactive, lọc, tìm kiếm, bật-tắt tại cơ sở → dùng ở: FacilityManagerDashboard
+ *   fpCategoryOf: Tìm nhóm size chuẩn (Small/Medium/Large/Vehicle) theo chữ cái đầu của mã size (vd "M2" -> Medium) → dùng ở: SizeModal, (cấp file)
+ *   TypeModal: Hộp thoại thêm / sửa loại kho tại cơ sở: tên, mô tả, trạng thái Active/Deactive (không cho chuyển Deactive khi còn kho đang dùng loại này) → dùng ở: (cấp file)
+ *   submit: Bấm "Thêm loại kho" / "Lưu thay đổi": kiểm tra (tên bắt buộc, độ dài, trùng tên, không tắt khi còn kho dùng, có thay đổi) rồi gọi onSave → dùng ở: TypeModal
+ *   SizeModal: Hộp thoại thêm / sửa kích thước kho: chọn nhóm size, mã (tự gợi ý mã kế tiếp), tên hiển thị, rộng × dài → dùng ở: (cấp file)
+ *   FacilityPropertiesTab: Tab "Đặc tính kho": 2 chế độ xem Loại kho / Kích thước, đếm Active/Deactive, lọc, tìm kiếm, thêm/sửa (mở TypeModal / SizeModal) → dùng ở: FacilityManagerDashboard
  *   usage: Mức sử dụng của 1 loại/size tại cơ sở: tổng số kho, số kho đang hoạt động, các mức giá liên quan → dùng ở: toggle, remove, Actions +2
  *   label: Nhãn mô tả 1 dòng (vd 'loại kho #3 "Kho mát"' hoặc 'kích thước M2 "..."') dùng trong hộp thoại → dùng ở: (cấp file), Badge, changedField +22
  *   switchView: Bấm tab "Loại kho" / "Kích thước kho": đổi chế độ xem và xóa bộ lọc, từ khóa → dùng ở: (cấp file)
  *   typeBody: Tạo body gửi backend cho loại kho (luôn kèm facilityID để backend chỉ đổi trạng thái tại cơ sở này) → dùng ở: toggle
  *   sizeBody: Tạo body gửi backend cho kích thước (luôn kèm facilityID) → dùng ở: toggle
+ *   saveType: Lưu loại kho từ TypeModal (sửa hoặc thêm mới), đóng hộp thoại, gọi onChanged() để tải lại rồi hiện toast → dùng ở: (cấp file)
+ *   saveSize: Lưu kích thước từ SizeModal (sửa hoặc thêm mới), đóng hộp thoại, gọi onChanged() để tải lại rồi hiện toast → dùng ở: (cấp file)
  *   toggle: Bấm nút "Active"/"Deactive" ở 1 dòng: chuyển trạng thái loại/size tại cơ sở (chặn tắt khi còn kho đang dùng; hỏi xác nhận) → dùng ở: Actions
+ *   remove: Bấm nút "Xóa" ở 1 dòng: chặn (và giải thích) nếu còn kho hoặc đã có đơn; hỏi xác nhận → dùng ở: Actions
  *   StatusBadge: Component nhãn Active / Deactive của 1 dòng → dùng ở: (cấp file)
  *   Actions: Component các nút thao tác của 1 dòng (Sửa, Active/Deactive, Xóa — có khóa khi đang được dùng) → dùng ở: (cấp file)
  *   UsageCell: Component ô hiển thị mức sử dụng (số kho, số mức giá) của 1 dòng → dùng ở: (cấp file)
@@ -754,8 +761,8 @@ function UnitDetailModal({ unit, facility, lock, contract, onClose, onEdit, onDe
    THIẾT LẬP ĐẶC TÍNH KHO (mục "Đặc tính kho" của Facility Manager)
    Loại kho + Kích thước kho tại cơ sở, gộp trong 1 màn hình (component FacilityPropertiesTab bên dưới).
    Các hàm/hằng tiền tố "fp" chỉ dùng cho phần này. API backend:
-     GET/PUT /api/unit-types   (?facilityId=...; PUT chỉ bật/tắt tại cơ sở)
-     GET/PUT /api/unit-sizes   (?facilityId=...; PUT chỉ bật/tắt tại cơ sở)
+     GET/POST/PUT/DELETE /api/unit-types   (?facilityId=...)
+     GET/POST/PUT/DELETE /api/unit-sizes   (?facilityId=...)
      DELETE /api/operations/facilities/{fid}/rates/{typeId}/{sizeId}
    ========================================================= */
 
@@ -775,6 +782,10 @@ const fpNum = (v) => (v == null || v === '' ? 0 : Number(v))
  * Định dạng số kiểu Việt Nam với tối đa d chữ số thập phân.
  */
 const fpFmt = (v, d = 2) => fpNum(v).toLocaleString('vi-VN', { maximumFractionDigits: d })
+/**
+ * Cắt khoảng trắng thừa trong chuỗi (gộp nhiều khoảng trắng thành 1).
+ */
+const fpClean = (v) => String(v || '').trim().replace(/\s+/g, ' ')
 /**
  * Lấy mảng từ dữ liệu backend (mảng trực tiếp hoặc { items: [...] }).
  */
@@ -855,13 +866,301 @@ const fpCategoryOf = (code, categories) =>
   categories.find(c => String(code || '').toUpperCase().startsWith(c.prefix)) || null
 
 /* =========================================================
+   MODAL LOẠI KHO
+   ========================================================= */
+/**
+ * Hộp thoại thêm / sửa loại kho tại cơ sở: tên, mô tả, trạng thái Active/Deactive
+ * (không cho chuyển Deactive khi còn kho đang dùng loại này). Không tự gọi API, chỉ gọi onSave.
+ * @param {object} props
+ * @param {object|null} props.editing loại kho đang sửa; null = thêm mới.
+ * @param {Array} props.types các loại kho hiện có (kiểm tra trùng tên, dự đoán mã mới).
+ * @param {number} props.activeUnits số kho đang dùng loại này tại cơ sở.
+ * @param {string} props.facilityName tên cơ sở (hiển thị trong thông báo).
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {(payload: {typeName, description, isActive}) => Promise} props.onSave lưu (FacilityPropertiesTab gọi POST/PUT /api/unit-types).
+ */
+function TypeModal({ editing, types, activeUnits, facilityName, onClose, onSave }) {
+  const isNew = !editing
+  const nextId = types.reduce((m, t) => Math.max(m, t.id), 0) + 1
+  const [name, setName] = useState(editing?.name ?? '')
+  const [description, setDescription] = useState(editing?.description ?? '')
+  const [isActive, setIsActive] = useState(editing ? editing.isActive : true)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const lockPause = !isNew && editing.isActive && activeUnits > 0
+
+  // Bấm "Thêm loại kho" / "Lưu thay đổi": kiểm tra (tên bắt buộc, độ dài, trùng tên, không tắt khi còn kho dùng,
+  // có thay đổi) rồi gọi onSave; lỗi từ server hiện vào state error.
+  const submit = async (e) => {
+    e.preventDefault()
+    const n = fpClean(name)
+    const d = description.trim()
+    if (!n) return setError('Vui lòng nhập tên loại kho.')
+    if (n.length > 100) return setError('Tên loại kho tối đa 100 ký tự.')
+    if (d.length > 255) return setError('Mô tả tối đa 255 ký tự.')
+    const dup = types.find(t => t.id !== editing?.id && t.name.trim().toLowerCase() === n.toLowerCase())
+    if (dup) return setError(`Tên "${n}" đã tồn tại (loại #${dup.id}).`)
+    if (!isActive && lockPause) return setError(`Còn ${activeUnits} kho tại ${facilityName} đang dùng loại này nên chưa thể ngừng.`)
+    if (!isNew && n === editing.name && d === (editing.description || '') && isActive === editing.isActive) {
+      return setError('Bạn chưa thay đổi thông tin nào.')
+    }
+    setError('')
+    setSaving(true)
+    try {
+      await onSave({ typeName: n, description: d || null, isActive })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Hộp thoại thêm/sửa loại kho
+  return (
+    <div className="fm-modal-overlay">
+      <div className="fm-modal-card fp-modal">
+        <div className="fm-modal-header">
+          <h2>{isNew ? 'Thêm loại kho' : `Sửa loại kho #${editing.id}`}</h2>
+          <button type="button" className="fm-modal-close" onClick={onClose} aria-label="Đóng">×</button>
+        </div>
+        <form className="fm-modal-form" onSubmit={submit}>
+          {error && <div className="auth-message error" role="alert">{error}</div>}
+
+          <div className="fp-id-box">
+            <span>Mã loại kho</span>
+            <strong>#{isNew ? nextId : editing.id}</strong>
+            <em>{isNew ? 'Dự kiến, do hệ thống tự cấp khi lưu' : 'Do hệ thống cấp, không đổi được'}</em>
+          </div>
+
+          <label>
+            Tên loại kho
+            <input type="text" value={name} maxLength={100} placeholder="VD: Kho để xe" autoFocus required
+              onChange={(e) => setName(e.target.value)} />
+          </label>
+
+          <label>
+            Mô tả
+            <textarea rows={3} value={description} maxLength={255}
+              placeholder="VD: Kho có lối dắt xe, phù hợp gửi xe máy dài hạn"
+              onChange={(e) => setDescription(e.target.value)} />
+            <small className="fm-field-note">{description.trim().length}/255 ký tự</small>
+          </label>
+
+          <label>
+            Trạng thái tại {facilityName}
+            <select value={isActive ? 'on' : 'off'} onChange={(e) => setIsActive(e.target.value === 'on')}>
+              <option value="on">Active</option>
+              <option value="off" disabled={lockPause}>
+                Deactive{lockPause ? ` (còn ${activeUnits} kho đang dùng)` : ''}
+              </option>
+            </select>
+            <small className="fm-field-note">Chỉ loại kho Active mới chọn được khi tạo hoặc sửa kho.</small>
+          </label>
+
+          <div className="fm-modal-actions">
+            <button type="button" className="dashboard-secondary-btn" onClick={onClose}>Hủy</button>
+            <button type="submit" className="dashboard-primary-btn" disabled={saving}>
+              {saving ? 'Đang lưu...' : isNew ? 'Thêm loại kho' : 'Lưu thay đổi'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================
+   MODAL KÍCH THƯỚC KHO
+   ========================================================= */
+/**
+ * Hộp thoại thêm / sửa kích thước kho: chọn nhóm size, mã (tự gợi ý mã kế tiếp), tên hiển thị, rộng × dài;
+ * kiểm tra diện tích có thuộc khoảng của nhóm chuẩn không, cảnh báo quá cỡ (phải đặt riêng).
+ * Khi size đã có biểu giá hoặc kho đang dùng thì khóa kích thước. Không tự gọi API, chỉ gọi onSave.
+ * @param {object} props
+ * @param {object|null} props.editing size đang sửa; null = thêm mới.
+ * @param {Array} props.sizes các size hiện có (gợi ý mã, kiểm tra trùng).
+ * @param {Array} props.categories nhóm size chuẩn.
+ * @param {number} props.activeUnits số kho đang dùng size này.
+ * @param {boolean} props.hasRates size đã có trong biểu giá của cơ sở.
+ * @param {string} props.facilityName tên cơ sở.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {(payload) => Promise} props.onSave lưu (FacilityPropertiesTab gọi POST/PUT /api/unit-sizes).
+ */
+function SizeModal({ editing, sizes, categories, activeUnits, hasRates, facilityName, onClose, onSave }) {
+  const isNew = !editing
+  const dimsLocked = !isNew && (hasRates || activeUnits > 0)
+  const lockPause = !isNew && editing.isActive && activeUnits > 0
+
+  const [prefix, setPrefix] = useState(isNew ? categories[0]?.prefix : fpCategoryOf(editing.sizeCode, categories)?.prefix)
+  const [code, setCode] = useState(editing?.sizeCode ?? '')
+  const [name, setName] = useState(editing?.displayName ?? '')
+  const [width, setWidth] = useState(editing ? String(editing.widthM) : '')
+  const [length, setLength] = useState(editing ? String(editing.lengthM) : '')
+  const [isActive, setIsActive] = useState(editing ? editing.isActive : true)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const cat = categories.find(c => c.prefix === prefix) || categories[0]
+  // Chiều cao không hiển thị cho người dùng; chỉ dùng nội bộ để đổi khoảng thể tích của nhóm sang khoảng diện tích
+  const h = cat?.heightM || 2.5
+  const minArea = cat.minVolume / h
+  const maxArea = cat.maxVolume / h
+  const w = Number(width)
+  const l = Number(length)
+  const area = w > 0 && l > 0 ? w * l : 0
+  const areaOk = area > 0 && area * h >= cat.minVolume && area * h <= cat.maxVolume
+  // Diện tích lớn nhất của các nhóm size chuẩn: lớn hơn -> không tạo size chuẩn, nhận theo đơn đặt riêng (order)
+  const maxStdArea = Math.max(...categories.map(c => c.maxVolume / (c.heightM || 2.5)))
+  const oversize = area > maxStdArea
+  const lengthShort = w > 0 && l > 0 && l < w
+
+  // Gợi ý mã size kế tiếp trong nhóm (vd đã có M1, M2 -> "M3").
+  const suggested = useMemo(() => {
+    const max = sizes
+      .filter(s => s.sizeCode.toUpperCase().startsWith(cat.prefix))
+      .map(s => parseInt(s.sizeCode.slice(cat.prefix.length), 10) || 0)
+      .reduce((a, b) => Math.max(a, b), 0)
+    return `${cat.prefix}${max + 1}`
+  }, [sizes, cat])
+
+  // Bấm "Lưu" (submit): kiểm tra tên, mã đúng dạng nhóm + số, không trùng, kích thước hợp lệ theo nhóm,
+  // không quá cỡ... rồi gọi onSave; lỗi hiện vào state error.
+  const submit = async (e) => {
+    e.preventDefault()
+    const n = fpClean(name)
+    const c = isNew ? (code.trim().toUpperCase() || suggested) : editing.sizeCode
+    if (!n) return setError('Vui lòng nhập tên hiển thị.')
+    if (n.length > 100) return setError('Tên hiển thị tối đa 100 ký tự.')
+    if (isNew) {
+      if (!new RegExp(`^${cat.prefix}[0-9]+$`).test(c)) return setError(`Mã size phải dạng ${cat.prefix} + số, ví dụ ${suggested}.`)
+      if (sizes.some(s => s.sizeCode.toUpperCase() === c)) return setError(`Mã size "${c}" đã tồn tại.`)
+    }
+    if (!dimsLocked) {
+      if (!(w >= 0.5 && w <= 50) || !(l >= 0.5 && l <= 50)) return setError('Chiều rộng và chiều dài phải từ 0,5 đến 50 m.')
+      if (lengthShort) return setError(`Chiều dài (${fpFmt(l)} m) phải lớn hơn hoặc bằng chiều rộng (${fpFmt(w)} m). Hãy đổi chỗ hai số.`)
+      if (oversize) {
+        return setError(`Diện tích ${fpFmt(area)} m² lớn hơn mọi nhóm size chuẩn (tối đa ${fpFmt(maxStdArea)} m²). ` +
+          'Kho cỡ này không tạo thành size chuẩn mà nhận theo đơn đặt riêng (order): khách liên hệ cơ sở để báo giá.')
+      }
+      if (!areaOk) {
+        return setError(`Diện tích ${fpFmt(area)} m² không thuộc nhóm ${cat.name}. ` +
+          `Diện tích phải từ ${fpFmt(minArea)} đến ${fpFmt(maxArea)} m².`)
+      }
+    }
+    if (!isActive && lockPause) return setError(`Còn ${activeUnits} kho tại ${facilityName} dùng kích thước này nên chưa thể ngừng.`)
+    if (!isNew && n === editing.displayName && w === editing.widthM && l === editing.lengthM && isActive === editing.isActive) {
+      return setError('Bạn chưa thay đổi thông tin nào.')
+    }
+    setError('')
+    setSaving(true)
+    try {
+      const W = dimsLocked ? editing.widthM : w
+      const L = dimsLocked ? editing.lengthM : l
+      await onSave({
+        sizeCode: c,
+        displayName: n,
+        dimensions: `${c}: ${n}`,
+        widthM: W,
+        lengthM: L,
+        heightM: h,
+        volume: Math.round(W * L * h * 100) / 100,
+        isActive
+      })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Hộp thoại thêm/sửa kích thước kho
+  return (
+    <div className="fm-modal-overlay">
+      <div className="fm-modal-card fp-modal">
+        <div className="fm-modal-header">
+          <h2>{isNew ? 'Thêm kích thước kho' : `Sửa kích thước ${editing.sizeCode}`}</h2>
+          <button type="button" className="fm-modal-close" onClick={onClose} aria-label="Đóng">×</button>
+        </div>
+        <form className="fm-modal-form" onSubmit={submit}>
+          {error && <div className="auth-message error" role="alert">{error}</div>}
+          {dimsLocked && (
+            <p className="fm-form-hint">Kích thước đã có kho hoặc bảng giá nên chỉ đổi được tên hiển thị và trạng thái. Muốn kích thước khác, hãy thêm size mới.</p>
+          )}
+
+          <div className="fm-form-row">
+            <label>
+              Nhóm size
+              <select value={prefix} disabled={!isNew} onChange={(e) => { setPrefix(e.target.value); setCode('') }}>
+                {categories.map(c => (
+                  <option key={c.prefix} value={c.prefix}>
+                    {c.name} ({c.prefix}) · {fpFmt(c.minVolume / (c.heightM || 2.5))}–{fpFmt(c.maxVolume / (c.heightM || 2.5))} m²
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Mã size
+              <input type="text" value={isNew ? code : editing.sizeCode} readOnly={!isNew} maxLength={10}
+                placeholder={`Để trống = ${suggested}`} onChange={(e) => setCode(e.target.value.toUpperCase())} />
+            </label>
+          </div>
+
+          <label>
+            Tên hiển thị cho khách
+            <input type="text" value={name} maxLength={100} placeholder="VD: Kho 2 x 3 m" required
+              onChange={(e) => setName(e.target.value)} />
+          </label>
+
+          <div className="fm-form-row">
+            <label>
+              Dài (m)
+              <input type="number" min="0.5" max="50" step="0.01" value={length} readOnly={dimsLocked}
+                onChange={(e) => setLength(e.target.value)} required />
+            </label>
+            <label>
+              Rộng (m)
+              <input type="number" min="0.5" max="50" step="0.01" value={width} readOnly={dimsLocked}
+                onChange={(e) => setWidth(e.target.value)} required />
+            </label>
+          </div>
+
+          <div className={`fp-calc ${area > 0 && (!areaOk || lengthShort) && !dimsLocked ? 'bad' : ''}`}>
+            <span>Diện tích <strong>{fpFmt(area)} m²</strong></span>
+            <small>Nhóm {cat.name}: diện tích từ {fpFmt(minArea)} đến {fpFmt(maxArea)} m². Chiều dài phải ≥ chiều rộng.</small>
+            {!dimsLocked && lengthShort && <small>⚠ Chiều dài đang nhỏ hơn chiều rộng, hãy đổi chỗ hai số.</small>}
+            {!dimsLocked && oversize && <small>⚠ Lớn hơn mọi nhóm size chuẩn (tối đa {fpFmt(maxStdArea)} m²): nhận theo đơn đặt riêng, không tạo size.</small>}
+          </div>
+
+          <label>
+            Trạng thái tại {facilityName}
+            <select value={isActive ? 'on' : 'off'} onChange={(e) => setIsActive(e.target.value === 'on')}>
+              <option value="on">Active</option>
+              <option value="off" disabled={lockPause}>
+                Deactive{lockPause ? ` (còn ${activeUnits} kho đang dùng)` : ''}
+              </option>
+            </select>
+          </label>
+
+          <div className="fm-modal-actions">
+            <button type="button" className="dashboard-secondary-btn" onClick={onClose}>Hủy</button>
+            <button type="submit" className="dashboard-primary-btn" disabled={saving}>
+              {saving ? 'Đang lưu...' : isNew ? 'Thêm kích thước' : 'Lưu thay đổi'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* =========================================================
    TAB "ĐẶC TÍNH KHO" (màn hình chính của phần Loại kho + Kích thước)
    ========================================================= */
 /**
- * Tab "Đặc tính kho": 2 chế độ xem Loại kho / Kích thước, đếm Active/Deactive, lọc, tìm kiếm, bật-tắt tại cơ sở.
- * Thêm / sửa / xóa danh mục chỉ Business Operations làm (menu "Danh mục kho").
- * API: PUT /api/unit-types/{id}, /api/unit-sizes/{id} (body kèm facilityID: chỉ đổi trạng thái tại cơ sở).
- *      (Dữ liệu GET do trang cha tải sẵn.)
+ * Tab "Đặc tính kho": 2 chế độ xem Loại kho / Kích thước, đếm Active/Deactive, lọc, tìm kiếm,
+ * thêm/sửa (mở TypeModal / SizeModal), bật-tắt tại cơ sở, xóa (tự xóa mức giá liên quan trước).
+ * API: POST/PUT/DELETE /api/unit-types[/{id}], /api/unit-sizes[/{id}];
+ *      DELETE /api/operations/facilities/{id}/rates/{typeId}/{sizeId}. (Dữ liệu GET do trang cha tải sẵn.)
  * @param {object} props
  * @param {number} props.facilityId mã cơ sở (null -> báo chưa gán cơ sở).
  * @param {string} props.facilityName tên cơ sở.
@@ -891,6 +1190,7 @@ function FacilityPropertiesTab({
   const [view, setView] = useState('types') // 'types' = xem Loại kho, 'sizes' = xem Kích thước
   const [filter, setFilter] = useState('all') // 'all' | 'on' (Active) | 'off' (Deactive)
   const [query, setQuery] = useState('') // từ khóa tìm kiếm
+  const [modal, setModal] = useState(null) // hộp thoại đang mở: { kind: 'type' | 'size', row } (row null = thêm mới)
 
   const categories = sizeCategories?.length ? sizeCategories : FP_SIZE_CATEGORIES
   const isTypes = view === 'types'
@@ -951,6 +1251,37 @@ function FacilityPropertiesTab({
     isActive: s.isActive, facilityID: facilityId, ...patch
   })
 
+  /* ----- Lưu từ modal ----- */
+  /**
+   * Lưu loại kho từ TypeModal (sửa hoặc thêm mới), đóng hộp thoại, gọi onChanged() để tải lại rồi hiện toast.
+   * API: PUT /api/unit-types/{id}  |  POST /api/unit-types
+   * Được TypeModal gọi qua prop onSave; lỗi được ném ra để modal hiện.
+   */
+  const saveType = async (payload) => {
+    const row = modal.row
+    const body = { typeName: payload.typeName, name: payload.typeName, description: payload.description, isActive: payload.isActive, facilityID: facilityId }
+    const saved = row ? await apiPut(`/api/unit-types/${row.id}`, body) : await apiPost('/api/unit-types', body)
+    setModal(null)
+    await onChanged()
+    const id = row?.id ?? normalizeType(saved || {}).id
+    showToast(row ? `Đã cập nhật loại kho #${row.id}.` : `Đã thêm loại kho #${id || '?'} "${payload.typeName}".`)
+  }
+
+  /**
+   * Lưu kích thước từ SizeModal (sửa hoặc thêm mới), đóng hộp thoại, gọi onChanged() để tải lại rồi hiện toast.
+   * API: PUT /api/unit-sizes/{id}  |  POST /api/unit-sizes
+   * Được SizeModal gọi qua prop onSave; lỗi được ném ra để modal hiện.
+   */
+  const saveSize = async (payload) => {
+    const row = modal.row
+    const body = { ...payload, facilityID: facilityId }
+    const saved = row ? await apiPut(`/api/unit-sizes/${row.id}`, body) : await apiPost('/api/unit-sizes', body)
+    setModal(null)
+    await onChanged()
+    const code = row?.sizeCode ?? normalizeSize(saved || {}).sizeCode
+    showToast(row ? `Đã cập nhật kích thước ${row.sizeCode}.` : `Đã thêm kích thước ${code || ''} "${payload.displayName}".`)
+  }
+
   /* ----- Ngừng / bật lại tại cơ sở ----- */
   /**
    * Bấm nút "Active"/"Deactive" ở 1 dòng: chuyển trạng thái loại/size tại cơ sở (chặn tắt khi còn kho đang dùng; hỏi xác nhận).
@@ -986,6 +1317,55 @@ function FacilityPropertiesTab({
     }
   }
 
+  /* ----- Xóa: tự xóa mức giá của cơ sở trước, rồi mới xóa loại / size ----- */
+  /**
+   * Bấm nút "Xóa" ở 1 dòng: chặn (và giải thích) nếu còn kho hoặc đã có đơn; hỏi xác nhận; xóa các mức giá liên quan
+   * trước rồi mới xóa loại/size; dù lỗi vẫn gọi onChanged() để bảng khớp với dữ liệu thật.
+   * API: DELETE /api/operations/facilities/{facilityId}/rates/{unitTypeId}/{unitSizeId} rồi DELETE /api/unit-types|unit-sizes/{id}
+   */
+  const remove = async (row) => {
+    const u = usage(row)
+    const reasons = []
+    if (u.allUnits > 0) reasons.push(`Có ${u.allUnits} kho tại ${facilityName} thuộc ${isTypes ? 'loại' : 'kích thước'} này.`)
+    if (row.reservationCount > 0) reasons.push(`Đã có ${row.reservationCount} đơn đặt chỗ sử dụng.`)
+    if (reasons.length) {
+      await dialog.alert({
+        tone: 'warning',
+        title: `Không thể xóa ${label(row)}`,
+        message: `${reasons.join(' ')}\n\nNếu không muốn dùng nữa, hãy chuyển sang Deactive (sau khi đổi hoặc ngừng các kho liên quan).`
+      })
+      return
+    }
+
+    const rateText = u.rates.length
+      ? `\n\nSẽ xóa luôn ${u.rates.length} mức giá liên quan tại ${facilityName}: ` +
+        u.rates.map(r => `${isTypes ? r.size : r.unitType} (${fmtMoney(r.price)})`).join(', ') + '.'
+      : ''
+    const ok = await dialog.confirm({
+      tone: 'warning',
+      title: `Xóa ${label(row)}?`,
+      message: `Thao tác này không hoàn tác được.${rateText}`,
+      confirmLabel: u.rates.length ? 'Xóa cả mức giá' : 'Xóa'
+    })
+    if (!ok) return
+
+    try {
+      for (const r of u.rates) {
+        await apiDelete(`/api/operations/facilities/${facilityId}/rates/${r.unitTypeId}/${r.unitSizeId}`)
+      }
+      await apiDelete(`${base}/${row.id}`)
+      await onChanged()
+      showToast(`Đã xóa ${label(row)}.`)
+    } catch (err) {
+      await onChanged()
+      await dialog.alert({
+        tone: 'danger',
+        title: 'Không xóa được',
+        message: `${err.message}\n\nNếu ${isTypes ? 'loại' : 'kích thước'} này còn kho hoặc mức giá ở cơ sở khác, chỉ Business Operations mới xóa được.`
+      })
+    }
+  }
+
   if (facilityId == null) {
     return <div className="fm-section-card"><div className="empty-state">Tài khoản chưa được gán cơ sở.</div></div>
   }
@@ -995,12 +1375,21 @@ function FacilityPropertiesTab({
     ? <span className="fp-badge fp-badge-active">● Active</span>
     : <span className="fp-badge fp-badge-deactive">● Deactive</span>
 
-  // Component nút thao tác của 1 dòng: chỉ bật / tắt tại cơ sở (thêm, sửa, xóa danh mục do Business Operations làm).
-  const Actions = ({ row }) => (
-    <div className="fp-actions">
-      <button type="button" className="fp-btn" onClick={() => toggle(row)}>{row.isActive ? 'Deactive' : 'Active'}</button>
-    </div>
-  )
+  // Component các nút thao tác của 1 dòng (Sửa, Active/Deactive, Xóa — có khóa khi đang được dùng).
+  const Actions = ({ row }) => {
+    const u = usage(row)
+    const locked = u.allUnits > 0 || row.reservationCount > 0
+    return (
+      <div className="fp-actions">
+        <button type="button" className="fp-btn" onClick={() => setModal({ kind: isTypes ? 'type' : 'size', row })}>Sửa</button>
+        <button type="button" className="fp-btn" onClick={() => toggle(row)}>{row.isActive ? 'Deactive' : 'Active'}</button>
+        <button type="button" className={`fp-btn ${locked ? 'locked' : 'danger'}`}
+          title={locked ? 'Bấm để xem lý do không xóa được' : 'Xóa'} onClick={() => remove(row)}>
+          {locked ? '🔒 Xóa' : 'Xóa'}
+        </button>
+      </div>
+    )
+  }
 
   // Component ô hiển thị mức sử dụng (số kho, số mức giá) của 1 dòng.
   const UsageCell = ({ row }) => {
@@ -1013,6 +1402,9 @@ function FacilityPropertiesTab({
     )
   }
 
+  const editingRow = modal?.row
+  const editingUsage = editingRow ? usage(editingRow) : { activeUnits: 0, rates: [] }
+
   // Tab "Đặc tính kho": loại kho + kích thước
   return (
     <div className="fm-section-card fp-card">
@@ -1020,8 +1412,11 @@ function FacilityPropertiesTab({
       <div className="fp-head">
         <div>
           <h2>Thiết lập đặc tính kho</h2>
-          <p>Loại kho và kích thước kho dùng tại {facilityName}. Chuyển Active / Deactive để chọn loại, kích thước nào được dùng khi tạo kho ở cơ sở này. Thêm, sửa, xóa danh mục do Business Operations thực hiện.</p>
+          <p>Loại kho và kích thước kho đang dùng tại {facilityName}. Thêm, sửa, chuyển Active / Deactive hoặc xóa ngay tại đây.</p>
         </div>
+        <button type="button" className="dashboard-primary-btn" onClick={() => setModal({ kind: isTypes ? 'type' : 'size', row: null })}>
+          {isTypes ? '+ Thêm loại kho' : '+ Thêm kích thước'}
+        </button>
       </div>
 
       {/* Chuyển giữa loại kho / kích thước */}
@@ -1095,6 +1490,16 @@ function FacilityPropertiesTab({
         </div>
       )}
 
+      {modal?.kind === 'type' && (
+        <TypeModal key={editingRow?.id || 'new'} editing={editingRow} types={catalog.types}
+          activeUnits={editingUsage.activeUnits} facilityName={facilityName}
+          onClose={() => setModal(null)} onSave={saveType} />
+      )}
+      {modal?.kind === 'size' && (
+        <SizeModal key={editingRow?.id || 'new'} editing={editingRow} sizes={catalog.sizes} categories={categories}
+          activeUnits={editingUsage.activeUnits} hasRates={editingUsage.rates.length > 0}
+          facilityName={facilityName} onClose={() => setModal(null)} onSave={saveSize} />
+      )}
     </div>
   )
 }

@@ -33,8 +33,7 @@ public class UnitTypeRepository : IUnitTypeRepository
 
     public async Task<bool> ExistsByNameAsync(string name, int? excludeId = null, CancellationToken cancellationToken = default)
     {
-        var lowered = name.Trim().ToLower(); // không phân biệt hoa thường (Postgres mặc định có phân biệt)
-        var query = _context.UnitTypes.Where(t => t.TypeName.ToLower() == lowered);
+        var query = _context.UnitTypes.Where(t => t.TypeName == name);
         if (excludeId.HasValue) query = query.Where(t => t.UnitTypeID != excludeId.Value);
         return await query.AnyAsync(cancellationToken);
     }

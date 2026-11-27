@@ -26,11 +26,6 @@ public class UnitSizesController : ControllerBase
         return Ok(items);
     }
 
-    // GET /api/unit-sizes/categories : nhóm kích thước đang dùng (BOM chọn khi tạo kích thước)
-    [HttpGet("categories")]
-    public async Task<ActionResult<IEnumerable<SizeCategoryOption>>> GetCategories(CancellationToken cancellationToken)
-        => Ok(await _unitSizeService.GetCategoriesAsync(cancellationToken));
-
     // GET /api/unit-sizes/{id}
     [HttpGet("{id:int}")]
     public async Task<ActionResult<UnitSizeResponse>> GetById(

@@ -1,70 +1,101 @@
 /**
  * ======================================================================
- * FILE: src/pages/business/BusinessCatalog.jsx  —  DANH MỤC LOẠI KHO & KÍCH THƯỚC KHO (CRUD, CHỈ BOM)
- * CHỨC NĂNG: Màn hình "Danh mục kho" của Business Operations: 2 tab Loại kho / Kích thước kho, cho thêm / sửa /
- *   xóa / ngừng dùng. Ràng buộc kiểm tra ngay trên form và kiểm tra lại ở backend:
- *    - Loại kho: tên 2–100 ký tự, không trùng (không phân biệt hoa thường), mô tả ≤ 255 ký tự.
- *    - Kích thước: chọn nhóm (Nhỏ / Vừa / Lớn / Xe); rộng, dài 0,5–50 m, tối đa 2 số lẻ; dài ≥ rộng;
- *      diện tích nằm trong khoảng của nhóm; không trùng số đo; tên hiển thị không trùng; mã size do hệ thống cấp.
- *    - Đang được kho / đơn / bảng giá dùng: không xóa được; kích thước thì khóa số đo và nhóm.
+ * FILE: src/pages/business/BusinessCatalog.jsx  —  DANH MỤC LOẠI KHO & KÍCH THƯỚC KHO (CRUD)
+ * ⚠ GHI CHÚ: hiện KHÔNG có file nào import component này -> đây là CODE CHƯA DÙNG (giữ nguyên, không xóa).
+ *   (BusinessCatalog.css thì vẫn được dùng, vì BusinessFacilityForm.jsx import lại các class .bc-*.)
+ * CHỨC NĂNG (nếu được gắn vào menu): màn hình "Danh mục thiết lập" có 2 tab Loại kho / Kích thước kho,
+ *   cho thêm / sửa / xóa; chặn xóa khi danh mục đang được kho / đơn / biểu giá sử dụng; cảnh báo khi sửa danh mục
+ *   đang dùng (thay đổi áp dụng cho mọi kho liên quan); backend chưa có API danh mục thì tự chuyển sang chế độ chỉ xem.
  * THÀNH PHẦN CHÍNH:
  *   - BusinessCatalog (export default): màn hình chính với 2 bảng DataGrid.
  *   - UnitTypeForm: modal thêm / sửa loại kho.
- *   - UnitSizeForm: modal thêm / sửa kích thước kho.
+ *   - UnitSizeForm: modal thêm / sửa kích thước kho (ghép chuỗi "S2: 2x2m", tự tính diện tích).
  *   - CatalogModal, Field: khung hộp thoại và 1 ô form dùng chung.
- * DÙNG Ở: src/pages/business/BusinessOperations.jsx (menu "Danh mục kho").
- *   (BusinessCatalog.css cũng được BusinessFacilityForm.jsx dùng lại các class .bc-*.)
- * PHỤ THUỘC: components/common/DataGrid, features/unit/unitTypes (chip loại kho), api/catalogApi, BusinessCatalog.css.
+ *   - SIZE_CODE_PATTERN, fmtArea, suggestedSizeLetter: hằng số / hàm tiện ích.
+ * DÙNG Ở: Chưa có nơi nào import (code chưa dùng).
+ * PHỤ THUỘC: components/common/DataGrid (bảng có tìm kiếm + sắp xếp), features/unit/unitTypes (chip loại kho, thước size),
+ *   api/catalogApi (gọi API danh mục, ghép / tách chuỗi kích thước), BusinessCatalog.css.
  * API (qua api/catalogApi.js, UnitTypesController / UnitSizesController):
  *   GET/POST /api/unit-types, PUT/DELETE /api/unit-types/{id},
- *   GET/POST /api/unit-sizes, PUT/DELETE /api/unit-sizes/{id}, GET /api/unit-sizes/categories.
- * LUỒNG: mở màn hình -> load (loại kho + kích thước + nhóm kích thước) -> bấm "+ Thêm" / "Sửa"
- *   -> form kiểm tra -> saveType / saveSize -> runSave gọi API -> afterChange đóng form, tải lại, báo thành công.
+ *   GET/POST /api/unit-sizes, PUT/DELETE /api/unit-sizes/{id}.
+ * LUỒNG: mở màn hình -> load (GET unit-types + unit-sizes; lỗi thì lấy từ operationState và bật readOnly)
+ *   -> bấm "+ Thêm" / "Sửa" -> UnitTypeForm / UnitSizeForm kiểm tra -> saveType / saveSize hỏi xác nhận nếu đang dùng
+ *   -> runSave gọi API -> afterChange đóng form, tải lại, báo thành công.
  * ======================================================================
  */
 
 /**
  * GHI CHÚ CÁC HÀM (tên: chức năng)
- *   fmtNum: Định dạng số kiểu Việt Nam (tối đa 2 chữ số thập phân) → dùng ở: UnitSizeForm, BusinessCatalog
- *   toNumber: Đổi chuỗi nhập (cho phép dấu phẩy) thành số; rỗng -> NaN → dùng ở: UnitSizeForm
- *   CatalogModal: Khung hộp thoại chung cho các form danh mục → dùng ở: UnitTypeForm, UnitSizeForm
- *   Field: 1 trường form: nhãn, ô nhập, câu lỗi hoặc gợi ý → dùng ở: UnitTypeForm, UnitSizeForm
- *   UnitTypeForm: Modal thêm / sửa loại kho: tên, mô tả, đang dùng → dùng ở: BusinessCatalog
- *   UnitSizeForm: Modal thêm / sửa kích thước: nhóm, rộng, dài, tên hiển thị, đang dùng → dùng ở: BusinessCatalog
- *   sideError: Kiểm tra 1 số đo (là số, 0,5–50 m, tối đa 2 số lẻ) → dùng ở: UnitSizeForm
- *   BusinessCatalog: Màn hình danh mục 2 tab → dùng ở: BusinessOperations.jsx
- *   load: Tải loại kho, kích thước, nhóm kích thước → dùng ở: BusinessCatalog, afterChange
- *   afterChange / runSave: Lưu xong thì đóng form, tải lại, báo kết quả; lỗi thì hiện pop-up → dùng ở: saveType, saveSize, deleteType, deleteSize
- *   saveType / deleteType / saveSize / deleteSize: Thêm, sửa, xóa từng mục → dùng ở: BusinessCatalog
+ *   fmtArea: Định dạng diện tích kiểu Việt Nam (tối đa 1 chữ số thập phân) → dùng ở: UnitSizeForm, BusinessCatalog
+ *   suggestedSizeLetter: Gợi ý chữ cái nhóm size theo diện tích: <=8 m² 'S', <=16 'M', <=30 'L', lớn hơn 'V' → dùng ở: UnitSizeForm
+ *   CatalogModal: Khung hộp thoại chung cho các form danh mục: tiêu đề, nội dung, nút Hủy / Lưu; đóng bằng Esc, nút × hoặc bấm ra ngoài → dùng ở: UnitTypeForm, UnitSizeForm
+ *   Field: 1 trường form: nhãn (thêm dấu * nếu bắt buộc), ô nhập (children), và câu lỗi (ưu tiên) hoặc gợi ý bên dưới → dùng ở: UnitTypeForm, UnitSizeForm
+ *   UnitTypeForm: Modal thêm / sửa loại kho: tên (2–100 ký tự, không trùng), mô tả (<= 255 ký tự), xem trước chip loại kho (icon + màu tự chọn theo tên) → dùng ở: BusinessCatalog
+ *   submit: Lưu loại kho (submit form): bật hiện lỗi, kiểm tra hợp lệ rồi gọi onSave({ typeName, description }) → dùng ở: UnitTypeForm
+ *   UnitSizeForm: Modal thêm / sửa kích thước: mã size (S/M/L/V + 1–2 số), dài × rộng (0,5–50 m) hoặc tủ Locker + ghi chú; tự ghép chuỗi "S2: 2x2m" → dùng ở: BusinessCatalog
+ *   dimError: Kiểm tra 1 số đo nhập vào (phải là số, từ 0,5 m đến 50 m); trả câu lỗi hoặc '' → dùng ở: UnitSizeForm
+ *   BusinessCatalog: Màn hình danh mục: 2 tab (Loại kho / Kích thước kho) hiển thị bằng DataGrid, nút Thêm / Sửa / Xóa, đếm mức sử dụng của từng mục để chặn xóa → chưa thấy nơi dùng
+ *   usageOfType: Mức sử dụng của 1 loại kho (ưu tiên số backend trả, không có thì dùng số tự đếm) → dùng ở: saveType, deleteType, BusinessCatalog
+ *   usageOfSize: Mức sử dụng của 1 kích thước (ưu tiên số backend trả, không có thì dùng số tự đếm) → dùng ở: saveSize, deleteSize, BusinessCatalog
+ *   load: Tải danh mục loại kho + kích thước; lỗi thì dùng dữ liệu vận hành và chuyển sang chỉ xem → dùng ở: BusinessCatalog, afterChange
+ *   afterChange: Sau khi lưu: đóng form, tải lại danh mục + dữ liệu cha (onChanged), báo thành công → dùng ở: runSave
+ *   runSave: Chạy 1 thao tác lưu/xóa, thành công thì gọi afterChange, lỗi thì hiện pop-up → dùng ở: saveType, deleteType, saveSize +1
+ *   saveType: Thêm hoặc sửa loại kho (hỏi xác nhận khi đổi tên loại đang được kho sử dụng) → dùng ở: BusinessCatalog
+ *   deleteType: Xóa loại kho (bấm "Xóa" trên dòng): chặn và báo lý do nếu đang được kho / đơn / mức giá dùng, ngược lại hỏi xác nhận rồi xóa → dùng ở: BusinessCatalog
+ *   saveSize: Thêm hoặc sửa kích thước (hỏi xác nhận khi sửa kích thước đang được kho sử dụng) → dùng ở: BusinessCatalog
+ *   deleteSize: Xóa kích thước (bấm "Xóa" trên dòng): chặn nếu đang được kho / mức giá dùng, ngược lại hỏi xác nhận rồi xóa → dùng ở: BusinessCatalog
+ *   actionButtons: Vẽ cặp nút Sửa / Xóa cho 1 dòng (khóa khi chỉ xem; nút Xóa mờ khi đang được dùng) → dùng ở: BusinessCatalog
  */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import DataGrid from '../../components/common/DataGrid'
-import { UnitTypeChip, getUnitTypeStyle } from '../../features/unit/unitTypes'
-import { catalogApi, isMissingEndpoint } from '../../api/catalogApi'
+import { SizeMeter, UnitTypeChip, getUnitTypeStyle } from '../../features/unit/unitTypes'
+import { catalogApi, composeDimensions, isMissingEndpoint, parseDimensions } from '../../api/catalogApi'
 import './BusinessCatalog.css'
 
-/* Giới hạn số đo khi tạo kích thước (khớp backend UnitSizeService). */
-const MIN_SIDE = 0.5
-const MAX_SIDE = 50
+/** Mã size hợp lệ: 1 chữ S/M/L/V + 1–2 chữ số (vd S2, M10). */
+const SIZE_CODE_PATTERN = /^[SMLV]\d{1,2}$/
+/**
+ * Định dạng diện tích kiểu Việt Nam (tối đa 1 chữ số thập phân).
+ * @param {number} value diện tích m².
+ * @returns {string} vd "4,5".
+ */
+const fmtArea = value => Number(value).toLocaleString('vi-VN', { maximumFractionDigits: 1 })
 
-/** Định dạng số kiểu Việt Nam, tối đa 2 chữ số thập phân. */
-const fmtNum = value => Number(value).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
-/** Đổi chuỗi nhập (cho phép dấu phẩy) thành số; rỗng -> NaN. */
-const toNumber = value => (String(value).trim() === '' ? NaN : Number(String(value).replace(',', '.')))
-/** Gộp khoảng trắng thừa giống backend. */
-const normalizeName = value => String(value || '').trim().replace(/\s+/g, ' ')
+/**
+ * Gợi ý chữ cái nhóm size theo diện tích: <=8 m² 'S', <=16 'M', <=30 'L', lớn hơn 'V'.
+ * Được gọi bởi: UnitSizeForm để cảnh báo khi chữ cái mã size không khớp diện tích.
+ * @param {number|null} area diện tích m².
+ * @returns {'S'|'M'|'L'|'V'|null} null nếu chưa có diện tích.
+ */
+function suggestedSizeLetter(area) {
+  if (!area) return null
+  if (area <= 8) return 'S'
+  if (area <= 16) return 'M'
+  if (area <= 30) return 'L'
+  return 'V'
+}
 
 /* ---------- Modal chung ---------- */
 /**
  * Khung hộp thoại chung cho các form danh mục: tiêu đề, nội dung, nút Hủy / Lưu; đóng bằng Esc, nút × hoặc bấm ra ngoài.
+ * Được dùng bởi: UnitTypeForm, UnitSizeForm.
+ * @param {object} props
+ * @param {string} props.title tiêu đề.
+ * @param {string} [props.subtitle] dòng phụ dưới tiêu đề.
+ * @param {React.ReactNode} props.children nội dung form.
+ * @param {Function} props.onClose đóng hộp thoại.
+ * @param {Function} props.onSubmit gọi khi submit form.
+ * @param {string} props.submitLabel chữ trên nút lưu.
+ * @param {boolean} props.saving đang lưu -> khóa nút lưu.
  */
 function CatalogModal({ title, subtitle, children, onClose, onSubmit, submitLabel, saving }) {
-  // Gắn phím Esc để đóng hộp thoại khi mở; gỡ khi đóng.
+  // Gắn phím Esc để đóng hộp thoại khi mở; gỡ khi đóng (chạy lại nếu onClose đổi).
   useEffect(() => {
     const onKey = event => { if (event.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
+  // Khung hộp thoại dùng chung
   return (
     <div className="bc-modal-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
       <form className="bc-modal" role="dialog" aria-modal="true" aria-labelledby="bc-modal-title" onSubmit={event => { event.preventDefault(); onSubmit() }} noValidate>
@@ -85,8 +116,17 @@ function CatalogModal({ title, subtitle, children, onClose, onSubmit, submitLabe
   )
 }
 
-/** 1 trường form: nhãn (dấu * nếu bắt buộc), ô nhập, câu lỗi (ưu tiên) hoặc gợi ý. */
+/**
+ * 1 trường form: nhãn (thêm dấu * nếu bắt buộc), ô nhập (children), và câu lỗi (ưu tiên) hoặc gợi ý bên dưới.
+ * @param {object} props
+ * @param {string} props.label nhãn.
+ * @param {string} [props.error] câu lỗi (có thì tô đỏ).
+ * @param {string} [props.hint] câu gợi ý khi không có lỗi.
+ * @param {React.ReactNode} props.children ô nhập.
+ * @param {boolean} [props.required] hiện dấu * bắt buộc.
+ */
 function Field({ label, error, hint, children, required }) {
+  // 1 ô nhập có nhãn + lỗi
   return (
     <label className={`bc-field${error ? ' has-error' : ''}`}>
       <span className="bc-field-label">{label}{required && <em aria-hidden="true"> *</em>}</span>
@@ -98,47 +138,51 @@ function Field({ label, error, hint, children, required }) {
 
 /* ---------- Form loại kho ---------- */
 /**
- * Modal thêm / sửa loại kho: tên (2–100 ký tự, không trùng, không phân biệt hoa thường), mô tả (≤ 255 ký tự), đang dùng.
+ * Modal thêm / sửa loại kho: tên (2–100 ký tự, không trùng), mô tả (<= 255 ký tự), xem trước chip loại kho
+ * (icon + màu tự chọn theo tên). Không gọi API: trả dữ liệu qua onSave.
+ * Được gọi bởi: BusinessCatalog khi modal.kind === 'type'.
+ * @param {object} props
  * @param {object|null} props.item loại kho đang sửa (null khi thêm mới).
  * @param {Array} props.allTypes mọi loại kho (kiểm tra trùng tên).
- * @param {{units: number}} props.usage số kho đang dùng loại này.
- * @param {Function} props.onSave nhận { typeName, description, isActive }.
+ * @param {{units: number}} props.usage số kho đang dùng loại này (để cảnh báo khi đổi tên).
+ * @param {Function} props.onClose đóng modal.
+ * @param {Function} props.onSave nhận { typeName, description }.
  */
 function UnitTypeForm({ item, allTypes, usage, onClose, onSave }) {
   const [name, setName] = useState(item?.name || '')
   const [description, setDescription] = useState(item?.description || '')
-  const [isActive, setIsActive] = useState(item ? item.isActive !== false : true)
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const trimmed = normalizeName(name)
-  const duplicate = allTypes.find(t => t.unitTypeId !== item?.unitTypeId && normalizeName(t.name).toLowerCase() === trimmed.toLowerCase())
+  const trimmed = name.trim()
+  const duplicate = allTypes.some(t => t.unitTypeId !== item?.unitTypeId && t.name.trim().toLowerCase() === trimmed.toLowerCase())
   const errors = {
     name: !trimmed ? 'Vui lòng nhập tên loại kho.'
       : trimmed.length < 2 ? 'Tên loại kho cần ít nhất 2 ký tự.'
         : trimmed.length > 100 ? 'Tên loại kho tối đa 100 ký tự.'
-          : duplicate ? `Đã có loại kho "${duplicate.name}".` : '',
-    description: description.trim().length > 255 ? `Mô tả tối đa 255 ký tự (đang có ${description.trim().length}).` : ''
+          : duplicate ? 'Đã có loại kho trùng tên.' : '',
+    description: description.length > 255 ? `Mô tả tối đa 255 ký tự (đang có ${description.length}).` : ''
   }
   const valid = !errors.name && !errors.description
   const style = getUnitTypeStyle(trimmed)
 
-  // Lưu: bật hiện lỗi, hợp lệ thì gửi dữ liệu lên component cha.
+  // Lưu loại kho (submit form): bật hiện lỗi, kiểm tra hợp lệ rồi gọi onSave({ typeName, description }).
   const submit = async () => {
     setTouched(true)
     if (!valid) return
     setSaving(true)
     try {
-      await onSave({ typeName: trimmed, description: description.trim() || null, isActive })
+      await onSave({ typeName: trimmed, description: description.trim() || null })
     } finally {
       setSaving(false)
     }
   }
 
+  // Form thêm/sửa loại kho
   return (
     <CatalogModal
-      title={item ? 'Sửa loại kho' : 'Thêm loại kho'}
-      subtitle={item ? `Mã loại #${item.unitTypeId}` : 'Loại kho dùng để phân nhóm kho và đặt bảng giá.'}
+      title={item ? `Sửa loại kho` : 'Thêm loại kho'}
+      subtitle={item ? `Mã loại #${item.unitTypeId}` : 'Loại kho dùng để phân nhóm kho và đặt biểu giá.'}
       onClose={onClose}
       onSubmit={submit}
       submitLabel={item ? 'Lưu thay đổi' : 'Thêm loại kho'}
@@ -147,170 +191,153 @@ function UnitTypeForm({ item, allTypes, usage, onClose, onSave }) {
       {item && usage.units > 0 && (
         <div className="bc-note warn">Loại kho này đang được <strong>{usage.units} kho</strong> sử dụng. Đổi tên sẽ áp dụng cho tất cả các kho đó.</div>
       )}
-      <Field label="Tên loại kho" required error={touched ? errors.name : ''} hint="Ví dụ: Kho lạnh, Indoor Unit (2–100 ký tự)">
+      <Field label="Tên loại kho" required error={touched ? errors.name : ''} hint="Ví dụ: Kho lạnh, Kho mát, Climate-Control Unit">
         <input value={name} maxLength={120} onChange={e => setName(e.target.value)} onBlur={() => setTouched(true)} autoFocus />
       </Field>
-      <Field label="Mô tả" error={errors.description} hint={`${description.trim().length}/255 ký tự`}>
+      <Field label="Mô tả" error={errors.description} hint={`${description.length}/255 ký tự`}>
         <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Ví dụ: Kho điều hòa nhiệt độ, phù hợp đồ điện tử, hồ sơ" />
       </Field>
-      <label className="bc-check bc-check-inline">
-        <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
-        <span>Đang dùng (bỏ chọn để ngừng dùng loại này cho kho mới)</span>
-      </label>
       <div className="bc-preview">
         <span>Hiển thị cho khách:</span>
         <UnitTypeChip type={trimmed || 'Kho'} />
         <small>{trimmed ? style.description : 'Nhập tên để xem trước.'}</small>
       </div>
+      <p className="bc-field-hint">Icon và màu được chọn tự động theo tên: tên chứa "lạnh/cold" là Kho lạnh, "mát/climate" là Kho mát, "indoor/trong nhà" là Kho trong nhà, "drive/xe" là Kho xe vào tận nơi, "basic/tiêu chuẩn" là Kho tiêu chuẩn.</p>
     </CatalogModal>
   )
 }
 
 /* ---------- Form kích thước kho ---------- */
 /**
- * Kiểm tra 1 số đo: là số, từ 0,5 đến 50 m, tối đa 2 chữ số thập phân. Trả câu lỗi hoặc ''.
- */
-function sideError(value, label) {
-  const n = toNumber(value)
-  if (!Number.isFinite(n)) return `Nhập ${label} (mét).`
-  if (n < MIN_SIDE) return `${label[0].toUpperCase()}${label.slice(1)} tối thiểu ${fmtNum(MIN_SIDE)} m.`
-  if (n > MAX_SIDE) return `${label[0].toUpperCase()}${label.slice(1)} tối đa ${MAX_SIDE} m.`
-  if (Math.round(n * 100) !== n * 100) return 'Tối đa 2 chữ số thập phân.'
-  return ''
-}
-
-/**
- * Modal thêm / sửa kích thước kho. BOM chọn nhóm, nhập rộng × dài (dài ≥ rộng), tên hiển thị (có thể để trống để
- * hệ thống tự đặt); chiều cao lấy theo nhóm, mã size do hệ thống cấp. Kích thước đang được dùng thì khóa số đo + nhóm.
+ * Modal thêm / sửa kích thước: mã size (S/M/L/V + 1–2 số), dài × rộng (0,5–50 m) hoặc tủ Locker + ghi chú;
+ * tự ghép chuỗi "S2: 2x2m" (composeDimensions), tính diện tích, cảnh báo trùng mã / trùng kích thước /
+ * chữ cái không khớp diện tích. Không gọi API: trả dữ liệu qua onSave.
+ * Được gọi bởi: BusinessCatalog khi modal.kind === 'size'.
+ * @param {object} props
  * @param {object|null} props.item kích thước đang sửa (null khi thêm mới).
  * @param {Array} props.allSizes mọi kích thước (kiểm tra trùng).
- * @param {Array} props.categories nhóm kích thước đang dùng (GET /api/unit-sizes/categories).
- * @param {{units: number, rates: number, reservations: number}} props.usage mức sử dụng.
- * @param {Function} props.onSave nhận { sizeCategoryId, widthM, lengthM, displayName, isActive }.
+ * @param {{units: number}} props.usage số kho đang dùng kích thước này.
+ * @param {Function} props.onClose đóng modal.
+ * @param {Function} props.onSave nhận { dimensions, volume }.
  */
-function UnitSizeForm({ item, allSizes, categories, usage, onClose, onSave }) {
-  const inUse = Boolean(item && (usage.units || usage.rates || usage.reservations))
-  const [categoryId, setCategoryId] = useState(item ? String(item.sizeCategoryId || '') : '')
-  const [width, setWidth] = useState(item?.widthM != null ? String(item.widthM) : '')
-  const [length, setLength] = useState(item?.lengthM != null ? String(item.lengthM) : '')
-  const [displayName, setDisplayName] = useState(item?.displayName || '')
-  const [isActive, setIsActive] = useState(item ? item.isActive !== false : true)
+function UnitSizeForm({ item, allSizes, usage, onClose, onSave }) {
+  const initial = item ? parseDimensions(item.dimensions, item.volume) : { code: '', length: '', width: '', isLocker: false, lockerNote: '' }
+  const [code, setCode] = useState(initial.code)
+  const [isLocker, setIsLocker] = useState(initial.isLocker)
+  const [length, setLength] = useState(initial.length === '' ? '' : String(initial.length))
+  const [width, setWidth] = useState(initial.width === '' ? '' : String(initial.width))
+  const [lockerNote, setLockerNote] = useState(initial.lockerNote || '')
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const category = categories.find(c => String(c.sizeCategoryId) === categoryId)
-    // Nhóm của kích thước đang sửa có thể đã ngừng dùng (không có trong danh sách) -> vẫn hiện tên.
-    || (item && String(item.sizeCategoryId) === categoryId ? { sizeCategoryId: item.sizeCategoryId, categoryName: item.categoryName, standardHeightM: item.heightM, minAreaM2: null, maxAreaM2: null, codePrefix: item.sizeCode?.[0] } : null)
-  const w = toNumber(width)
-  const l = toNumber(length)
-  const area = Number.isFinite(w) && Number.isFinite(l) ? Math.round(w * l * 100) / 100 : null
-  const height = category?.standardHeightM ?? null
-  const isVehicle = String(category?.codePrefix || '').toUpperCase() === 'V'
-  const defaultName = area ? `${isVehicle ? 'Kho xe' : 'Kho'} ${fmtNum(w).replace(',', '.')} x ${fmtNum(l).replace(',', '.')} m` : ''
-  const finalName = normalizeName(displayName) || defaultName
+  // Giá trị suy ra từ ô nhập: mã viết hoa, dài/rộng dạng số, diện tích (làm tròn 0,1), chuỗi kích thước sẽ lưu,
+  // và kích thước khác bị trùng mã (sameCode) / trùng dài×rộng kể cả khi đảo chiều (sameDims).
+  const codeUpper = code.trim().toUpperCase()
+  const l =Number(String(length).replace(',', '.'))
+  const w = Number(String(width).replace(',', '.'))
+  const area = !isLocker && l > 0 && w > 0 ? Math.round(l * w * 10) / 10 : null
+  const dimensions = codeUpper ? composeDimensions({ code: codeUpper, length: l, width: w, isLocker, lockerNote }) : ''
   const others = allSizes.filter(s => s.unitSizeId !== item?.unitSizeId)
-  const sameDims = area && height != null && others.find(s =>
-    Number(s.heightM) === Number(height) &&
-    ((Number(s.widthM) === w && Number(s.lengthM) === l) || (Number(s.widthM) === l && Number(s.lengthM) === w)))
-  const sameName = finalName && others.find(s => normalizeName(s.displayName).toLowerCase() === finalName.toLowerCase())
-  const dimsChanged = item && (categoryId !== String(item.sizeCategoryId) || w !== Number(item.widthM) || l !== Number(item.lengthM))
-
-  const errors = {
-    category: !category ? 'Vui lòng chọn nhóm kích thước.' : '',
-    width: sideError(width, 'chiều rộng'),
-    length: sideError(length, 'chiều dài'),
-    order: '',
-    range: '',
-    dims: '',
-    name: ''
+  const sameCode = others.find(s => parseDimensions(s.dimensions).code === codeUpper)
+  const sameDims = !isLocker && others.find(s => {
+    const p = parseDimensions(s.dimensions)
+    return !p.isLocker && ((p.length === l && p.width === w) || (p.length === w && p.width === l))
+  })
+  // Kiểm tra 1 số đo nhập vào (phải là số, từ 0,5 m đến 50 m); trả câu lỗi hoặc ''.
+  const dimError = value => {
+    const n = Number(String(value).replace(',', '.'))
+    if (value === '' || !Number.isFinite(n)) return 'Nhập số mét.'
+    if (n < 0.5) return 'Tối thiểu 0,5 m.'
+    if (n > 50) return 'Tối đa 50 m.'
+    return ''
   }
-  if (!errors.width && !errors.length && l < w) errors.order = `Chiều dài (${fmtNum(l)} m) phải lớn hơn hoặc bằng chiều rộng (${fmtNum(w)} m). Hãy đổi chỗ 2 số đo.`
-  if (!errors.width && !errors.length && !errors.order && category?.minAreaM2 != null && (area < category.minAreaM2 || area > category.maxAreaM2))
-    errors.range = `Diện tích ${fmtNum(area)} m² không thuộc nhóm ${category.categoryName} (nhận từ ${fmtNum(category.minAreaM2)} đến ${fmtNum(category.maxAreaM2)} m²). Hãy đổi số đo hoặc chọn nhóm khác.`
-  if (!errors.width && !errors.length && sameDims && (!item || dimsChanged)) errors.dims = `Đã có kích thước ${sameDims.sizeCode} "${sameDims.displayName}" cùng số đo.`
-  if (normalizeName(displayName).length === 1) errors.name = 'Tên hiển thị cần ít nhất 2 ký tự.'
-  else if (finalName.length > 100) errors.name = 'Tên hiển thị tối đa 100 ký tự.'
-  else if (sameName) errors.name = `Tên "${finalName}" đã được kích thước ${sameName.sizeCode} dùng.`
-  if (inUse) { errors.category = ''; errors.width = ''; errors.length = ''; errors.order = ''; errors.range = ''; errors.dims = '' }
-  if (item && !normalizeName(displayName)) errors.name = 'Tên hiển thị không được để trống.'
+  const errors = {
+    code: !codeUpper ? 'Vui lòng nhập mã size.'
+      : !SIZE_CODE_PATTERN.test(codeUpper) ? 'Mã gồm 1 chữ S/M/L/V và 1–2 chữ số, ví dụ S2, M1, L3.'
+        : sameCode ? `Mã ${codeUpper} đã được dùng (${sameCode.dimensions}).` : '',
+    length: isLocker ? '' : dimError(length),
+    width: isLocker ? '' : dimError(width),
+    dims: sameDims ? `Đã có kích thước giống hệt: ${sameDims.dimensions}.` : '',
+    note: lockerNote.length > 30 ? 'Ghi chú tối đa 30 ký tự.' : ''
+  }
   const valid = Object.values(errors).every(v => !v)
+  const suggested = suggestedSizeLetter(area)
+  // Chữ cái mã size khác với hạng gợi ý theo diện tích -> chỉ cảnh báo, không chặn lưu.
+  const letterMismatch = area && SIZE_CODE_PATTERN.test(codeUpper) && codeUpper[0] !== suggested
 
-  // Lưu: bật hiện lỗi, hợp lệ thì gửi dữ liệu lên component cha (đang dùng thì không gửi số đo).
+  // Lưu kích thước (submit form): bật hiện lỗi, kiểm tra hợp lệ rồi gọi onSave({ dimensions, volume = diện tích }).
   const submit = async () => {
     setTouched(true)
     if (!valid) return
     setSaving(true)
     try {
-      await onSave(inUse
-        ? { displayName: normalizeName(displayName), isActive }
-        : { sizeCategoryId: Number(categoryId), widthM: w, lengthM: l, displayName: normalizeName(displayName) || null, isActive })
+      await onSave({ dimensions, volume: area })
     } finally {
       setSaving(false)
     }
   }
 
-  const blockError = errors.order || errors.range || errors.dims
+  // Form thêm/sửa kích thước kho
   return (
     <CatalogModal
-      title={item ? `Sửa kích thước ${item.sizeCode}` : 'Thêm kích thước kho'}
-      subtitle={item ? `Mã kích thước #${item.unitSizeId}` : 'Mã size (S5, M3...) và chiều cao được hệ thống tự cấp theo nhóm.'}
+      title={item ? 'Sửa kích thước kho' : 'Thêm kích thước kho'}
+      subtitle={item ? `Mã kích thước #${item.unitSizeId}` : 'Kích thước được ghép thành dạng "S2: 2x2m" và tự tính diện tích.'}
       onClose={onClose}
       onSubmit={submit}
       submitLabel={item ? 'Lưu thay đổi' : 'Thêm kích thước'}
       saving={saving}
     >
-      {inUse && (
-        <div className="bc-note warn">
-          Kích thước này đang được dùng ({[usage.units && `${usage.units} kho`, usage.reservations && `${usage.reservations} đơn đặt`, usage.rates && `${usage.rates} mức giá`].filter(Boolean).join(', ')}),
-          nên <strong>không đổi được số đo hay nhóm</strong>. Chỉ đổi được tên hiển thị và trạng thái; nếu cần số đo khác, hãy tạo kích thước mới.
+      {item && usage.units > 0 && (
+        <div className="bc-note warn">Kích thước này đang được <strong>{usage.units} kho</strong> sử dụng. Thay đổi sẽ áp dụng cho tất cả các kho đó.</div>
+      )}
+      {/* Mã size + tên */}
+      <div className="bc-row">
+        <Field label="Mã size" required error={touched ? errors.code : ''} hint="S = nhỏ, M = vừa, L = lớn, V = rất lớn">
+          <input value={code} maxLength={3} onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} onBlur={() => setTouched(true)} placeholder="S2" autoFocus />
+        </Field>
+        <label className="bc-check">
+          <input type="checkbox" checked={isLocker} onChange={e => setIsLocker(e.target.checked)} />
+          <span>Tủ locker (không đo dài × rộng)</span>
+        </label>
+      </div>
+      {/* Kích thước dài × rộng (hoặc ghi chú tủ locker) */}
+      {isLocker ? (
+        <Field label="Ghi chú kích thước locker" error={errors.note} hint='Ví dụ: "< 2.5m" (không bắt buộc)'>
+          <input value={lockerNote} maxLength={40} onChange={e => setLockerNote(e.target.value)} placeholder="< 2.5m" />
+        </Field>
+      ) : (
+        <div className="bc-row">
+          <Field label="Dài (m)" required error={touched ? errors.length : ''}>
+            <input type="number" inputMode="decimal" min="0.5" max="50" step="0.1" value={length} onChange={e => setLength(e.target.value)} placeholder="2" />
+          </Field>
+          <span className="bc-times" aria-hidden="true">×</span>
+          <Field label="Rộng (m)" required error={touched ? errors.width : ''}>
+            <input type="number" inputMode="decimal" min="0.5" max="50" step="0.1" value={width} onChange={e => setWidth(e.target.value)} placeholder="2" />
+          </Field>
         </div>
       )}
-      <Field label="Nhóm kích thước" required error={touched ? errors.category : ''}
-        hint={category?.minAreaM2 != null ? `Diện tích cho phép: ${fmtNum(category.minAreaM2)}–${fmtNum(category.maxAreaM2)} m², cao ${fmtNum(category.standardHeightM)} m` : 'Nhỏ / Vừa / Lớn / Xe; quyết định chiều cao và chữ đầu mã size'}>
-        <select value={categoryId} onChange={e => setCategoryId(e.target.value)} disabled={inUse}>
-          <option value="">-- Chọn nhóm --</option>
-          {categories.map(c => (
-            <option key={c.sizeCategoryId} value={c.sizeCategoryId}>
-              {c.categoryName} ({c.codePrefix}) · {fmtNum(c.minAreaM2)}–{fmtNum(c.maxAreaM2)} m²
-            </option>
-          ))}
-          {category && !categories.some(c => String(c.sizeCategoryId) === categoryId) && (
-            <option value={categoryId}>{category.categoryName} (đang ngừng dùng)</option>
-          )}
-        </select>
-      </Field>
-      <div className="bc-row">
-        <Field label="Rộng (m)" required error={touched ? errors.width : ''}>
-          <input type="number" inputMode="decimal" min={MIN_SIDE} max={MAX_SIDE} step="0.01" value={width} onChange={e => setWidth(e.target.value)} placeholder="2" disabled={inUse} />
-        </Field>
-        <span className="bc-times" aria-hidden="true">×</span>
-        <Field label="Dài (m)" required error={touched ? errors.length : ''} hint="Dài ≥ rộng">
-          <input type="number" inputMode="decimal" min={MIN_SIDE} max={MAX_SIDE} step="0.01" value={length} onChange={e => setLength(e.target.value)} placeholder="4" disabled={inUse} />
-        </Field>
-      </div>
-      {blockError && (touched || area) && <div className="bc-note error" role="alert">{blockError}</div>}
-      <Field label="Tên hiển thị" required={Boolean(item)} error={touched || displayName ? errors.name : ''}
-        hint={item ? '2–100 ký tự, không trùng' : `Để trống sẽ tự đặt: "${defaultName || 'Kho R x D m'}"`}>
-        <input value={displayName} maxLength={110} onChange={e => setDisplayName(e.target.value)} placeholder={defaultName || 'Kho 2 x 4 m'} />
-      </Field>
-      <label className="bc-check bc-check-inline">
-        <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
-        <span>Đang dùng (bỏ chọn để ngừng dùng kích thước này cho kho mới)</span>
-      </label>
+      {errors.dims && <div className="bc-note error" role="alert">{errors.dims}</div>}
+      {/* Xem trước chuỗi kích thước */}
       <div className="bc-preview">
         <span>Sẽ lưu là:</span>
-        <strong>{item && !(dimsChanged && category && String(item.sizeCategoryId) !== categoryId) ? item.sizeCode : category ? `${category.codePrefix}? (tự cấp)` : '—'}</strong>
-        <span>{finalName || '—'}</span>
-        {area && height != null && <span className="bc-area">{fmtNum(w)} × {fmtNum(l)} × {fmtNum(height)} m · {fmtNum(area)} m²</span>}
+        <strong>{dimensions || '—'}</strong>
+        {area && <span className="bc-area">{fmtArea(area)} m²</span>}
+        {dimensions && <SizeMeter size={dimensions} />}
       </div>
+      {letterMismatch && (
+        <div className="bc-note warn">Diện tích {fmtArea(area)} m² thường thuộc hạng <strong>{suggested}</strong> ({{ S: 'nhỏ, tối đa 8 m²', M: 'vừa, 8–16 m²', L: 'lớn, 16–30 m²', V: 'rất lớn, trên 30 m²' }[suggested]}). Kiểm tra lại mã size.</div>
+      )}
     </CatalogModal>
   )
 }
 
 /* ---------- Màn hình chính ---------- */
 /**
- * Màn hình danh mục: 2 tab (Loại kho / Kích thước kho) bằng DataGrid, nút Thêm / Sửa / Xóa; đếm mức sử dụng để chặn xóa.
- * @param {object} props.operationState dữ liệu vận hành (dự phòng khi không tải được danh mục).
+ * Màn hình danh mục: 2 tab (Loại kho / Kích thước kho) hiển thị bằng DataGrid, nút Thêm / Sửa / Xóa,
+ * đếm mức sử dụng của từng mục để chặn xóa. Hiện chưa được component nào dùng.
+ * @param {object} props
+ * @param {object} props.operationState dữ liệu vận hành đã map (units, reservations, rentalRates, unitTypes, unitSizes)
+ *   để đếm mức sử dụng và làm dữ liệu dự phòng ở chế độ chỉ xem.
  * @param {object} props.dialog hộp thoại (alert / confirm).
  * @param {Function} [props.onChanged] gọi sau mỗi thay đổi để component cha tải lại dữ liệu.
  */
@@ -318,28 +345,60 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
   const [tab, setTab] = useState('types') // 'types' | 'sizes'
   const [types, setTypes] = useState(null)
   const [sizes, setSizes] = useState(null)
-  const [categories, setCategories] = useState([])
-  const [readOnly, setReadOnly] = useState(false) // true khi không tải được API danh mục
+  const [readOnly, setReadOnly] = useState(false) // true khi backend chưa có API danh mục
   const [modal, setModal] = useState(null) // { kind: 'type' | 'size', item }
 
-  // Mức sử dụng (backend trả kèm mỗi dòng).
-  const usageOfType = item => ({ units: item.unitCount || 0, reservations: item.reservationCount || 0, rates: item.rateCount || 0 })
-  const usageOfSize = item => ({ units: item.unitCount || 0, reservations: item.reservationCount || 0, rates: item.rateCount || 0 })
-  const isUsed = u => Boolean(u.units || u.reservations || u.rates)
-  const usageText = u => [u.units && `${u.units} kho`, u.reservations && `${u.reservations} đơn đặt`, u.rates && `${u.rates} mức giá`].filter(Boolean).join(', ')
+  const units = operationState?.units || []
+  const reservations = operationState?.reservations || []
+  const rates = operationState?.rentalRates || []
+
+  // Đếm số kho, đơn đặt, mức giá đang dùng từng loại kho (theo dữ liệu vận hành).
+  const typeUsage = useMemo(() => {
+    const map = new Map()
+    // Lấy (hoặc tạo mới) bộ đếm của 1 loại kho trong Map.
+    const get = id => { if (!map.has(id)) map.set(id, { units: 0, reservations: 0, rates: 0 }); return map.get(id) }
+    units.forEach(u => { get(Number(u.unitTypeId)).units++ })
+    reservations.forEach(r => { if (r.unitTypeId != null) get(Number(r.unitTypeId)).reservations++ })
+    rates.forEach(r => { get(Number(r.unitTypeId)).rates++ })
+    return map
+  }, [units, reservations, rates])
+
+  // Đếm số kho, mức giá đang dùng từng kích thước (theo dữ liệu vận hành).
+  const sizeUsage = useMemo(() => {
+    const map = new Map()
+    // Lấy (hoặc tạo mới) bộ đếm của 1 kích thước trong Map.
+    const get = id => { if (!map.has(id)) map.set(id, { units: 0, rates: 0 }); return map.get(id) }
+    units.forEach(u => { get(Number(u.sizeId ?? u.unitSizeId)).units++ })
+    rates.forEach(r => { get(Number(r.unitSizeId)).rates++ })
+    return map
+  }, [units, rates])
+
+  // Mức sử dụng của 1 loại kho (ưu tiên số backend trả, không có thì dùng số tự đếm).
+  const usageOfType = item => ({
+    units: item.unitCount ?? typeUsage.get(Number(item.unitTypeId))?.units ?? 0,
+    reservations: item.reservationCount ?? typeUsage.get(Number(item.unitTypeId))?.reservations ?? 0,
+    rates: item.rateCount ?? typeUsage.get(Number(item.unitTypeId))?.rates ?? 0
+  })
+  // Mức sử dụng của 1 kích thước (ưu tiên số backend trả, không có thì dùng số tự đếm).
+  const usageOfSize = item => ({
+    units: item.unitCount ?? sizeUsage.get(Number(item.unitSizeId))?.units ?? 0,
+    rates: item.rateCount ?? sizeUsage.get(Number(item.unitSizeId))?.rates ?? 0
+  })
 
   /**
-   * Tải loại kho, kích thước, nhóm kích thước; lỗi thì dùng dữ liệu vận hành và chuyển sang chỉ xem.
-   * API: GET /api/unit-types + GET /api/unit-sizes + GET /api/unit-sizes/categories
+   * Tải danh mục loại kho + kích thước; lỗi thì dùng dữ liệu vận hành và chuyển sang chỉ xem
+   * (chỉ hiện hộp thoại lỗi nếu không phải lỗi "thiếu endpoint").
+   * API: GET /api/unit-types + GET /api/unit-sizes (qua catalogApi)
+   * Được gọi khi: mở màn hình và sau mỗi lần lưu / xóa (afterChange).
    */
   const load = async () => {
     try {
-      const [typeData, sizeData, categoryData] = await Promise.all([catalogApi.listUnitTypes(), catalogApi.listUnitSizes(), catalogApi.listSizeCategories()])
-      setTypes(typeData || [])
+      const [typeData, sizeData] = await Promise.all([catalogApi.listUnitTypes(), catalogApi.listUnitSizes()])
+      setTypes((typeData || []).map(t => ({ ...t, name: t.name ?? t.typeName })))
       setSizes(sizeData || [])
-      setCategories(categoryData || [])
       setReadOnly(false)
     } catch (error) {
+      // Backend chưa có API danh mục: hiển thị chỉ xem từ dữ liệu vận hành.
       setTypes((operationState?.unitTypes || []).map(t => ({ ...t, description: t.description ?? null })))
       setSizes(operationState?.unitSizes || [])
       setReadOnly(true)
@@ -349,17 +408,17 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
     }
   }
 
-  // Chạy 1 lần khi mở màn hình.
+  // Chạy 1 lần khi mở màn hình: tải danh mục.
   useEffect(() => { load() }, [])
 
-  // Sau khi lưu: đóng form, tải lại danh mục + dữ liệu cha, báo thành công.
+  // Sau khi lưu: đóng form, tải lại danh mục + dữ liệu cha (onChanged), báo thành công.
   const afterChange = async message => {
     setModal(null)
     await Promise.all([load(), onChanged?.()])
     if (message) await dialog.alert({ tone: 'success', title: 'Đã lưu', message })
   }
 
-  // Chạy 1 thao tác lưu/xóa; lỗi (kể cả lỗi ràng buộc từ backend) thì hiện pop-up.
+  // Chạy 1 thao tác lưu/xóa, thành công thì gọi afterChange, lỗi thì hiện pop-up.
   const runSave = async (action, successMessage) => {
     try {
       await action()
@@ -370,7 +429,12 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
   }
 
   /* ----- Loại kho ----- */
-  /** Thêm hoặc sửa loại kho (hỏi xác nhận khi đổi tên loại đang được kho dùng). API: POST / PUT /api/unit-types */
+  /**
+   * Thêm hoặc sửa loại kho (hỏi xác nhận khi đổi tên loại đang được kho sử dụng).
+   * API: POST /api/unit-types  |  PUT /api/unit-types/{id}
+   * Được gọi bởi: UnitTypeForm (prop onSave).
+   * @param {{typeName: string, description: string|null}} body dữ liệu loại kho.
+   */
   const saveType = async body => {
     const item = modal?.item
     if (item) {
@@ -390,14 +454,19 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
     }
   }
 
-  /** Xóa loại kho: đang được dùng thì chặn và báo lý do, ngược lại hỏi xác nhận rồi xóa. API: DELETE /api/unit-types/{id} */
+  /**
+   * Xóa loại kho (bấm "Xóa" trên dòng): chặn và báo lý do nếu đang được kho / đơn / mức giá dùng, ngược lại hỏi xác nhận rồi xóa.
+   * API: DELETE /api/unit-types/{id}
+   * @param {object} item loại kho.
+   */
   const deleteType = async item => {
     const usage = usageOfType(item)
-    if (isUsed(usage)) {
+    if (usage.units || usage.reservations || usage.rates) {
+      const parts = [usage.units && `${usage.units} kho`, usage.reservations && `${usage.reservations} đơn đặt`, usage.rates && `${usage.rates} mức giá`].filter(Boolean).join(', ')
       await dialog.alert({
         tone: 'warning',
         title: `Không thể xóa "${item.name}"`,
-        message: `Loại kho đang được dùng bởi ${usageText(usage)}. Có thể sửa và bỏ chọn "Đang dùng" để ngừng dùng loại này.`
+        message: `Loại kho đang được dùng bởi ${parts}. Hãy chuyển các kho sang loại khác và xóa các mức giá liên quan trước.`
       })
       return
     }
@@ -407,47 +476,66 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
   }
 
   /* ----- Kích thước ----- */
-  /** Thêm hoặc sửa kích thước. API: POST / PUT /api/unit-sizes */
+  /**
+   * Thêm hoặc sửa kích thước (hỏi xác nhận khi sửa kích thước đang được kho sử dụng).
+   * API: POST /api/unit-sizes  |  PUT /api/unit-sizes/{id}
+   * Được gọi bởi: UnitSizeForm (prop onSave).
+   * @param {{dimensions: string, volume: number|null}} body dữ liệu kích thước.
+   */
   const saveSize = async body => {
     const item = modal?.item
     if (item) {
-      await runSave(() => catalogApi.updateUnitSize(item.unitSizeId, body), `Đã cập nhật kích thước ${item.sizeCode}.`)
+      const usage = usageOfSize(item)
+      if (usage.units > 0 && body.dimensions !== item.dimensions) {
+        const ok = await dialog.confirm({
+          tone: 'warning',
+          title: 'Sửa kích thước đang được dùng?',
+          message: `"${item.dimensions}" → "${body.dimensions}"\nÁp dụng cho ${usage.units} kho đang dùng kích thước này.`,
+          confirmLabel: 'Lưu thay đổi'
+        })
+        if (!ok) return
+      }
+      await runSave(() => catalogApi.updateUnitSize(item.unitSizeId, body), `Đã cập nhật kích thước "${body.dimensions}".`)
     } else {
-      let created = null
-      await runSave(async () => { created = await catalogApi.createUnitSize(body) }, null)
-      if (created) await dialog.alert({ tone: 'success', title: 'Đã lưu', message: `Đã thêm kích thước ${created.sizeCode} "${created.displayName}".` })
+      await runSave(() => catalogApi.createUnitSize(body), `Đã thêm kích thước "${body.dimensions}".`)
     }
   }
 
-  /** Xóa kích thước: đang được dùng thì chặn, ngược lại hỏi xác nhận rồi xóa. API: DELETE /api/unit-sizes/{id} */
+  /**
+   * Xóa kích thước (bấm "Xóa" trên dòng): chặn nếu đang được kho / mức giá dùng, ngược lại hỏi xác nhận rồi xóa.
+   * API: DELETE /api/unit-sizes/{id}
+   * @param {object} item kích thước.
+   */
   const deleteSize = async item => {
     const usage = usageOfSize(item)
-    if (isUsed(usage)) {
-      await dialog.alert({ tone: 'warning', title: `Không thể xóa ${item.sizeCode}`, message: `Kích thước đang được dùng bởi ${usageText(usage)}. Có thể sửa và bỏ chọn "Đang dùng" để ngừng dùng kích thước này.` })
+    if (usage.units || usage.rates) {
+      const parts = [usage.units && `${usage.units} kho`, usage.rates && `${usage.rates} mức giá`].filter(Boolean).join(', ')
+      await dialog.alert({ tone: 'warning', title: `Không thể xóa "${item.dimensions}"`, message: `Kích thước đang được dùng bởi ${parts}.` })
       return
     }
-    const ok = await dialog.confirm({ tone: 'danger', title: `Xóa kích thước ${item.sizeCode} "${item.displayName}"?`, message: 'Thao tác này không thể hoàn tác.', confirmLabel: 'Xóa kích thước' })
+    const ok = await dialog.confirm({ tone: 'danger', title: `Xóa kích thước "${item.dimensions}"?`, message: 'Thao tác này không thể hoàn tác.', confirmLabel: 'Xóa kích thước' })
     if (!ok) return
-    await runSave(() => catalogApi.deleteUnitSize(item.unitSizeId), `Đã xóa kích thước ${item.sizeCode}.`)
+    await runSave(() => catalogApi.deleteUnitSize(item.unitSizeId), `Đã xóa kích thước "${item.dimensions}".`)
   }
 
-  // Cặp nút Sửa / Xóa cho 1 dòng (khóa khi chỉ xem; nút Xóa mờ khi đang được dùng).
+  // Vẽ cặp nút Sửa / Xóa cho 1 dòng (khóa khi chỉ xem; nút Xóa mờ khi đang được dùng).
   const actionButtons = (onEdit, onDelete, inUse) => (
     <div className="bc-actions">
       <button type="button" className="bc-btn" onClick={onEdit} disabled={readOnly}>Sửa</button>
       <button type="button" className={`bc-btn danger${inUse ? ' muted' : ''}`} onClick={onDelete} disabled={readOnly} title={inUse ? 'Đang được sử dụng, không xóa được' : undefined}>Xóa</button>
     </div>
   )
-  const statusPill = active => active !== false ? <span className="dg-pill ok">Đang dùng</span> : <span className="dg-pill warn">Ngừng dùng</span>
 
   if (!types || !sizes) return <section className="business-panel"><p>Đang tải danh mục...</p></section>
 
+  // Màn hình danh mục loại kho / kích thước
   return (
     <section className="business-panel bc-root">
+      {/* Tiêu đề + tab */}
       <div className="business-panel-header">
         <div>
-          <h2>Danh mục kho</h2>
-          <p>Loại kho và kích thước kho dùng chung cho mọi cơ sở. Chỉ Business Operations được thêm, sửa, xóa.</p>
+          <h2>Danh mục thiết lập</h2>
+          <p>Quản lý loại kho và kích thước kho dùng chung cho mọi cơ sở.</p>
         </div>
         <button
           type="button"
@@ -459,8 +547,12 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
         </button>
       </div>
 
+      {/* Cảnh báo chế độ chỉ xem */}
       {readOnly && (
-        <div className="bc-note warn" role="status">Không tải được danh mục từ máy chủ nên đang ở <strong>chế độ chỉ xem</strong>. Bấm làm mới để thử lại.</div>
+        <div className="bc-note warn" role="status">
+          Backend chưa có API danh mục (<code>/api/operations/unit-types</code>, <code>/api/operations/unit-sizes</code>) nên đang ở <strong>chế độ chỉ xem</strong>.
+          Thêm file <code>backend/Controllers/CatalogSetupController.cs</code> vào backend để bật thêm / sửa / xóa.
+        </div>
       )}
 
       <div className="bc-tabs" role="tablist" aria-label="Loại danh mục">
@@ -468,6 +560,7 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
         <button type="button" role="tab" aria-selected={tab === 'sizes'} className={tab === 'sizes' ? 'active' : ''} onClick={() => setTab('sizes')}>Kích thước kho <em>{sizes.length}</em></button>
       </div>
 
+      {/* Bảng loại kho */}
       {tab === 'types' && (
         <DataGrid
           rows={types}
@@ -479,32 +572,60 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
           columns={[
             { key: 'unitTypeId', label: 'Mã', sortValue: t => Number(t.unitTypeId), render: t => <span className="dg-cell-strong">#{t.unitTypeId}</span> },
             { key: 'name', label: 'Tên loại kho', render: t => <><strong>{t.name}</strong><span className="dg-cell-sub"><UnitTypeChip type={t.name} compact /></span></> },
-            { key: 'description', label: 'Mô tả', render: t => t.description || <span className="dg-cell-sub">—</span> },
-            { key: 'status', label: 'Trạng thái', sortValue: t => (t.isActive !== false ? 0 : 1), render: t => statusPill(t.isActive) },
+            { key: 'description', label: 'Mô tả', render: t => t.description || <span className="dg-cell-sub">{readOnly ? '(cần API danh mục để xem)' : '—'}</span> },
             { key: 'units', label: 'Số kho', align: 'right', sortValue: t => usageOfType(t).units, render: t => usageOfType(t).units },
             { key: 'rates', label: 'Mức giá', align: 'right', sortValue: t => usageOfType(t).rates, render: t => usageOfType(t).rates },
-            { key: 'actions', label: '', sortable: false, render: t => actionButtons(() => setModal({ kind: 'type', item: t }), () => deleteType(t), isUsed(usageOfType(t))) }
+            {
+              key: 'actions', label: '', sortable: false,
+              // Cột thao tác của bảng loại kho: nút Sửa / Xóa theo mức sử dụng.
+              render: t => {
+                const u = usageOfType(t)
+                return actionButtons(() => setModal({ kind: 'type', item: t }), () => deleteType(t), u.units || u.reservations || u.rates)
+              }
+            }
           ]}
         />
       )}
 
+      {/* Bảng kích thước kho */}
       {tab === 'sizes' && (
         <DataGrid
           rows={sizes}
           getRowId={s => s.unitSizeId}
-          searchText={s => `${s.sizeCode} ${s.displayName} ${s.categoryName || ''}`}
+          searchText={s => s.dimensions}
           searchPlaceholder="Tìm kích thước..."
-          initialSort={{ key: 'sizeCode', dir: 'asc' }}
+          initialSort={{ key: 'unitSizeId', dir: 'asc' }}
           emptyText="Chưa có kích thước nào."
           columns={[
-            { key: 'sizeCode', label: 'Mã size', sortValue: s => `${String(s.sizeCategoryId || 9).padStart(2, '0')}-${String(parseInt(s.sizeCode.slice(1), 10) || 0).padStart(3, '0')}`, render: s => <span className="dg-cell-strong">{s.sizeCode}</span> },
-            { key: 'displayName', label: 'Tên hiển thị', render: s => <strong>{s.displayName}</strong> },
-            { key: 'category', label: 'Nhóm', sortValue: s => s.sizeCategoryId, render: s => s.categoryName || <span className="dg-cell-sub">—</span> },
-            { key: 'dims', label: 'Rộng × Dài × Cao', sortable: false, render: s => s.widthM != null ? `${fmtNum(s.widthM)} × ${fmtNum(s.lengthM)} × ${fmtNum(s.heightM)} m` : '—' },
-            { key: 'area', label: 'Diện tích', align: 'right', sortValue: s => Number(s.areaM2 || 0), render: s => s.areaM2 != null ? `${fmtNum(s.areaM2)} m²` : '—' },
-            { key: 'status', label: 'Trạng thái', sortValue: s => (s.isActive !== false ? 0 : 1), render: s => statusPill(s.isActive) },
+            { key: 'unitSizeId', label: 'Mã', sortValue: s => Number(s.unitSizeId), render: s => <span className="dg-cell-strong">#{s.unitSizeId}</span> },
+            { key: 'dimensions', label: 'Kích thước', render: s => <strong>{s.dimensions}</strong> },
+            {
+              key: 'area', label: 'Diện tích', align: 'right',
+              // Giá trị sắp xếp cột diện tích (tính từ chuỗi kích thước).
+              sortValue: s => parseDimensions(s.dimensions, s.volume).area,
+              // Hiển thị diện tích (m²) hoặc "Locker".
+              render: s => {
+                const p = parseDimensions(s.dimensions, s.volume)
+                return p.area ? `${fmtArea(p.area)} m²` : <span className="dg-cell-sub">{p.isLocker ? 'Locker' : '—'}</span>
+              }
+            },
+            { key: 'class', label: 'Hạng', sortable: false, render: s => <SizeMeter size={s.dimensions} /> },
+            {
+              key: 'volume', label: 'Dữ liệu', sortable: false,
+              // Hiển thị trạng thái dữ liệu: "Thiếu diện tích" nếu cột Volume trong DB trống (không phải locker), ngược lại "Đủ".
+              render: s => (s.volume == null && !parseDimensions(s.dimensions).isLocker)
+                ? <span className="dg-pill warn" title="Cột Volume trong DB đang trống. Mở Sửa rồi Lưu để hệ thống tự tính diện tích.">Thiếu diện tích</span>
+                : <span className="dg-pill ok">Đủ</span>
+            },
             { key: 'units', label: 'Số kho', align: 'right', sortValue: s => usageOfSize(s).units, render: s => usageOfSize(s).units },
-            { key: 'actions', label: '', sortable: false, render: s => actionButtons(() => setModal({ kind: 'size', item: s }), () => deleteSize(s), isUsed(usageOfSize(s))) }
+            {
+              key: 'actions', label: '', sortable: false,
+              // Cột thao tác của bảng kích thước: nút Sửa / Xóa theo mức sử dụng.
+              render: s => {
+                const u = usageOfSize(s)
+                return actionButtons(() => setModal({ kind: 'size', item: s }), () => deleteSize(s), u.units || u.rates)
+              }
+            }
           ]}
         />
       )}
@@ -513,7 +634,7 @@ export default function BusinessCatalog({ operationState, dialog, onChanged }) {
         <UnitTypeForm item={modal.item} allTypes={types} usage={modal.item ? usageOfType(modal.item) : { units: 0 }} onClose={() => setModal(null)} onSave={saveType} />
       )}
       {modal?.kind === 'size' && (
-        <UnitSizeForm item={modal.item} allSizes={sizes} categories={categories} usage={modal.item ? usageOfSize(modal.item) : { units: 0, rates: 0, reservations: 0 }} onClose={() => setModal(null)} onSave={saveSize} />
+        <UnitSizeForm item={modal.item} allSizes={sizes} usage={modal.item ? usageOfSize(modal.item) : { units: 0 }} onClose={() => setModal(null)} onSave={saveSize} />
       )}
     </section>
   )

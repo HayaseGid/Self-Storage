@@ -2,7 +2,7 @@
  * ======================================================================
  * FILE: src/pages/business/BusinessOperations.jsx  —  TRANG LÀM VIỆC CỦA BUSINESS OPERATIONS MANAGER
  * CHỨC NĂNG: Khung trang chính (sidebar + topbar + nội dung) cho vai trò Business Operations.
- *   Tải toàn bộ dữ liệu vận hành + báo cáo từ backend, điều hướng giữa 7 mục menu (thêm "Danh mục kho"):
+ *   Tải toàn bộ dữ liệu vận hành + báo cáo từ backend, điều hướng giữa 6 mục menu:
  *   Tổng quan · Cơ sở toàn hệ thống · Kích thước & giá · Chính sách · Doanh thu & hiệu suất · Báo cáo & xuất file.
  *   Tự xử lý thêm / sửa / ngừng hoạt động / xóa cơ sở; các mục còn lại giao cho component con.
  * THÀNH PHẦN CHÍNH:
@@ -54,7 +54,6 @@ import BusinessFacilityForm from "./BusinessFacilityForm";
 import LocationPicker from "../../features/facility/LocationPicker"; // chọn vị trí cơ sở trên bản đồ
 import { invalidateFacilityLocations } from "../../features/facility/FacilityMap"; // xóa cache tọa độ sau khi đổi cơ sở
 import BusinessPriceBands from "./BusinessPriceBands";
-import BusinessCatalog from "./BusinessCatalog"; // danh mục loại kho + kích thước kho
 
 /**
  * Trang Business Operations: tải dữ liệu vận hành + báo cáo, điều hướng giữa các mục menu,
@@ -71,7 +70,7 @@ const EMPTY_FACILITY = { name: "", unitCodePrefix: "", area: "", address: "", ma
 
 function BusinessOperations({ currentUser, navigate, currentUserKey = "storespace_current_user" }) {
     const dialog = useDialog();
-    const [activeMenu, setActiveMenu] = useState("dashboard"); // 'dashboard' | 'facilities' | 'catalog' | 'prices' | 'policies' | 'revenue' | 'reports'
+    const [activeMenu, setActiveMenu] = useState("dashboard"); // 'dashboard' | 'facilities' | 'prices' | 'policies' | 'revenue' | 'reports'
     const [showAddFacility, setShowAddFacility] = useState(false); // bật/tắt modal "Thêm cơ sở mới"
     const [operationState, setOperationState] = useState(null); // dữ liệu vận hành đã chuẩn hóa (facilities, units, managers...)
     const [reports, setReports] = useState(null); // số liệu báo cáo từ /api/operations/reports
@@ -358,17 +357,6 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
 
                     <button
                         className={
-                            activeMenu === "catalog"
-                                ? "active"
-                                : ""
-                        }
-                        onClick={() => setActiveMenu("catalog")}
-                    >
-                        <span>▦</span> Danh mục kho
-                    </button>
-
-                    <button
-                        className={
                             activeMenu === "prices"
                                 ? "active"
                                 : ""
@@ -438,7 +426,6 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                         <h1>
                             {activeMenu === "dashboard" && "Tổng quan kinh doanh"}
                             {activeMenu === "facilities" && "Quản lý cơ sở"}
-                            {activeMenu === "catalog" && "Danh mục loại kho & kích thước kho"}
                             {activeMenu === "prices" && "Quy chuẩn kích thước & khung giá"}
                             {activeMenu === "policies" && "Thiết lập chính sách chung"}
                             {activeMenu === "revenue" && "Doanh thu & hiệu suất"}
@@ -504,15 +491,6 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                                 const ok = await updateFacility(editingFacility, values, { skipConfirm: true });
                                 if (ok) setEditingFacility(null);
                             }}
-                        />
-                    )}
-
-                    {/* Danh mục loại kho + kích thước kho */}
-                    {activeMenu === "catalog" && (
-                        <BusinessCatalog
-                            operationState={operationState}
-                            dialog={dialog}
-                            onChanged={() => loadBusinessData({ silent: true })}
                         />
                     )}
 

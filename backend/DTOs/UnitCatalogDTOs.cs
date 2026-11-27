@@ -53,21 +53,7 @@ public sealed record UnitSizeResponse(
     bool IsActive = true,
     int UnitCount = 0,
     int ReservationCount = 0,
-    int RateCount = 0,
-    int SizeCategoryID = 0,
-    string? CategoryName = null);
-
-/// <summary>Nhóm kích thước (Small / Medium / Large / Vehicle) để BOM chọn khi tạo kích thước, kèm khoảng diện tích cho phép.</summary>
-public sealed record SizeCategoryOption(
-    int SizeCategoryID,
-    string CategoryCode,
-    string CategoryName,
-    string CodePrefix,
-    decimal StandardHeightM,
-    decimal MinVolumeM3,
-    decimal MaxVolumeM3,
-    decimal MinAreaM2,
-    decimal MaxAreaM2);
+    int RateCount = 0);
 
 /// <summary>Body cho POST / PUT kích thước kho (khớp bảng UnitSize trong DB).</summary>
 public sealed record UpsertUnitSizeDTO
@@ -97,7 +83,4 @@ public sealed record UpsertUnitSizeDTO
     public bool? IsActive { get; init; }
 
     public int? FacilityID { get; init; }
-
-    // Nhóm kích thước (SizeCategory). Bắt buộc khi tạo mới; chiều cao và chữ đầu mã size lấy theo nhóm.
-    public int? SizeCategoryID { get; init; }
 }

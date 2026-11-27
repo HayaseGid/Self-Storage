@@ -20,14 +20,28 @@ public class UnitSizeRepository : IUnitSizeRepository
     {
         return await _context.UnitSizes
             .AsNoTracking()
-            .Include(s => s.SizeCategory)
             .OrderBy(s => s.UnitSizeID)
             .ToListAsync(cancellationToken);
     }
 
     public async Task<UnitSize?> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
-        return await _context.UnitSizes.Include(s => s.SizeCategory).FirstOrDefaultAsync(s => s.UnitSizeID == id, cancellationToken);
+        return await _context.UnitSizes.FirstOrDefaultAsync(s => s.UnitSizeID == id, cancellationToken);
+    }
+
+    public async Task<bool> ExistsByDimensionsAsync(string dimensions, int? excludeId = null, CancellationToken cancellationToken = default)
+    {
+        var trimmed = dimensions.Trim();
+        var codeCandidate = trimmed.Contains(':') ? trimmed.Split(':', 2)[0].Trim() : trimmed;
+        var query = _context.UnitSizes.Where(s =>
+            s.SizeCode == codeCandidate ||
+            s.DisplayName == trimmed ||
+            (s.SizeCode + ": " + s.DisplayName) == trimmed);
+        if (excludeId.HasValue)
+        {
+            query = query.Where(s => s.UnitSizeID != excludeId.Value);
+        }
+        return await query.AnyAsync(cancellationToken);
     }
 
     public async Task<int> GetStorageUnitCountAsync(int unitSizeId, CancellationToken cancellationToken)
@@ -153,39 +167,115 @@ public class UnitSizeRepository : IUnitSizeRepository
         }
     }
 
-    public async Task<SizeCategory?> GetCategoryAsync(int sizeCategoryId, CancellationToken cancellationToken)
-        => await _context.SizeCategories.FirstOrDefaultAsync(c => c.SizeCategoryID == sizeCategoryId, cancellationToken);
-
-    public async Task<IReadOnlyList<SizeCategory>> GetActiveCategoriesAsync(CancellationToken cancellationToken)
-        => await _context.SizeCategories.AsNoTracking().Where(c => c.IsActive).OrderBy(c => c.SizeCategoryID).ToListAsync(cancellationToken);
-
-    // Cùng rộng × dài × cao (đảo chiều cũng tính là trùng).
-    public async Task<UnitSize?> FindSameDimensionsAsync(decimal widthM, decimal lengthM, decimal heightM, int? excludeId, CancellationToken cancellationToken)
-        => await _context.UnitSizes.AsNoTracking().FirstOrDefaultAsync(s =>
-            s.HeightM == heightM &&
-            ((s.WidthM == widthM && s.LengthM == lengthM) || (s.WidthM == lengthM && s.LengthM == widthM)) &&
-            (!excludeId.HasValue || s.UnitSizeID != excludeId.Value), cancellationToken);
-
-    // So tên không phân biệt hoa thường (Postgres mặc định phân biệt, SQL Server thì không).
-    public async Task<UnitSize?> FindByDisplayNameAsync(string displayName, int? excludeId, CancellationToken cancellationToken)
+    public async Task PopulateSizeFieldsAsync(UnitSize entity, UpsertUnitSizeDTO request, CancellationToken cancellationToken)
     {
-        var lowered = displayName.ToLower();
-        return await _context.UnitSizes.AsNoTracking().FirstOrDefaultAsync(s =>
-            s.DisplayName.ToLower() == lowered && (!excludeId.HasValue || s.UnitSizeID != excludeId.Value), cancellationToken);
-    }
-
-    // Mã size kế tiếp của nhóm: chữ đầu nhóm + (số lớn nhất đang có + 1), vd S4 -> S5.
-    public async Task<string> NextSizeCodeAsync(string prefix, int? excludeId, CancellationToken cancellationToken)
-    {
-        var codes = await _context.UnitSizes
-            .Where(s => s.SizeCode.StartsWith(prefix) && (!excludeId.HasValue || s.UnitSizeID != excludeId.Value))
-            .Select(s => s.SizeCode)
+        var categories = await _context.SizeCategories
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.SizeCategoryID)
             .ToListAsync(cancellationToken);
-        var next = codes
-            .Select(code => int.TryParse(code[prefix.Length..], out var n) ? n : 0)
-            .DefaultIfEmpty(0)
-            .Max() + 1;
-        return $"{prefix}{next}";
+
+        var rawDimensions = !string.IsNullOrWhiteSpace(request.Dimensions)
+            ? request.Dimensions.Trim()
+            : !string.IsNullOrWhiteSpace(request.SizeCode) && !string.IsNullOrWhiteSpace(request.DisplayName)
+                ? $"{request.SizeCode.Trim()}: {request.DisplayName.Trim()}"
+                : (request.DisplayName ?? request.SizeCode ?? string.Empty).Trim();
+
+        string? explicitCode = !string.IsNullOrWhiteSpace(request.SizeCode) ? request.SizeCode.Trim().ToUpperInvariant() : null;
+        var displayName = !string.IsNullOrWhiteSpace(request.DisplayName) ? request.DisplayName.Trim() : rawDimensions;
+
+        if (rawDimensions.Contains(':'))
+        {
+            var parts = rawDimensions.Split(':', 2, StringSplitOptions.TrimEntries);
+            explicitCode ??= parts[0].ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(request.DisplayName))
+            {
+                displayName = string.IsNullOrWhiteSpace(parts[1]) ? rawDimensions : parts[1];
+            }
+        }
+
+        decimal? requestedVolume = request.Volume;
+        if (!requestedVolume.HasValue && request.WidthM.HasValue && request.LengthM.HasValue)
+        {
+            var h = request.HeightM ?? 2.50m;
+            requestedVolume = request.WidthM.Value * request.LengthM.Value * h;
+        }
+
+        SizeCategory? chosenCategory = null;
+        if (!string.IsNullOrWhiteSpace(explicitCode))
+        {
+            var prefix = explicitCode[..1];
+            chosenCategory = categories.FirstOrDefault(c => c.CodePrefix.Trim().Equals(prefix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (chosenCategory is null && requestedVolume.HasValue)
+        {
+            chosenCategory = categories.FirstOrDefault(c =>
+                requestedVolume.Value >= c.MinVolumeM3 && requestedVolume.Value <= c.MaxVolumeM3);
+        }
+
+        chosenCategory ??= categories.FirstOrDefault() ?? new SizeCategory
+        {
+            SizeCategoryID = 1,
+            CodePrefix = "S",
+            StandardHeightM = 2.50m,
+            MinVolumeM3 = 2.25m,
+            MaxVolumeM3 = 24.00m
+        };
+
+        var prefixChar = chosenCategory.CodePrefix.Trim();
+        if (string.IsNullOrWhiteSpace(explicitCode) ||
+            !explicitCode.StartsWith(prefixChar, StringComparison.OrdinalIgnoreCase) ||
+            explicitCode.Length < 2 ||
+            !char.IsDigit(explicitCode[1]))
+        {
+            var existingCodes = await _context.UnitSizes
+                .Where(s => s.SizeCode.StartsWith(prefixChar) && s.UnitSizeID != entity.UnitSizeID)
+                .Select(s => s.SizeCode)
+                .ToListAsync(cancellationToken);
+            var nextNum = existingCodes
+                .Select(code => int.TryParse(code[prefixChar.Length..], out var n) ? n : 0)
+                .DefaultIfEmpty(0)
+                .Max() + 1;
+            explicitCode = $"{prefixChar}{nextNum}";
+        }
+
+        var height = chosenCategory.StandardHeightM;
+        decimal width;
+        decimal length;
+
+        if (request.WidthM.HasValue && request.LengthM.HasValue)
+        {
+            width = request.WidthM.Value;
+            length = request.LengthM.Value;
+            var vol = width * length * height;
+            if (vol < chosenCategory.MinVolumeM3 || vol > chosenCategory.MaxVolumeM3)
+            {
+                var targetVol = Math.Clamp(vol, chosenCategory.MinVolumeM3, chosenCategory.MaxVolumeM3);
+                length = decimal.Round(targetVol / (width * height), 2, MidpointRounding.AwayFromZero);
+            }
+        }
+        else
+        {
+            var targetVolume = Math.Clamp(requestedVolume ?? chosenCategory.MinVolumeM3, chosenCategory.MinVolumeM3, chosenCategory.MaxVolumeM3);
+            var targetArea = targetVolume / height;
+            width = 2.00m;
+            length = decimal.Round(targetArea / width, 2, MidpointRounding.AwayFromZero);
+            if (width * length * height < chosenCategory.MinVolumeM3)
+            {
+                length = decimal.Round(chosenCategory.MinVolumeM3 / (width * height) + 0.01m, 2);
+            }
+            else if (width * length * height > chosenCategory.MaxVolumeM3)
+            {
+                length = decimal.Round(chosenCategory.MaxVolumeM3 / (width * height) - 0.01m, 2);
+            }
+        }
+
+        entity.SizeCategoryID = chosenCategory.SizeCategoryID;
+        entity.SizeCode = explicitCode;
+        entity.DisplayName = string.IsNullOrWhiteSpace(displayName) ? explicitCode : displayName;
+        entity.WidthM = width;
+        entity.LengthM = Math.Max(0.50m, length);
+        entity.HeightM = height;
     }
 
     public void Add(UnitSize unitSize) => _context.UnitSizes.Add(unitSize);

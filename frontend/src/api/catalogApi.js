@@ -2,19 +2,21 @@
  * ======================================================================
  * FILE: src/api/catalogApi.js  —  API DANH MỤC LOẠI KHO / KÍCH THƯỚC KHO
  * CHỨC NĂNG: Gom các hàm gọi backend để thêm / sửa / xóa / liệt kê LOẠI KHO (UnitType) và
- *   KÍCH THƯỚC KHO (UnitSize), lấy nhóm kích thước, xóa một mức giá thuê. Dữ liệu backend được chuẩn hóa
- *   về 1 dạng thống nhất. Thêm / sửa / xóa chỉ Business Operations làm được (backend kiểm tra).
+ *   KÍCH THƯỚC KHO (UnitSize), xóa một mức giá thuê, kèm các hàm tách/ghép chuỗi kích thước
+ *   ("M2: 2x3m", "S1: Locker (...)"). Dữ liệu backend được chuẩn hóa về 1 dạng thống nhất.
+ *   ⚠ Hiện CHỈ được import bởi pages/business/BusinessCatalog.jsx, mà trang này lại KHÔNG được
+ *   file nào dùng -> đây là CODE CHƯA DÙNG (giữ nguyên, không xóa).
  * THÀNH PHẦN CHÍNH:
  *   - listUnitTypes / createUnitType / updateUnitType / deleteUnitType : CRUD loại kho.
  *   - listUnitSizes / createUnitSize / updateUnitSize / deleteUnitSize : CRUD kích thước kho.
  *   - deleteRentalRate : xóa 1 mức giá (cơ sở + loại + kích thước).
- *   - listSizeCategories : nhóm kích thước (Small / Medium / Large / Vehicle) + khoảng diện tích.
+ *   - parseDimensions / composeDimensions : tách / ghép chuỗi kích thước.
  *   - isMissingEndpoint : nhận biết lỗi "backend chưa có endpoint" để ẩn tính năng.
  *   - catalogApi : object gom các hàm CRUD ở trên.
- * DÙNG Ở: src/pages/business/BusinessCatalog.jsx (menu "Danh mục kho" của Business Operations).
+ * DÙNG Ở: src/pages/business/BusinessCatalog.jsx (trang chưa được gắn vào ứng dụng).
  * PHỤ THUỘC: ./api (apiGet, apiPost, apiPut, apiDelete).
  * API: GET/POST /api/unit-types, PUT/DELETE /api/unit-types/{id},
- *   GET/POST /api/unit-sizes, PUT/DELETE /api/unit-sizes/{id}, GET /api/unit-sizes/categories,
+ *   GET/POST /api/unit-sizes, PUT/DELETE /api/unit-sizes/{id},
  *   DELETE /api/operations/facilities/{facilityId}/rates/{unitTypeId}/{unitSizeId}.
  * LUỒNG: Trang danh mục gọi catalogApi.listUnitTypes() -> GET /api/unit-types -> normalizeUnitType()
  *   -> mảng object thống nhất -> trang hiển thị bảng; bấm Lưu -> createUnitType/updateUnitType -> API.
@@ -30,12 +32,13 @@
  *   updateUnitType: Cập nhật loại kho. API: PUT /api/unit-types/{id} (UnitTypesController) → dùng ở: (cấp file)
  *   deleteUnitType: Xóa loại kho. API: DELETE /api/unit-types/{id} (UnitTypesController) → dùng ở: (cấp file)
  *   listUnitSizes: Lấy danh sách kích thước kho (có thể lọc theo cơ sở) → dùng ở: (cấp file)
- *   createUnitSize: Tạo kích thước kho mới (nhóm, rộng, dài, tên hiển thị; mã size + chiều cao backend tự cấp) → dùng ở: (cấp file)
+ *   createUnitSize: Tạo kích thước kho mới (mã cỡ, tên, thể tích, dài/rộng/cao...) → dùng ở: (cấp file)
  *   updateUnitSize: Cập nhật kích thước kho. API: PUT /api/unit-sizes/{id} (UnitSizesController) → dùng ở: (cấp file)
  *   deleteUnitSize: Xóa kích thước kho. API: DELETE /api/unit-sizes/{id} (UnitSizesController) → dùng ở: (cấp file)
  *   deleteRentalRate: Xóa một mức giá thuê (theo cơ sở + loại kho + kích thước) → dùng ở: (cấp file)
- *   sizeBody: Dựng body gửi lên khi tạo / sửa kích thước → dùng ở: createUnitSize, updateUnitSize
- *   listSizeCategories: Lấy nhóm kích thước đang dùng. API: GET /api/unit-sizes/categories → dùng ở: BusinessCatalog.jsx (load)
+ *   parseDimensions: Tách chuỗi kích thước kho thành các phần riêng → dùng ở: BusinessCatalog.jsx (UnitSizeForm, BusinessCatalog)
+ *   composeDimensions: Ghép các phần kích thước thành chuỗi chuẩn (ngược lại với parseDimensions), ví dụ { code:'M2', length:2, width:3 } -> "M2: 2x3m" → dùng ở: BusinessCatalog.jsx (UnitSizeForm)
+ *   fmt: Chuẩn hóa một số đo (chấp nhận dấu phẩy), làm tròn 1 chữ số thập phân; không hợp lệ -> '' → dùng ở: composeDimensions
  *   isMissingEndpoint: Kiểm tra lỗi có phải do backend chưa có endpoint này không (404/405/501 hoặc message "not found") → dùng ở: BusinessCatalog.jsx (load)
  */
 import { apiDelete, apiGet, apiPost, apiPut } from './api'
@@ -92,9 +95,7 @@ function normalizeUnitSize(item) {
     unitCount: Number(item.unitCount ?? item.storageUnitCount ?? 0),
     storageUnitCount: Number(item.storageUnitCount ?? item.unitCount ?? 0),
     reservationCount: Number(item.reservationCount ?? 0),
-    rateCount: Number(item.rateCount ?? 0),
-    sizeCategoryId: item.sizeCategoryID != null || item.sizeCategoryId != null ? Number(item.sizeCategoryID ?? item.sizeCategoryId) : null,
-    categoryName: item.categoryName || ''
+    rateCount: Number(item.rateCount ?? 0)
   }
 }
 
@@ -176,7 +177,19 @@ export async function listUnitSizes(facilityId = null) {
  * @returns {Promise<object|null>} kích thước vừa tạo (đã chuẩn hóa).
  */
 export async function createUnitSize(payload) {
-  const item = await apiPost('/api/unit-sizes', sizeBody(payload, true))
+  const item = await apiPost('/api/unit-sizes', {
+    dimensions: payload?.dimensions,
+    sizeCode: payload?.sizeCode,
+    displayName: payload?.displayName,
+    volume: payload?.volume === '' || payload?.volume === null || payload?.volume === undefined
+      ? null
+      : Number(payload.volume),
+    widthM: payload?.widthM ? Number(payload.widthM) : undefined,
+    lengthM: payload?.lengthM ? Number(payload.lengthM) : undefined,
+    heightM: payload?.heightM ? Number(payload.heightM) : undefined,
+    isActive: payload?.isActive ?? true,
+    facilityID: payload?.facilityId ?? payload?.facilityID ?? undefined
+  })
   return normalizeUnitSize(item)
 }
 
@@ -188,42 +201,20 @@ export async function createUnitSize(payload) {
  * @returns {Promise<object|null>} kích thước sau khi cập nhật (đã chuẩn hóa).
  */
 export async function updateUnitSize(id, payload) {
-  const item = await apiPut(`/api/unit-sizes/${id}`, sizeBody(payload, false))
+  const item = await apiPut(`/api/unit-sizes/${id}`, {
+    dimensions: payload?.dimensions,
+    sizeCode: payload?.sizeCode,
+    displayName: payload?.displayName,
+    volume: payload?.volume === '' || payload?.volume === null || payload?.volume === undefined
+      ? null
+      : Number(payload.volume),
+    widthM: payload?.widthM ? Number(payload.widthM) : undefined,
+    lengthM: payload?.lengthM ? Number(payload.lengthM) : undefined,
+    heightM: payload?.heightM ? Number(payload.heightM) : undefined,
+    isActive: payload?.isActive,
+    facilityID: payload?.facilityId ?? payload?.facilityID ?? undefined
+  })
   return normalizeUnitSize(item)
-}
-
-/**
- * Body gửi lên khi tạo / sửa kích thước: nhóm, rộng, dài, tên hiển thị, đang dùng.
- * Mã size và chiều cao do backend tự cấp theo nhóm. Trường không gửi (undefined) thì backend giữ nguyên.
- * @param {{sizeCategoryId, widthM, lengthM, displayName, isActive}} payload dữ liệu form.
- * @param {boolean} isCreate tạo mới (isActive mặc định true).
- */
-function sizeBody(payload, isCreate) {
-  return {
-    sizeCategoryID: payload?.sizeCategoryId ?? undefined,
-    widthM: payload?.widthM ?? undefined,
-    lengthM: payload?.lengthM ?? undefined,
-    displayName: payload?.displayName ?? undefined,
-    isActive: payload?.isActive ?? (isCreate ? true : undefined)
-  }
-}
-
-/**
- * Lấy các nhóm kích thước đang dùng (Small / Medium / Large / Vehicle) kèm khoảng diện tích cho phép.
- * API: GET /api/unit-sizes/categories  (UnitSizesController)
- * @returns {Promise<object[]>} [{ sizeCategoryId, categoryName, codePrefix, standardHeightM, minAreaM2, maxAreaM2 }]
- */
-export async function listSizeCategories() {
-  const items = await apiGet('/api/unit-sizes/categories')
-  return Array.isArray(items) ? items.map(c => ({
-    sizeCategoryId: Number(c.sizeCategoryID ?? c.sizeCategoryId),
-    categoryCode: c.categoryCode,
-    categoryName: c.categoryName,
-    codePrefix: c.codePrefix,
-    standardHeightM: Number(c.standardHeightM),
-    minAreaM2: Number(c.minAreaM2),
-    maxAreaM2: Number(c.maxAreaM2)
-  })) : []
 }
 
 /**
@@ -249,6 +240,81 @@ export function deleteRentalRate(facilityId, unitTypeId, unitSizeId) {
 }
 
 /**
+ * Tách chuỗi kích thước kho thành các phần riêng.
+ * Ví dụ "M2: 2x3m" -> { code:'M2', length:2, width:3, area:6, isLocker:false }
+ *       "S1: Locker (tủ nhỏ)" -> { code:'S1', isLocker:true, lockerNote:'tủ nhỏ' }
+ * @param {string} dimensions chuỗi kích thước.
+ * @param {number|null} volume diện tích/thể tích có sẵn (ưu tiên hơn diện tích tự tính).
+ * @returns {{code:string, length:number|'', width:number|'', area:number|null, isLocker:boolean, lockerNote:string}}
+ */
+export function parseDimensions(dimensions = '', volume = null) {
+  const raw = String(dimensions || '').trim()
+  const [leftPart = '', rightPart = ''] = raw.split(':').map(part => part.trim())
+  const codeMatch = leftPart.match(/^([SMLV]\d{1,2})$/i) || raw.match(/^([SMLV]\d{1,2})\b/i)
+  const code = codeMatch ? codeMatch[1].toUpperCase() : ''
+  const rest = rightPart || raw.replace(/^[SMLV]\d{1,2}\s*:?\s*/i, '').trim()
+
+  const isLocker = /locker|tủ/i.test(rest)
+  if (isLocker) {
+    const noteMatch = rest.match(/\(([^)]+)\)/)
+    const lockerNote = noteMatch
+      ? noteMatch[1].trim()
+      : rest.replace(/locker|tủ/gi, '').replace(/^[\s\-:]+|[\s\-:]+$/g, '').trim()
+    return {
+      code,
+      length: '',
+      width: '',
+      area: null,
+      isLocker: true,
+      lockerNote
+    }
+  }
+
+  const dimMatch = rest.match(/(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)/i)
+  const length = dimMatch ? Number(dimMatch[1].replace(',', '.')) : ''
+  const width = dimMatch ? Number(dimMatch[2].replace(',', '.')) : ''
+  const computedArea = Number.isFinite(length) && Number.isFinite(width) && length > 0 && width > 0
+    ? Math.round(length * width * 10) / 10
+    : null
+  const numericVolume = volume !== null && volume !== undefined && volume !== '' && Number.isFinite(Number(volume))
+    ? Number(volume)
+    : null
+
+  return {
+    code,
+    length,
+    width,
+    area: numericVolume ?? computedArea,
+    isLocker: false,
+    lockerNote: ''
+  }
+}
+
+/**
+ * Ghép các phần kích thước thành chuỗi chuẩn (ngược lại với parseDimensions),
+ * ví dụ { code:'M2', length:2, width:3 } -> "M2: 2x3m"; locker -> "S1: Locker (ghi chú)".
+ * @param {{code, length, width, isLocker, lockerNote}} parts các phần kích thước từ form.
+ * @returns {string} chuỗi kích thước ('' nếu thiếu mã cỡ; chỉ mã cỡ nếu thiếu dài/rộng).
+ */
+export function composeDimensions({ code = '', length = '', width = '', isLocker = false, lockerNote = '' } = {}) {
+  const cleanCode = String(code || '').trim().toUpperCase()
+  if (!cleanCode) return ''
+  if (isLocker) {
+    const note = String(lockerNote || '').trim()
+    return note ? `${cleanCode}: Locker (${note})` : `${cleanCode}: Locker`
+  }
+  // Chuẩn hóa một số đo (chấp nhận dấu phẩy), làm tròn 1 chữ số thập phân; không hợp lệ -> ''.
+  const fmt = n => {
+    const num = Number(String(n).replace(',', '.'))
+    return Number.isFinite(num) && num > 0 ? String(Math.round(num * 10) / 10) : ''
+  }
+  const l = fmt(length)
+  const w = fmt(width)
+  if (!l || !w) return cleanCode
+  return `${cleanCode}: ${l}x${w}m`
+}
+
+/**
  * Kiểm tra lỗi có phải do backend chưa có endpoint này không (404/405/501 hoặc message "not found").
  * Dùng để giao diện ẩn tính năng thay vì báo lỗi.
  * @param {Error|ApiError} error lỗi bắt được khi gọi API.
@@ -269,7 +335,6 @@ export const catalogApi = {
   updateUnitType,
   deleteUnitType,
   listUnitSizes,
-  listSizeCategories,
   createUnitSize,
   updateUnitSize,
   deleteUnitSize,

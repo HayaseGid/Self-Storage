@@ -7,6 +7,7 @@ public interface IUnitSizeRepository
 {
     Task<IReadOnlyList<UnitSize>> GetAllAsync(CancellationToken cancellationToken);
     Task<UnitSize?> GetByIdAsync(int id, CancellationToken cancellationToken);
+    Task<bool> ExistsByDimensionsAsync(string dimensions, int? excludeId = null, CancellationToken cancellationToken = default);
     Task<int> GetStorageUnitCountAsync(int unitSizeId, CancellationToken cancellationToken);
     Task<(int UnitCount, int ReservationCount, int RateCount, bool IsActiveAtFacility)> GetUsageStatsAsync(int unitSizeId, int? facilityId, CancellationToken cancellationToken);
     Task<bool> IsUsedByUnitsOrRatesAsync(int unitSizeId, CancellationToken cancellationToken);
@@ -16,11 +17,7 @@ public interface IUnitSizeRepository
     Task EnsureFacilityLinkAsync(int facilityId, int unitSizeId, bool isActive, int? userId, CancellationToken cancellationToken);
     Task EnsureAllFacilitiesLinkAsync(int unitSizeId, int? userId, CancellationToken cancellationToken);
     Task RemoveFacilityLinksAsync(int unitSizeId, CancellationToken cancellationToken);
-    Task<SizeCategory?> GetCategoryAsync(int sizeCategoryId, CancellationToken cancellationToken);
-    Task<IReadOnlyList<SizeCategory>> GetActiveCategoriesAsync(CancellationToken cancellationToken);
-    Task<UnitSize?> FindSameDimensionsAsync(decimal widthM, decimal lengthM, decimal heightM, int? excludeId, CancellationToken cancellationToken);
-    Task<UnitSize?> FindByDisplayNameAsync(string displayName, int? excludeId, CancellationToken cancellationToken);
-    Task<string> NextSizeCodeAsync(string prefix, int? excludeId, CancellationToken cancellationToken);
+    Task PopulateSizeFieldsAsync(UnitSize entity, UpsertUnitSizeDTO request, CancellationToken cancellationToken);
     void Add(UnitSize unitSize);
     void Remove(UnitSize unitSize);
     Task SaveChangesAsync(CancellationToken cancellationToken);
