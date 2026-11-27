@@ -211,6 +211,7 @@ using (var scope = app.Services.CreateScope())
         DatabaseSeeder.EnsureUserAccessCodeColumns(dbContext);
         DatabaseSeeder.SeedIfEmpty(dbContext);
         DatabaseSeeder.EnsureReturnInspectionTables(dbContext);
+        DatabaseSeeder.EnsurePostgresConstraints(dbContext); // CHECK + unique có điều kiện mà EnsureCreated không tạo
     }
     // Bảng phiên bản chính sách BOM: tạo nếu chưa có (cả SQL Server và Postgres).
     DatabaseSeeder.EnsurePolicyVersionTable(dbContext);
