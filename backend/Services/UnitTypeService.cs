@@ -81,9 +81,9 @@ public class UnitTypeService : IUnitTypeService
         if (!authorized || user is null) return (false, authError, null);
 
         var rawName = !string.IsNullOrWhiteSpace(request.TypeName) ? request.TypeName : (request.Name ?? string.Empty);
-        var normalizedName = rawName.Trim();
-        if (string.IsNullOrWhiteSpace(normalizedName))
-            return (false, "Tên loại kho không được để trống.", null);
+        var normalizedName = NormalizeName(rawName);
+        var nameError = ValidateName(normalizedName);
+        if (nameError is not null) return (false, nameError, null);
 
         var duplicated = await _unitTypeRepository.ExistsByNameAsync(normalizedName, null, cancellationToken);
         if (duplicated)
@@ -132,16 +132,20 @@ public class UnitTypeService : IUnitTypeService
         string? userEmail,
         CancellationToken cancellationToken)
     {
-        var (authorized, authError, user) = await CheckAuthorizationAsync(userEmail, request.FacilityID, cancellationToken);
+        // Có FacilityID: chỉ bật / tắt loại kho tại cơ sở đó (Quản lý cơ sở dùng), không sửa danh mục.
+        if (request.FacilityID.HasValue)
+            return await ToggleAtFacilityAsync(id, request.FacilityID.Value, request.IsActive, userEmail, cancellationToken);
+
+        var (authorized, authError, user) = await CheckAuthorizationAsync(userEmail, null, cancellationToken);
         if (!authorized || user is null) return (false, authError, null);
 
         var entity = await _unitTypeRepository.GetByIdAsync(id, cancellationToken);
         if (entity is null) return (false, "NOT_FOUND", null);
 
         var rawName = !string.IsNullOrWhiteSpace(request.TypeName) ? request.TypeName : (request.Name ?? entity.TypeName);
-        var normalizedName = rawName.Trim();
-        if (string.IsNullOrWhiteSpace(normalizedName))
-            return (false, "Tên loại kho không được để trống.", null);
+        var normalizedName = NormalizeName(rawName);
+        var nameError = ValidateName(normalizedName);
+        if (nameError is not null) return (false, nameError, null);
 
         var duplicated = await _unitTypeRepository.ExistsByNameAsync(normalizedName, id, cancellationToken);
         if (duplicated)
@@ -151,26 +155,7 @@ public class UnitTypeService : IUnitTypeService
         entity.Description = NormalizeDescription(request.Description);
 
         if (request.IsActive.HasValue)
-        {
-            if (request.FacilityID.HasValue)
-            {
-                if (!request.IsActive.Value)
-                {
-                    var hasActiveUnits = await _unitTypeRepository.HasActiveUnitsAtFacilityAsync(request.FacilityID.Value, id, cancellationToken);
-                    if (hasActiveUnits)
-                        return (false, "Cơ sở vẫn còn kho đang hoạt động thuộc loại này. Hãy ngừng hoặc đổi các kho đó trước.", null);
-                }
-                await _unitTypeRepository.EnsureFacilityLinkAsync(request.FacilityID.Value, id, request.IsActive.Value, user.UserID, cancellationToken);
-                if (entity.CreatedByUserID.HasValue && entity.FacilityUnitTypes.Count <= 1)
-                {
-                    entity.IsActive = request.IsActive.Value;
-                }
-            }
-            else if (user.RoleID == 4)
-            {
-                entity.IsActive = request.IsActive.Value;
-            }
-        }
+            entity.IsActive = request.IsActive.Value;
 
         await _unitTypeRepository.SaveChangesAsync(cancellationToken);
 
@@ -208,7 +193,7 @@ public class UnitTypeService : IUnitTypeService
 
         var isUsed = await _unitTypeRepository.IsUsedAsync(id, cancellationToken);
         if (isUsed)
-            return (false, "Không thể xóa loại kho đang được sử dụng bởi kho, đơn đặt chỗ hoặc bảng giá.");
+            return (false, $"Không thể xóa loại kho \"{entity.TypeName}\": đang được kho, đơn đặt chỗ hoặc bảng giá sử dụng. Có thể tắt \"Đang dùng\" để ngừng dùng loại này.");
 
         await _unitTypeRepository.RemoveFacilityLinksAsync(id, cancellationToken);
         _unitTypeRepository.Remove(entity);
@@ -229,21 +214,62 @@ public class UnitTypeService : IUnitTypeService
         if (user is null || user.Status != "Active")
             return (false, "UNAUTHORIZED:Tài khoản không hợp lệ hoặc đã bị khóa.", null);
 
+        // Chỉ Business Operations Manager (RoleID 4) được thêm / sửa / xóa danh mục loại kho.
         if (user.RoleID == 4)
             return (true, null, user);
 
-        if (user.RoleID == 3)
-        {
-            if (facilityId.HasValue)
-            {
-                var isManager = await _unitTypeRepository.IsFacilityManagerAsync(facilityId.Value, user.UserID, cancellationToken);
-                if (!isManager)
-                    return (false, "FORBIDDEN:Bạn không quản lý cơ sở này.", null);
-            }
-            return (true, null, user);
-        }
+        return (false, "FORBIDDEN:Chỉ Business Operations Manager mới được thêm, sửa, xóa loại kho.", null);
+    }
 
-        return (false, "FORBIDDEN:Chỉ Business Operations Manager hoặc Facility Manager mới được thao tác danh mục loại kho.", null);
+    /// <summary>Bật / tắt 1 loại kho tại 1 cơ sở: BOM, hoặc Facility Manager của đúng cơ sở đó.</summary>
+    private async Task<(bool IsSuccess, string? ErrorMessage, UnitTypeResponse? Data)> ToggleAtFacilityAsync(
+        int id, int facilityId, bool? isActive, string? userEmail, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(userEmail))
+            return (false, "UNAUTHORIZED:Thiếu thông tin người dùng (header X-User-Email).", null);
+        var user = await _userRepository.GetUserByEmailAsync(userEmail.Trim());
+        if (user is null || user.Status != "Active")
+            return (false, "UNAUTHORIZED:Tài khoản không hợp lệ hoặc đã bị khóa.", null);
+        var allowed = user.RoleID == 4 ||
+                      (user.RoleID == 3 && await _unitTypeRepository.IsFacilityManagerAsync(facilityId, user.UserID, cancellationToken));
+        if (!allowed)
+            return (false, "FORBIDDEN:Chỉ Quản lý của cơ sở này hoặc Business Operations mới được bật / tắt loại kho tại cơ sở.", null);
+
+        var entity = await _unitTypeRepository.GetByIdAsync(id, cancellationToken);
+        if (entity is null) return (false, "NOT_FOUND", null);
+        if (isActive is null) return (false, "Thiếu trạng thái bật / tắt tại cơ sở.", null);
+
+        if (!isActive.Value && await _unitTypeRepository.HasActiveUnitsAtFacilityAsync(facilityId, id, cancellationToken))
+            return (false, "Cơ sở vẫn còn kho đang hoạt động thuộc loại này. Hãy ngừng hoặc đổi các kho đó trước.", null);
+
+        await _unitTypeRepository.EnsureFacilityLinkAsync(facilityId, id, isActive.Value, user.UserID, cancellationToken);
+        await _unitTypeRepository.SaveChangesAsync(cancellationToken);
+
+        var stats = await _unitTypeRepository.GetUsageStatsAsync(id, facilityId, cancellationToken);
+        return (true, null, new UnitTypeResponse(
+            entity.UnitTypeID,
+            entity.TypeName,
+            entity.Description,
+            stats.UnitCount,
+            entity.UnitTypeID,
+            entity.TypeName,
+            stats.IsActiveAtFacility,
+            stats.UnitCount,
+            stats.ReservationCount,
+            stats.RateCount,
+            null));
+    }
+
+    // Gộp khoảng trắng thừa: "  Kho   lạnh " -> "Kho lạnh".
+    private static string NormalizeName(string value)
+        => string.Join(' ', value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+    private static string? ValidateName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "Tên loại kho không được để trống.";
+        if (name.Length < 2) return "Tên loại kho cần ít nhất 2 ký tự.";
+        if (name.Length > 100) return "Tên loại kho tối đa 100 ký tự.";
+        return null;
     }
 
     private static string? NormalizeDescription(string? value)

@@ -115,3 +115,6 @@
 .bc-pause-warning { display: grid; gap: 8px; margin-top: 8px; }
 .bc-pause-warning p { margin: 0; }
 .bc-pause-warning ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+/* Danh mục kho: ô bị khóa (kích thước đang dùng) và checkbox "Đang dùng" trong form */
+.bc-field input:disabled, .bc-field select:disabled { background: #f2f7fc; color: #6a8196; cursor: not-allowed; }
+.bc-check.bc-check-inline { margin-top: 0; white-space: normal; }
