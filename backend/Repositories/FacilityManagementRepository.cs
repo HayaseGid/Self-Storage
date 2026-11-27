@@ -46,6 +46,14 @@ public class FacilityManagementRepository : IFacilityManagementRepository
             cancellationToken);
     }
 
+    public async Task<string?> GetFacilityNameManagedByAsync(int managerId, int? exceptFacilityId, CancellationToken cancellationToken)
+    {
+        return await _context.Facilities
+            .Where(f => f.ManagerID == managerId && (exceptFacilityId == null || f.FacilityID != exceptFacilityId))
+            .Select(f => f.FacilityName)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<Facility?> GetFacilityByIdAsync(int facilityId, CancellationToken cancellationToken)
     {
         return await _context.Facilities.FirstOrDefaultAsync(

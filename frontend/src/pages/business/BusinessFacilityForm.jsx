@@ -73,6 +73,10 @@ export default function BusinessFacilityForm({ facility, facilities = [], manage
   const managerOptions = managers.some(m => m.email === original.managerEmail) || !original.managerEmail
     ? managers
     : [{ userId: 'current', fullName: '(Quản lý hiện tại)', email: original.managerEmail }, ...managers]
+  // Mỗi Facility Manager chỉ quản lý 1 cơ sở: tìm cơ sở KHÁC mà email này đang quản lý.
+  const takenBy = email => facilities.find(f =>
+    f.facilityId !== facility.facilityId &&
+    String(f.managerEmail || f.manager || '').trim().toLowerCase() === String(email || '').trim().toLowerCase())
 
   // Thông báo lỗi cho từng ô (chuỗi rỗng = hợp lệ).
   const errors = {
@@ -83,7 +87,9 @@ export default function BusinessFacilityForm({ facility, facilities = [], manage
     address: !address ? 'Vui lòng nhập địa chỉ.'
       : address.length < 8 ? 'Địa chỉ quá ngắn, cần có số nhà, đường và quận.'
         : address.length > 255 ? 'Địa chỉ tối đa 255 ký tự.' : '',
-    managerEmail: !values.managerEmail ? 'Vui lòng chọn Facility Manager.' : '',
+    managerEmail: !values.managerEmail ? 'Vui lòng chọn Facility Manager.'
+      : values.managerEmail !== original.managerEmail && takenBy(values.managerEmail)
+        ? `Quản lý này đang phụ trách "${takenBy(values.managerEmail).name}". Mỗi Facility Manager chỉ quản lý 1 cơ sở.` : '',
     location: values.latitude == null || values.longitude == null ? 'Vui lòng chọn vị trí cơ sở trên bản đồ để cơ sở hiện trên bản đồ của khách.' : ''
   }
   const valid = Object.values(errors).every(v => !v)
@@ -180,7 +186,14 @@ export default function BusinessFacilityForm({ facility, facilities = [], manage
               <span className="bc-field-label">Facility Manager<em aria-hidden="true"> *</em></span>
               <select value={values.managerEmail} onChange={set('managerEmail')}>
                 <option value="">Chọn Facility Manager</option>
-                {managerOptions.map(m => <option key={m.userId} value={m.email}>{m.fullName} · {m.email}</option>)}
+                {managerOptions.map(m => {
+                  const busy = m.email !== original.managerEmail ? takenBy(m.email) : null // Đang quản lý cơ sở khác
+                  return (
+                    <option key={m.userId} value={m.email} disabled={!!busy}>
+                      {m.fullName} · {m.email}{busy ? ` (đang quản lý ${busy.name})` : ''}
+                    </option>
+                  )
+                })}
               </select>
               {touched && errors.managerEmail && <span className="bc-field-error" role="alert">{errors.managerEmail}</span>}
             </label>

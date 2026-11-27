@@ -1114,6 +1114,11 @@ public class FacilityManagementService : IFacilityManagementService
         if (manager is null)
             return new OperationsServiceResponse(false, "Cần chỉ định tài khoản Facility Manager hợp lệ.", 400, null);
 
+        var managedFacility = await _repo.GetFacilityNameManagedByAsync(manager.UserID, null, cancellationToken);
+        if (managedFacility is not null)
+            return new OperationsServiceResponse(false,
+                $"{manager.Email} đang quản lý cơ sở \"{managedFacility}\". Mỗi Facility Manager chỉ quản lý 1 cơ sở, vui lòng chọn người khác.", 409, null);
+
         var facility = new Facility
         {
             ManagerID = manager.UserID,
@@ -1245,6 +1250,14 @@ public class FacilityManagementService : IFacilityManagementService
             var manager = await _repo.GetActiveUserByEmailAndRoleAsync(request.ManagerEmail, 3, cancellationToken);
             if (manager is null)
                 return new OperationsServiceResponse(false, "Cần chỉ định tài khoản Facility Manager hợp lệ.", 400, null);
+
+            if (manager.UserID != facility.ManagerID)
+            {
+                var managedFacility = await _repo.GetFacilityNameManagedByAsync(manager.UserID, facility.FacilityID, cancellationToken);
+                if (managedFacility is not null)
+                    return new OperationsServiceResponse(false,
+                        $"{manager.Email} đang quản lý cơ sở \"{managedFacility}\". Mỗi Facility Manager chỉ quản lý 1 cơ sở, vui lòng chọn người khác.", 409, null);
+            }
             facility.ManagerID = manager.UserID;
         }
 

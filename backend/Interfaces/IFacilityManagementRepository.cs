@@ -9,6 +9,7 @@ public interface IFacilityManagementRepository
     Task<User?> GetActiveUserByEmailAndRoleAsync(string email, int roleId, CancellationToken cancellationToken);
     Task<string?> GetUserEmailByIdAsync(int userId, CancellationToken cancellationToken);
     Task<bool> IsFacilityManagerAsync(int facilityId, int userId, CancellationToken cancellationToken);
+    Task<string?> GetFacilityNameManagedByAsync(int managerId, int? exceptFacilityId, CancellationToken cancellationToken);
 
     Task<Facility?> GetFacilityByIdAsync(int facilityId, CancellationToken cancellationToken);
     Task<bool> FacilityExistsAsync(int facilityId, CancellationToken cancellationToken);

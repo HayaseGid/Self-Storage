@@ -241,6 +241,15 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
             return;
         }
 
+        
+        // Mỗi Facility Manager chỉ quản lý 1 cơ sở
+        const busyFacility = (facilities || []).find(f =>
+            String(f.managerEmail || f.manager || "").trim().toLowerCase() === newFacility.manager.trim().toLowerCase());
+        if (busyFacility) {
+            void dialog.alert({ tone: "warning", title: "Quản lý đã có cơ sở", message: `${newFacility.manager} đang quản lý "${busyFacility.name}". Mỗi Facility Manager chỉ quản lý 1 cơ sở, vui lòng chọn người khác.` });
+            return;
+        }
+
         // Bắt buộc chọn vị trí để cơ sở hiện ghim trên bản đồ của khách.
         if (newFacility.latitude == null || newFacility.longitude == null) {
             void dialog.alert({ tone: "warning", title: "Chưa chọn vị trí", message: "Vui lòng chọn vị trí cơ sở trên bản đồ (bấm vào bản đồ hoặc \"Tìm theo địa chỉ\") để cơ sở hiện trên bản đồ của khách." });
@@ -579,7 +588,14 @@ function BusinessOperations({ currentUser, navigate, currentUserKey = "storespac
                                     }
                                 >
                                     <option value="">Chọn Facility Manager</option>
-                                    {operationState.managers.map(manager => <option key={manager.userId} value={manager.email}>{manager.fullName} · {manager.email}</option>)}
+                                    {operationState.managers.map(manager => {
+                                        const busy = (facilities || []).find(f => String(f.managerEmail || "").toLowerCase() === String(manager.email).toLowerCase());
+                                        return (
+                                            <option key={manager.userId} value={manager.email} disabled={!!busy}>
+                                                {manager.fullName} · {manager.email}{busy ? ` (đang quản lý ${busy.name})` : ""}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
 
                                                 <small>Chỉ chọn Facility Manager đã hoạt động trong database.</small>
